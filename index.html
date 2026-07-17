@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Little Garden</title>
+<style>
+  :root {
+    --bg: #f3efe4;
+    --bg-glow: #e2ecd4;
+    --panel: #fbf9f2;
+    --border: #ddd6c2;
+    --text: #2d3a2e;
+    --muted: #77836f;
+    --accent: #3e8e4f;
+    --gold: #b07f10;
+    --soil: #7a5230;
+    --soil-hi: #916440;
+    --soil-dark: #5d3d24;
+    --frame: #8a5a33;
+    --ripe-glow: rgba(217, 165, 32, 0.55);
+    --chip-on: #e3f0e0;
+    --shadow: rgba(61, 48, 32, 0.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121a12;
+      --bg-glow: #1c2b1e;
+      --panel: #1c261c;
+      --border: #32402f;
+      --text: #dfe9d9;
+      --muted: #93a189;
+      --accent: #6fce84;
+      --gold: #e2b13c;
+      --soil: #4a3325;
+      --soil-hi: #5d4130;
+      --soil-dark: #33231a;
+      --frame: #5d3f26;
+      --ripe-glow: rgba(226, 177, 60, 0.5);
+      --chip-on: #28402b;
+      --shadow: rgba(0, 0, 0, 0.5);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f3efe4;
+    --bg-glow: #e2ecd4;
+    --panel: #fbf9f2;
+    --border: #ddd6c2;
+    --text: #2d3a2e;
+    --muted: #77836f;
+    --accent: #3e8e4f;
+    --gold: #b07f10;
+    --soil: #7a5230;
+    --soil-hi: #916440;
+    --soil-dark: #5d3d24;
+    --frame: #8a5a33;
+    --ripe-glow: rgba(217, 165, 32, 0.55);
+    --chip-on: #e3f0e0;
+    --shadow: rgba(61, 48, 32, 0.18);
+  }
+  :root[data-theme="dark"] {
+    --bg: #121a12;
+    --bg-glow: #1c2b1e;
+    --panel: #1c261c;
+    --border: #32402f;
+    --text: #dfe9d9;
+    --muted: #93a189;
+    --accent: #6fce84;
+    --gold: #e2b13c;
+    --soil: #4a3325;
+    --soil-hi: #5d4130;
+    --soil-dark: #33231a;
+    --frame: #5d3f26;
+    --ripe-glow: rgba(226, 177, 60, 0.5);
+    --chip-on: #28402b;
+    --shadow: rgba(0, 0, 0, 0.5);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: radial-gradient(1100px 520px at 50% -8%, var(--bg-glow) 0%, var(--bg) 62%);
+    color: var(--text);
+    font-family: "SF Pro Rounded", ui-rounded, "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 26px 16px 40px;
+  }
+  .game { width: 100%; max-width: 500px; text-align: center; }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  h1 { font-size: 1.55rem; letter-spacing: 0.3px; text-wrap: balance; }
+  .coins {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--gold);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.9rem;
+    text-align: left;
+    margin-bottom: 16px;
+  }
+
+  /* Seed toolbar */
+  .shop {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    justify-content: center;
+    margin-bottom: 10px;
+  }
+  .chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    background: var(--panel);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 7px 10px 6px;
+    min-width: 66px;
+    cursor: pointer;
+    color: var(--text);
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    font-family: inherit;
+  }
+  .chip:hover { transform: translateY(-2px); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chip.on {
+    border-color: var(--accent);
+    background: var(--chip-on);
+    box-shadow: 0 3px 10px var(--shadow);
+  }
+  .chip .c-emoji { font-size: 1.35rem; line-height: 1.2; }
+  .chip .c-name { font-size: 0.72rem; font-weight: 700; }
+  .chip .c-meta {
+    font-size: 0.66rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .chip .c-multi { font-size: 0.64rem; color: var(--accent); font-weight: 700; }
+  .chip.cant .c-meta:first-line { color: inherit; }
+  .chip.cant { opacity: 0.5; }
+
+  .msg {
+    min-height: 1.3em;
+    font-size: 0.88rem;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  /* Plot */
+  .plot-wrap { position: relative; margin: 0 auto 8px; max-width: 440px; }
+  .ruler-top, .ruler-side {
+    color: var(--muted);
+    font-size: 0.72rem;
+    letter-spacing: 1px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ruler-top { margin-bottom: 4px; }
+  .ruler-top::before, .ruler-top::after,
+  .ruler-side::before, .ruler-side::after { content: "⟝"; visibility: hidden; }
+  #plot {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 2px;
+    background: var(--soil-dark);
+    border: 9px solid var(--frame);
+    border-radius: 14px;
+    padding: 2px;
+    box-shadow: 0 14px 30px var(--shadow);
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .cell {
+    position: relative;
+    aspect-ratio: 1;
+    border: none;
+    background: radial-gradient(circle at 35% 30%, var(--soil-hi), var(--soil) 75%);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    overflow: visible;
+  }
+  /* dashed meter lines splitting the plot into 1 m squares */
+  .cell.m-r { border-right: 2px dashed rgba(255, 244, 214, 0.5); }
+  .cell.m-b { border-bottom: 2px dashed rgba(255, 244, 214, 0.5); }
+  .cell:hover { filter: brightness(1.15); }
+  .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
+  .cell .plant {
+    font-size: clamp(15px, 5vw, 25px);
+    line-height: 1;
+    transition: transform 0.25s, opacity 0.25s;
+    pointer-events: none;
+  }
+  .cell.ripe { box-shadow: inset 0 0 12px var(--ripe-glow); }
+  .cell.ripe .plant { animation: sway 1.6s ease-in-out infinite; }
+  @keyframes sway {
+    0%, 100% { transform: scale(1) rotate(-5deg); }
+    50%      { transform: scale(1.08) rotate(5deg); }
+  }
+  .cell .bar {
+    position: absolute;
+    left: 12%;
+    right: 12%;
+    bottom: 7%;
+    height: 4px;
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 2px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .cell .bar i {
+    display: block;
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+  .cell .badge {
+    position: absolute;
+    top: 3%;
+    right: 5%;
+    font-size: 0.58rem;
+    font-weight: 800;
+    color: #fff;
+    background: var(--accent);
+    border-radius: 8px;
+    padding: 1px 4px;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .pop {
+    position: absolute;
+    left: 50%;
+    top: 10%;
+    transform: translateX(-50%);
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: var(--gold);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    pointer-events: none;
+    animation: rise 0.9s ease-out forwards;
+    z-index: 5;
+    white-space: nowrap;
+  }
+  @keyframes rise {
+    from { opacity: 1; translate: 0 0; }
+    to   { opacity: 0; translate: 0 -26px; }
+  }
+
+  .legend {
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.55;
+    max-width: 430px;
+    margin: 10px auto 0;
+  }
+  .legend b { color: var(--text); }
+  @media (prefers-reduced-motion: reduce) {
+    .cell .plant, .chip { transition: none; }
+    .cell.ripe .plant { animation: none; }
+    .pop { animation-duration: 0.01s; }
+  }
+</style>
+
+<div class="game">
+  <header>
+    <h1>🌻 My Little Garden</h1>
+    <div class="coins" id="coins">🪙 20</div>
+  </header>
+  <p class="subtitle">A 3 m × 3 m plot with 81 planting spots — 9 per square meter. Pick a seed, click the soil, and watch it grow.</p>
+
+  <div class="shop" id="shop"></div>
+  <p class="msg" id="msg">Pick a seed, then click an empty spot of soil.</p>
+
+  <div class="plot-wrap">
+    <div class="ruler-top">⟵&nbsp;&nbsp;3 m&nbsp;&nbsp;⟶</div>
+    <div id="plot"></div>
+  </div>
+
+  <p class="legend">
+    Crops marked <b>♻️</b> are multi-harvest: pick them when ripe and the <b>stem stays behind</b> and regrows a new crop — until its harvests run out.
+    Single-harvest crops leave the soil empty. Use <b>⛏️ Dig</b> to clear a spot. Your garden saves itself and keeps growing while you're away.
+  </p>
+</div>
+
+<script>
+(function () {
+  var CROPS = {
+    carrot:     { name: 'Carrot',     emoji: '🥕', cost: 2,  grow: 15, sell: 5,  harvests: 1 },
+    lettuce:    { name: 'Lettuce',    emoji: '🥬', cost: 3,  grow: 22, sell: 8,  harvests: 1 },
+    strawberry: { name: 'Strawberry', emoji: '🍓', cost: 5,  grow: 30, sell: 6,  harvests: 3, regrow: 15 },
+    tomato:     { name: 'Tomato',     emoji: '🍅', cost: 8,  grow: 45, sell: 10, harvests: 4, regrow: 20 },
+    pepper:     { name: 'Pepper',     emoji: '🫑', cost: 10, grow: 60, sell: 14, harvests: 3, regrow: 25 },
+    pumpkin:    { name: 'Pumpkin',    emoji: '🎃', cost: 12, grow: 90, sell: 40, harvests: 1 }
+  };
+  var SIZE = 9, CELLS = SIZE * SIZE;
+  var SAVE_KEY = 'garden-game-v1';
+
+  var coins = 20;
+  var grid = new Array(CELLS).fill(null); // {t, state:'grow'|'ripe'|'regrow', end, left}
+  var sel = 'carrot';
+
+  var coinsEl = document.getElementById('coins');
+  var shopEl = document.getElementById('shop');
+  var msgEl = document.getElementById('msg');
+  var plotEl = document.getElementById('plot');
+  var cellEls = [];
+
+  function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
+
+  // ---------- persistence (works offline-grown: timestamps are absolute) ----------
+  function save() {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ coins: coins, grid: grid }));
+    } catch (e) { /* storage unavailable — play without saving */ }
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return;
+      var d = JSON.parse(raw);
+      if (typeof d.coins === 'number') coins = d.coins;
+      if (Array.isArray(d.grid) && d.grid.length === CELLS) {
+        grid = d.grid.map(function (p) {
+          return p && CROPS[p.t] ? p : null;
+        });
+      }
+    } catch (e) { /* corrupt save — start fresh */ }
+  }
+
+  // ---------- shop ----------
+  var chips = {};
+  function buildShop() {
+    Object.keys(CROPS).forEach(function (key) {
+      var c = CROPS[key];
+      var b = document.createElement('button');
+      b.className = 'chip';
+      b.innerHTML =
+        '<span class="c-emoji">' + c.emoji + '</span>' +
+        '<span class="c-name">' + c.name + '</span>' +
+        '<span class="c-meta">🪙' + c.cost + ' · ' + c.grow + 's</span>' +
+        (c.harvests > 1
+          ? '<span class="c-multi">♻️ ×' + c.harvests + '</span>'
+          : '<span class="c-multi">&nbsp;</span>');
+      b.title = c.harvests > 1
+        ? c.name + ': ' + c.harvests + ' harvests, regrows in ' + c.regrow + 's, 🪙' + c.sell + ' each'
+        : c.name + ': single harvest, 🪙' + c.sell;
+      b.addEventListener('click', function () { setSel(key); });
+      shopEl.appendChild(b);
+      chips[key] = b;
+    });
+    var dig = document.createElement('button');
+    dig.className = 'chip';
+    dig.innerHTML =
+      '<span class="c-emoji">⛏️</span><span class="c-name">Dig</span>' +
+      '<span class="c-meta">clear spot</span><span class="c-multi">&nbsp;</span>';
+    dig.title = 'Dig up a plant (no refund)';
+    dig.addEventListener('click', function () { setSel('dig'); });
+    shopEl.appendChild(dig);
+    chips.dig = dig;
+  }
+  function setSel(key) {
+    sel = key;
+    Object.keys(chips).forEach(function (k) {
+      chips[k].classList.toggle('on', k === sel);
+    });
+    if (key === 'dig') setMsg('Dig mode: click a plant to remove it.');
+    else setMsg(CROPS[key].name + ' selected — click an empty spot of soil to plant.');
+  }
+  function refreshAfford() {
+    Object.keys(CROPS).forEach(function (k) {
+      chips[k].classList.toggle('cant', coins < CROPS[k].cost);
+    });
+  }
+
+  var msgTimer = null;
+  function setMsg(text) {
+    msgEl.textContent = text;
+    if (msgTimer) clearTimeout(msgTimer);
+    msgTimer = setTimeout(function () { msgEl.textContent = ' '; }, 3500);
+  }
+
+  // ---------- plot ----------
+  function buildPlot() {
+    for (var i = 0; i < CELLS; i++) {
+      var col = i % SIZE, row = (i / SIZE) | 0;
+      var b = document.createElement('button');
+      b.className = 'cell' +
+        (col === 2 || col === 5 ? ' m-r' : '') +
+        (row === 2 || row === 5 ? ' m-b' : '');
+      b.innerHTML = '<span class="plant"></span><span class="bar" hidden><i></i></span><span class="badge" hidden></span>';
+      (function (idx) {
+        b.addEventListener('click', function () { clickCell(idx); });
+      })(i);
+      plotEl.appendChild(b);
+      cellEls.push(b);
+    }
+  }
+
+  function clickCell(i) {
+    var p = grid[i];
+    if (sel === 'dig') {
+      if (!p) { setMsg('Nothing to dig here.'); return; }
+      grid[i] = null;
+      setMsg('Dug up the ' + CROPS[p.t].name.toLowerCase() + '.');
+      afterAction();
+      return;
+    }
+    if (p) {
+      if (p.state === 'ripe') { harvest(i); afterAction(); }
+      else if (p.state === 'regrow') setMsg('The stem is regrowing a new ' + CROPS[p.t].name.toLowerCase() + '…');
+      else setMsg('Still growing — give it a moment.');
+      return;
+    }
+    var c = CROPS[sel];
+    if (!c) return;
+    if (coins < c.cost) { setMsg('Not enough coins for ' + c.name.toLowerCase() + ' (needs 🪙' + c.cost + ').'); return; }
+    coins -= c.cost;
+    grid[i] = { t: sel, state: 'grow', end: Date.now() + c.grow * 1000, left: c.harvests };
+    afterAction();
+  }
+
+  function harvest(i) {
+    var p = grid[i], c = CROPS[p.t];
+    coins += c.sell;
+    popup(i, '+🪙' + c.sell);
+    p.left--;
+    if (p.left > 0) {
+      // multi-harvest: the stem stays behind and regrows
+      p.state = 'regrow';
+      p.end = Date.now() + c.regrow * 1000;
+      setMsg('Harvested a ' + c.name.toLowerCase() + '! The stem will regrow (' + p.left + ' left).');
+    } else {
+      grid[i] = null;
+      setMsg('Harvested the ' + c.name.toLowerCase() + '!');
+    }
+  }
+
+  function popup(i, text) {
+    var s = document.createElement('span');
+    s.className = 'pop';
+    s.textContent = text;
+    cellEls[i].appendChild(s);
+    setTimeout(function () { s.remove(); }, 900);
+  }
+
+  function afterAction() {
+    // Soft-lock rescue: broke with an empty garden -> small gift
+    var any = grid.some(Boolean);
+    if (!any && coins < 2) { coins = 5; setMsg('A neighbor gifted you 🪙5 to replant!'); }
+    updateAll();
+    save();
+  }
+
+  // ---------- render ----------
+  function updateCell(i) {
+    var el = cellEls[i];
+    var plant = el.firstChild, bar = plant.nextSibling, badge = bar.nextSibling;
+    var p = grid[i];
+    el.classList.remove('ripe');
+    if (!p) {
+      plant.textContent = '';
+      bar.hidden = true;
+      badge.hidden = true;
+      el.title = 'Empty soil — click to plant';
+      return;
+    }
+    var c = CROPS[p.t], now = Date.now();
+    if (p.state !== 'ripe' && now >= p.end) p.state = 'ripe';
+
+    if (p.state === 'ripe') {
+      plant.textContent = c.emoji;
+      plant.style.transform = 'scale(1)';
+      plant.style.opacity = '1';
+      plant.style.filter = 'none';
+      bar.hidden = true;
+      el.classList.add('ripe');
+      if (c.harvests > 1) {
+        badge.hidden = false;
+        badge.textContent = '×' + p.left;
+      } else badge.hidden = true;
+      el.title = c.name + ' — ripe! Click to harvest' +
+        (c.harvests > 1 ? ' (' + p.left + ' harvest' + (p.left > 1 ? 's' : '') + ' left, stem regrows)' : '');
+      return;
+    }
+
+    var dur = (p.state === 'regrow' ? c.regrow : c.grow) * 1000;
+    var pr = Math.min(1, Math.max(0, 1 - (p.end - now) / dur));
+    badge.hidden = true;
+    bar.hidden = false;
+    bar.firstChild.style.width = (pr * 100).toFixed(0) + '%';
+
+    if (p.state === 'regrow') {
+      // the stem left behind after harvest
+      plant.textContent = '🌿';
+      plant.style.transform = 'scale(0.68)';
+      plant.style.opacity = '0.6';
+      plant.style.filter = 'none';
+      el.title = c.name + ' stem — regrowing (' + Math.ceil((p.end - now) / 1000) + 's)';
+      return;
+    }
+    // growing from seed
+    if (pr < 0.3) {
+      plant.textContent = '🌱';
+      plant.style.transform = 'scale(0.55)';
+      plant.style.opacity = '0.95';
+      plant.style.filter = 'none';
+    } else if (pr < 0.65) {
+      plant.textContent = '🌿';
+      plant.style.transform = 'scale(0.72)';
+      plant.style.opacity = '1';
+      plant.style.filter = 'none';
+    } else {
+      plant.textContent = c.emoji;
+      plant.style.transform = 'scale(0.82)';
+      plant.style.opacity = '0.85';
+      plant.style.filter = 'grayscale(0.55)';
+    }
+    el.title = c.name + ' — growing (' + Math.ceil((p.end - now) / 1000) + 's to ripe)';
+  }
+
+  function updateAll() {
+    for (var i = 0; i < CELLS; i++) updateCell(i);
+    coinsEl.textContent = '🪙 ' + coins;
+    refreshAfford();
+  }
+
+  // ---------- boot ----------
+  load();
+  buildShop();
+  buildPlot();
+  setSel('carrot');
+  updateAll();
+  setInterval(updateAll, 250);
+  setInterval(save, 5000);
+
+  // small debug/test handle
+  window.__g = { grid: grid, crops: CROPS, coins: function () { return coins; } };
+})();
+</script>
+
+</html>
