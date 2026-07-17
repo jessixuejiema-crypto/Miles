@@ -52,14 +52,16 @@
     padding: 5px;
     margin-bottom: 28px;
     gap: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
   .tab {
     border: none;
     background: transparent;
     color: var(--muted);
-    font-size: 1rem;
+    font-size: 0.95rem;
     font-weight: 600;
-    padding: 10px 22px;
+    padding: 10px 18px;
     border-radius: 999px;
     cursor: pointer;
     transition: background 0.2s, color 0.2s;
@@ -70,27 +72,25 @@
     color: #0b1220;
   }
 
-  /* Dice */
+  /* 2D dice button (d100) */
   .dice-zone { margin-bottom: 10px; }
   .dice {
     width: 110px;
     height: 110px;
     background: var(--dice-face);
-    border-radius: 20px;
-    display: inline-grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(3, 1fr);
-    padding: 16px;
-    gap: 4px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
     border: none;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.45), inset 0 -4px 0 rgba(0,0,0,0.12);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.45), inset 0 -6px 0 rgba(0,0,0,0.12);
     transition: transform 0.15s;
     user-select: none;
   }
   .dice:hover { transform: translateY(-4px) scale(1.03); }
   .dice:active { transform: translateY(0) scale(0.97); }
-  .dice.rolling { animation: roll 0.6s ease-in-out; }
+  .dice.rolling { animation: roll 0.8s ease-in-out; }
   @keyframes roll {
     0%   { transform: rotate(0deg)   scale(1); }
     25%  { transform: rotate(90deg)  scale(1.15); }
@@ -98,14 +98,13 @@
     75%  { transform: rotate(310deg) scale(1.1); }
     100% { transform: rotate(360deg) scale(1); }
   }
-  .pip {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    background: var(--pip);
-    visibility: hidden;
+  .dice .num {
+    font-size: 2.1rem;
+    font-weight: 800;
+    color: var(--pip);
+    font-variant-numeric: tabular-nums;
   }
-  .pip.on { visibility: visible; }
+  .dice .num.label { font-size: 1.6rem; letter-spacing: 1px; }
   .hint {
     color: var(--muted);
     font-size: 0.85rem;
@@ -169,6 +168,13 @@
     color: var(--good);
     font-weight: 700;
   }
+
+  /* 3D panel */
+  #canvas3d {
+    max-width: 100%;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
   footer {
     margin-top: 20px;
     color: var(--muted);
@@ -179,28 +185,35 @@
 <body>
 <div class="app">
   <h1>🎲 Dice Algebra</h1>
-  <p class="subtitle">Click the dice to roll a random equation. The roll sets the difficulty!</p>
+  <p class="subtitle">Click the 100-sided dice to roll a random equation. The roll sets the difficulty!</p>
 
   <div class="tabs" role="tablist">
     <button class="tab active" id="tab-x" role="tab" aria-selected="true">Solve for x</button>
     <button class="tab" id="tab-xy" role="tab" aria-selected="false">Solve for x &amp; y</button>
+    <button class="tab" id="tab-3d" role="tab" aria-selected="false">3D Dice</button>
   </div>
 
-  <div class="dice-zone">
-    <button class="dice" id="dice" aria-label="Roll the dice">
-      <span class="pip" id="p0"></span><span class="pip" id="p1"></span><span class="pip" id="p2"></span>
-      <span class="pip" id="p3"></span><span class="pip" id="p4"></span><span class="pip" id="p5"></span>
-      <span class="pip" id="p6"></span><span class="pip" id="p7"></span><span class="pip" id="p8"></span>
-    </button>
-  </div>
-  <p class="hint">1–2 easy &nbsp;·&nbsp; 3–4 medium &nbsp;·&nbsp; 5–6 hard</p>
-  <p class="difficulty" id="difficulty"></p>
+  <div id="panel-algebra">
+    <div class="dice-zone">
+      <button class="dice" id="dice" aria-label="Roll the 100-sided dice">
+        <span class="num label" id="dice-num">d100</span>
+      </button>
+    </div>
+    <p class="hint">1–33 easy &nbsp;·&nbsp; 34–66 medium &nbsp;·&nbsp; 67–100 hard</p>
+    <p class="difficulty" id="difficulty"></p>
 
-  <div class="card" id="card">
-    <p class="placeholder" id="placeholder">Roll the dice to get your first problem!</p>
-    <div class="equation" id="equation" hidden></div>
-    <button class="reveal-btn" id="reveal" hidden>Show answer</button>
-    <p class="answer" id="answer" hidden></p>
+    <div class="card" id="card">
+      <p class="placeholder" id="placeholder">Roll the dice to get your first problem!</p>
+      <div class="equation" id="equation" hidden></div>
+      <button class="reveal-btn" id="reveal" hidden>Show answer</button>
+      <p class="answer" id="answer" hidden></p>
+    </div>
+  </div>
+
+  <div id="panel-3d" hidden>
+    <canvas id="canvas3d" width="340" height="340" aria-label="3D 100-sided dice — click to roll"></canvas>
+    <p class="hint">Click the dice to watch it roll in 3D</p>
+    <p class="difficulty" id="result3d"></p>
   </div>
 
   <footer>Every problem has a whole-number answer. Good luck! ✏️</footer>
@@ -208,10 +221,11 @@
 
 <script>
 (function () {
-  var mode = 'x'; // 'x' or 'xy'
+  var mode = 'x'; // 'x', 'xy', or '3d'
   var rolling = false;
 
   var diceEl = document.getElementById('dice');
+  var diceNumEl = document.getElementById('dice-num');
   var diffEl = document.getElementById('difficulty');
   var placeholderEl = document.getElementById('placeholder');
   var equationEl = document.getElementById('equation');
@@ -219,22 +233,10 @@
   var answerEl = document.getElementById('answer');
   var tabX = document.getElementById('tab-x');
   var tabXY = document.getElementById('tab-xy');
-
-  // Which pips light up for each face value (3x3 grid, indices 0-8)
-  var FACES = {
-    1: [4],
-    2: [0, 8],
-    3: [0, 4, 8],
-    4: [0, 2, 6, 8],
-    5: [0, 2, 4, 6, 8],
-    6: [0, 2, 3, 5, 6, 8]
-  };
-
-  function showFace(n) {
-    for (var i = 0; i < 9; i++) {
-      document.getElementById('p' + i).classList.toggle('on', FACES[n].indexOf(i) !== -1);
-    }
-  }
+  var tab3D = document.getElementById('tab-3d');
+  var panelAlgebra = document.getElementById('panel-algebra');
+  var panel3D = document.getElementById('panel-3d');
+  var result3dEl = document.getElementById('result3d');
 
   function randInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -244,7 +246,6 @@
     while (n === 0) n = randInt(min, max);
     return n;
   }
-  function pick(arr) { return arr[randInt(0, arr.length - 1)]; }
 
   // Format "a·x" nicely: 1x -> x, -1x -> -x
   function coef(a, v) {
@@ -324,7 +325,7 @@
     };
   }
 
-  // ---- Two-variable system generators. Each returns {lines: [eq1, eq2], answer} ----
+  // ---- Two-variable system generators. Each returns {lines: [eq1, eq2], x, y} ----
 
   function eqLine(a, b, rhs) {
     // Build "ax + by = rhs" with nice signs; a is never 0 here
@@ -368,9 +369,10 @@
     };
   }
 
+  // d100 difficulty bands
   function levelFor(face) {
-    if (face <= 2) return 1;
-    if (face <= 4) return 2;
+    if (face <= 33) return 1;
+    if (face <= 66) return 2;
     return 3;
   }
 
@@ -402,18 +404,21 @@
     if (rolling) return;
     rolling = true;
     diceEl.classList.add('rolling');
+    diceNumEl.classList.remove('label');
 
-    // Flicker faces while the dice spins
-    var flicker = setInterval(function () { showFace(randInt(1, 6)); }, 90);
+    // Flicker random numbers while the dice spins
+    var flicker = setInterval(function () {
+      diceNumEl.textContent = randInt(1, 100);
+    }, 70);
 
     setTimeout(function () {
       clearInterval(flicker);
       diceEl.classList.remove('rolling');
       rolling = false;
-      var face = randInt(1, 6);
-      showFace(face);
+      var face = randInt(1, 100);
+      diceNumEl.textContent = face;
       renderProblem(face);
-    }, 600);
+    }, 800);
   });
 
   revealBtn.addEventListener('click', function () {
@@ -426,14 +431,271 @@
     }
   });
 
+  // ================= 3D d100 (software-rendered, no libraries) =================
+  // The die is a zocchihedron-style sphere: 100 flat hexagonal facets placed on
+  // a Fibonacci lattice, each numbered 1-100. Rendered on canvas with painter's
+  // algorithm, Lambert shading, and a mild perspective camera.
+
+  var canvas = document.getElementById('canvas3d');
+  var ctx = canvas.getContext && canvas.getContext('2d');
+  var CSIZE = 340, CX = CSIZE / 2, CY = CSIZE / 2, RADIUS = 118, CAMD = 4;
+  var LIGHT = normalize3([-0.35, 0.55, 0.76]);
+
+  function normalize3(v) {
+    var l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) || 1;
+    return [v[0] / l, v[1] / l, v[2] / l];
+  }
+  function cross3(a, b) {
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  }
+  function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+
+  // Quaternions as [w, x, y, z]
+  function qmul(a, b) {
+    return [
+      a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+      a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+      a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+      a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0]
+    ];
+  }
+  function qaxis(axis, angle) {
+    var s = Math.sin(angle / 2);
+    return [Math.cos(angle / 2), axis[0] * s, axis[1] * s, axis[2] * s];
+  }
+  function qrot(q, v) {
+    var r = qmul(qmul(q, [0, v[0], v[1], v[2]]), [q[0], -q[1], -q[2], -q[3]]);
+    return [r[1], r[2], r[3]];
+  }
+  function qslerp(a, b, t) {
+    var d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+    if (d < 0) { b = [-b[0], -b[1], -b[2], -b[3]]; d = -d; }
+    var wa, wb;
+    if (d > 0.9995) { wa = 1 - t; wb = t; }
+    else {
+      var th = Math.acos(Math.min(1, d)), sth = Math.sin(th);
+      wa = Math.sin((1 - t) * th) / sth;
+      wb = Math.sin(t * th) / sth;
+    }
+    var out = [
+      a[0] * wa + b[0] * wb, a[1] * wa + b[1] * wb,
+      a[2] * wa + b[2] * wb, a[3] * wa + b[3] * wb
+    ];
+    return normalizeQ(out);
+  }
+  function normalizeQ(q) {
+    var l = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]) || 1;
+    return [q[0] / l, q[1] / l, q[2] / l, q[3] / l];
+  }
+
+  // Build the 100 facets on a Fibonacci sphere
+  var FACETS = []; // {n, normal, center, verts[6]}
+  (function buildDie() {
+    var GA = Math.PI * (3 - Math.sqrt(5)); // golden angle
+    var FR = 0.19;                          // facet circumradius
+    for (var i = 0; i < 100; i++) {
+      var y = 1 - 2 * (i + 0.5) / 100;
+      var r = Math.sqrt(Math.max(0, 1 - y * y));
+      var th = i * GA;
+      var p = [Math.cos(th) * r, y, Math.sin(th) * r];
+      var ref = Math.abs(p[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      var t1 = normalize3(cross3(p, ref));
+      var t2 = cross3(p, t1);
+      var verts = [];
+      for (var k = 0; k < 6; k++) {
+        var a = k * Math.PI / 3 + Math.PI / 6;
+        var ca = Math.cos(a) * FR, sa = Math.sin(a) * FR;
+        verts.push([
+          p[0] + ca * t1[0] + sa * t2[0],
+          p[1] + ca * t1[1] + sa * t2[1],
+          p[2] + ca * t1[2] + sa * t2[2]
+        ]);
+      }
+      FACETS.push({ n: i + 1, normal: p, verts: verts });
+    }
+  })();
+
+  // Quaternion that brings facet n's normal to face the camera (+z)
+  function targetQuat(n) {
+    var p = FACETS[n - 1].normal, z = [0, 0, 1];
+    var d = dot3(p, z);
+    if (d > 0.99999) return [1, 0, 0, 0];
+    if (d < -0.99999) return qaxis([1, 0, 0], Math.PI);
+    return qaxis(normalize3(cross3(p, z)), Math.acos(d));
+  }
+
+  function project(v) {
+    var s = CAMD / (CAMD - v[2]);
+    return [CX + v[0] * RADIUS * s, CY - v[1] * RADIUS * s, s];
+  }
+
+  var q3 = qaxis([0.3, 1, 0.2], 0.6); // current orientation
+  var anim = { phase: 'idle', done: false };
+  var winFace = -1;
+  var rafId = null, lastT = 0;
+
+  function draw() {
+    ctx.clearRect(0, 0, CSIZE, CSIZE);
+
+    // Soft shadow under the die
+    ctx.save();
+    ctx.translate(CX, CY + RADIUS * 1.14);
+    ctx.scale(1, 0.22);
+    var sg = ctx.createRadialGradient(0, 0, 0, 0, 0, RADIUS * 0.8);
+    sg.addColorStop(0, 'rgba(0,0,0,0.4)');
+    sg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sg;
+    ctx.beginPath();
+    ctx.arc(0, 0, RADIUS * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Base sphere fills the tiny gaps between facets
+    ctx.beginPath();
+    ctx.arc(CX, CY, RADIUS * 1.0, 0, Math.PI * 2);
+    ctx.fillStyle = '#8b94a3';
+    ctx.fill();
+
+    // Collect visible facets, back to front
+    var visible = [];
+    for (var i = 0; i < 100; i++) {
+      var f = FACETS[i];
+      var rn = qrot(q3, f.normal);
+      if (rn[2] <= 0.02) continue;
+      visible.push({ f: f, rn: rn });
+    }
+    visible.sort(function (a, b) { return a.rn[2] - b.rn[2]; });
+
+    for (var j = 0; j < visible.length; j++) {
+      var vf = visible[j], f2 = vf.f, rn2 = vf.rn;
+      var lam = Math.max(0, dot3(rn2, LIGHT));
+      var shade = 0.42 + 0.58 * lam;
+      var isWin = f2.n === winFace;
+      var cr, cg, cb;
+      if (isWin) { cr = 56 * 0.3 + 56 * shade; cg = 189 * shade; cb = 248 * shade; }
+      else { cr = 248 * shade; cg = 250 * shade; cb = 252 * shade; }
+
+      ctx.beginPath();
+      var ctrProj = null;
+      for (var k2 = 0; k2 < 6; k2++) {
+        var pv = project(qrot(q3, f2.verts[k2]));
+        if (k2 === 0) ctx.moveTo(pv[0], pv[1]); else ctx.lineTo(pv[0], pv[1]);
+      }
+      ctx.closePath();
+      ctx.fillStyle = 'rgb(' + (cr | 0) + ',' + (cg | 0) + ',' + (cb | 0) + ')';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(15,23,42,0.22)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Number, faded out as the facet turns away (drawn screen-upright)
+      if (rn2[2] > 0.5) {
+        ctrProj = project(qrot(q3, f2.normal));
+        var alpha = (rn2[2] - 0.5) / 0.5;
+        var fs = 12.5 * ctrProj[2] * rn2[2];
+        ctx.font = '700 ' + fs.toFixed(1) + 'px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = isWin
+          ? 'rgba(11,18,32,' + alpha.toFixed(2) + ')'
+          : 'rgba(15,23,42,' + (0.9 * alpha).toFixed(2) + ')';
+        ctx.fillText(f2.n, ctrProj[0], ctrProj[1]);
+      }
+    }
+  }
+
+  function frame(t) {
+    var dt = Math.min(40, t - lastT || 16);
+    lastT = t;
+
+    if (anim.phase === 'idle' && !anim.done) {
+      // Gentle tumble while waiting for the first roll
+      q3 = normalizeQ(qmul(qaxis([0.2, 1, 0.1], 0.0005 * dt), q3));
+    } else if (anim.phase === 'spin') {
+      var el = t - anim.t0;
+      var k = Math.max(0, 1 - el / anim.dur);
+      var speed = 0.0025 + 0.011 * k * k; // rad per ms, decelerating
+      q3 = normalizeQ(qmul(qaxis(anim.axis, speed * dt), q3));
+      if (el >= anim.dur) {
+        anim.phase = 'settle';
+        anim.t0 = t;
+        anim.dur = 750;
+        anim.qFrom = q3;
+        anim.qTo = targetQuat(anim.n);
+      }
+    } else if (anim.phase === 'settle') {
+      var u = Math.min(1, (t - anim.t0) / anim.dur);
+      var e = 1 - Math.pow(1 - u, 3);
+      q3 = qslerp(anim.qFrom, anim.qTo, e);
+      if (u >= 1) {
+        var landed = anim.n;
+        winFace = landed;
+        anim = { phase: 'idle', done: true };
+        var lvl = levelFor(landed);
+        result3dEl.className = 'difficulty ' + DIFF_LABEL[lvl][0];
+        result3dEl.textContent = 'You rolled ' + landed + ' — ' + DIFF_LABEL[lvl][1];
+      }
+    }
+
+    draw();
+    if (mode === '3d') rafId = requestAnimationFrame(frame);
+  }
+
+  function roll3D() {
+    if (anim.phase === 'spin' || anim.phase === 'settle') return;
+    winFace = -1;
+    result3dEl.textContent = '';
+    result3dEl.className = 'difficulty';
+    anim = {
+      phase: 'spin',
+      t0: lastT,
+      dur: 1300,
+      n: randInt(1, 100),
+      axis: normalize3([Math.random() - 0.5, Math.random() + 0.3, Math.random() - 0.5]),
+      done: false
+    };
+  }
+
+  canvas.addEventListener('click', roll3D);
+
+  // Crisp rendering on high-DPI screens
+  (function setupCanvas() {
+    if (!ctx) return;
+    var dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    canvas.width = CSIZE * dpr;
+    canvas.height = CSIZE * dpr;
+    canvas.style.width = CSIZE + 'px';
+    canvas.style.height = CSIZE + 'px';
+    ctx.scale(dpr, dpr);
+  })();
+
+  // ================= Tabs =================
+
   function setMode(next) {
     if (mode === next) return;
+    var prev = mode;
     mode = next;
     tabX.classList.toggle('active', next === 'x');
     tabXY.classList.toggle('active', next === 'xy');
+    tab3D.classList.toggle('active', next === '3d');
     tabX.setAttribute('aria-selected', next === 'x');
     tabXY.setAttribute('aria-selected', next === 'xy');
-    // Reset the card so the old problem doesn't linger in the wrong mode
+    tab3D.setAttribute('aria-selected', next === '3d');
+
+    panelAlgebra.hidden = next === '3d';
+    panel3D.hidden = next !== '3d';
+
+    if (next === '3d') {
+      lastT = 0;
+      rafId = requestAnimationFrame(frame);
+      return;
+    }
+    if (prev === '3d') {
+      if (rafId) cancelAnimationFrame(rafId);
+      return; // keep the current algebra problem when coming back from 3D view
+    }
+    // Switching between x and xy: reset the card so the old problem doesn't
+    // linger in the wrong mode
     placeholderEl.hidden = false;
     equationEl.hidden = true;
     revealBtn.hidden = true;
@@ -444,8 +706,7 @@
 
   tabX.addEventListener('click', function () { setMode('x'); });
   tabXY.addEventListener('click', function () { setMode('xy'); });
-
-  showFace(5); // starting face
+  tab3D.addEventListener('click', function () { setMode('3d'); });
 })();
 </script>
 </body>
