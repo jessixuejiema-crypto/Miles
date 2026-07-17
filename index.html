@@ -175,6 +175,52 @@
     cursor: pointer;
     touch-action: manipulation;
   }
+
+  /* Tips panel */
+  .tip-card {
+    background: var(--card);
+    border: 1px solid #334155;
+    border-radius: 18px;
+    padding: 34px 28px 26px;
+    min-height: 170px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .tip-emoji { font-size: 2rem; }
+  .tip-text {
+    font-size: 1.15rem;
+    line-height: 1.55;
+    max-width: 420px;
+  }
+  .tip-fade { animation: tipfade 0.45s ease; }
+  @keyframes tipfade {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .tip-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 4px;
+    width: 100%;
+    transform-origin: left;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  }
+  .tip-bar.run { animation: tipbar 5s linear; }
+  @keyframes tipbar {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+  .tip-count {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 12px;
+  }
   footer {
     margin-top: 20px;
     color: var(--muted);
@@ -191,6 +237,7 @@
     <button class="tab active" id="tab-x" role="tab" aria-selected="true">Solve for x</button>
     <button class="tab" id="tab-xy" role="tab" aria-selected="false">Solve for x &amp; y</button>
     <button class="tab" id="tab-3d" role="tab" aria-selected="false">3D Dice</button>
+    <button class="tab" id="tab-tips" role="tab" aria-selected="false">Tips</button>
   </div>
 
   <div id="panel-algebra">
@@ -214,6 +261,15 @@
     <canvas id="canvas3d" width="340" height="340" aria-label="3D 100-sided dice — click to roll"></canvas>
     <p class="hint">Click the dice to watch it roll in 3D</p>
     <p class="difficulty" id="result3d"></p>
+  </div>
+
+  <div id="panel-tips" hidden>
+    <div class="tip-card" aria-live="polite">
+      <div id="tip-emoji" class="tip-emoji">💡</div>
+      <p id="tip-text" class="tip-text"></p>
+      <div id="tip-bar" class="tip-bar"></div>
+    </div>
+    <p class="tip-count" id="tip-count"></p>
   </div>
 
   <footer>Every problem has a whole-number answer. Good luck! ✏️</footer>
@@ -658,6 +714,64 @@
 
   canvas.addEventListener('click', roll3D);
 
+  // ================= Tips (a new random one every 5 seconds) =================
+
+  var tabTips = document.getElementById('tab-tips');
+  var panelTips = document.getElementById('panel-tips');
+  var tipEmojiEl = document.getElementById('tip-emoji');
+  var tipTextEl = document.getElementById('tip-text');
+  var tipBarEl = document.getElementById('tip-bar');
+  var tipCountEl = document.getElementById('tip-count');
+
+  var TIPS = [
+    ['🎲', 'The dice is 100-sided: 1–33 rolls an easy problem, 34–66 medium, and 67–100 hard.'],
+    ['🙈', 'Try to solve the problem on paper before pressing “Show answer” — you learn way more that way.'],
+    ['🧊', 'Check out the 3D Dice tab to watch the d100 tumble and land on your number.'],
+    ['⚖️', 'Whatever you do to one side of an equation, do to the other side too — that keeps it balanced.'],
+    ['🔁', 'To solve for x, undo operations in reverse: deal with + and − first, then × and ÷.'],
+    ['✌️', 'In the x & y tab you get two equations. Add or subtract them to make one variable disappear!'],
+    ['🔍', 'If the two equations are x + y and x − y, adding them cancels y instantly — try it.'],
+    ['➖', 'Watch the signs! Most algebra slip-ups come from dropping a minus somewhere.'],
+    ['🎯', 'Every problem here has a whole-number answer, so a fraction or decimal means recheck your steps.'],
+    ['✅', 'Check your answer by plugging it back into the original equation — both sides should match.'],
+    ['📦', 'See parentheses like 3(x + 2)? Distribute first: multiply everything inside by 3.'],
+    ['🪜', 'Variables on both sides? Move all the x terms to one side first, then solve as usual.'],
+    ['🔥', 'Roll a few hard ones in a row — high numbers (67–100) give the trickiest equations.'],
+    ['🧮', 'For x/4 + 2 = 5, subtract 2 first, then multiply both sides by 4. Fractions fear you now.'],
+    ['🔄', 'Not feeling this problem? Just click the dice again for a fresh one — rolls are unlimited.'],
+    ['🏆', 'Challenge a friend: same roll, first correct answer wins the round.']
+  ];
+
+  var tipTimer = null;
+  var tipIndex = -1;
+
+  function showRandomTip() {
+    var next = tipIndex;
+    while (next === tipIndex) next = randInt(0, TIPS.length - 1); // never repeat back-to-back
+    tipIndex = next;
+    tipEmojiEl.textContent = TIPS[next][0];
+    tipTextEl.textContent = TIPS[next][1];
+    tipCountEl.textContent = 'Tip ' + (next + 1) + ' of ' + TIPS.length + ' · next one in 5 seconds';
+
+    // Restart the fade + countdown-bar animations
+    tipTextEl.classList.remove('tip-fade');
+    tipEmojiEl.classList.remove('tip-fade');
+    tipBarEl.classList.remove('run');
+    void tipTextEl.offsetWidth; // force reflow so animations replay
+    tipTextEl.classList.add('tip-fade');
+    tipEmojiEl.classList.add('tip-fade');
+    tipBarEl.classList.add('run');
+  }
+
+  function startTips() {
+    showRandomTip();
+    tipTimer = setInterval(showRandomTip, 5000);
+  }
+  function stopTips() {
+    if (tipTimer) clearInterval(tipTimer);
+    tipTimer = null;
+  }
+
   // Crisp rendering on high-DPI screens
   (function setupCanvas() {
     if (!ctx) return;
@@ -678,21 +792,30 @@
     tabX.classList.toggle('active', next === 'x');
     tabXY.classList.toggle('active', next === 'xy');
     tab3D.classList.toggle('active', next === '3d');
+    tabTips.classList.toggle('active', next === 'tips');
     tabX.setAttribute('aria-selected', next === 'x');
     tabXY.setAttribute('aria-selected', next === 'xy');
     tab3D.setAttribute('aria-selected', next === '3d');
+    tabTips.setAttribute('aria-selected', next === 'tips');
 
-    panelAlgebra.hidden = next === '3d';
+    panelAlgebra.hidden = next === '3d' || next === 'tips';
     panel3D.hidden = next !== '3d';
+    panelTips.hidden = next !== 'tips';
+
+    if (prev === '3d' && rafId) cancelAnimationFrame(rafId);
+    if (prev === 'tips') stopTips();
 
     if (next === '3d') {
       lastT = 0;
       rafId = requestAnimationFrame(frame);
       return;
     }
-    if (prev === '3d') {
-      if (rafId) cancelAnimationFrame(rafId);
-      return; // keep the current algebra problem when coming back from 3D view
+    if (next === 'tips') {
+      startTips();
+      return;
+    }
+    if (prev === '3d' || prev === 'tips') {
+      return; // keep the current algebra problem when coming back
     }
     // Switching between x and xy: reset the card so the old problem doesn't
     // linger in the wrong mode
@@ -707,6 +830,7 @@
   tabX.addEventListener('click', function () { setMode('x'); });
   tabXY.addEventListener('click', function () { setMode('xy'); });
   tab3D.addEventListener('click', function () { setMode('3d'); });
+  tabTips.addEventListener('click', function () { setMode('tips'); });
 })();
 </script>
 </body>
