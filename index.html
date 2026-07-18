@@ -15,7 +15,7 @@
     --hairline:       #e1e0d9;
     --border:         rgba(11,11,11,0.10);
     --accent:         #2a78d6;
-    --chain:          #eb6834;
+    --chain:          #4a3aa7;
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
@@ -27,7 +27,7 @@
     --hairline:       #2c2c2a;
     --border:         rgba(255,255,255,0.10);
     --accent:         #3987e5;
-    --chain:          #d95926;
+    --chain:          #9085e9;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
@@ -125,9 +125,9 @@
     z-index: 5;
   }
   #legend .legend-title { font-weight: 600; color: var(--text-primary); margin-bottom: 6px; font-size: 12px; }
-  #legendBar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; width: 150px; border: 1px solid var(--border); }
-  #legendBar span { flex: 1; }
-  .legend-labels { display: flex; justify-content: space-between; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  #legendRows { display: grid; grid-template-columns: auto auto; gap: 3px 8px; align-items: center; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border); }
+  .legend-range { font-variant-numeric: tabular-nums; }
   #stats { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--hairline); color: var(--text-muted); line-height: 1.5; }
   #hubs {
     position: absolute;
@@ -180,7 +180,7 @@
 <header>
   <div class="title-row">
     <h1>Word Chain Graph</h1>
-    <span class="subtitle">Every line links two words one letter apart &mdash; change a letter (dog&rarr;cog), add one (dog&rarr;dogs), or drop one (dogs&rarr;dog). Darker&nbsp;/&nbsp;brighter = more connections.</span>
+    <span class="subtitle">Every line links two words one letter apart &mdash; change a letter (dog&rarr;cog), add one (dog&rarr;dogs), or drop one (dogs&rarr;dog). Color shows connections: blue&nbsp;&rarr;&nbsp;green&nbsp;&rarr;&nbsp;yellow&nbsp;&rarr;&nbsp;orange&nbsp;&rarr;&nbsp;red.</span>
   </div>
   <div class="controls">
     <div class="control-group">
@@ -215,8 +215,7 @@
   <div id="tooltip"></div>
   <div id="legend">
     <div class="legend-title">Connections per word</div>
-    <div id="legendBar"></div>
-    <div class="legend-labels"><span id="legMin">1</span><span id="legMax"></span></div>
+    <div id="legendRows"></div>
     <div id="stats"></div>
   </div>
   <details id="hubs" open>
@@ -313,9 +312,9 @@ const THEMES = {
     dimNode: "#e7e6e1",
     dimEdge: "rgba(137,135,129,0.07)",
     hoverRing: "#0b0b0b",
-    chain: "#eb6834",
-    /* sequential blue, low -> high degree (darker = more connected) */
-    ramp: ["#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#1c5cab", "#104281", "#0d366b"],
+    chain: "#4a3aa7",
+    /* binned by connection count: blue -> green -> yellow -> orange -> red */
+    bins: ["#2a78d6", "#008300", "#eda100", "#eb6834", "#e34948"],
     isolated: "#e1e0d9",
   },
   dark: {
@@ -327,9 +326,9 @@ const THEMES = {
     dimNode: "#2b2b29",
     dimEdge: "rgba(137,135,129,0.08)",
     hoverRing: "#ffffff",
-    chain: "#d95926",
-    /* same blue ramp re-stepped for the dark surface (brighter = more connected) */
-    ramp: ["#1c5cab", "#256abf", "#3987e5", "#5598e7", "#86b6ef", "#b7d3f6", "#cde2fb"],
+    chain: "#9085e9",
+    /* same five hues stepped for the dark surface */
+    bins: ["#3987e5", "#0ca30c", "#eda100", "#d95926", "#e66767"],
     isolated: "#383835",
   },
 };
@@ -385,15 +384,19 @@ function rebuildVisible() {
   if (selected !== -1 && !visible[selected]) clearSelection();
 }
 
-/* ---------------- color mapping ---------------- */
-function rampIndex(d) {
+/* ---------------- color mapping ----------------
+   fixed bins by connection count:
+   1-4 blue, 5-9 green, 10-16 yellow, 17-20 orange, 21+ red */
+const BIN_LIMITS = [4, 9, 16, 20, Infinity];
+const BIN_LABELS = ["1–4", "5–9", "10–16", "17–20", "21–25"];
+function binIndex(d) {
   if (d <= 0) return -1;
-  const t = Math.sqrt(d) / Math.sqrt(maxDeg);
-  return Math.min(6, Math.floor(t * 7));
+  for (let k = 0; k < BIN_LIMITS.length; k++) if (d <= BIN_LIMITS[k]) return k;
+  return BIN_LIMITS.length - 1;
 }
 function nodeColor(i, T) {
-  const r = rampIndex(deg[i]);
-  return r < 0 ? T.isolated : T.ramp[r];
+  const r = binIndex(deg[i]);
+  return r < 0 ? T.isolated : T.bins[r];
 }
 function nodeRadius(i) { return 3 + Math.sqrt(deg[i]) * 1.15; }
 
@@ -839,9 +842,12 @@ if (window.matchMedia) {
 /* ---------------- legend / stats / hubs ---------------- */
 function updateLegend() {
   const T = THEMES[themeName];
-  const bar = document.getElementById("legendBar");
-  bar.innerHTML = T.ramp.map((c) => `<span style="background:${c}"></span>`).join("");
-  document.getElementById("legMax").textContent = maxDeg;
+  let rows = T.bins.map((c, k) =>
+    `<div class="legend-swatch" style="background:${c}"></div><div class="legend-range">${BIN_LABELS[k]}</div>`
+  );
+  if (showIsolated)
+    rows.push(`<div class="legend-swatch" style="background:${T.isolated}"></div><div class="legend-range">no links</div>`);
+  document.getElementById("legendRows").innerHTML = rows.join("");
   document.getElementById("stats").innerHTML =
     `${visCount.toLocaleString()} words &middot; ${visEdges.length.toLocaleString()} links` +
     (isolatedHidden ? `<br>${isolatedHidden} unlinked words hidden` : "");
