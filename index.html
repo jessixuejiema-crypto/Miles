@@ -251,17 +251,30 @@
     text-align: center;
     margin-bottom: 6px;
   }
-  .dist-bar {
-    display: flex;
-    height: 28px;
-    border-radius: 9px;
+  .dist-viewport {
     overflow: hidden;
+    border-radius: 9px;
     border: 1px solid #2b2b4a;
     background: var(--panel);
   }
+  .dist-bar {
+    display: flex;
+    height: 28px;
+    width: 100%;
+  }
   .dist-seg {
     height: 100%;
-    transition: width .25s ease;
+  }
+  .dist-controls {
+    display: flex;
+    gap: 14px;
+    margin-top: 8px;
+  }
+  .dist-ctl { flex: 1; }
+  .dist-ctl input[type="range"] {
+    width: 100%;
+    accent-color: #a04dff;
+    cursor: pointer;
   }
 
   .index-panel {
@@ -311,12 +324,6 @@
   }
   #resetBtn:hover { color: var(--text); border-color: var(--dim); }
 
-  #fx {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 50;
-  }
   .flash {
     position: fixed;
     inset: 0;
@@ -350,7 +357,7 @@
         <span>Timelapse speed</span>
         <span class="speed-value" id="speedValue">20 rolls/sec</span>
       </div>
-      <input type="range" id="speedSlider" min="0" max="300" step="1" value="130">
+      <input type="range" id="speedSlider" min="-100" max="400" step="1" value="130">
     </div>
     <div class="result" id="result">
       <div class="name" style="color:#555">?</div>
@@ -363,7 +370,19 @@
     </div>
     <div class="dist">
       <div class="dist-label" id="distLabel">Expected Odds</div>
-      <div class="dist-bar" id="distBar"></div>
+      <div class="dist-viewport" id="distViewport">
+        <div class="dist-bar" id="distBar"></div>
+      </div>
+      <div class="dist-controls">
+        <div class="dist-ctl">
+          <div class="speed-label"><span>Zoom</span><span class="speed-value" id="zoomValue">1×</span></div>
+          <input type="range" id="zoomSlider" min="0" max="500" step="1" value="0">
+        </div>
+        <div class="dist-ctl">
+          <div class="speed-label"><span>Scroll</span><span class="speed-value" id="panValue">0%</span></div>
+          <input type="range" id="panSlider" min="0" max="1000" step="1" value="0">
+        </div>
+      </div>
     </div>
   </div>
 
@@ -374,7 +393,6 @@
   </div>
 </div>
 
-<canvas id="fx"></canvas>
 <div class="flash" id="flash"></div>
 
 <script>
@@ -413,7 +431,7 @@ const RARITIES = [
 const TOTAL_W = RARITIES.reduce((s, r) => s + r.w, 0);
 const N = RARITIES.length;
 // Index in RARITIES doubles as rarity rank (higher index = rarer).
-const EPIC_IDX = RARITIES.findIndex(r => r.name === 'Mythical'); // confetti tier
+const EPIC_IDX = RARITIES.findIndex(r => r.name === 'Mythical'); // chime tier
 const TOP_IDX = RARITIES.findIndex(r => r.name === 'Nebula');    // flash + fanfare tier
 
 const SAVE_KEY = 'rarityWheelSave';
@@ -558,12 +576,8 @@ function spin() {
   requestAnimationFrame(frame);
 }
 
-function finish(idx, quick) {
+function showResult(idx) {
   const r = RARITIES[idx];
-  state.rolls++;
-  state.counts[r.name] = (state.counts[r.name] || 0) + 1;
-  if (!quick) save(); // timelapse saves once per tick instead of once per roll
-
   const nameEl = resultEl.querySelector('.name');
   nameEl.textContent = r.name.toUpperCase() + '!';
   nameEl.className = 'name' + (r.special ? ' ' + r.special : '');
@@ -572,58 +586,27 @@ function finish(idx, quick) {
   const oneIn = Math.round(TOTAL_W / r.w);
   resultEl.querySelector('.odds').textContent =
     `${r.name} · ${(100 * r.w / TOTAL_W).toFixed(3)}% chance · 1 in ${oneIn.toLocaleString()}`;
+}
+
+function finish(idx, quick) {
+  const r = RARITIES[idx];
+  state.rolls++;
+  state.counts[r.name] = (state.counts[r.name] || 0) + 1;
 
   if (quick) {
-    // timelapse: keep effects to the finds that deserve them
-    if (idx >= TOP_IDX) { confetti(r, idx); flash(r.color); fanfare(idx); }
-    else if (idx >= EPIC_IDX) { confetti(r, idx); beep(784, 0.15, 0.08, 'triangle'); }
+    // timelapse: the tick handles saving and UI; only big finds get effects
+    if (idx >= TOP_IDX) { showResult(idx); flash(r.color); fanfare(idx); }
+    else if (idx >= EPIC_IDX) beep(784, 0.15, 0.08, 'triangle');
   } else {
+    save();
+    showResult(idx);
     resultEl.classList.add('pop');
-    if (idx >= EPIC_IDX) confetti(r, idx); // Mythical and up
-    if (idx >= TOP_IDX) flash(r.color);    // Nebula and up
+    if (idx >= TOP_IDX) flash(r.color); // Nebula and up
     fanfare(idx);
     spinning = false;
     rollBtn.disabled = false;
     updateUI();
   }
-}
-
-const fxCanvas = document.getElementById('fx');
-const fxCtx = fxCanvas.getContext('2d');
-let particles = [];
-let fxRunning = false;
-function sizeFx() { fxCanvas.width = innerWidth; fxCanvas.height = innerHeight; }
-sizeFx();
-addEventListener('resize', sizeFx);
-
-function confetti(r, idx) {
-  const n = idx >= TOP_IDX ? 220 : 90;
-  const rainbow = ['#ff004c', '#ff9100', '#ffee00', '#00e676', '#00b0ff', '#d500f9'];
-  for (let i = 0; i < n; i++) {
-    particles.push({
-      x: innerWidth / 2, y: innerHeight / 2,
-      vx: (Math.random() - 0.5) * 16,
-      vy: (Math.random() - 0.5) * 16 - 4,
-      size: 4 + Math.random() * 6,
-      color: r.special ? rainbow[i % rainbow.length] : r.color,
-      life: 1,
-    });
-  }
-  if (!fxRunning) { fxRunning = true; requestAnimationFrame(fxFrame); }
-}
-function fxFrame() {
-  fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
-  particles.forEach(p => {
-    p.x += p.vx; p.y += p.vy;
-    p.vy += 0.25; p.life -= 0.012;
-    fxCtx.globalAlpha = Math.max(p.life, 0);
-    fxCtx.fillStyle = p.color;
-    fxCtx.fillRect(p.x, p.y, p.size, p.size);
-  });
-  fxCtx.globalAlpha = 1;
-  particles = particles.filter(p => p.life > 0 && p.y < fxCanvas.height + 40);
-  if (particles.length) requestAnimationFrame(fxFrame);
-  else fxRunning = false;
 }
 
 const flashEl = document.getElementById('flash');
@@ -637,6 +620,28 @@ function flash(color) {
 const indexList = document.getElementById('indexList');
 const distBar = document.getElementById('distBar');
 const distLabel = document.getElementById('distLabel');
+const distViewport = document.getElementById('distViewport');
+const zoomSlider = document.getElementById('zoomSlider');
+const zoomValue = document.getElementById('zoomValue');
+const panSlider = document.getElementById('panSlider');
+const panValue = document.getElementById('panValue');
+let distZoom = 1;
+
+// zoom is logarithmic (1x to 100,000x) so the tiniest slivers become visible;
+// the scroll slider pans the zoomed bar left/right through the viewport
+function applyZoomPan() {
+  distBar.style.width = (distZoom * 100) + '%';
+  const frac = +panSlider.value / 1000;
+  const max = distViewport.scrollWidth - distViewport.clientWidth;
+  distViewport.scrollLeft = max > 0 ? frac * max : 0;
+  zoomValue.textContent = (distZoom < 10 ? distZoom.toFixed(1) : Math.round(distZoom).toLocaleString()) + '×';
+  panValue.textContent = Math.round(frac * 100) + '%';
+}
+zoomSlider.addEventListener('input', () => {
+  distZoom = Math.pow(10, +zoomSlider.value / 100);
+  applyZoomPan();
+});
+panSlider.addEventListener('input', applyZoomPan);
 
 function updateDistBar() {
   // With rolls, show the real share each rarity has appeared; before any, show the odds.
@@ -657,6 +662,7 @@ function updateDistBar() {
       : `${r.name} — ${share.toFixed(3)}% chance`;
     distBar.appendChild(seg);
   });
+  applyZoomPan(); // rebuilding the bar resets layout, so reapply zoom + scroll
 }
 
 function updateUI() {
@@ -716,10 +722,11 @@ const speedValue = document.getElementById('speedValue');
 let timelapseTimer = null;
 let tlSpeed = 20;
 
-// logarithmic slider: 0..300 maps to 10^(v/100) = 1..1000 rolls/sec,
-// so it moves slowly through 1-10 and races up toward the top
+// logarithmic slider: -100..400 maps to 10^(v/100) = 0.1..10,000 rolls/sec,
+// so it moves slowly through the low speeds and races up toward the top
 function sliderToSpeed(v) {
-  return Math.max(1, Math.round(Math.pow(10, v / 100)));
+  const raw = Math.pow(10, v / 100);
+  return raw < 1 ? Math.round(raw * 100) / 100 : Math.round(raw);
 }
 // timers can't fire faster than ~20/sec, so past that we batch rolls per tick
 function tickInterval() { return tlSpeed <= 20 ? Math.round(1000 / tlSpeed) : 50; }
@@ -746,6 +753,7 @@ function timelapseTick() {
   // snap the wheel straight to the last result — no time for a full spin
   rotation = -Math.PI / 2 - (target + 0.5) * SEG;
   drawWheel();
+  showResult(target);
   save();
   updateUI();
 }
