@@ -168,6 +168,30 @@
     color: transparent !important;
     animation: shimmer 1.8s linear infinite;
   }
+  .void-text {
+    background: linear-gradient(90deg, #b388ff, #4a148c, #d1c4e9, #4a148c, #b388ff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent !important;
+    animation: shimmer 2.2s linear infinite;
+  }
+  .singularity-text {
+    background: linear-gradient(90deg, #ffffff, #616161, #000000, #616161, #ffffff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent !important;
+    animation: shimmer 1.5s linear infinite;
+  }
+  .claude-text {
+    background: linear-gradient(90deg, #da7756, #ffb59d, #ff7043, #ffd6c2, #da7756);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent !important;
+    animation: shimmer 1.5s linear infinite;
+  }
 
   .stats-bar {
     display: flex;
@@ -300,7 +324,7 @@
     <div class="stats-bar">
       <div class="stat"><div class="label">Total Rolls</div><div class="value" id="statRolls">0</div></div>
       <div class="stat"><div class="label">Best Find</div><div class="value" id="statBest">—</div></div>
-      <div class="stat"><div class="label">Found</div><div class="value" id="statFound">0 / 21</div></div>
+      <div class="stat"><div class="label">Found</div><div class="value" id="statFound">0 / 29</div></div>
     </div>
     <div class="dist">
       <div class="dist-label" id="distLabel">Expected Odds</div>
@@ -330,25 +354,35 @@ const RARITIES = [
   { name: 'Legendary',      w: 6,     color: '#ff9800' },
   { name: 'Iron',           w: 5,     color: '#cfd8dc' },
   { name: 'Water',          w: 5,     color: '#00bcd4' },
+  { name: 'Slime',          w: 4,     color: '#7cb342' },
   { name: 'Lava',           w: 3,     color: '#ff5722' },
   { name: 'Molten',         w: 2.5,   color: '#e64a19' },
   { name: 'Mythical',       w: 2,     color: '#9c27b0' },
+  { name: 'Obsidian',       w: 1.75,  color: '#311b92' },
+  { name: 'Frozen',         w: 1.25,  color: '#a5f3fc' },
   { name: 'Copper',         w: 1,     color: '#c77b3f' },
   { name: 'Super',          w: 0.99,  color: '#ff4081' },
   { name: 'Divine',         w: 0.75,  color: '#fff59d' },
   { name: 'Gold',           w: 0.5,   color: '#ffd700' },
+  { name: 'Shadow',         w: 0.4,   color: '#37294d' },
   { name: 'Diamond',        w: 0.25,  color: '#00e5ff' },
   { name: 'Gem',            w: 0.25,  color: '#e040fb' },
+  { name: 'Nebula',         w: 0.2,   color: '#673ab7', special: 'cosmic-text' },
   { name: 'Prismatic',      w: 0.130, color: '#ff00cc', special: 'rainbow-text' },
   { name: 'Transcendental', w: 0.120, color: '#7c4dff', special: 'cosmic-text' },
+  { name: 'Void',           w: 0.05,  color: '#4a148c', special: 'void-text' },
   { name: 'Godly',          w: 0.01,  color: '#fffde7', special: 'godly-text' },
+  { name: 'Singularity',    w: 0.005, color: '#000000', special: 'singularity-text' },
+  { name: 'Claude',         w: 0.001, color: '#da7756', special: 'claude-text' },
 ];
 const TOTAL_W = RARITIES.reduce((s, r) => s + r.w, 0);
 const N = RARITIES.length;
 // Index in RARITIES doubles as rarity rank (higher index = rarer).
+const EPIC_IDX = RARITIES.findIndex(r => r.name === 'Mythical'); // confetti tier
+const TOP_IDX = RARITIES.findIndex(r => r.name === 'Nebula');    // flash + fanfare tier
 
 const SAVE_KEY = 'rarityWheelSave';
-let state = { rolls: 0, counts: {}, best: -1 };
+let state = { rolls: 0, counts: {} };
 try {
   const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (saved && typeof saved.rolls === 'number') state = saved;
@@ -361,7 +395,7 @@ const CX = SIZE / 2, CY = SIZE / 2, R = SIZE / 2 - 10;
 const SEG = (2 * Math.PI) / N;
 let rotation = -Math.PI / 2 - SEG / 2; // start with segment 0 centered under the pointer
 
-const DARK_TEXT = new Set(['Glass', 'Iron', 'Divine', 'Gold', 'Diamond', 'Godly']);
+const DARK_TEXT = new Set(['Glass', 'Iron', 'Frozen', 'Divine', 'Gold', 'Diamond', 'Godly']);
 
 function drawWheel() {
   wctx.clearRect(0, 0, SIZE, SIZE);
@@ -384,7 +418,7 @@ function drawWheel() {
     wctx.textAlign = 'right';
     wctx.textBaseline = 'middle';
     wctx.fillStyle = DARK_TEXT.has(RARITIES[i].name) ? '#1a1a2e' : '#ffffff';
-    wctx.font = 'bold 21px Segoe UI, sans-serif';
+    wctx.font = 'bold 18px Segoe UI, sans-serif';
     wctx.fillText(RARITIES[i].name, R - 14, 0);
     wctx.restore();
   }
@@ -432,7 +466,7 @@ function beep(freq, dur, vol, type) {
   } catch (e) {}
 }
 function fanfare(rank) {
-  const notes = rank >= 18 ? [523, 659, 784, 1047, 1319] : rank >= 11 ? [523, 659, 784] : [440, 554];
+  const notes = rank >= TOP_IDX ? [523, 659, 784, 1047, 1319] : rank >= EPIC_IDX ? [523, 659, 784] : [440, 554];
   notes.forEach((f, i) => setTimeout(() => beep(f, 0.35, 0.12, 'triangle'), i * 110));
 }
 
@@ -493,7 +527,6 @@ function finish(idx, quick) {
   const r = RARITIES[idx];
   state.rolls++;
   state.counts[r.name] = (state.counts[r.name] || 0) + 1;
-  if (idx > state.best) state.best = idx;
   save();
 
   const nameEl = resultEl.querySelector('.name');
@@ -507,12 +540,12 @@ function finish(idx, quick) {
 
   if (quick) {
     // 20 rolls/sec: keep effects to the finds that deserve them
-    if (idx >= 18) { confetti(r, idx); flash(r.color); fanfare(idx); }
-    else if (idx >= 11) { confetti(r, idx); beep(784, 0.15, 0.08, 'triangle'); }
+    if (idx >= TOP_IDX) { confetti(r, idx); flash(r.color); fanfare(idx); }
+    else if (idx >= EPIC_IDX) { confetti(r, idx); beep(784, 0.15, 0.08, 'triangle'); }
   } else {
     resultEl.classList.add('pop');
-    if (idx >= 11) confetti(r, idx); // Mythical and up
-    if (idx >= 18) flash(r.color);   // Prismatic, Transcendental, Godly
+    if (idx >= EPIC_IDX) confetti(r, idx); // Mythical and up
+    if (idx >= TOP_IDX) flash(r.color);    // Nebula and up
     fanfare(idx);
     spinning = false;
     rollBtn.disabled = false;
@@ -530,7 +563,7 @@ sizeFx();
 addEventListener('resize', sizeFx);
 
 function confetti(r, idx) {
-  const n = idx >= 18 ? 220 : 90;
+  const n = idx >= TOP_IDX ? 220 : 90;
   const rainbow = ['#ff004c', '#ff9100', '#ffee00', '#00e676', '#00b0ff', '#d500f9'];
   for (let i = 0; i < n; i++) {
     particles.push({
@@ -596,8 +629,13 @@ function updateUI() {
   updateDistBar();
   document.getElementById('statRolls').textContent = state.rolls.toLocaleString();
   const bestEl = document.getElementById('statBest');
-  if (state.best >= 0) {
-    const b = RARITIES[state.best];
+  // rarest rarity rolled so far (derived from counts so old saves stay correct)
+  let bestIdx = -1;
+  for (let i = N - 1; i >= 0; i--) {
+    if (state.counts[RARITIES[i].name]) { bestIdx = i; break; }
+  }
+  if (bestIdx >= 0) {
+    const b = RARITIES[bestIdx];
     bestEl.textContent = b.name;
     bestEl.className = 'value' + (b.special ? ' ' + b.special : '');
     bestEl.style.color = b.special ? '' : b.color;
@@ -632,7 +670,7 @@ function save() {
 
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (!confirm('Reset all rolls and progress?')) return;
-  state = { rolls: 0, counts: {}, best: -1 };
+  state = { rolls: 0, counts: {} };
   save();
   updateUI();
 });
