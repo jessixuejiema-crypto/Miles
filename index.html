@@ -187,6 +187,31 @@
   .stat .label { color: var(--dim); font-size: .72rem; text-transform: uppercase; letter-spacing: 1px; }
   .stat .value { font-size: 1.15rem; font-weight: 700; margin-top: 2px; }
 
+  .dist {
+    width: 100%;
+    margin-top: 16px;
+  }
+  .dist .dist-label {
+    color: var(--dim);
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+  .dist-bar {
+    display: flex;
+    height: 28px;
+    border-radius: 9px;
+    overflow: hidden;
+    border: 1px solid #2b2b4a;
+    background: var(--panel);
+  }
+  .dist-seg {
+    height: 100%;
+    transition: width .25s ease;
+  }
+
   .index-panel {
     background: var(--panel);
     border: 1px solid #2b2b4a;
@@ -276,6 +301,10 @@
       <div class="stat"><div class="label">Total Rolls</div><div class="value" id="statRolls">0</div></div>
       <div class="stat"><div class="label">Best Find</div><div class="value" id="statBest">—</div></div>
       <div class="stat"><div class="label">Found</div><div class="value" id="statFound">0 / 21</div></div>
+    </div>
+    <div class="dist">
+      <div class="dist-label" id="distLabel">Expected Odds</div>
+      <div class="dist-bar" id="distBar"></div>
     </div>
   </div>
 
@@ -539,7 +568,32 @@ function flash(color) {
 }
 
 const indexList = document.getElementById('indexList');
+const distBar = document.getElementById('distBar');
+const distLabel = document.getElementById('distLabel');
+
+function updateDistBar() {
+  // With rolls, show the real share each rarity has appeared; before any, show the odds.
+  const hasRolls = state.rolls > 0;
+  distLabel.textContent = hasRolls ? 'Your Roll Distribution' : 'Expected Odds';
+  distBar.innerHTML = '';
+  RARITIES.forEach(r => {
+    const share = hasRolls
+      ? 100 * (state.counts[r.name] || 0) / state.rolls
+      : 100 * r.w / TOTAL_W;
+    if (share <= 0) return;
+    const seg = document.createElement('div');
+    seg.className = 'dist-seg';
+    seg.style.width = share + '%';
+    seg.style.background = r.color;
+    seg.title = hasRolls
+      ? `${r.name} — ${share.toFixed(1)}% of your rolls (×${(state.counts[r.name] || 0).toLocaleString()})`
+      : `${r.name} — ${share.toFixed(3)}% chance`;
+    distBar.appendChild(seg);
+  });
+}
+
 function updateUI() {
+  updateDistBar();
   document.getElementById('statRolls').textContent = state.rolls.toLocaleString();
   const bestEl = document.getElementById('statBest');
   if (state.best >= 0) {
