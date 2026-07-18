@@ -347,6 +347,12 @@
     font-size: .8rem;
   }
   #resetBtn:hover { color: var(--text); border-color: var(--dim); }
+  #resetBtn.confirm {
+    color: #fff;
+    background: #c62828;
+    border-color: #c62828;
+    font-weight: 700;
+  }
 
   .flash {
     position: fixed;
@@ -859,11 +865,34 @@ function save() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {}
 }
 
-document.getElementById('resetBtn').addEventListener('click', () => {
-  if (!confirm('Reset all rolls and progress?')) return;
-  state = { rolls: 0, counts: {} };
-  save();
-  updateUI();
+// confirm() dialogs are blocked in sandboxed pages, so use a two-click confirm
+const resetBtn = document.getElementById('resetBtn');
+let resetArmed = null;
+
+function disarmReset() {
+  clearTimeout(resetArmed);
+  resetArmed = null;
+  resetBtn.textContent = 'Reset progress';
+  resetBtn.classList.remove('confirm');
+}
+
+resetBtn.addEventListener('click', () => {
+  if (resetArmed) {
+    disarmReset();
+    state = { rolls: 0, counts: {} };
+    save();
+    const nameEl = resultEl.querySelector('.name');
+    nameEl.textContent = '?';
+    nameEl.className = 'name';
+    nameEl.style.color = '#555';
+    nameEl.style.textShadow = 'none';
+    resultEl.querySelector('.odds').textContent = 'Spin the wheel to find out your fate';
+    updateUI();
+  } else {
+    resetBtn.textContent = 'Click again to confirm reset';
+    resetBtn.classList.add('confirm');
+    resetArmed = setTimeout(disarmReset, 4000);
+  }
 });
 
 // ---- Timelapse: automatic rolls at a slider-chosen speed ----
