@@ -409,8 +409,10 @@ function islandRgb(size) {
 }
 function packIsland(size) {
   const [r, g, b] = islandRgb(size);
-  return ((225 << 24) | (b << 16) | (g << 8) | r) >>> 0;
+  return ((b << 16) | (g << 8) | r) >>> 0; // rgb only; alpha applied per frame (zoom fade)
 }
+/* per-theme rgb triplets per degree bucket, for the accumulation splats */
+const rgbBuckets = {};
 function blendRgbAt(d, hexes) {
   const rgbs = hexes.map(hexToRgb);
   let lo = 0;
@@ -431,6 +433,16 @@ for (const name of Object.keys(THEMES)) {
   }
   colorByDeg[name] = arr;
   packedByTheme[name] = packed;
+}
+for (const name of Object.keys(THEMES)) {
+  const t = new Uint8Array((COLOR_CAP + 1) * 3);
+  const iso = hexToRgb(THEMES[name].isolated);
+  t[0] = iso[0]; t[1] = iso[1]; t[2] = iso[2];
+  for (let d = 1; d <= COLOR_CAP; d++) {
+    const [r, g, b] = blendRgbAt(d, THEMES[name].bins);
+    t[d * 3] = r; t[d * 3 + 1] = g; t[d * 3 + 2] = b;
+  }
+  rgbBuckets[name] = t;
 }
 function degBucket(i) { return deg[i] <= 0 ? 0 : Math.min(deg[i], COLOR_CAP); }
 function nodeColor(i, T) {
@@ -504,7 +516,7 @@ function rebuildVisible() {
       if (size >= 2 && size <= 100) {
         marks.push(sx / size, sy / size);
         markColors.push(packIsland(size));
-        markHalves.push(size <= 10 ? 3 : size <= 30 ? 4 : 5);
+        markHalves.push(size <= 10 ? 4 : size <= 30 ? 5 : 6); // circle radius
       }
     }
   }
@@ -562,15 +574,31 @@ const BG_RES = 4096;
 const HEAT_RES = 2048;
 const MIP_RES = 1024;
 let bgCanvas = null, heatCanvas = null, bgMip = null, heatMip = null, bgDirty = true;
-/* pixel-buffer layer for the far-view constant-size dots */
+/* pixel-buffer layer for the far-view constant-size dots.
+   Colors ACCUMULATE per pixel so overlapping circles blend into
+   gradient blobs (orange + yellow -> orange-yellow), heat-map style. */
 let dotCanvas = null, dotCtx = null, dotImg = null, dot32 = null;
+let accR = null, accG = null, accB = null, accW = null;
+let dotMask = null; // relative pixel offsets of the dot circle
+let HW = 0, HH = 0; // half-resolution buffer; upscaling smooths the blobs
+const DOT_R = 1.8;  // radius in half-res pixels (~7px circles on screen)
 function ensureDotLayer() {
-  if (dotCanvas && dotCanvas.width === W && dotCanvas.height === H) return;
+  const hw = Math.ceil(W / 2), hh = Math.ceil(H / 2);
+  if (dotCanvas && HW === hw && HH === hh) return;
+  HW = hw; HH = hh;
   dotCanvas = document.createElement("canvas");
-  dotCanvas.width = W; dotCanvas.height = H;
+  dotCanvas.width = HW; dotCanvas.height = HH;
   dotCtx = dotCanvas.getContext("2d");
-  dotImg = dotCtx.createImageData(W, H);
+  dotImg = dotCtx.createImageData(HW, HH);
   dot32 = new Uint32Array(dotImg.data.buffer);
+  accR = new Int32Array(HW * HH); accG = new Int32Array(HW * HH);
+  accB = new Int32Array(HW * HH); accW = new Int32Array(HW * HH);
+  const offs = [];
+  const R = Math.ceil(DOT_R);
+  for (let dy = -R; dy <= R; dy++)
+    for (let dx = -R; dx <= R; dx++)
+      if (dx * dx + dy * dy <= DOT_R * DOT_R) offs.push(dy * HW + dx);
+  dotMask = Int32Array.from(offs);
 }
 
 function renderBitmaps() {
@@ -773,46 +801,68 @@ function draw() {
     const wx0 = camX - (W / 2) / scale, wx1 = camX + (W / 2) / scale;
     const wy0 = camY - (H / 2) / scale, wy1 = camY + (H / 2) / scale;
     if (heatAlpha < 1) {
-      // island markers + constant-size dots, splatted into a pixel buffer
-      // (5x faster than fillRect at this node count)
+      // Word dots: soft circles whose colors ACCUMULATE per pixel, so
+      // overlapping words blend into gradient blobs (mini heat map).
       ensureDotLayer();
-      dot32.fill(0);
-      const KX = scale, CX = -camX * scale + W / 2, CY = -camY * scale + H / 2;
-      // markers first, so word dots draw over them
-      for (let m = 0, mi = 0; m < islandMarks.length; m += 2, mi++) {
-        const X = islandMarks[m], Y = islandMarks[m + 1];
-        if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
-        const c = islandMarkColor[mi];
-        const half = islandMarkHalf[mi];
-        const sx = (X * KX + CX) | 0, sy = (Y * KX + CY) | 0;
-        const x0 = sx - half < 0 ? 0 : sx - half, x1 = sx + half - 1 >= W ? W - 1 : sx + half - 1;
-        const y0 = sy - half < 0 ? 0 : sy - half, y1 = sy + half - 1 >= H ? H - 1 : sy + half - 1;
-        for (let y = y0; y <= y1; y++) {
-          const base = y * W;
-          for (let x = x0; x <= x1; x++) dot32[base + x] = c;
-        }
-      }
-      const packed = packedByTheme[themeName];
+      accR.fill(0); accG.fill(0); accB.fill(0); accW.fill(0);
+      const KX = scale / 2, CX = (-camX * scale + W / 2) / 2, CY = (-camY * scale + H / 2) / 2;
+      const rgb = rgbBuckets[themeName];
+      const MARG = Math.ceil(DOT_R) + 1;
       for (let d = 0; d <= COLOR_CAP; d++) {
         const arr = colorBuckets[d];
         if (!arr.length) continue;
-        const c = packed[d];
+        const r = rgb[d * 3], g = rgb[d * 3 + 1], b = rgb[d * 3 + 2];
         for (let n = 0; n < arr.length; n++) {
           const i = arr[n];
           const X = px[i], Y = py[i];
           if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
           const sx = (X * KX + CX) | 0, sy = (Y * KX + CY) | 0;
-          const x0 = sx - 2 < 0 ? 0 : sx - 2, x1 = sx + 1 >= W ? W - 1 : sx + 1;
-          const y0 = sy - 2 < 0 ? 0 : sy - 2, y1 = sy + 1 >= H ? H - 1 : sy + 1;
+          if (sx >= MARG && sx < HW - MARG && sy >= MARG && sy < HH - MARG) {
+            const base = sy * HW + sx;
+            for (let k = 0; k < dotMask.length; k++) {
+              const p = base + dotMask[k];
+              accR[p] += r; accG[p] += g; accB[p] += b; accW[p]++;
+            }
+          }
+        }
+      }
+      // resolve: average the accumulated colors; multi-hit pixels go solid
+      const total = HW * HH;
+      for (let p = 0; p < total; p++) {
+        const w = accW[p];
+        if (w === 0) { dot32[p] = 0; continue; }
+        const a = w > 1 ? 255 : 205;
+        dot32[p] = (a << 24) | ((accB[p] / w) << 16) | ((accG[p] / w) << 8) | (accR[p] / w);
+      }
+      // Island markers: circles that fade out as you zoom toward them,
+      // drawn only where no word dots landed.
+      const markerFade = scale <= VEC_T * 0.5 ? 1 : 1 - (scale - VEC_T * 0.5) / (VEC_T * 0.5);
+      const mA = (225 * markerFade) | 0;
+      if (mA > 3) {
+        for (let m = 0, mi = 0; m < islandMarks.length; m += 2, mi++) {
+          const X = islandMarks[m], Y = islandMarks[m + 1];
+          if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
+          const c = (mA << 24) | islandMarkColor[mi];
+          const rad = islandMarkHalf[mi] >> 1;
+          const r2 = rad * rad + 1;
+          const sx = (X * KX + CX) | 0, sy = (Y * KX + CY) | 0;
+          const y0 = sy - rad < 0 ? 0 : sy - rad, y1 = sy + rad >= HH ? HH - 1 : sy + rad;
+          const x0 = sx - rad < 0 ? 0 : sx - rad, x1 = sx + rad >= HW ? HW - 1 : sx + rad;
           for (let y = y0; y <= y1; y++) {
-            const base = y * W;
-            for (let x = x0; x <= x1; x++) dot32[base + x] = c;
+            const dy = y - sy, base = y * HW;
+            for (let x = x0; x <= x1; x++) {
+              const dx = x - sx;
+              if (dx * dx + dy * dy > r2) continue;
+              const p = base + x;
+              if (accW[p] === 0) dot32[p] = c;
+            }
           }
         }
       }
       dotCtx.putImageData(dotImg, 0, 0);
       ctx.globalAlpha = 1 - heatAlpha;
-      ctx.drawImage(dotCanvas, 0, 0, W, H);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(dotCanvas, 0, 0, HW * 2, HH * 2);
       ctx.globalAlpha = 1;
     }
     if (focusOrChain) {
