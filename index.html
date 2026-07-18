@@ -549,7 +549,6 @@ const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
 let camX = POS_SPAN / 2, camY = POS_SPAN / 2, scale = 0.01;
 const VEC_T = 0.055;   // below this: cached edge bitmap + constant-size dots
-const HEAT_T = 0.016;  // below this: pure heat map
 const MINPX = 2.2;     // minimum on-screen node radius when zoomed out
 
 function resize() {
@@ -573,17 +572,16 @@ function fitBox(box, pad) {
 
 /* ================= background bitmaps (far view) ================= */
 const BG_RES = 4096;
-const HEAT_RES = 2048;
 const MIP_RES = 1024;
-let bgCanvas = null, heatCanvas = null, bgMip = null, heatMip = null, bgDirty = true;
+let bgCanvas = null, bgMip = null, bgDirty = true;
 /* pixel-buffer layer for the far-view constant-size dots.
    Colors ACCUMULATE per pixel so overlapping circles blend into
    gradient blobs (orange + yellow -> orange-yellow), heat-map style. */
 let dotCanvas = null, dotCtx = null, dotImg = null, dot32 = null;
 let accR = null, accG = null, accB = null, accW = null;
 let dotMask = null, dotWgt = null; // circle offsets + anti-aliased coverage (0-64)
-let HW = 0, HH = 0; // half-resolution buffer; upscaling smooths the blobs
-const DOT_R = 2.0;  // radius in half-res pixels (~8px circles on screen)
+let HW = 0, HH = 0; // half-resolution buffer; upscaling smooths the circles
+const DOT_R = 2.0;    // fill radius in half-res pixels (~8px circles on screen)
 function ensureDotLayer() {
   const hw = Math.ceil(W / 2), hh = Math.ceil(H / 2);
   if (dotCanvas && HW === hw && HH === hh) return;
@@ -604,6 +602,30 @@ function ensureDotLayer() {
     }
   dotMask = Int32Array.from(offs);
   dotWgt = Int32Array.from(wgts);
+}
+/* fills first, then a 1px dilation ring around them becomes the outline */
+const OUTLINE_RGB = { light: [122, 120, 114], dark: [104, 103, 98] };
+function resolveDotLayer() {
+  const [or_, og, ob] = OUTLINE_RGB[themeName];
+  const oPack = (235 << 24) | (ob << 16) | (og << 8) | or_;
+  const total = HW * HH;
+  for (let p = 0; p < total; p++) {
+    const w = accW[p];
+    if (w === 0) { dot32[p] = 0; continue; }
+    const a = w >= 60 ? 255 : ((w * 255) >> 6);
+    dot32[p] = (a << 24) | ((accB[p] / w) << 16) | ((accG[p] / w) << 8) | (accR[p] / w);
+  }
+  // outline: any empty pixel touching a filled one becomes rim ink
+  const T = 14; // ignore ultra-faint AA fringes
+  for (let y = 1; y < HH - 1; y++) {
+    const row = y * HW;
+    for (let x = 1; x < HW - 1; x++) {
+      const p = row + x;
+      if (accW[p] !== 0) continue;
+      if (accW[p - 1] > T || accW[p + 1] > T || accW[p - HW] > T || accW[p + HW] > T)
+        dot32[p] = oPack;
+    }
+  }
 }
 
 function renderBitmaps() {
@@ -628,53 +650,14 @@ function renderBitmaps() {
     if (++inBatch >= 20000) { g.stroke(); g.beginPath(); inBatch = 0; }
   }
   g.stroke();
-  // --- heat layer: colored splats blurred into a smooth field ---
-  const raw = document.createElement("canvas");
-  raw.width = HEAT_RES; raw.height = HEAT_RES;
-  const h = raw.getContext("2d");
-  const k2 = HEAT_RES / POS_SPAN;
-  h.globalAlpha = 0.8;
-  const TAU = Math.PI * 2;
-  for (let d = 0; d <= COLOR_CAP; d++) {
-    const arr = colorBuckets[d];
-    if (!arr.length) continue;
-    h.fillStyle = d === 0 ? T.isolated : colorByDeg[themeName][d];
-    const r = d === 0 ? 1.2 : 1.6 + Math.sqrt(d) * 0.6;
-    // one batched path of circles per color bucket — no square stamps
-    h.beginPath();
-    for (const i of arr) {
-      const x = px[i] * k2, y = py[i] * k2;
-      h.moveTo(x + r, y);
-      h.arc(x, y, r, 0, TAU);
-    }
-    h.fill();
-  }
-  if (!heatCanvas) {
-    heatCanvas = document.createElement("canvas");
-    heatCanvas.width = HEAT_RES; heatCanvas.height = HEAT_RES;
-  }
-  const hb = heatCanvas.getContext("2d");
-  hb.setTransform(1, 0, 0, 1, 0, 0);
-  hb.clearRect(0, 0, HEAT_RES, HEAT_RES);
-  hb.filter = "blur(3px)";
-  hb.drawImage(raw, 0, 0);
-  hb.filter = "none";
-  hb.globalAlpha = 0.5;          // keep a crisper core under the blur
-  hb.drawImage(raw, 0, 0);
-  hb.globalAlpha = 1;
-  // 1024px mips: far zoom blits these instead of downscaling the full bitmaps
+  // 1024px mip: deep zoom blits this instead of downscaling the full bitmap
   if (!bgMip) {
     bgMip = document.createElement("canvas");
     bgMip.width = MIP_RES; bgMip.height = MIP_RES;
-    heatMip = document.createElement("canvas");
-    heatMip.width = MIP_RES; heatMip.height = MIP_RES;
   }
   const gm = bgMip.getContext("2d");
   gm.clearRect(0, 0, MIP_RES, MIP_RES);
   gm.drawImage(bgCanvas, 0, 0, MIP_RES, MIP_RES);
-  const hm = heatMip.getContext("2d");
-  hm.clearRect(0, 0, MIP_RES, MIP_RES);
-  hm.drawImage(heatCanvas, 0, 0, MIP_RES, MIP_RES);
   bgDirty = false;
 }
 
@@ -791,31 +774,20 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
 
   if (scale < VEC_T) {
-    /* ---- far view: edge bitmap + constant-size dots, fading into a heat map ---- */
+    /* ---- far view: edge bitmap + overlapping outlined circles ---- */
     if (bgDirty) renderBitmaps();
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     const k = POS_SPAN * scale;                 // world span in screen px
     const [dx, dy] = toScreen(0, 0);
     ctx.imageSmoothingEnabled = true;
-    // heatAlpha: 0 above the crossfade band, 1 at/below HEAT_T
-    const heatAlpha = scale <= HEAT_T ? 1 : scale >= HEAT_T * 1.5 ? 0 : 1 - (scale - HEAT_T) / (HEAT_T * 0.5);
-    const useMip = k < 1600;
-    if (heatAlpha < 1) {
-      ctx.globalAlpha = 1 - heatAlpha;
-      ctx.drawImage(useMip ? bgMip : bgCanvas, dx, dy, k, k);
-      ctx.globalAlpha = 1;
-    }
-    if (heatAlpha > 0) {
-      ctx.globalAlpha = heatAlpha;
-      ctx.drawImage(useMip ? heatMip : heatCanvas, dx, dy, k, k);
-      ctx.globalAlpha = 1;
-    }
+    ctx.drawImage(k < 1600 ? bgMip : bgCanvas, dx, dy, k, k);
     // viewport bounds for culling the live dots and markers
     const wx0 = camX - (W / 2) / scale, wx1 = camX + (W / 2) / scale;
     const wy0 = camY - (H / 2) / scale, wy1 = camY + (H / 2) / scale;
-    if (heatAlpha < 1) {
-      // Word dots: soft circles whose colors ACCUMULATE per pixel, so
-      // overlapping words blend into gradient blobs (mini heat map).
+    {
+      // Word dots: outlined circles whose fills ACCUMULATE per pixel, so
+      // overlapping words blend into gradient blobs while every circle
+      // keeps a visible rim.
       ensureDotLayer();
       accR.fill(0); accG.fill(0); accB.fill(0); accW.fill(0);
       const KX = scale / 2, CX = (-camX * scale + W / 2) / 2, CY = (-camY * scale + H / 2) / 2;
@@ -845,21 +817,15 @@ function draw() {
           }
         }
       }
-      // resolve: weighted-average colors; alpha follows coverage for
-      // anti-aliased edges, saturating where circles overlap
-      const total = HW * HH;
-      for (let p = 0; p < total; p++) {
-        const w = accW[p];
-        if (w === 0) { dot32[p] = 0; continue; }
-        const a = w >= 60 ? 255 : ((w * 255) >> 6);
-        dot32[p] = (a << 24) | ((accB[p] / w) << 16) | ((accG[p] / w) << 8) | (accR[p] / w);
-      }
+      resolveDotLayer();
       // Island markers: anti-aliased circles that GROW as you zoom toward
-      // them, then fade out before the words take over. Drawn only where
-      // no word dots landed.
+      // them, then fade out before the words take over. They also fade at
+      // extreme zoom-out so thousands can't pile into a blob. Drawn only
+      // where no word dots landed.
       const markerFade = scale <= VEC_T * 0.5 ? 1 : 1 - (scale - VEC_T * 0.5) / (VEC_T * 0.5);
+      const deepFade = Math.min(1, Math.max(0, (scale - 0.004) / 0.006));
       const growth = Math.min(3, Math.max(1, scale / (VEC_T * 0.35)));
-      const mA = (225 * markerFade) | 0;
+      const mA = (225 * markerFade * deepFade) | 0;
       if (mA > 3) {
         for (let m = 0, mi = 0; m < islandMarks.length; m += 2, mi++) {
           const X = islandMarks[m], Y = islandMarks[m + 1];
@@ -877,7 +843,7 @@ function draw() {
               const cov = rad + 0.5 - Math.sqrt(dx * dx + dy * dy);
               if (cov <= 0) continue;
               const p = base + x;
-              if (accW[p] !== 0) continue;
+              if (dot32[p] !== 0) continue;
               const aPix = cov >= 1 ? mA : (mA * cov) | 0;
               dot32[p] = (aPix << 24) | rgbPart;
             }
@@ -885,10 +851,8 @@ function draw() {
         }
       }
       dotCtx.putImageData(dotImg, 0, 0);
-      ctx.globalAlpha = 1 - heatAlpha;
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(dotCanvas, 0, 0, HW * 2, HH * 2);
-      ctx.globalAlpha = 1;
     }
     if (focusOrChain) {
       ctx.fillStyle = themeName === "light" ? "rgba(252,252,251,0.88)" : "rgba(26,26,25,0.88)";
@@ -1017,13 +981,7 @@ function draw() {
         }
       }
     }
-    const total = HW * HH;
-    for (let p = 0; p < total; p++) {
-      const w = accW[p];
-      if (w === 0) { dot32[p] = 0; continue; }
-      const a = w >= 60 ? 255 : ((w * 255) >> 6);
-      dot32[p] = (a << 24) | ((accB[p] / w) << 16) | ((accG[p] / w) << 8) | (accR[p] / w);
-    }
+    resolveDotLayer();
     dotCtx.putImageData(dotImg, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(dotCanvas, 0, 0, HW * 2, HH * 2);
