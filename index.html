@@ -200,6 +200,12 @@
   }
   .add-row button:hover { transform: translateY(-2px); box-shadow: 0 6px 22px rgba(0, 220, 120, .45); }
   .add-row button:active { transform: translateY(1px); }
+  .add-row button.remove {
+    color: #fff;
+    background: linear-gradient(135deg, #ff8a65, #e53935);
+    box-shadow: 0 4px 16px rgba(255, 80, 60, .3);
+  }
+  .add-row button.remove:hover { box-shadow: 0 6px 22px rgba(255, 80, 60, .45); }
 
   .result {
     margin-top: 16px;
@@ -427,6 +433,8 @@
       <button data-count="5">+5</button>
       <button data-count="10">+10</button>
       <button data-count="100">+100</button>
+      <button data-count="-1" class="remove">&minus;1</button>
+      <button data-count="-100" class="remove">&minus;100</button>
     </div>
     <div class="result" id="result">
       <div class="name" style="color:#555">?</div>
@@ -1033,8 +1041,49 @@ function addRarities(count) {
   beep(660, 0.2, 0.1, 'triangle');
 }
 
+function announceRemoval(text) {
+  const nameEl = resultEl.querySelector('.name');
+  nameEl.textContent = 'REMOVED';
+  nameEl.className = 'name';
+  nameEl.style.color = '#e53935';
+  nameEl.style.textShadow = 'none';
+  resultEl.querySelector('.odds').textContent = text;
+  resultEl.classList.remove('pop');
+  void resultEl.offsetWidth;
+  resultEl.classList.add('pop');
+}
+
+// removes the most recently added rarities; the original wheel is untouchable
+function removeRarities(count) {
+  const customs = state.custom || [];
+  if (!customs.length) {
+    announceRemoval('No added rarities to remove — the original wheel stays.');
+    return;
+  }
+  const removed = customs.splice(Math.max(0, customs.length - count), count);
+  removed.forEach(r => {
+    // drop their rolls too so the distribution stays consistent
+    state.rolls -= state.counts[r.name] || 0;
+    delete state.counts[r.name];
+    const i = RARITIES.findIndex(x => x.name === r.name);
+    if (i >= 0) RARITIES.splice(i, 1);
+  });
+  recomputeDerived();
+  buildDistBar();
+  buildIndex();
+  drawWheel();
+  save();
+  updateUI();
+  announceRemoval(`Removed ${removed.length} added ${removed.length === 1 ? 'rarity' : 'rarities'} (${customs.length} left) — back to ${N} on the wheel.`);
+  beep(330, 0.2, 0.1, 'triangle');
+}
+
 document.querySelectorAll('.add-row button').forEach(btn => {
-  btn.addEventListener('click', () => addRarities(+btn.dataset.count));
+  btn.addEventListener('click', () => {
+    const n = +btn.dataset.count;
+    if (n > 0) addRarities(n);
+    else removeRarities(-n);
+  });
 });
 
 // ---- Timelapse: automatic rolls at a slider-chosen speed ----
