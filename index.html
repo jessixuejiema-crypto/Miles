@@ -802,7 +802,7 @@ function updateDistBar() {
     const share = hasRolls ? 100 * c / state.rolls : 100 * r.w / TOTAL_W;
     distSegs[i].style.width = share + '%';
     distSegs[i].title = hasRolls
-      ? `${r.name} — ${share.toFixed(2)}% of your rolls (×${c.toLocaleString()})`
+      ? `${r.name} — ${share < 0.001 ? share.toExponential(1) : share.toFixed(2)}% of your rolls (×${fmtBig(c)})`
       : `${r.name} — ${share < 0.001 ? share.toExponential(1) : share.toFixed(3)}% chance`;
   });
   applyZoomPan();
@@ -810,6 +810,17 @@ function updateDistBar() {
 
 function fmtPct(pct) {
   return (pct < 0.001 ? pct.toExponential(1) : pct < 0.1 ? pct.toFixed(3) : pct.toFixed(1)) + '%';
+}
+
+// turbo counts reach quintillions fast — abbreviate past a million
+const BIG_UNITS = [
+  [1e33, 'Dc'], [1e30, 'No'], [1e27, 'Oc'], [1e24, 'Sp'], [1e21, 'Sx'],
+  [1e18, 'Qi'], [1e15, 'Qa'], [1e12, 'T'], [1e9, 'B'], [1e6, 'M'],
+];
+function fmtBig(x) {
+  if (x < 1e6) return x.toLocaleString();
+  for (const [v, s] of BIG_UNITS) if (x >= v) return (x / v).toPrecision(3) + s;
+  return x.toExponential(2);
 }
 
 // index rows, rarest first; indexRows[i] maps back to RARITIES[i]
@@ -829,7 +840,7 @@ for (let i = N - 1; i >= 0; i--) {
 
 function updateUI() {
   updateDistBar();
-  document.getElementById('statRolls').textContent = state.rolls.toLocaleString();
+  document.getElementById('statRolls').textContent = fmtBig(state.rolls);
   const bestEl = document.getElementById('statBest');
   // rarest rarity rolled so far (derived from counts so old saves stay correct)
   let bestIdx = -1;
@@ -855,7 +866,7 @@ function updateUI() {
     const { row, nameEl, countEl } = indexRows[i];
     row.classList.toggle('unfound', !c);
     nameEl.className = 'rname' + (r.special && c ? ' ' + r.special : '');
-    countEl.textContent = '×' + c.toLocaleString();
+    countEl.textContent = '×' + fmtBig(c);
   }
   document.getElementById('statFound').textContent = `${found} / ${N}`;
 }
@@ -909,8 +920,21 @@ function sliderToSpeed(v) {
   return raw < 1 ? Math.round(raw * 100) / 100 : Math.round(raw);
 }
 const turboBtn = document.getElementById('turboBtn');
-const TURBO_SPEED = 10000000;
+const TURBO_SPEED = 1e20;
 let turbo = false;
+const PROB = RARITIES.map(r => r.w / TOTAL_W);
+
+// Box-Muller standard normal, for sampling batches too big to roll one by one
+let gaussSpare = null;
+function gauss() {
+  if (gaussSpare !== null) { const g = gaussSpare; gaussSpare = null; return g; }
+  let u = 0;
+  while (u === 0) u = Math.random();
+  const v = Math.random();
+  const m = Math.sqrt(-2 * Math.log(u));
+  gaussSpare = m * Math.sin(2 * Math.PI * v);
+  return m * Math.cos(2 * Math.PI * v);
+}
 
 // Walker alias table: O(1) weighted picks so turbo's 500k rolls fit in a tick.
 // Same exact odds as pickRarity, just a constant-time lookup.
@@ -961,20 +985,31 @@ function timelapseTick() {
       finish(target, true);
     }
   } else {
-    // turbo fast path: every roll still happens individually and fairly,
-    // but tallies merge into state once per tick with no per-roll DOM work
     const local = new Array(N).fill(0);
-    for (let i = 0; i < n; i++) local[pickFast()]++;
+    if (n <= 2e6) {
+      // every roll still happens individually and fairly, tallied locally
+      for (let i = 0; i < n; i++) local[pickFast()]++;
+    } else {
+      // 10^20/sec can't be rolled one at a time — draw each rarity's count
+      // from the statistical distribution of n fair rolls (normal ≈ binomial;
+      // at 5e18 rolls per tick even Omega expects ~34 million hits)
+      for (let j = 0; j < N; j++) {
+        const expct = n * PROB[j];
+        local[j] = Math.max(0, Math.round(expct + Math.sqrt(expct) * gauss()));
+      }
+    }
     state.rolls += n;
     target = 0;
+    let bestNew = -1;
     for (let j = 0; j < N; j++) {
       if (!local[j]) continue;
       const name = RARITIES[j].name;
-      const firstFind = !state.counts[name];
+      if (!state.counts[name] && j >= TOP_IDX) bestNew = j;
       state.counts[name] = (state.counts[name] || 0) + local[j];
       target = j; // ends at the rarest rolled this tick (list runs common -> rare)
-      if (firstFind && j >= TOP_IDX) { flash(RARITIES[j].color); fanfare(j); }
     }
+    // one celebration for the rarest brand-new find, not a barrage of 80
+    if (bestNew >= 0) { flash(RARITIES[bestNew].color); fanfare(bestNew); }
   }
   // snap the wheel straight to the result — no time for a full spin
   rotation = -Math.PI / 2 - (target + 0.5) * SEG;
