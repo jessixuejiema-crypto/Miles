@@ -123,6 +123,34 @@
   }
   @keyframes pulse { 50% { filter: brightness(1.25); } }
 
+  .speed-row {
+    margin-top: 12px;
+    width: min(420px, 100%);
+    background: var(--panel);
+    border: 1px solid #2b2b4a;
+    border-radius: 10px;
+    padding: 10px 16px 12px;
+  }
+  .speed-row .speed-label {
+    display: flex;
+    justify-content: space-between;
+    color: var(--dim);
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .speed-row .speed-value {
+    color: var(--text);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  #speedSlider {
+    width: 100%;
+    accent-color: #a04dff;
+    cursor: pointer;
+  }
+
   .result {
     margin-top: 16px;
     min-height: 92px;
@@ -316,6 +344,13 @@
     <div class="btn-row">
       <button id="rollBtn">ROLL</button>
       <button id="timelapseBtn">TIMELAPSE</button>
+    </div>
+    <div class="speed-row">
+      <div class="speed-label">
+        <span>Timelapse speed</span>
+        <span class="speed-value" id="speedValue">20 rolls/sec</span>
+      </div>
+      <input type="range" id="speedSlider" min="0" max="300" step="1" value="130">
     </div>
     <div class="result" id="result">
       <div class="name" style="color:#555">?</div>
@@ -527,7 +562,7 @@ function finish(idx, quick) {
   const r = RARITIES[idx];
   state.rolls++;
   state.counts[r.name] = (state.counts[r.name] || 0) + 1;
-  save();
+  if (!quick) save(); // timelapse saves once per tick instead of once per roll
 
   const nameEl = resultEl.querySelector('.name');
   nameEl.textContent = r.name.toUpperCase() + '!';
@@ -539,7 +574,7 @@ function finish(idx, quick) {
     `${r.name} · ${(100 * r.w / TOTAL_W).toFixed(3)}% chance · 1 in ${oneIn.toLocaleString()}`;
 
   if (quick) {
-    // 20 rolls/sec: keep effects to the finds that deserve them
+    // timelapse: keep effects to the finds that deserve them
     if (idx >= TOP_IDX) { confetti(r, idx); flash(r.color); fanfare(idx); }
     else if (idx >= EPIC_IDX) { confetti(r, idx); beep(784, 0.15, 0.08, 'triangle'); }
   } else {
@@ -549,9 +584,8 @@ function finish(idx, quick) {
     fanfare(idx);
     spinning = false;
     rollBtn.disabled = false;
+    updateUI();
   }
-
-  updateUI();
 }
 
 const fxCanvas = document.getElementById('fx');
@@ -675,21 +709,50 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   updateUI();
 });
 
-// ---- Timelapse: 20 automatic rolls per second ----
+// ---- Timelapse: automatic rolls at a slider-chosen speed ----
 const timelapseBtn = document.getElementById('timelapseBtn');
+const speedSlider = document.getElementById('speedSlider');
+const speedValue = document.getElementById('speedValue');
 let timelapseTimer = null;
+let tlSpeed = 20;
+
+// logarithmic slider: 0..300 maps to 10^(v/100) = 1..1000 rolls/sec,
+// so it moves slowly through 1-10 and races up toward the top
+function sliderToSpeed(v) {
+  return Math.max(1, Math.round(Math.pow(10, v / 100)));
+}
+// timers can't fire faster than ~20/sec, so past that we batch rolls per tick
+function tickInterval() { return tlSpeed <= 20 ? Math.round(1000 / tlSpeed) : 50; }
+function rollsPerTick() { return tlSpeed <= 20 ? 1 : Math.round(tlSpeed / 20); }
+
+function updateSpeed() {
+  tlSpeed = sliderToSpeed(+speedSlider.value);
+  speedValue.textContent = tlSpeed.toLocaleString() + ' rolls/sec';
+  if (timelapseTimer) {
+    clearInterval(timelapseTimer);
+    timelapseTimer = setInterval(timelapseTick, tickInterval());
+  }
+}
+speedSlider.addEventListener('input', updateSpeed);
+updateSpeed();
 
 function timelapseTick() {
-  const target = pickRarity();
-  // snap the wheel straight to the result — no time for a full spin at 20/sec
+  let target;
+  const n = rollsPerTick();
+  for (let i = 0; i < n; i++) {
+    target = pickRarity();
+    finish(target, true);
+  }
+  // snap the wheel straight to the last result — no time for a full spin
   rotation = -Math.PI / 2 - (target + 0.5) * SEG;
   drawWheel();
-  finish(target, true);
+  save();
+  updateUI();
 }
 
 function startTimelapse() {
   if (spinning) return; // let a manual spin finish first
-  timelapseTimer = setInterval(timelapseTick, 50);
+  timelapseTimer = setInterval(timelapseTick, tickInterval());
   timelapseBtn.textContent = 'STOP';
   timelapseBtn.classList.add('running');
   rollBtn.disabled = true;
