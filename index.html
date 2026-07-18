@@ -434,6 +434,7 @@ for (const name of Object.keys(THEMES)) {
   colorByDeg[name] = arr;
   packedByTheme[name] = packed;
 }
+const rgbDim = {};
 for (const name of Object.keys(THEMES)) {
   const t = new Uint8Array((COLOR_CAP + 1) * 3);
   const iso = hexToRgb(THEMES[name].isolated);
@@ -443,6 +444,7 @@ for (const name of Object.keys(THEMES)) {
     t[d * 3] = r; t[d * 3 + 1] = g; t[d * 3 + 2] = b;
   }
   rgbBuckets[name] = t;
+  rgbDim[name] = hexToRgb(THEMES[name].dimNode);
 }
 function degBucket(i) { return deg[i] <= 0 ? 0 : Math.min(deg[i], COLOR_CAP); }
 function nodeColor(i, T) {
@@ -937,33 +939,28 @@ function draw() {
   const ringW = 1.4 / scale;
   const drawRings = scale >= 0.35;
   const ramp = colorByDeg[themeName];
-  ctx.lineWidth = ringW;
-  ctx.strokeStyle = T.surface;
-  for (let i = 0; i < N; i++) {
-    if (!visible[i]) continue;
-    const X = px[i], Y = py[i];
-    if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
-    const d = deg[i];
-    const chainNode = onChain !== null && onChain.has(i);
-    const dimmed = !chainNode && ((focus && i !== selected && !nbrs.has(i)) || (onChain !== null && !focus));
-    let r = 3 + Math.sqrt(d < 40 ? d : 40) * 1.15;
-    const minR = MINPX / scale;
-    if (r < minR) r = minR; // keep circles the same on-screen size when zoomed out
-    if (dimmed) {
-      r *= 0.65;
-      ctx.fillStyle = T.dimNode;
-      if (drawRings) {
+  if (drawRings) {
+    ctx.lineWidth = ringW;
+    ctx.strokeStyle = T.surface;
+    for (let i = 0; i < N; i++) {
+      if (!visible[i]) continue;
+      const X = px[i], Y = py[i];
+      if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
+      const d = deg[i];
+      const chainNode = onChain !== null && onChain.has(i);
+      const dimmed = !chainNode && ((focus && i !== selected && !nbrs.has(i)) || (onChain !== null && !focus));
+      let r = 3 + Math.sqrt(d < 40 ? d : 40) * 1.15;
+      const minR = MINPX / scale;
+      if (r < minR) r = minR;
+      if (dimmed) {
+        ctx.fillStyle = T.dimNode;
         ctx.beginPath();
-        ctx.arc(X, Y, r, 0, Math.PI * 2);
+        ctx.arc(X, Y, r * 0.65, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-      } else {
-        ctx.fillRect(X - r, Y - r, r * 2, r * 2); // sub-4px: squares are ~10x faster
+        continue;
       }
-      continue;
-    }
-    ctx.fillStyle = d <= 0 ? T.isolated : ramp[d < COLOR_CAP ? d : COLOR_CAP];
-    if (drawRings || chainNode) {
+      ctx.fillStyle = d <= 0 ? T.isolated : ramp[d < COLOR_CAP ? d : COLOR_CAP];
       ctx.beginPath();
       ctx.arc(X, Y, r, 0, Math.PI * 2);
       ctx.fill();
@@ -976,12 +973,59 @@ function draw() {
       } else {
         ctx.stroke();
       }
-    } else {
-      ctx.fillRect(X - r, Y - r, r * 2, r * 2);
     }
+  } else {
+    // nodes are only a few px here: splat them as anti-aliased circles
+    // into the pixel buffer (same soft look as the far view, no squares)
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ensureDotLayer();
+    accR.fill(0); accG.fill(0); accB.fill(0); accW.fill(0);
+    const KX2 = scale / 2, CX2 = (-camX * scale + W / 2) / 2, CY2 = (-camY * scale + H / 2) / 2;
+    const rgb = rgbBuckets[themeName];
+    const dim = rgbDim[themeName];
+    const MARG = Math.ceil(DOT_R) + 2;
+    const ML = dotMask.length;
+    for (let i = 0; i < N; i++) {
+      if (!visible[i]) continue;
+      const X = px[i], Y = py[i];
+      if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
+      if (special.has(i)) continue; // repainted as crisp arcs below
+      const chainNode = onChain !== null && onChain.has(i);
+      const dimmed = !chainNode && ((focus && i !== selected) || (onChain !== null && !focus));
+      let r, g, b;
+      if (dimmed) { r = dim[0]; g = dim[1]; b = dim[2]; }
+      else {
+        const d = deg[i];
+        const bk = (d <= 0 ? 0 : d < COLOR_CAP ? d : COLOR_CAP) * 3;
+        r = rgb[bk]; g = rgb[bk + 1]; b = rgb[bk + 2];
+      }
+      const sx = (X * KX2 + CX2) | 0, sy = (Y * KX2 + CY2) | 0;
+      if (sx >= MARG && sx < HW - MARG && sy >= MARG && sy < HH - MARG) {
+        const base = sy * HW + sx;
+        for (let k = 0; k < ML; k++) {
+          const p = base + dotMask[k];
+          const wg = dotWgt[k];
+          accR[p] += r * wg; accG[p] += g * wg; accB[p] += b * wg; accW[p] += wg;
+        }
+      }
+    }
+    const total = HW * HH;
+    for (let p = 0; p < total; p++) {
+      const w = accW[p];
+      if (w === 0) { dot32[p] = 0; continue; }
+      const a = w >= 60 ? 255 : ((w * 255) >> 6);
+      dot32[p] = (a << 24) | ((accB[p] / w) << 16) | ((accG[p] / w) << 8) | (accR[p] / w);
+    }
+    dotCtx.putImageData(dotImg, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(dotCanvas, 0, 0, HW * 2, HH * 2);
+    // back to world space for the highlight passes below
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-camX, -camY);
   }
-  if (focusOrChain) {
-    // repaint highlighted nodes on top so dimmed neighbors never cover them
+  if (special.size > 0) {
+    // repaint highlighted nodes on top so nothing covers them
     for (const i of special) {
       if (!visible[i]) continue;
       ctx.beginPath();
