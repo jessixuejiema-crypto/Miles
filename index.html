@@ -92,6 +92,37 @@
   #rollBtn:active:not(:disabled) { transform: translateY(1px); }
   #rollBtn:disabled { filter: grayscale(.7) brightness(.7); cursor: default; }
 
+  .btn-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .btn-row #rollBtn { margin-top: 0; }
+
+  #timelapseBtn {
+    padding: 14px 28px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #fff;
+    background: linear-gradient(135deg, #7c4dff, #d500f9);
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(160, 60, 255, .35);
+    transition: transform .12s, box-shadow .12s, filter .12s;
+  }
+  #timelapseBtn:hover { transform: translateY(-2px); box-shadow: 0 6px 26px rgba(160, 60, 255, .5); }
+  #timelapseBtn:active { transform: translateY(1px); }
+  #timelapseBtn.running {
+    background: linear-gradient(135deg, #ff1744, #ff5252);
+    box-shadow: 0 4px 20px rgba(255, 40, 60, .4);
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { filter: brightness(1.25); } }
+
   .result {
     margin-top: 16px;
     min-height: 92px;
@@ -233,7 +264,10 @@
       <div class="pointer"></div>
       <canvas id="wheel" width="700" height="700"></canvas>
     </div>
-    <button id="rollBtn">ROLL</button>
+    <div class="btn-row">
+      <button id="rollBtn">ROLL</button>
+      <button id="timelapseBtn">TIMELAPSE</button>
+    </div>
     <div class="result" id="result">
       <div class="name" style="color:#555">?</div>
       <div class="odds">Spin the wheel to find out your fate</div>
@@ -426,7 +460,7 @@ function spin() {
   requestAnimationFrame(frame);
 }
 
-function finish(idx) {
+function finish(idx, quick) {
   const r = RARITIES[idx];
   state.rolls++;
   state.counts[r.name] = (state.counts[r.name] || 0) + 1;
@@ -441,15 +475,21 @@ function finish(idx) {
   const oneIn = Math.round(TOTAL_W / r.w);
   resultEl.querySelector('.odds').textContent =
     `${r.name} · ${(100 * r.w / TOTAL_W).toFixed(3)}% chance · 1 in ${oneIn.toLocaleString()}`;
-  resultEl.classList.add('pop');
 
-  if (idx >= 11) confetti(r, idx); // Mythical and up
-  if (idx >= 18) flash(r.color);   // Prismatic, Transcendental, Godly
-  fanfare(idx);
+  if (quick) {
+    // 20 rolls/sec: keep effects to the finds that deserve them
+    if (idx >= 18) { confetti(r, idx); flash(r.color); fanfare(idx); }
+    else if (idx >= 11) { confetti(r, idx); beep(784, 0.15, 0.08, 'triangle'); }
+  } else {
+    resultEl.classList.add('pop');
+    if (idx >= 11) confetti(r, idx); // Mythical and up
+    if (idx >= 18) flash(r.color);   // Prismatic, Transcendental, Godly
+    fanfare(idx);
+    spinning = false;
+    rollBtn.disabled = false;
+  }
 
   updateUI();
-  spinning = false;
-  rollBtn.disabled = false;
 }
 
 const fxCanvas = document.getElementById('fx');
@@ -543,9 +583,43 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   updateUI();
 });
 
+// ---- Timelapse: 20 automatic rolls per second ----
+const timelapseBtn = document.getElementById('timelapseBtn');
+let timelapseTimer = null;
+
+function timelapseTick() {
+  const target = pickRarity();
+  // snap the wheel straight to the result — no time for a full spin at 20/sec
+  rotation = -Math.PI / 2 - (target + 0.5) * SEG;
+  drawWheel();
+  finish(target, true);
+}
+
+function startTimelapse() {
+  if (spinning) return; // let a manual spin finish first
+  timelapseTimer = setInterval(timelapseTick, 50);
+  timelapseBtn.textContent = 'STOP';
+  timelapseBtn.classList.add('running');
+  rollBtn.disabled = true;
+  resultEl.classList.remove('pop');
+}
+
+function stopTimelapse() {
+  clearInterval(timelapseTimer);
+  timelapseTimer = null;
+  timelapseBtn.textContent = 'TIMELAPSE';
+  timelapseBtn.classList.remove('running');
+  rollBtn.disabled = false;
+}
+
+timelapseBtn.addEventListener('click', () => {
+  if (timelapseTimer) stopTimelapse();
+  else startTimelapse();
+});
+
 rollBtn.addEventListener('click', spin);
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space' && !spinning) { e.preventDefault(); spin(); }
+  if (e.code === 'Space' && !spinning && !timelapseTimer) { e.preventDefault(); spin(); }
 });
 </script>
 </body>
