@@ -347,6 +347,7 @@ const THEMES = {
     chain: "#4a3aa7",
     bins: ["#2a78d6", "#008300", "#eda100", "#eb6834", "#e34948"],
     isolated: "#d9d8d2",
+    islandMark: "rgba(137,135,129,0.55)",
   },
   dark: {
     surface: "#1a1a19",
@@ -361,6 +362,7 @@ const THEMES = {
     chain: "#9085e9",
     bins: ["#3987e5", "#0ca30c", "#eda100", "#d95926", "#e66767"],
     isolated: "#41403d",
+    islandMark: "rgba(137,135,129,0.55)",
   },
 };
 let themeName = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -381,10 +383,28 @@ function blendAt(d, hexes) {
   return `rgb(${mix[0]},${mix[1]},${mix[2]})`;
 }
 const colorByDeg = {};
+const packedByTheme = {};   // ABGR uint32 per degree bucket, for pixel-buffer dots
+const packedMark = (140 << 24) | (129 << 16) | (135 << 8) | 137; // muted island marker
+function blendRgbAt(d, hexes) {
+  const rgbs = hexes.map(hexToRgb);
+  let lo = 0;
+  while (lo < ANCHOR_DEGS.length - 2 && d > ANCHOR_DEGS[lo + 1]) lo++;
+  const t = Math.max(0, Math.min(1, (d - ANCHOR_DEGS[lo]) / (ANCHOR_DEGS[lo + 1] - ANCHOR_DEGS[lo])));
+  const a = rgbs[lo], b = rgbs[lo + 1];
+  return a.map((v, k) => Math.round(v + (b[k] - v) * t));
+}
 for (const name of Object.keys(THEMES)) {
   const arr = [];
-  for (let d = 1; d <= COLOR_CAP; d++) arr[d] = blendAt(d, THEMES[name].bins);
+  const packed = new Uint32Array(COLOR_CAP + 1);
+  const iso = hexToRgb(THEMES[name].isolated);
+  packed[0] = (255 << 24) | (iso[2] << 16) | (iso[1] << 8) | iso[0];
+  for (let d = 1; d <= COLOR_CAP; d++) {
+    arr[d] = blendAt(d, THEMES[name].bins);
+    const [r, g, b] = blendRgbAt(d, THEMES[name].bins);
+    packed[d] = (255 << 24) | (b << 16) | (g << 8) | r;
+  }
   colorByDeg[name] = arr;
+  packedByTheme[name] = packed;
 }
 function degBucket(i) { return deg[i] <= 0 ? 0 : Math.min(deg[i], COLOR_CAP); }
 function nodeColor(i, T) {
@@ -403,7 +423,9 @@ let visEdges = new Int32Array(0);
 let deg = new Int32Array(N);
 let maxDeg = 1;
 let visCount = 0, isolatedHidden = 0, visComps = 0;
-let mainBox = null; // bbox of the biggest visible component
+let mainBox = null;          // bbox of the biggest visible component
+let colorBuckets = [];       // node indices grouped by degree bucket (far-view dots)
+let islandMarks = new Float32Array(0); // centroids of very small islands [x,y,...]
 
 function rebuildVisible() {
   const lenOk = new Uint8Array(N);
@@ -430,17 +452,19 @@ function rebuildVisible() {
   // island census + biggest-component bbox (BFS over CSR, visible+linked only)
   visComps = 0;
   let bestSize = 0;
+  const marks = [];
   {
     const seenC = new Uint8Array(N);
     const stack = new Int32Array(N);
     for (let s = 0; s < N; s++) {
       if (!visible[s] || seenC[s] || deg[s] === 0) continue;
       visComps++;
-      let top = 0, size = 0;
+      let top = 0, size = 0, sx = 0, sy = 0;
       let x0 = px[s], x1 = px[s], y0 = py[s], y1 = py[s];
       stack[top++] = s; seenC[s] = 1;
       while (top > 0) {
         const v = stack[--top]; size++;
+        sx += px[v]; sy += py[v];
         if (px[v] < x0) x0 = px[v]; if (px[v] > x1) x1 = px[v];
         if (py[v] < y0) y0 = py[v]; if (py[v] > y1) y1 = py[v];
         for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
@@ -449,8 +473,13 @@ function rebuildVisible() {
         }
       }
       if (size > bestSize) { bestSize = size; mainBox = [x0, y0, x1, y1]; }
+      if (size >= 2 && size <= 6) { marks.push(sx / size, sy / size); }
     }
   }
+  islandMarks = Float32Array.from(marks);
+  // group nodes by color bucket so far-view dots draw with few style changes
+  colorBuckets = Array.from({ length: COLOR_CAP + 1 }, () => []);
+  for (let i = 0; i < N; i++) if (visible[i]) colorBuckets[degBucket(i)].push(i);
   updateLegend();
   updateHubs();
   if (selected !== -1 && !visible[selected]) selected = -1;
@@ -471,7 +500,9 @@ const canvas = document.getElementById("graph");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
 let camX = POS_SPAN / 2, camY = POS_SPAN / 2, scale = 0.01;
-const VEC_T = 0.055;          // below this, blit the cached bitmap
+const VEC_T = 0.055;   // below this: cached edge bitmap + constant-size dots
+const HEAT_T = 0.016;  // below this: pure heat map
+const MINPX = 2.2;     // minimum on-screen node radius when zoomed out
 
 function resize() {
   DPR = window.devicePixelRatio || 1;
@@ -492,22 +523,33 @@ function fitBox(box, pad) {
   scale = Math.min(2.5, Math.max(0.002, Math.min(W, H) / span));
 }
 
-/* ================= background bitmap (far view) ================= */
+/* ================= background bitmaps (far view) ================= */
 const BG_RES = 4096;
-let bgCanvas = null, bgDirty = true;
+const HEAT_RES = 2048;
+const MIP_RES = 1024;
+let bgCanvas = null, heatCanvas = null, bgMip = null, heatMip = null, bgDirty = true;
+/* pixel-buffer layer for the far-view constant-size dots */
+let dotCanvas = null, dotCtx = null, dotImg = null, dot32 = null;
+function ensureDotLayer() {
+  if (dotCanvas && dotCanvas.width === W && dotCanvas.height === H) return;
+  dotCanvas = document.createElement("canvas");
+  dotCanvas.width = W; dotCanvas.height = H;
+  dotCtx = dotCanvas.getContext("2d");
+  dotImg = dotCtx.createImageData(W, H);
+  dot32 = new Uint32Array(dotImg.data.buffer);
+}
 
-function renderBG() {
+function renderBitmaps() {
+  const T = THEMES[themeName];
+  // --- edge layer ---
   if (!bgCanvas) {
     bgCanvas = document.createElement("canvas");
     bgCanvas.width = BG_RES; bgCanvas.height = BG_RES;
   }
-  const T = THEMES[themeName];
   const g = bgCanvas.getContext("2d");
   const k = BG_RES / POS_SPAN;
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.fillStyle = T.surface;
-  g.fillRect(0, 0, BG_RES, BG_RES);
-  // edges in batches
+  g.clearRect(0, 0, BG_RES, BG_RES);
   g.strokeStyle = T.edge;
   g.lineWidth = 0.4;
   let inBatch = 0;
@@ -519,16 +561,45 @@ function renderBG() {
     if (++inBatch >= 20000) { g.stroke(); g.beginPath(); inBatch = 0; }
   }
   g.stroke();
-  // nodes as small dots, bucketed by color so fillStyle changes only ~26 times
-  const buckets = Array.from({ length: COLOR_CAP + 1 }, () => []);
-  for (let i = 0; i < N; i++) if (visible[i]) buckets[degBucket(i)].push(i);
+  // --- heat layer: colored splats blurred into a smooth field ---
+  const raw = document.createElement("canvas");
+  raw.width = HEAT_RES; raw.height = HEAT_RES;
+  const h = raw.getContext("2d");
+  const k2 = HEAT_RES / POS_SPAN;
+  h.globalAlpha = 0.8;
   for (let d = 0; d <= COLOR_CAP; d++) {
-    const arr = buckets[d];
+    const arr = colorBuckets[d];
     if (!arr.length) continue;
-    g.fillStyle = d === 0 ? T.isolated : colorByDeg[themeName][d];
-    const r = d === 0 ? 1.1 : 1.2 + Math.sqrt(d) * 0.28;
-    for (const i of arr) g.fillRect(px[i] * k - r, py[i] * k - r, r * 2, r * 2);
+    h.fillStyle = d === 0 ? T.isolated : colorByDeg[themeName][d];
+    const r = d === 0 ? 1.2 : 1.6 + Math.sqrt(d) * 0.6;
+    for (const i of arr) h.fillRect(px[i] * k2 - r, py[i] * k2 - r, r * 2, r * 2);
   }
+  if (!heatCanvas) {
+    heatCanvas = document.createElement("canvas");
+    heatCanvas.width = HEAT_RES; heatCanvas.height = HEAT_RES;
+  }
+  const hb = heatCanvas.getContext("2d");
+  hb.setTransform(1, 0, 0, 1, 0, 0);
+  hb.clearRect(0, 0, HEAT_RES, HEAT_RES);
+  hb.filter = "blur(3px)";
+  hb.drawImage(raw, 0, 0);
+  hb.filter = "none";
+  hb.globalAlpha = 0.5;          // keep a crisper core under the blur
+  hb.drawImage(raw, 0, 0);
+  hb.globalAlpha = 1;
+  // 1024px mips: far zoom blits these instead of downscaling the full bitmaps
+  if (!bgMip) {
+    bgMip = document.createElement("canvas");
+    bgMip.width = MIP_RES; bgMip.height = MIP_RES;
+    heatMip = document.createElement("canvas");
+    heatMip.width = MIP_RES; heatMip.height = MIP_RES;
+  }
+  const gm = bgMip.getContext("2d");
+  gm.clearRect(0, 0, MIP_RES, MIP_RES);
+  gm.drawImage(bgCanvas, 0, 0, MIP_RES, MIP_RES);
+  const hm = heatMip.getContext("2d");
+  hm.clearRect(0, 0, MIP_RES, MIP_RES);
+  hm.drawImage(heatCanvas, 0, 0, MIP_RES, MIP_RES);
   bgDirty = false;
 }
 
@@ -634,6 +705,7 @@ function drawLabels(T, special, focusOrChain) {
 
 function draw() {
   drawQueued = false;
+  if (!edgePairs || !colorBuckets.length) return; // boot not finished yet
   const T = THEMES[themeName];
   const special = specialSet();
   const focus = selected !== -1;
@@ -644,12 +716,69 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
 
   if (scale < VEC_T) {
-    /* ---- far view: blit cached bitmap ---- */
-    if (bgDirty) renderBG();
+    /* ---- far view: edge bitmap + constant-size dots, fading into a heat map ---- */
+    if (bgDirty) renderBitmaps();
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     const k = POS_SPAN * scale;                 // world span in screen px
     const [dx, dy] = toScreen(0, 0);
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(bgCanvas, dx, dy, k, k);
+    // heatAlpha: 0 above the crossfade band, 1 at/below HEAT_T
+    const heatAlpha = scale <= HEAT_T ? 1 : scale >= HEAT_T * 1.5 ? 0 : 1 - (scale - HEAT_T) / (HEAT_T * 0.5);
+    const useMip = k < 1600;
+    if (heatAlpha < 1) {
+      ctx.globalAlpha = 1 - heatAlpha;
+      ctx.drawImage(useMip ? bgMip : bgCanvas, dx, dy, k, k);
+      ctx.globalAlpha = 1;
+    }
+    if (heatAlpha > 0) {
+      ctx.globalAlpha = heatAlpha;
+      ctx.drawImage(useMip ? heatMip : heatCanvas, dx, dy, k, k);
+      ctx.globalAlpha = 1;
+    }
+    // viewport bounds for culling the live dots and markers
+    const wx0 = camX - (W / 2) / scale, wx1 = camX + (W / 2) / scale;
+    const wy0 = camY - (H / 2) / scale, wy1 = camY + (H / 2) / scale;
+    if (heatAlpha < 1) {
+      // island markers + constant-size dots, splatted into a pixel buffer
+      // (5x faster than fillRect at this node count)
+      ensureDotLayer();
+      dot32.fill(0);
+      const KX = scale, CX = -camX * scale + W / 2, CY = -camY * scale + H / 2;
+      // markers first, so word dots draw over them
+      for (let m = 0; m < islandMarks.length; m += 2) {
+        const X = islandMarks[m], Y = islandMarks[m + 1];
+        if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
+        const sx = (X * KX + CX) | 0, sy = (Y * KX + CY) | 0;
+        const x0 = sx - 3 < 0 ? 0 : sx - 3, x1 = sx + 2 >= W ? W - 1 : sx + 2;
+        const y0 = sy - 3 < 0 ? 0 : sy - 3, y1 = sy + 2 >= H ? H - 1 : sy + 2;
+        for (let y = y0; y <= y1; y++) {
+          const base = y * W;
+          for (let x = x0; x <= x1; x++) dot32[base + x] = packedMark;
+        }
+      }
+      const packed = packedByTheme[themeName];
+      for (let d = 0; d <= COLOR_CAP; d++) {
+        const arr = colorBuckets[d];
+        if (!arr.length) continue;
+        const c = packed[d];
+        for (let n = 0; n < arr.length; n++) {
+          const i = arr[n];
+          const X = px[i], Y = py[i];
+          if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
+          const sx = (X * KX + CX) | 0, sy = (Y * KX + CY) | 0;
+          const x0 = sx - 2 < 0 ? 0 : sx - 2, x1 = sx + 1 >= W ? W - 1 : sx + 1;
+          const y0 = sy - 2 < 0 ? 0 : sy - 2, y1 = sy + 1 >= H ? H - 1 : sy + 1;
+          for (let y = y0; y <= y1; y++) {
+            const base = y * W;
+            for (let x = x0; x <= x1; x++) dot32[base + x] = c;
+          }
+        }
+      }
+      dotCtx.putImageData(dotImg, 0, 0);
+      ctx.globalAlpha = 1 - heatAlpha;
+      ctx.drawImage(dotCanvas, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
     if (focusOrChain) {
       ctx.fillStyle = themeName === "light" ? "rgba(252,252,251,0.88)" : "rgba(26,26,25,0.88)";
       ctx.fillRect(0, 0, W, H);
@@ -717,6 +846,8 @@ function draw() {
     const chainNode = onChain !== null && onChain.has(i);
     const dimmed = !chainNode && ((focus && i !== selected && !nbrs.has(i)) || (onChain !== null && !focus));
     let r = 3 + Math.sqrt(d < 40 ? d : 40) * 1.15;
+    const minR = MINPX / scale;
+    if (r < minR) r = minR; // keep circles the same on-screen size when zoomed out
     if (dimmed) {
       r *= 0.65;
       ctx.fillStyle = T.dimNode;
@@ -753,7 +884,7 @@ function draw() {
     for (const i of special) {
       if (!visible[i]) continue;
       ctx.beginPath();
-      ctx.arc(px[i], py[i], nodeRadius(i), 0, Math.PI * 2);
+      ctx.arc(px[i], py[i], Math.max(nodeRadius(i), MINPX / scale), 0, Math.PI * 2);
       ctx.fillStyle = nodeColor(i, T);
       ctx.fill();
       ctx.lineWidth = onChain && onChain.has(i) ? 2.5 / scale : ringW;
@@ -1111,7 +1242,7 @@ const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
   rebuildVisible();
   settleMsg.innerHTML = "Drawing the map&hellip;";
   await frame(); await frame();
-  renderBG();
+  renderBitmaps();
   if (mainBox) fitBox(mainBox, 400);
   settleMsg.style.opacity = "0";
   setTimeout(() => settleMsg.remove(), 450);
