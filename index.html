@@ -303,6 +303,11 @@
     padding: 16px;
     width: min(360px, 96vw);
   }
+  #indexList {
+    max-height: 620px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
   .index-panel h2 {
     font-size: 1rem;
     text-transform: uppercase;
@@ -386,7 +391,7 @@
     <div class="stats-bar">
       <div class="stat"><div class="label">Total Rolls</div><div class="value" id="statRolls">0</div></div>
       <div class="stat"><div class="label">Best Find</div><div class="value" id="statBest">—</div></div>
-      <div class="stat"><div class="label">Found</div><div class="value" id="statFound">0 / 29</div></div>
+      <div class="stat"><div class="label">Found</div><div class="value" id="statFound">0 / 129</div></div>
     </div>
     <div class="dist">
       <div class="dist-label" id="distLabel">Expected Odds</div>
@@ -418,35 +423,135 @@
 <script>
 // Rarity table — the number is the weight from the wheel list; chance = weight / total.
 const RARITIES = [
-  { name: 'Common',         w: 30,    color: '#9e9e9e' },
-  { name: 'Wood',           w: 20,    color: '#8d6e63' },
-  { name: 'Uncommon',       w: 10,    color: '#4caf50' },
-  { name: 'Glass',          w: 9,     color: '#b3e5fc' },
-  { name: 'Rare',           w: 7,     color: '#2196f3' },
-  { name: 'Coal',           w: 6.5,   color: '#455a64' },
-  { name: 'Legendary',      w: 6,     color: '#ff9800' },
-  { name: 'Iron',           w: 5,     color: '#cfd8dc' },
-  { name: 'Water',          w: 5,     color: '#00bcd4' },
-  { name: 'Slime',          w: 4,     color: '#7cb342' },
-  { name: 'Lava',           w: 3,     color: '#ff5722' },
-  { name: 'Molten',         w: 2.5,   color: '#e64a19' },
-  { name: 'Mythical',       w: 2,     color: '#9c27b0' },
-  { name: 'Obsidian',       w: 1.75,  color: '#311b92' },
-  { name: 'Frozen',         w: 1.25,  color: '#a5f3fc' },
-  { name: 'Copper',         w: 1,     color: '#c77b3f' },
-  { name: 'Super',          w: 0.99,  color: '#ff4081' },
-  { name: 'Divine',         w: 0.75,  color: '#fff59d' },
-  { name: 'Gold',           w: 0.5,   color: '#ffd700' },
-  { name: 'Shadow',         w: 0.4,   color: '#37294d' },
-  { name: 'Diamond',        w: 0.25,  color: '#00e5ff' },
-  { name: 'Gem',            w: 0.25,  color: '#e040fb' },
-  { name: 'Nebula',         w: 0.2,   color: '#673ab7', special: 'cosmic-text' },
-  { name: 'Prismatic',      w: 0.130, color: '#ff00cc', special: 'rainbow-text' },
-  { name: 'Transcendental', w: 0.120, color: '#7c4dff', special: 'cosmic-text' },
-  { name: 'Void',           w: 0.05,  color: '#4a148c', special: 'void-text' },
-  { name: 'Godly',          w: 0.01,  color: '#fffde7', special: 'godly-text' },
-  { name: 'Singularity',    w: 0.005, color: '#000000', special: 'singularity-text' },
-  { name: 'Claude',         w: 0.001, color: '#da7756', special: 'claude-text' },
+  { name: "Common", w: 30, color: '#9e9e9e' },
+  { name: "Wood", w: 20, color: '#8d6e63' },
+  { name: "Uncommon", w: 10, color: '#4caf50' },
+  { name: "Glass", w: 9, color: '#b3e5fc' },
+  { name: "Rare", w: 7, color: '#2196f3' },
+  { name: "Coal", w: 6.5, color: '#455a64' },
+  { name: "Legendary", w: 6, color: '#ff9800' },
+  { name: "Iron", w: 5, color: '#cfd8dc' },
+  { name: "Water", w: 5, color: '#00bcd4' },
+  { name: "Slime", w: 4, color: '#7cb342' },
+  { name: "Lava", w: 3, color: '#ff5722' },
+  { name: "Stone", w: 2.8, color: '#78909c' },
+  { name: "Sand", w: 2.6, color: '#e0c068' },
+  { name: "Molten", w: 2.5, color: '#e64a19' },
+  { name: "Clay", w: 2.4, color: '#bf8a6b' },
+  { name: "Moss", w: 2.2, color: '#6b8e4e' },
+  { name: "Mythical", w: 2, color: '#9c27b0' },
+  { name: "Ice", w: 2, color: '#b3e0f2' },
+  { name: "Steel", w: 1.9, color: '#90a4ae' },
+  { name: "Obsidian", w: 1.75, color: '#311b92' },
+  { name: "Bronze", w: 1.7, color: '#cd7f32' },
+  { name: "Brick", w: 1.6, color: '#b35a44' },
+  { name: "Bone", w: 1.4, color: '#ece5ce' },
+  { name: "Leaf", w: 1.3, color: '#66bb6a' },
+  { name: "Frozen", w: 1.25, color: '#a5f3fc' },
+  { name: "Mud", w: 1.15, color: '#6d4c41' },
+  { name: "Snow", w: 1.05, color: '#f5fbff' },
+  { name: "Copper", w: 1, color: '#c77b3f' },
+  { name: "Super", w: 0.99, color: '#ff4081' },
+  { name: "Fog", w: 0.9, color: '#b0bec5' },
+  { name: "Rust", w: 0.8, color: '#a84e32' },
+  { name: "Divine", w: 0.75, color: '#fff59d' },
+  { name: "Salt", w: 0.7, color: '#f0f0f0' },
+  { name: "Ash", w: 0.6, color: '#757575' },
+  { name: "Gold", w: 0.5, color: '#ffd700' },
+  { name: "Smoke", w: 0.5, color: '#546e7a' },
+  { name: "Coral", w: 0.45, color: '#ff7f66' },
+  { name: "Shadow", w: 0.4, color: '#37294d' },
+  { name: "Amber", w: 0.38, color: '#ffbf40' },
+  { name: "Jade", w: 0.32, color: '#00a86b' },
+  { name: "Pearl", w: 0.28, color: '#f8e8e0' },
+  { name: "Ivory", w: 0.26, color: '#fffff0' },
+  { name: "Diamond", w: 0.25, color: '#00e5ff' },
+  { name: "Gem", w: 0.25, color: '#e040fb' },
+  { name: "Onyx", w: 0.24, color: '#353839' },
+  { name: "Ruby", w: 0.22, color: '#e0115f' },
+  { name: "Nebula", w: 0.2, color: '#673ab7', special: 'cosmic-text' },
+  { name: "Sapphire", w: 0.2, color: '#0f52ba' },
+  { name: "Emerald", w: 0.18, color: '#50c878' },
+  { name: "Topaz", w: 0.16, color: '#ffc87c' },
+  { name: "Opal", w: 0.15, color: '#a8c3bc' },
+  { name: "Quartz", w: 0.14, color: '#d9c2d0' },
+  { name: "Prismatic", w: 0.13, color: '#ff00cc', special: 'rainbow-text' },
+  { name: "Marble", w: 0.13, color: '#e8e4dc' },
+  { name: "Transcendental", w: 0.12, color: '#7c4dff', special: 'cosmic-text' },
+  { name: "Titanium", w: 0.12, color: '#8792a0' },
+  { name: "Platinum", w: 0.11, color: '#e5e4e2' },
+  { name: "Neon", w: 0.1, color: '#39ff14' },
+  { name: "Toxic", w: 0.09, color: '#9acd32' },
+  { name: "Electric", w: 0.08, color: '#ffe93b' },
+  { name: "Magnetic", w: 0.075, color: '#5c6bc0' },
+  { name: "Radiant", w: 0.068, color: '#fff176' },
+  { name: "Spectral", w: 0.06, color: '#9fe8df' },
+  { name: "Haunted", w: 0.055, color: '#7e57c2' },
+  { name: "Void", w: 0.05, color: '#4a148c', special: 'void-text' },
+  { name: "Cursed", w: 0.05, color: '#4e342e' },
+  { name: "Blessed", w: 0.045, color: '#fff9c4' },
+  { name: "Enchanted", w: 0.04, color: '#ba68c8' },
+  { name: "Arcane", w: 0.036, color: '#6a1b9a' },
+  { name: "Runic", w: 0.032, color: '#4db6ac' },
+  { name: "Astral", w: 0.028, color: '#7986cb' },
+  { name: "Lunar", w: 0.025, color: '#d6dee6' },
+  { name: "Solar", w: 0.022, color: '#ffb300' },
+  { name: "Eclipse", w: 0.02, color: '#263238' },
+  { name: "Meteor", w: 0.018, color: '#a1594c' },
+  { name: "Comet", w: 0.016, color: '#81d4fa' },
+  { name: "Stardust", w: 0.014, color: '#f8bbd0' },
+  { name: "Aurora", w: 0.012, color: '#64ffda' },
+  { name: "Tempest", w: 0.011, color: '#3e5060' },
+  { name: "Godly", w: 0.01, color: '#fffde7', special: 'godly-text' },
+  { name: "Tsunami", w: 0.01, color: '#0288d1' },
+  { name: "Quake", w: 0.009, color: '#795548' },
+  { name: "Inferno", w: 0.008, color: '#ff3d00' },
+  { name: "Blizzard", w: 0.007, color: '#e1f5fe' },
+  { name: "Thunder", w: 0.0065, color: '#ffd600' },
+  { name: "Plasma", w: 0.006, color: '#d500f9' },
+  { name: "Ionic", w: 0.0055, color: '#00b8d4' },
+  { name: "Singularity", w: 0.005, color: '#000000', special: 'singularity-text' },
+  { name: "Quantum", w: 0.0045, color: '#18ffff' },
+  { name: "Fractal", w: 0.004, color: '#ea80fc' },
+  { name: "Hologram", w: 0.0035, color: '#b9f6ca' },
+  { name: "Antimatter", w: 0.003, color: '#d50000' },
+  { name: "Dark Matter", w: 0.0026, color: '#4a0080' },
+  { name: "Neutron", w: 0.0022, color: '#c5cae9' },
+  { name: "Pulsar", w: 0.0019, color: '#82b1ff' },
+  { name: "Quasar", w: 0.0016, color: '#ff80ab' },
+  { name: "Supernova", w: 0.0014, color: '#ffab00' },
+  { name: "Wormhole", w: 0.0012, color: '#3d5afe' },
+  { name: "Claude", w: 0.001, color: '#da7756', special: 'claude-text' },
+  { name: "Event Horizon", w: 0.0009, color: '#212121' },
+  { name: "Galactic", w: 0.0008, color: '#7c43bd' },
+  { name: "Cosmic", w: 0.0007, color: '#00e5ff' },
+  { name: "Celestial", w: 0.0006, color: '#e6ceff' },
+  { name: "Infinity", w: 0.0005, color: '#c0c0ff' },
+  { name: "Eternal", w: 0.00042, color: '#ffecb3' },
+  { name: "Immortal", w: 0.00035, color: '#ffca28' },
+  { name: "Omniscient", w: 0.00028, color: '#b3c7ff' },
+  { name: "Omnipotent", w: 0.00022, color: '#ff6d00' },
+  { name: "Reality", w: 0.00018, color: '#76ff03' },
+  { name: "Dimension", w: 0.00015, color: '#651fff' },
+  { name: "Multiverse", w: 0.00012, color: '#f50057' },
+  { name: "Paradox", w: 0.0001, color: '#607d8b' },
+  { name: "Chaos", w: 0.00008, color: '#dd2c00' },
+  { name: "Order", w: 0.00006, color: '#eceff1' },
+  { name: "Glitch", w: 0.00004, color: '#39ff14', special: 'rainbow-text' },
+  { name: "Corrupted", w: 0.00003, color: '#7b1fa2', special: 'void-text' },
+  { name: "Forbidden", w: 0.00002, color: '#c62828', special: 'void-text' },
+  { name: "Impossible", w: 0.000012, color: '#ff00cc', special: 'rainbow-text' },
+  { name: "Unreal", w: 0.000008, color: '#536dfe', special: 'cosmic-text' },
+  { name: "Dream", w: 0.000005, color: '#ce93d8', special: 'cosmic-text' },
+  { name: "Nightmare", w: 0.000003, color: '#1a1a2e', special: 'void-text' },
+  { name: "Ascended", w: 0.000002, color: '#fff8e1', special: 'godly-text' },
+  { name: "Enlightened", w: 0.0000012, color: '#ffee58', special: 'godly-text' },
+  { name: "Absolute", w: 8e-7, color: '#f5f5f5', special: 'singularity-text' },
+  { name: "Ultimate", w: 5e-7, color: '#ff1744', special: 'rainbow-text' },
+  { name: "Supreme", w: 3e-7, color: '#ffd700', special: 'godly-text' },
+  { name: "Sovereign", w: 2e-7, color: '#9575cd', special: 'cosmic-text' },
+  { name: "Apex", w: 1e-7, color: '#ff5722', special: 'singularity-text' },
+  { name: "Omega", w: 1e-9, color: '#ffffff', special: 'rainbow-text' },
 ];
 const TOTAL_W = RARITIES.reduce((s, r) => s + r.w, 0);
 const N = RARITIES.length;
@@ -482,18 +587,22 @@ function drawWheel() {
     wctx.fillStyle = RARITIES[i].color;
     wctx.fill();
     wctx.strokeStyle = 'rgba(0,0,0,.55)';
-    wctx.lineWidth = 2;
+    wctx.lineWidth = N > 40 ? 1 : 2;
     wctx.stroke();
 
-    wctx.save();
-    wctx.translate(CX, CY);
-    wctx.rotate(a0 + SEG / 2);
-    wctx.textAlign = 'right';
-    wctx.textBaseline = 'middle';
-    wctx.fillStyle = DARK_TEXT.has(RARITIES[i].name) ? '#1a1a2e' : '#ffffff';
-    wctx.font = 'bold 18px Segoe UI, sans-serif';
-    wctx.fillText(RARITIES[i].name, R - 14, 0);
-    wctx.restore();
+    // with 100+ segments the slices are too thin for labels;
+    // the result panel and index name what you land on
+    if (N <= 40) {
+      wctx.save();
+      wctx.translate(CX, CY);
+      wctx.rotate(a0 + SEG / 2);
+      wctx.textAlign = 'right';
+      wctx.textBaseline = 'middle';
+      wctx.fillStyle = DARK_TEXT.has(RARITIES[i].name) ? '#1a1a2e' : '#ffffff';
+      wctx.font = 'bold 18px Segoe UI, sans-serif';
+      wctx.fillText(RARITIES[i].name, R - 14, 0);
+      wctx.restore();
+    }
   }
   wctx.beginPath();
   wctx.arc(CX, CY, 46, 0, 2 * Math.PI);
@@ -579,6 +688,7 @@ function spin() {
   const duration = 4200 + Math.random() * 600;
   const startT = performance.now();
   let lastSeg = segmentUnderPointer(startRot);
+  let lastBeep = 0;
 
   function frame(t) {
     const p = Math.min((t - startT) / duration, 1);
@@ -588,7 +698,11 @@ function spin() {
     const seg = segmentUnderPointer(rotation);
     if (seg !== lastSeg) {
       lastSeg = seg;
-      beep(900 + Math.random() * 200, 0.03, 0.05, 'square');
+      // throttle ticks: 129 thin segments would otherwise be a solid buzz
+      if (t - lastBeep > 45) {
+        lastBeep = t;
+        beep(900 + Math.random() * 200, 0.03, 0.05, 'square');
+      }
     }
     if (p < 1) requestAnimationFrame(frame);
     else finish(target);
@@ -663,26 +777,48 @@ zoomSlider.addEventListener('input', () => {
 });
 panSlider.addEventListener('input', applyZoomPan);
 
+// With 129 rarities, rebuilding the DOM every tick is too slow —
+// build the bar segments and index rows once, then update them in place.
+const distSegs = RARITIES.map(r => {
+  const seg = document.createElement('div');
+  seg.className = 'dist-seg';
+  seg.style.background = r.color;
+  distBar.appendChild(seg);
+  return seg;
+});
+
 function updateDistBar() {
   // With rolls, show the real share each rarity has appeared; before any, show the odds.
   const hasRolls = state.rolls > 0;
   distLabel.textContent = hasRolls ? 'Your Roll Distribution' : 'Expected Odds';
-  distBar.innerHTML = '';
-  RARITIES.forEach(r => {
-    const share = hasRolls
-      ? 100 * (state.counts[r.name] || 0) / state.rolls
-      : 100 * r.w / TOTAL_W;
-    if (share <= 0) return;
-    const seg = document.createElement('div');
-    seg.className = 'dist-seg';
-    seg.style.width = share + '%';
-    seg.style.background = r.color;
-    seg.title = hasRolls
-      ? `${r.name} — ${share.toFixed(1)}% of your rolls (×${(state.counts[r.name] || 0).toLocaleString()})`
-      : `${r.name} — ${share.toFixed(3)}% chance`;
-    distBar.appendChild(seg);
+  RARITIES.forEach((r, i) => {
+    const c = state.counts[r.name] || 0;
+    const share = hasRolls ? 100 * c / state.rolls : 100 * r.w / TOTAL_W;
+    distSegs[i].style.width = share + '%';
+    distSegs[i].title = hasRolls
+      ? `${r.name} — ${share.toFixed(2)}% of your rolls (×${c.toLocaleString()})`
+      : `${r.name} — ${share < 0.001 ? share.toExponential(1) : share.toFixed(3)}% chance`;
   });
-  applyZoomPan(); // rebuilding the bar resets layout, so reapply zoom + scroll
+  applyZoomPan();
+}
+
+function fmtPct(pct) {
+  return (pct < 0.001 ? pct.toExponential(1) : pct < 0.1 ? pct.toFixed(3) : pct.toFixed(1)) + '%';
+}
+
+// index rows, rarest first; indexRows[i] maps back to RARITIES[i]
+const indexRows = [];
+for (let i = N - 1; i >= 0; i--) {
+  const r = RARITIES[i];
+  const row = document.createElement('div');
+  row.className = 'rarity-row unfound';
+  row.innerHTML =
+    `<div class="swatch" style="background:${r.color}"></div>` +
+    `<div class="rname" style="${r.special ? '' : `color:${r.color}`}">${r.name}</div>` +
+    `<div class="chance">${fmtPct(100 * r.w / TOTAL_W)}</div>` +
+    `<div class="count">×0</div>`;
+  indexList.appendChild(row);
+  indexRows[i] = { row, nameEl: row.children[1], countEl: row.children[3] };
 }
 
 function updateUI() {
@@ -704,23 +840,18 @@ function updateUI() {
     bestEl.className = 'value';
     bestEl.style.color = '';
   }
-  const found = RARITIES.filter(r => state.counts[r.name]).length;
-  document.getElementById('statFound').textContent = `${found} / ${N}`;
 
-  indexList.innerHTML = '';
-  // rarest first
-  [...RARITIES].reverse().forEach(r => {
+  let found = 0;
+  for (let i = 0; i < N; i++) {
+    const r = RARITIES[i];
     const c = state.counts[r.name] || 0;
-    const row = document.createElement('div');
-    row.className = 'rarity-row' + (c ? '' : ' unfound');
-    const pct = 100 * r.w / TOTAL_W;
-    row.innerHTML =
-      `<div class="swatch" style="background:${r.color}"></div>` +
-      `<div class="rname${r.special && c ? ' ' + r.special : ''}" style="${r.special ? '' : `color:${r.color}`}">${r.name}</div>` +
-      `<div class="chance">${pct < 0.1 ? pct.toFixed(3) : pct.toFixed(1)}%</div>` +
-      `<div class="count">×${c.toLocaleString()}</div>`;
-    indexList.appendChild(row);
-  });
+    if (c) found++;
+    const { row, nameEl, countEl } = indexRows[i];
+    row.classList.toggle('unfound', !c);
+    nameEl.className = 'rname' + (r.special && c ? ' ' + r.special : '');
+    countEl.textContent = '×' + c.toLocaleString();
+  }
+  document.getElementById('statFound').textContent = `${found} / ${N}`;
 }
 updateUI();
 
