@@ -449,7 +449,7 @@
   <p class="legend">
     Seeds marked <b>♻️</b> are multi-harvest: pick them when ripe and the <b>stem stays behind</b> and regrows a new crop, forever.
     Single-harvest crops leave the soil empty. Harvests go in your <b>🧺 basket</b> — sell them at the Sell Shop.
-    The Seed Shop <b>restocks every 3 minutes</b>; rare seeds are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
+    The Seed Shop <b>restocks every 10 seconds</b>; rare seeds are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
   </p>
 </div>
 
@@ -463,7 +463,7 @@
     </div>
     <div class="m-sub">
       <span>Seller's stock</span>
-      <span id="restock">Restock in 3:00</span>
+      <span id="restock">Restock in 0:10</span>
     </div>
     <div class="m-body" id="seedlist"></div>
   </div>
@@ -532,7 +532,7 @@
 
   var SPOTS_PER_M = 3;         // 3x3 planting spots per square meter
   var EXPAND_COST = 100;       // always 100¢, forever
-  var RESTOCK_MS = 3 * 60 * 1000;
+  var RESTOCK_MS = 10 * 1000;
   var SAVE_KEY = 'garden-game-v2';
 
   var sheckles = 20;
