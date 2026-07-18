@@ -634,12 +634,20 @@ function renderBitmaps() {
   const h = raw.getContext("2d");
   const k2 = HEAT_RES / POS_SPAN;
   h.globalAlpha = 0.8;
+  const TAU = Math.PI * 2;
   for (let d = 0; d <= COLOR_CAP; d++) {
     const arr = colorBuckets[d];
     if (!arr.length) continue;
     h.fillStyle = d === 0 ? T.isolated : colorByDeg[themeName][d];
     const r = d === 0 ? 1.2 : 1.6 + Math.sqrt(d) * 0.6;
-    for (const i of arr) h.fillRect(px[i] * k2 - r, py[i] * k2 - r, r * 2, r * 2);
+    // one batched path of circles per color bucket — no square stamps
+    h.beginPath();
+    for (const i of arr) {
+      const x = px[i] * k2, y = py[i] * k2;
+      h.moveTo(x + r, y);
+      h.arc(x, y, r, 0, TAU);
+    }
+    h.fill();
   }
   if (!heatCanvas) {
     heatCanvas = document.createElement("canvas");
