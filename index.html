@@ -116,7 +116,26 @@
   }
   #timelapseBtn:hover { transform: translateY(-2px); box-shadow: 0 6px 26px rgba(160, 60, 255, .5); }
   #timelapseBtn:active { transform: translateY(1px); }
-  #timelapseBtn.running {
+
+  #turboBtn {
+    padding: 14px 28px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #04121a;
+    background: linear-gradient(135deg, #00e5ff, #00b0ff);
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0, 200, 255, .35);
+    transition: transform .12s, box-shadow .12s, filter .12s;
+  }
+  #turboBtn:hover { transform: translateY(-2px); box-shadow: 0 6px 26px rgba(0, 200, 255, .5); }
+  #turboBtn:active { transform: translateY(1px); }
+
+  #timelapseBtn.running,
+  #turboBtn.running {
+    color: #fff;
     background: linear-gradient(135deg, #ff1744, #ff5252);
     box-shadow: 0 4px 20px rgba(255, 40, 60, .4);
     animation: pulse 1s ease-in-out infinite;
@@ -351,6 +370,7 @@
     <div class="btn-row">
       <button id="rollBtn">ROLL</button>
       <button id="timelapseBtn">TIMELAPSE</button>
+      <button id="turboBtn">TURBO</button>
     </div>
     <div class="speed-row">
       <div class="speed-label">
@@ -728,9 +748,38 @@ function sliderToSpeed(v) {
   const raw = Math.pow(10, v / 100);
   return raw < 1 ? Math.round(raw * 100) / 100 : Math.round(raw);
 }
+const turboBtn = document.getElementById('turboBtn');
+const TURBO_SPEED = 10000000;
+let turbo = false;
+
+// Walker alias table: O(1) weighted picks so turbo's 500k rolls fit in a tick.
+// Same exact odds as pickRarity, just a constant-time lookup.
+const ALIAS = (() => {
+  const prob = new Float64Array(N), alias = new Int32Array(N);
+  const p = RARITIES.map(r => r.w * N / TOTAL_W);
+  const small = [], large = [];
+  p.forEach((s, i) => (s < 1 ? small : large).push(i));
+  while (small.length && large.length) {
+    const s = small.pop(), l = large.pop();
+    prob[s] = p[s]; alias[s] = l;
+    p[l] += p[s] - 1;
+    (p[l] < 1 ? small : large).push(l);
+  }
+  while (large.length) prob[large.pop()] = 1;
+  while (small.length) prob[small.pop()] = 1;
+  return { prob, alias };
+})();
+
+function pickFast() {
+  const u = Math.random() * N;
+  const i = u | 0;
+  return (u - i) < ALIAS.prob[i] ? i : ALIAS.alias[i];
+}
+
+function effSpeed() { return turbo ? TURBO_SPEED : tlSpeed; }
 // timers can't fire faster than ~20/sec, so past that we batch rolls per tick
-function tickInterval() { return tlSpeed <= 20 ? Math.round(1000 / tlSpeed) : 50; }
-function rollsPerTick() { return tlSpeed <= 20 ? 1 : Math.round(tlSpeed / 20); }
+function tickInterval() { const s = effSpeed(); return s <= 20 ? Math.round(1000 / s) : 50; }
+function rollsPerTick() { const s = effSpeed(); return s <= 20 ? 1 : Math.round(s / 20); }
 
 function updateSpeed() {
   tlSpeed = sliderToSpeed(+speedSlider.value);
@@ -744,13 +793,30 @@ speedSlider.addEventListener('input', updateSpeed);
 updateSpeed();
 
 function timelapseTick() {
-  let target;
   const n = rollsPerTick();
-  for (let i = 0; i < n; i++) {
-    target = pickRarity();
-    finish(target, true);
+  let target;
+  if (n <= 500) {
+    for (let i = 0; i < n; i++) {
+      target = pickRarity();
+      finish(target, true);
+    }
+  } else {
+    // turbo fast path: every roll still happens individually and fairly,
+    // but tallies merge into state once per tick with no per-roll DOM work
+    const local = new Array(N).fill(0);
+    for (let i = 0; i < n; i++) local[pickFast()]++;
+    state.rolls += n;
+    target = 0;
+    for (let j = 0; j < N; j++) {
+      if (!local[j]) continue;
+      const name = RARITIES[j].name;
+      const firstFind = !state.counts[name];
+      state.counts[name] = (state.counts[name] || 0) + local[j];
+      target = j; // ends at the rarest rolled this tick (list runs common -> rare)
+      if (firstFind && j >= TOP_IDX) { flash(RARITIES[j].color); fanfare(j); }
+    }
   }
-  // snap the wheel straight to the last result — no time for a full spin
+  // snap the wheel straight to the result — no time for a full spin
   rotation = -Math.PI / 2 - (target + 0.5) * SEG;
   drawWheel();
   showResult(target);
@@ -761,8 +827,9 @@ function timelapseTick() {
 function startTimelapse() {
   if (spinning) return; // let a manual spin finish first
   timelapseTimer = setInterval(timelapseTick, tickInterval());
-  timelapseBtn.textContent = 'STOP';
-  timelapseBtn.classList.add('running');
+  const btn = turbo ? turboBtn : timelapseBtn;
+  btn.textContent = 'STOP';
+  btn.classList.add('running');
   rollBtn.disabled = true;
   resultEl.classList.remove('pop');
 }
@@ -770,14 +837,31 @@ function startTimelapse() {
 function stopTimelapse() {
   clearInterval(timelapseTimer);
   timelapseTimer = null;
+  turbo = false;
   timelapseBtn.textContent = 'TIMELAPSE';
   timelapseBtn.classList.remove('running');
+  turboBtn.textContent = 'TURBO';
+  turboBtn.classList.remove('running');
   rollBtn.disabled = false;
 }
 
 timelapseBtn.addEventListener('click', () => {
-  if (timelapseTimer) stopTimelapse();
-  else startTimelapse();
+  const wasTurbo = turbo;
+  if (timelapseTimer) {
+    stopTimelapse();
+    if (!wasTurbo) return; // plain stop; but turbo -> timelapse switches over
+  }
+  startTimelapse();
+});
+
+turboBtn.addEventListener('click', () => {
+  const wasTurbo = turbo;
+  if (timelapseTimer) {
+    stopTimelapse();
+    if (wasTurbo) return; // plain stop; but timelapse -> turbo switches over
+  }
+  turbo = true;
+  startTimelapse();
 });
 
 rollBtn.addEventListener('click', spin);
