@@ -136,6 +136,11 @@
     <input type="range" id="trail" min="0" max="600" step="10" value="300">
     <output id="trailOut">300</output>
   </div>
+  <div class="row">
+    <label for="zoom">Zoom</label>
+    <input type="range" id="zoom" min="0" max="12" step="1" value="5">
+    <output id="zoomOut">5&times;</output>
+  </div>
   <div class="buttons">
     <button id="pauseBtn">Pause</button>
     <button id="resetBtn">Reset</button>
@@ -156,6 +161,7 @@
   let g = 1200;          // px/s^2
   let damping = 0;
   let trailMax = 300;
+  let zoom = 5;          // tip magnifier factor (0 = off)
   let paused = false;
 
   let pivot = { x: 0, y: 0 };
@@ -394,6 +400,10 @@
     $("trailOut").textContent = trailMax;
     if (trail.length > trailMax) trail.splice(0, trail.length - trailMax);
   });
+  $("zoom").addEventListener("input", (e) => {
+    zoom = +e.target.value;
+    $("zoomOut").textContent = zoom ? zoom + "×" : "Off";
+  });
   $("pauseBtn").addEventListener("click", () => {
     paused = !paused;
     $("pauseBtn").textContent = paused ? "Resume" : "Pause";
@@ -426,18 +436,7 @@
   }
   window.addEventListener("resize", resize);
 
-  function draw() {
-    const w = window.innerWidth, h = window.innerHeight;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-
-    // Subtle vignette
-    const grad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
-    grad.addColorStop(0, "#101528");
-    grad.addColorStop(1, "#0b0e17");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-
+  function drawWorld() {
     // Trail of the last bob
     if (trail.length > 1) {
       ctx.lineCap = "round";
@@ -509,6 +508,51 @@
         ctx.stroke();
       }
     }
+  }
+
+  function drawLens(w, h) {
+    const R = Math.max(80, Math.min(120, Math.min(w, h) * 0.16));
+    const cx = w - R - 18, cy = h - R - 18;
+    const tipX = px[N], tipY = py[N];
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = "#0d1220";
+    ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+    ctx.translate(cx, cy);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-tipX, -tipY);
+    drawWorld();
+    ctx.restore();
+
+    // Rim + label
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(139, 147, 167, 0.9)";
+    ctx.font = "11px 'Segoe UI', system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`tip ${zoom}×`, cx, cy - R - 8);
+  }
+
+  function draw() {
+    const w = window.innerWidth, h = window.innerHeight;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    // Subtle vignette
+    const grad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
+    grad.addColorStop(0, "#101528");
+    grad.addColorStop(1, "#0b0e17");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    drawWorld();
+    if (zoom > 0) drawLens(w, h);
   }
 
   // ---------------------------------------------------------------
