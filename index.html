@@ -3,990 +3,539 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>My Little Garden</title>
+<title>Triple Pendulum</title>
 <style>
   :root {
-    --bg: #f3efe4;
-    --bg-glow: #e2ecd4;
-    --panel: #fbf9f2;
-    --border: #ddd6c2;
-    --text: #2d3a2e;
-    --muted: #77836f;
-    --accent: #3e8e4f;
-    --gold: #b07f10;
-    --soil: #7a5230;
-    --soil-hi: #916440;
-    --soil-dark: #5d3d24;
-    --frame: #8a5a33;
-    --ripe-glow: rgba(217, 165, 32, 0.55);
-    --chip-on: #e3f0e0;
-    --shadow: rgba(61, 48, 32, 0.18);
-    --overlay: rgba(40, 34, 24, 0.55);
-    --danger: #b3443c;
+    --bg: #0b0e17;
+    --panel: rgba(18, 23, 38, 0.82);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --text: #e8ecf4;
+    --text-dim: #8b93a7;
+    --accent: #6ea8ff;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #121a12;
-      --bg-glow: #1c2b1e;
-      --panel: #1c261c;
-      --border: #32402f;
-      --text: #dfe9d9;
-      --muted: #93a189;
-      --accent: #6fce84;
-      --gold: #e2b13c;
-      --soil: #4a3325;
-      --soil-hi: #5d4130;
-      --soil-dark: #33231a;
-      --frame: #5d3f26;
-      --ripe-glow: rgba(226, 177, 60, 0.5);
-      --chip-on: #28402b;
-      --shadow: rgba(0, 0, 0, 0.5);
-      --overlay: rgba(0, 0, 0, 0.65);
-      --danger: #e07a72;
-    }
-  }
-  :root[data-theme="light"] {
-    --bg: #f3efe4;
-    --bg-glow: #e2ecd4;
-    --panel: #fbf9f2;
-    --border: #ddd6c2;
-    --text: #2d3a2e;
-    --muted: #77836f;
-    --accent: #3e8e4f;
-    --gold: #b07f10;
-    --soil: #7a5230;
-    --soil-hi: #916440;
-    --soil-dark: #5d3d24;
-    --frame: #8a5a33;
-    --ripe-glow: rgba(217, 165, 32, 0.55);
-    --chip-on: #e3f0e0;
-    --shadow: rgba(61, 48, 32, 0.18);
-    --overlay: rgba(40, 34, 24, 0.55);
-    --danger: #b3443c;
-  }
-  :root[data-theme="dark"] {
-    --bg: #121a12;
-    --bg-glow: #1c2b1e;
-    --panel: #1c261c;
-    --border: #32402f;
-    --text: #dfe9d9;
-    --muted: #93a189;
-    --accent: #6fce84;
-    --gold: #e2b13c;
-    --soil: #4a3325;
-    --soil-hi: #5d4130;
-    --soil-dark: #33231a;
-    --frame: #5d3f26;
-    --ripe-glow: rgba(226, 177, 60, 0.5);
-    --chip-on: #28402b;
-    --shadow: rgba(0, 0, 0, 0.5);
-    --overlay: rgba(0, 0, 0, 0.65);
-    --danger: #e07a72;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    min-height: 100vh;
-    background: radial-gradient(1100px 520px at 50% -8%, var(--bg-glow) 0%, var(--bg) 62%);
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
     color: var(--text);
-    font-family: "SF Pro Rounded", ui-rounded, "Segoe UI", system-ui, -apple-system, sans-serif;
-    display: flex;
-    justify-content: center;
-    padding: 26px 16px 40px;
   }
-  .game { width: 100%; max-width: 520px; text-align: center; }
+  #canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    cursor: grab;
+    touch-action: none;
+  }
+  #canvas.dragging { cursor: grabbing; }
 
-  header {
+  #hud {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    pointer-events: none;
+    user-select: none;
+  }
+  #hud h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  #hud p {
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+
+  #panel {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     display: flex;
-    align-items: baseline;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 230px;
+    user-select: none;
+  }
+  .row {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 8px;
+    font-size: 12.5px;
+    color: var(--text-dim);
   }
-  h1 { font-size: 1.5rem; letter-spacing: 0.3px; text-wrap: balance; }
-  .coins {
-    font-size: 1.05rem;
-    font-weight: 800;
-    color: var(--gold);
+  .row label { flex: 0 0 62px; }
+  .row output {
+    flex: 0 0 44px;
+    text-align: right;
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    justify-content: center;
-    margin-bottom: 12px;
-  }
-  .act {
-    background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 9px 14px;
-    font-size: 0.88rem;
-    font-weight: 700;
     color: var(--text);
-    cursor: pointer;
-    font-family: inherit;
-    transition: transform 0.1s, border-color 0.15s;
   }
-  .act:hover { transform: translateY(-2px); border-color: var(--accent); }
-  .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .act.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
-
-  /* Seed toolbar (owned seeds) */
-  .shop {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    justify-content: center;
-    margin-bottom: 8px;
-    min-height: 30px;
-  }
-  .chip {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-    background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 6px 10px 5px;
-    min-width: 62px;
-    cursor: pointer;
-    color: var(--text);
-    transition: border-color 0.15s, background 0.15s, transform 0.1s;
-    font-family: inherit;
-  }
-  .chip:hover { transform: translateY(-2px); }
-  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .chip.on {
-    border-color: var(--accent);
-    background: var(--chip-on);
-    box-shadow: 0 3px 10px var(--shadow);
-  }
-  .chip .c-emoji { font-size: 1.3rem; line-height: 1.2; }
-  .chip .c-name { font-size: 0.7rem; font-weight: 700; }
-  .chip .c-meta {
-    font-size: 0.65rem;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .msg {
-    min-height: 1.3em;
-    font-size: 0.88rem;
-    color: var(--muted);
-    margin-bottom: 12px;
-  }
-
-  /* Plot */
-  .plot-wrap { position: relative; margin: 0 auto 8px; max-width: 460px; }
-  .ruler-top {
-    color: var(--muted);
-    font-size: 0.72rem;
-    letter-spacing: 1px;
-    font-variant-numeric: tabular-nums;
-    margin-bottom: 4px;
-  }
-  #plot {
-    display: grid;
-    gap: 2px;
-    background: var(--soil-dark);
-    border: 9px solid var(--frame);
-    border-radius: 14px;
-    padding: 2px;
-    box-shadow: 0 14px 30px var(--shadow);
-    user-select: none;
-    touch-action: manipulation;
-  }
-  .cell {
-    position: relative;
-    aspect-ratio: 1;
-    border: none;
-    background: radial-gradient(circle at 35% 30%, var(--soil-hi), var(--soil) 75%);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    overflow: visible;
-    font-size: inherit;
-  }
-  /* dashed meter lines splitting the plot into 1 m squares */
-  .cell.m-r { border-right: 2px dashed rgba(255, 244, 214, 0.5); }
-  .cell.m-b { border-bottom: 2px dashed rgba(255, 244, 214, 0.5); }
-  .cell:hover { filter: brightness(1.15); }
-  .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
-  .cell .plant {
-    font-size: 0.56em;
-    line-height: 1;
-    transition: transform 0.25s, opacity 0.25s;
-    pointer-events: none;
-  }
-  .cell.ripe { box-shadow: inset 0 0 12px var(--ripe-glow); }
-  .cell.ripe .plant { animation: sway 1.6s ease-in-out infinite; }
-  @keyframes sway {
-    0%, 100% { transform: scale(1) rotate(-5deg); }
-    50%      { transform: scale(1.08) rotate(5deg); }
-  }
-  .cell .bar {
-    position: absolute;
-    left: 12%;
-    right: 12%;
-    bottom: 7%;
-    height: 3px;
-    background: rgba(0, 0, 0, 0.35);
-    border-radius: 2px;
-    overflow: hidden;
-    pointer-events: none;
-  }
-  .cell .bar i {
-    display: block;
-    height: 100%;
-    width: 0%;
-    background: var(--accent);
-    border-radius: 2px;
-  }
-  .cell .badge {
-    position: absolute;
-    top: 2%;
-    right: 3%;
-    font-size: 0.28em;
-    pointer-events: none;
-  }
-  .pop {
-    position: absolute;
-    left: 50%;
-    top: 10%;
-    transform: translateX(-50%);
-    font-size: 0.34em;
-    font-weight: 800;
-    color: var(--gold);
-    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
-    pointer-events: none;
-    animation: rise 0.9s ease-out forwards;
-    z-index: 5;
-    white-space: nowrap;
-  }
-  @keyframes rise {
-    from { opacity: 1; translate: 0 0; }
-    to   { opacity: 0; translate: 0 -26px; }
-  }
-
-  .legend {
-    color: var(--muted);
-    font-size: 0.82rem;
-    line-height: 1.55;
-    max-width: 450px;
-    margin: 10px auto 0;
-  }
-  .legend b { color: var(--text); }
-
-  /* Shop modals */
-  .overlay[hidden] { display: none; }
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--overlay);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 18px;
-    z-index: 50;
-  }
-  .modal {
-    background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-radius: 18px;
-    width: 100%;
-    max-width: 430px;
-    max-height: 86vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 20px 50px var(--shadow);
-    text-align: left;
-    overflow: hidden;
-  }
-  .m-head {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    padding: 16px 16px 12px;
-    border-bottom: 1.5px solid var(--border);
-  }
-  .m-face { font-size: 2.1rem; line-height: 1; }
-  .m-bubble {
+  input[type="range"] {
     flex: 1;
-    background: var(--chip-on);
-    border-radius: 12px;
-    padding: 9px 12px;
-    font-size: 0.9rem;
-    line-height: 1.45;
-    min-height: 2.4em;
+    accent-color: var(--accent);
+    height: 4px;
   }
-  .m-close {
-    background: none;
-    border: none;
-    font-size: 1.1rem;
-    cursor: pointer;
-    color: var(--muted);
-    padding: 4px 6px;
-    font-family: inherit;
-  }
-  .m-close:hover { color: var(--text); }
-  .m-sub {
-    padding: 8px 16px;
-    font-size: 0.78rem;
-    color: var(--muted);
-    border-bottom: 1.5px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    font-variant-numeric: tabular-nums;
-  }
-  .m-body { overflow-y: auto; padding: 8px 12px 12px; }
-
-  .srow {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 7px 6px;
-    border-bottom: 1px solid var(--border);
-  }
-  .srow:last-child { border-bottom: none; }
-  .srow .s-emoji { font-size: 1.4rem; width: 30px; text-align: center; }
-  .srow .s-info { flex: 1; min-width: 0; }
-  .srow .s-name { font-size: 0.85rem; font-weight: 700; }
-  .srow .s-tags { font-size: 0.7rem; color: var(--muted); }
-  .srow .s-stock {
-    font-size: 0.72rem;
-    font-weight: 800;
-    color: var(--accent);
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .srow.oos .s-stock { color: var(--danger); }
-  .srow.oos .s-emoji, .srow.oos .s-info { opacity: 0.45; }
-  .srow .s-buy {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 9px;
-    padding: 6px 10px;
-    font-size: 0.78rem;
-    font-weight: 800;
-    cursor: pointer;
-    font-family: inherit;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .srow .s-buy:disabled { opacity: 0.35; cursor: not-allowed; }
-
-  .inv-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    padding: 4px 2px 10px;
-  }
-  .stack {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    background: var(--bg);
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 7px 10px;
-    min-width: 62px;
-    cursor: pointer;
-    font-family: inherit;
+  .buttons { display: flex; gap: 8px; margin-top: 2px; }
+  button {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.07);
     color: var(--text);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 7px 0;
+    font-size: 12.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
   }
-  .stack.held { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
-  .stack .st-emoji { font-size: 1.3rem; }
-  .stack .st-count { font-size: 0.72rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .stack .st-name { font-size: 0.62rem; color: var(--muted); }
-  .sell-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    padding: 4px 2px 6px;
-  }
-  .sell-actions .act { flex: 1 1 auto; font-size: 0.8rem; padding: 8px 8px; }
-  .act.gold { background: var(--gold); border-color: var(--gold); color: #fff; }
-  .act.quiet { color: var(--muted); }
+  button:hover { background: rgba(255, 255, 255, 0.14); }
+  button.active { background: var(--accent); border-color: var(--accent); color: #0b0e17; }
 
-  @media (prefers-reduced-motion: reduce) {
-    .cell .plant, .chip, .act { transition: none; }
-    .cell.ripe .plant { animation: none; }
-    .pop { animation-duration: 0.01s; }
+  @media (max-width: 600px) {
+    #hud h1 { font-size: 15px; }
+    #hud p { font-size: 11px; }
+    #panel { min-width: 200px; padding: 10px 12px; }
   }
 </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
 
-<div class="game">
-  <header>
-    <h1>🌻 My Little Garden</h1>
-    <div class="coins" id="coins">🪙 20¢</div>
-  </header>
-
-  <div class="actions">
-    <button class="act primary" id="btn-seedshop">🌱 Seed Shop</button>
-    <button class="act primary" id="btn-sellshop">🧺 Sell Shop</button>
-    <button class="act" id="btn-expand">📐 Expand Garden (100¢)</button>
-  </div>
-
-  <div class="shop" id="shop"></div>
-  <p class="msg" id="msg">Visit the Seed Shop to buy your first seeds!</p>
-
-  <div class="plot-wrap">
-    <div class="ruler-top" id="ruler">⟵&nbsp;&nbsp;3 m&nbsp;&nbsp;⟶</div>
-    <div id="plot"></div>
-  </div>
-
-  <p class="legend">
-    Seeds marked <b>♻️</b> are multi-harvest: pick them when ripe and the <b>stem stays behind</b> and regrows a new crop, forever.
-    Single-harvest crops leave the soil empty. Harvests go in your <b>🧺 basket</b> — sell them at the Sell Shop.
-    The Seed Shop <b>restocks every 10 seconds</b>; rare seeds are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
-  </p>
+<div id="hud">
+  <h1>Triple Pendulum</h1>
+  <p>Grab any bob, drag it, and let go to fling it.</p>
 </div>
 
-<!-- Seed shop -->
-<div class="overlay" id="ov-seed" hidden>
-  <div class="modal" role="dialog" aria-label="Seed shop">
-    <div class="m-head">
-      <div class="m-face">🧑‍🌾</div>
-      <div class="m-bubble" id="seed-bubble">These are the seeds that are in stock!</div>
-      <button class="m-close" id="close-seed" aria-label="Close seed shop">✖</button>
-    </div>
-    <div class="m-sub">
-      <span>Seller's stock</span>
-      <span id="restock">Restock in 0:10</span>
-    </div>
-    <div class="m-body" id="seedlist"></div>
+<div id="panel">
+  <div class="row">
+    <label for="gravity">Gravity</label>
+    <input type="range" id="gravity" min="100" max="2500" step="10" value="1200">
+    <output id="gravityOut">1200</output>
   </div>
-</div>
-
-<!-- Sell shop -->
-<div class="overlay" id="ov-sell" hidden>
-  <div class="modal" role="dialog" aria-label="Sell shop">
-    <div class="m-head">
-      <div class="m-face">🤠</div>
-      <div class="m-bubble" id="sell-bubble">Howdy! Whatcha got in that basket for me?</div>
-      <button class="m-close" id="close-sell" aria-label="Close sell shop">✖</button>
-    </div>
-    <div class="m-body">
-      <div class="inv-grid" id="invlist"></div>
-      <div class="sell-actions" id="held-actions" hidden>
-        <button class="act" id="btn-worth">💰 How much is this worth?</button>
-        <button class="act primary" id="btn-sellthis">✅ I want to sell this</button>
-        <button class="act quiet" id="btn-nevermind">🙅 Nevermind</button>
-      </div>
-      <div class="sell-actions">
-        <button class="act gold" id="btn-sellall">💸 Sell All</button>
-      </div>
-    </div>
+  <div class="row">
+    <label for="damping">Damping</label>
+    <input type="range" id="damping" min="0" max="0.5" step="0.005" value="0">
+    <output id="dampingOut">0.00</output>
+  </div>
+  <div class="row">
+    <label for="trail">Trail</label>
+    <input type="range" id="trail" min="0" max="600" step="10" value="300">
+    <output id="trailOut">300</output>
+  </div>
+  <div class="buttons">
+    <button id="pauseBtn">Pause</button>
+    <button id="resetBtn">Reset</button>
   </div>
 </div>
 
 <script>
-(function () {
-  // name, emoji, price¢, stock range, % chance in stock each restock, multi?, grow s, regrow s, sell¢ per harvest
-  var SEEDS = [
-    { key: 'carrot',          name: 'Carrot',           emoji: '🥕', price: 10,    stock: [10, 20], chance: 100,  multi: false, grow: 15,   sell: 25 },
-    { key: 'strawberry',      name: 'Strawberry',       emoji: '🍓', price: 50,    stock: [2, 4],   chance: 99,   multi: true,  grow: 30,   regrow: 15,  sell: 30 },
-    { key: 'blueberry',       name: 'Blueberry',        emoji: '🫐', price: 75,    stock: [1, 2],   chance: 80,   multi: true,  grow: 40,   regrow: 20,  sell: 45 },
-    { key: 'buttercup',       name: 'Buttercup',        emoji: '🌼', price: 100,   stock: [1, 2],   chance: 50,   multi: false, grow: 35,   sell: 250 },
-    { key: 'tomato',          name: 'Tomato',           emoji: '🍅', price: 200,   stock: [1, 3],   chance: 40,   multi: true,  grow: 60,   regrow: 25,  sell: 120 },
-    { key: 'corn',            name: 'Corn',             emoji: '🌽', price: 250,   stock: [1, 2],   chance: 20,   multi: true,  grow: 80,   regrow: 30,  sell: 150 },
-    { key: 'daffodil',        name: 'Daffodil',         emoji: '🌷', price: 300,   stock: [1, 2],   chance: 18,   multi: false, grow: 45,   sell: 750 },
-    { key: 'watermelon',      name: 'Watermelon',       emoji: '🍉', price: 500,   stock: [1, 2],   chance: 15,   multi: false, grow: 90,   sell: 1300 },
-    { key: 'pumpkin',         name: 'Pumpkin',          emoji: '🎃', price: 800,   stock: [1, 2],   chance: 12,   multi: false, grow: 120,  sell: 2100 },
-    { key: 'apple',           name: 'Apple',            emoji: '🍎', price: 1250,  stock: [1, 2],   chance: 10,   multi: true,  grow: 100,  regrow: 40,  sell: 750 },
-    { key: 'bamboo',          name: 'Bamboo',           emoji: '🎍', price: 2000,  stock: [1, 2],   chance: 9,    multi: false, grow: 60,   sell: 5000 },
-    { key: 'coconut',         name: 'Coconut',          emoji: '🥥', price: 3000,  stock: [1, 1],   chance: 7,    multi: true,  grow: 150,  regrow: 60,  sell: 1800 },
-    { key: 'cactus',          name: 'Cactus',           emoji: '🌵', price: 5000,  stock: [1, 1],   chance: 6,    multi: true,  grow: 120,  regrow: 50,  sell: 3000 },
-    { key: 'dragonfruit',     name: 'Dragon Fruit',     emoji: '🐉', price: 8000,  stock: [1, 1],   chance: 5,    multi: true,  grow: 180,  regrow: 70,  sell: 4800 },
-    { key: 'mango',           name: 'Mango',            emoji: '🥭', price: 12000, stock: [1, 1],   chance: 4.5,  multi: true,  grow: 200,  regrow: 80,  sell: 7200 },
-    { key: 'grape',           name: 'Grape',            emoji: '🍇', price: 20000, stock: [1, 1],   chance: 4,    multi: true,  grow: 240,  regrow: 90,  sell: 12000 },
-    { key: 'mushroom',        name: 'Mushroom',         emoji: '🍄', price: 40000, stock: [1, 1],   chance: 3.5,  multi: false, grow: 150,  sell: 100000 },
-    { key: 'pepper',          name: 'Pepper',           emoji: '🌶️', price: 75000, stock: [1, 1],  chance: 3,    multi: true,  grow: 300,  regrow: 100, sell: 45000 },
-    { key: 'cacao',           name: 'Cacao',            emoji: '🍫', price: 125000, stock: [1, 1],  chance: 2.5,  multi: true,  grow: 350,  regrow: 120, sell: 75000 },
-    { key: 'sunflower',       name: 'Sunflower',        emoji: '🌻', price: 250000, stock: [1, 1],  chance: 2,    multi: true,  grow: 400,  regrow: 150, sell: 150000 },
-    { key: 'beanstalk',       name: 'Beanstalk',        emoji: '🫛', price: 500000, stock: [1, 1],  chance: 1.5,  multi: true,  grow: 500,  regrow: 180, sell: 300000 },
-    { key: 'emberlily',       name: 'Ember Lily',       emoji: '🪷', price: 1e6,   stock: [1, 1],   chance: 1,    multi: true,  grow: 600,  regrow: 200, sell: 600000 },
-    { key: 'sugarapple',      name: 'Sugar Apple',      emoji: '🍏', price: 2.5e6, stock: [1, 1],   chance: 0.8,  multi: true,  grow: 700,  regrow: 240, sell: 1.5e6 },
-    { key: 'burningbud',      name: 'Burning Bud',      emoji: '🥀', price: 5e6,   stock: [1, 1],   chance: 0.6,  multi: true,  grow: 800,  regrow: 280, sell: 3e6 },
-    { key: 'giantpinecone',   name: 'Giant Pinecone',   emoji: '🌰', price: 1e7,   stock: [1, 1],   chance: 0.4,  multi: true,  grow: 900,  regrow: 300, sell: 6e6 },
-    { key: 'elderstrawberry', name: 'Elder Strawberry', emoji: '🍒', price: 2.5e7, stock: [1, 1],   chance: 0.3,  multi: true,  grow: 1000, regrow: 330, sell: 1.5e7 },
-    { key: 'romanesco',       name: 'Romanesco',        emoji: '🥦', price: 5e7,   stock: [1, 1],   chance: 0.2,  multi: true,  grow: 1100, regrow: 360, sell: 3e7 },
-    { key: 'crimsonthorn',    name: 'Crimson Thorn',    emoji: '🌹', price: 1e8,   stock: [1, 1],   chance: 0.1,  multi: true,  grow: 1200, regrow: 400, sell: 6e7 },
-    { key: 'zebrazinkle',     name: 'Zebra Zinkle',     emoji: '🦓', price: 2.5e8, stock: [1, 1],   chance: 0.05, multi: true,  grow: 1300, regrow: 430, sell: 1.5e8 },
-    { key: 'octobloom',       name: 'Octobloom',        emoji: '🐙', price: 5e8,   stock: [1, 1],   chance: 0.025, multi: true, grow: 1400, regrow: 460, sell: 3e8 },
-    { key: 'alienapple',      name: 'Alien Apple',      emoji: '👽', price: 1e15,  stock: [1, 1],   chance: 0.01, multi: true,  grow: 1500, regrow: 500, sell: 6e14 }
-  ];
-  var CROPS = {};
-  SEEDS.forEach(function (s) { CROPS[s.key] = s; });
+(() => {
+  "use strict";
 
-  var SPOTS_PER_M = 3;         // 3x3 planting spots per square meter
-  var EXPAND_COST = 100;       // always 100¢, forever
-  var RESTOCK_MS = 10 * 1000;
-  var SAVE_KEY = 'garden-game-v2';
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
 
-  var sheckles = 20;
-  var meters = 3;
-  var cols = meters * SPOTS_PER_M;
-  var grid = new Array(cols * cols).fill(null); // {t, state:'grow'|'ripe'|'regrow', end}
-  var seedsOwned = {};  // key -> count of seeds in your bag
-  var basket = {};      // key -> count of harvested crops
-  var stock = {};       // key -> count in shop right now
-  var nextRestock = 0;
-  var sel = 'dig';
-  var held = null;      // crop key selected in the sell shop
+  // ---------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------
+  const N = 3;
+  const L = [150, 120, 95];          // rod lengths (px)
+  const M = [1.0, 0.85, 0.7];        // bob masses
+  const BOB_R = [16, 14, 12];        // bob radii (px)
+  const BOB_COLOR = ["#6ea8ff", "#b78bff", "#ff7eb3"];
 
-  var coinsEl = document.getElementById('coins');
-  var shopEl = document.getElementById('shop');
-  var msgEl = document.getElementById('msg');
-  var plotEl = document.getElementById('plot');
-  var rulerEl = document.getElementById('ruler');
-  var seedBubble = document.getElementById('seed-bubble');
-  var sellBubble = document.getElementById('sell-bubble');
-  var seedListEl = document.getElementById('seedlist');
-  var invListEl = document.getElementById('invlist');
-  var heldActions = document.getElementById('held-actions');
-  var restockEl = document.getElementById('restock');
-  var ovSeed = document.getElementById('ov-seed');
-  var ovSell = document.getElementById('ov-sell');
-  var cellEls = [];
+  let theta = [Math.PI * 0.55, Math.PI * 0.75, Math.PI * 0.9]; // from downward vertical
+  let omega = [0, 0, 0];
 
-  function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
+  let g = 1200;        // px/s^2
+  let damping = 0;
+  let trailMax = 300;
+  let paused = false;
 
-  function money(n) {
-    if (n >= 1e15) return trim(n / 1e15) + 'Q¢';
-    if (n >= 1e12) return trim(n / 1e12) + 'T¢';
-    if (n >= 1e9)  return trim(n / 1e9)  + 'B¢';
-    if (n >= 1e6)  return trim(n / 1e6)  + 'M¢';
-    if (n >= 1e4)  return trim(n / 1e3)  + 'k¢';
-    return n + '¢';
-  }
-  function trim(x) {
-    return (Math.round(x * 100) / 100).toString();
+  let pivot = { x: 0, y: 0 };
+  let dpr = 1;
+
+  const trail = [];
+
+  // Dragging
+  let dragIndex = -1;           // which bob is grabbed (0..2)
+  let dragPos = { x: 0, y: 0 };
+  const angleHistory = [];      // [{t, theta:[...] }] while dragging, for fling velocity
+
+  // ---------------------------------------------------------------
+  // Geometry helpers
+  // ---------------------------------------------------------------
+  function bobPositions(th) {
+    const pts = [];
+    let x = pivot.x, y = pivot.y;
+    for (let i = 0; i < N; i++) {
+      x += L[i] * Math.sin(th[i]);
+      y += L[i] * Math.cos(th[i]);
+      pts.push({ x, y });
+    }
+    return pts;
   }
 
-  // ---------- persistence ----------
-  function save() {
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({
-        sheckles: sheckles, meters: meters, grid: grid,
-        seedsOwned: seedsOwned, basket: basket,
-        stock: stock, nextRestock: nextRestock
-      }));
-    } catch (e) { /* storage unavailable — play without saving */ }
+  // ---------------------------------------------------------------
+  // Physics: n-link point-mass pendulum (Lagrangian), RK4 integration
+  //
+  //   sum_j M_ij * a_j = b_i
+  //   M_ij = c_ij l_i l_j cos(th_i - th_j),  c_ij = sum_{k>=max(i,j)} m_k
+  //   b_i  = -sum_j c_ij l_i l_j sin(th_i - th_j) w_j^2
+  //          - g l_i sin(th_i) * sum_{k>=i} m_k  - damping term
+  // ---------------------------------------------------------------
+  const cumMass = [];
+  for (let i = 0; i < N; i++) {
+    let s = 0;
+    for (let k = i; k < N; k++) s += M[k];
+    cumMass[i] = s;
   }
-  function load() {
-    try {
-      var raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return;
-      var d = JSON.parse(raw);
-      if (typeof d.sheckles === 'number') sheckles = d.sheckles;
-      if (typeof d.meters === 'number' && d.meters >= 3) meters = d.meters;
-      cols = meters * SPOTS_PER_M;
-      if (Array.isArray(d.grid) && d.grid.length === cols * cols) {
-        grid = d.grid.map(function (p) { return p && CROPS[p.t] ? p : null; });
+
+  function accelerations(th, w) {
+    const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    const b = [0, 0, 0];
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const c = cumMass[Math.max(i, j)];
+        A[i][j] = c * L[i] * L[j] * Math.cos(th[i] - th[j]);
+        b[i] -= c * L[i] * L[j] * Math.sin(th[i] - th[j]) * w[j] * w[j];
+      }
+      b[i] -= g * L[i] * Math.sin(th[i]) * cumMass[i];
+      b[i] -= damping * L[i] * L[i] * cumMass[i] * w[i];
+    }
+    return solve3(A, b);
+  }
+
+  function solve3(A, b) {
+    // Gaussian elimination with partial pivoting on a 3x3 system
+    const m = [
+      [A[0][0], A[0][1], A[0][2], b[0]],
+      [A[1][0], A[1][1], A[1][2], b[1]],
+      [A[2][0], A[2][1], A[2][2], b[2]],
+    ];
+    for (let col = 0; col < 3; col++) {
+      let piv = col;
+      for (let r = col + 1; r < 3; r++)
+        if (Math.abs(m[r][col]) > Math.abs(m[piv][col])) piv = r;
+      if (piv !== col) { const t = m[col]; m[col] = m[piv]; m[piv] = t; }
+      const d = m[col][col];
+      if (Math.abs(d) < 1e-12) return [0, 0, 0];
+      for (let r = col + 1; r < 3; r++) {
+        const f = m[r][col] / d;
+        for (let c = col; c < 4; c++) m[r][c] -= f * m[col][c];
+      }
+    }
+    const x = [0, 0, 0];
+    for (let r = 2; r >= 0; r--) {
+      let s = m[r][3];
+      for (let c = r + 1; c < 3; c++) s -= m[r][c] * x[c];
+      x[r] = s / m[r][r];
+    }
+    return x;
+  }
+
+  function derivatives(th, w) {
+    return { dth: w, dw: accelerations(th, w) };
+  }
+
+  function rk4Step(dt) {
+    const k1 = derivatives(theta, omega);
+    const th2 = theta.map((t, i) => t + k1.dth[i] * dt / 2);
+    const w2 = omega.map((w, i) => w + k1.dw[i] * dt / 2);
+    const k2 = derivatives(th2, w2);
+    const th3 = theta.map((t, i) => t + k2.dth[i] * dt / 2);
+    const w3 = omega.map((w, i) => w + k2.dw[i] * dt / 2);
+    const k3 = derivatives(th3, w3);
+    const th4 = theta.map((t, i) => t + k3.dth[i] * dt);
+    const w4 = omega.map((w, i) => w + k3.dw[i] * dt);
+    const k4 = derivatives(th4, w4);
+    for (let i = 0; i < N; i++) {
+      theta[i] += (dt / 6) * (k1.dth[i] + 2 * k2.dth[i] + 2 * k3.dth[i] + k4.dth[i]);
+      omega[i] += (dt / 6) * (k1.dw[i] + 2 * k2.dw[i] + 2 * k3.dw[i] + k4.dw[i]);
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Dragging: FABRIK inverse kinematics on the sub-chain up to the
+  // grabbed bob; deeper segments keep their absolute angles.
+  // ---------------------------------------------------------------
+  function applyDragIK() {
+    const k = dragIndex;
+    const n = k + 1; // links in the constrained sub-chain
+    const pts = [{ x: pivot.x, y: pivot.y }, ...bobPositions(theta).slice(0, n)];
+
+    // Clamp target to reach
+    let reach = 0;
+    for (let i = 0; i < n; i++) reach += L[i];
+    let tx = dragPos.x, ty = dragPos.y;
+    const dx = tx - pivot.x, dy = ty - pivot.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > reach) {
+      tx = pivot.x + dx / dist * reach;
+      ty = pivot.y + dy / dist * reach;
+    }
+
+    for (let iter = 0; iter < 12; iter++) {
+      // Backward: pin end to target
+      pts[n] = { x: tx, y: ty };
+      for (let i = n - 1; i >= 1; i--) {
+        const ddx = pts[i].x - pts[i + 1].x;
+        const ddy = pts[i].y - pts[i + 1].y;
+        const d = Math.hypot(ddx, ddy) || 1e-9;
+        pts[i] = { x: pts[i + 1].x + ddx / d * L[i], y: pts[i + 1].y + ddy / d * L[i] };
+      }
+      // Forward: pin base to pivot
+      pts[0] = { x: pivot.x, y: pivot.y };
+      for (let i = 1; i <= n; i++) {
+        const ddx = pts[i].x - pts[i - 1].x;
+        const ddy = pts[i].y - pts[i - 1].y;
+        const d = Math.hypot(ddx, ddy) || 1e-9;
+        pts[i] = { x: pts[i - 1].x + ddx / d * L[i - 1], y: pts[i - 1].y + ddy / d * L[i - 1] };
+      }
+    }
+
+    for (let i = 0; i < n; i++) {
+      theta[i] = Math.atan2(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+    }
+    omega = [0, 0, 0];
+
+    angleHistory.push({ t: performance.now(), theta: theta.slice() });
+    while (angleHistory.length > 12) angleHistory.shift();
+  }
+
+  function releaseFling() {
+    // Estimate angular velocities from recent drag motion so the
+    // pendulum flies off in the direction it was being swung.
+    if (angleHistory.length < 2) return;
+    const last = angleHistory[angleHistory.length - 1];
+    let ref = angleHistory[0];
+    for (const s of angleHistory) {
+      if (last.t - s.t <= 90) { ref = s; break; }
+    }
+    const dt = (last.t - ref.t) / 1000;
+    if (dt < 1e-3) return;
+    const MAX_W = 25;
+    for (let i = 0; i < N; i++) {
+      let d = last.theta[i] - ref.theta[i];
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      omega[i] = Math.max(-MAX_W, Math.min(MAX_W, d / dt));
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Input
+  // ---------------------------------------------------------------
+  function pointerPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  canvas.addEventListener("pointerdown", (e) => {
+    const p = pointerPos(e);
+    const pts = bobPositions(theta);
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < N; i++) {
+      const d = Math.hypot(p.x - pts[i].x, p.y - pts[i].y);
+      if (d < BOB_R[i] + 18 && d < bestD) { best = i; bestD = d; }
+    }
+    if (best >= 0) {
+      dragIndex = best;
+      dragPos = p;
+      angleHistory.length = 0;
+      canvas.classList.add("dragging");
+      canvas.setPointerCapture(e.pointerId);
+    }
+  });
+
+  canvas.addEventListener("pointermove", (e) => {
+    if (dragIndex >= 0) dragPos = pointerPos(e);
+  });
+
+  function endDrag() {
+    if (dragIndex < 0) return;
+    releaseFling();
+    dragIndex = -1;
+    angleHistory.length = 0;
+    canvas.classList.remove("dragging");
+  }
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+
+  // ---------------------------------------------------------------
+  // Controls
+  // ---------------------------------------------------------------
+  const $ = (id) => document.getElementById(id);
+
+  $("gravity").addEventListener("input", (e) => {
+    g = +e.target.value;
+    $("gravityOut").textContent = g;
+  });
+  $("damping").addEventListener("input", (e) => {
+    damping = +e.target.value;
+    $("dampingOut").textContent = damping.toFixed(2);
+  });
+  $("trail").addEventListener("input", (e) => {
+    trailMax = +e.target.value;
+    $("trailOut").textContent = trailMax;
+    if (trail.length > trailMax) trail.splice(0, trail.length - trailMax);
+  });
+  $("pauseBtn").addEventListener("click", () => {
+    paused = !paused;
+    $("pauseBtn").textContent = paused ? "Resume" : "Pause";
+    $("pauseBtn").classList.toggle("active", paused);
+  });
+  $("resetBtn").addEventListener("click", () => {
+    theta = [Math.PI * 0.55, Math.PI * 0.75, Math.PI * 0.9];
+    omega = [0, 0, 0];
+    trail.length = 0;
+  });
+
+  // ---------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(window.innerWidth * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
+    pivot.x = window.innerWidth / 2;
+    pivot.y = window.innerHeight * 0.32;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  function draw() {
+    const w = window.innerWidth, h = window.innerHeight;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    // Subtle vignette
+    const grad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
+    grad.addColorStop(0, "#101528");
+    grad.addColorStop(1, "#0b0e17");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    const pts = bobPositions(theta);
+
+    // Trail of the last bob
+    if (trail.length > 1) {
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (let i = 1; i < trail.length; i++) {
+        const a = i / trail.length;
+        ctx.strokeStyle = `rgba(255, 126, 179, ${0.35 * a})`;
+        ctx.lineWidth = 1 + 2 * a;
+        ctx.beginPath();
+        ctx.moveTo(trail[i - 1].x, trail[i - 1].y);
+        ctx.lineTo(trail[i].x, trail[i].y);
+        ctx.stroke();
+      }
+    }
+
+    // Rods
+    ctx.lineCap = "round";
+    let prev = pivot;
+    for (let i = 0; i < N; i++) {
+      ctx.strokeStyle = "rgba(220, 228, 245, 0.85)";
+      ctx.lineWidth = 3.5 - i * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+      prev = pts[i];
+    }
+
+    // Pivot mount
+    ctx.fillStyle = "#39415a";
+    ctx.beginPath();
+    ctx.arc(pivot.x, pivot.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#e8ecf4";
+    ctx.beginPath();
+    ctx.arc(pivot.x, pivot.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bobs
+    for (let i = 0; i < N; i++) {
+      const r = BOB_R[i];
+      const glow = ctx.createRadialGradient(pts[i].x, pts[i].y, r * 0.2, pts[i].x, pts[i].y, r * 2.6);
+      glow.addColorStop(0, BOB_COLOR[i] + "55");
+      glow.addColorStop(1, "transparent");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(pts[i].x, pts[i].y, r * 2.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      const body = ctx.createRadialGradient(
+        pts[i].x - r * 0.35, pts[i].y - r * 0.35, r * 0.15,
+        pts[i].x, pts[i].y, r
+      );
+      body.addColorStop(0, "#ffffff");
+      body.addColorStop(0.25, BOB_COLOR[i]);
+      body.addColorStop(1, BOB_COLOR[i]);
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (i === dragIndex) {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(pts[i].x, pts[i].y, r + 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Main loop — fixed-timestep physics, capped catch-up
+  // ---------------------------------------------------------------
+  const PHYS_DT = 1 / 480;
+  let acc = 0;
+  let lastT = performance.now();
+
+  function frame(now) {
+    let elapsed = (now - lastT) / 1000;
+    lastT = now;
+    if (elapsed > 0.1) elapsed = 0.1;
+
+    if (dragIndex >= 0) {
+      applyDragIK();
+      acc = 0;
+    } else if (!paused) {
+      acc += elapsed;
+      while (acc >= PHYS_DT) {
+        rk4Step(PHYS_DT);
+        acc -= PHYS_DT;
+      }
+    }
+
+    if (!paused || dragIndex >= 0) {
+      const pts = bobPositions(theta);
+      if (trailMax > 0) {
+        trail.push({ x: pts[N - 1].x, y: pts[N - 1].y });
+        while (trail.length > trailMax) trail.shift();
       } else {
-        grid = new Array(cols * cols).fill(null);
-      }
-      if (d.seedsOwned) seedsOwned = d.seedsOwned;
-      if (d.basket) basket = d.basket;
-      if (d.stock) stock = d.stock;
-      if (typeof d.nextRestock === 'number') nextRestock = d.nextRestock;
-    } catch (e) { /* corrupt save — start fresh */ }
-  }
-
-  // ---------- seed shop stock ----------
-  function doRestock() {
-    SEEDS.forEach(function (s) {
-      stock[s.key] = (Math.random() * 100 < s.chance) ? randInt(s.stock[0], s.stock[1]) : 0;
-    });
-    nextRestock = Date.now() + RESTOCK_MS;
-    if (!ovSeed.hidden) {
-      seedBubble.textContent = 'Fresh delivery! These are the seeds that are in stock!';
-      renderSeedShop();
-    }
-    save();
-  }
-
-  function renderSeedShop() {
-    seedListEl.innerHTML = '';
-    SEEDS.forEach(function (s) {
-      var inStock = (stock[s.key] || 0) > 0;
-      var row = document.createElement('div');
-      row.className = 'srow' + (inStock ? '' : ' oos');
-      row.innerHTML =
-        '<span class="s-emoji">' + s.emoji + '</span>' +
-        '<span class="s-info"><span class="s-name">' + s.name + '</span><br>' +
-        '<span class="s-tags">' + (s.multi ? '♻️ multi-harvest' : '🚫 single harvest') +
-        ' · grows in ' + s.grow + 's</span></span>' +
-        '<span class="s-stock">' + (inStock ? '×' + stock[s.key] : 'NO STOCK') + '</span>';
-      var buy = document.createElement('button');
-      buy.className = 's-buy';
-      buy.textContent = money(s.price);
-      buy.disabled = !inStock || sheckles < s.price;
-      buy.addEventListener('click', function () { buySeed(s.key); });
-      row.appendChild(buy);
-      seedListEl.appendChild(row);
-    });
-  }
-
-  function buySeed(key) {
-    var s = CROPS[key];
-    if ((stock[key] || 0) < 1) { seedBubble.textContent = 'Sorry, no ' + s.name.toLowerCase() + ' seeds in stock right now!'; return; }
-    if (sheckles < s.price) { seedBubble.textContent = 'That one costs ' + money(s.price) + ' — come back with more sheckles!'; return; }
-    sheckles -= s.price;
-    stock[key]--;
-    seedsOwned[key] = (seedsOwned[key] || 0) + 1;
-    seedBubble.textContent = 'One ' + s.name.toLowerCase() + ' seed, all yours! Anything else?';
-    if (sel === 'dig') sel = key;
-    renderSeedShop();
-    refresh();
-  }
-
-  // ---------- owned-seed toolbar ----------
-  function renderToolbar() {
-    shopEl.innerHTML = '';
-    var owned = SEEDS.filter(function (s) { return (seedsOwned[s.key] || 0) > 0; });
-    // Out of the selected seed? Fall back to another seed or an empty hand —
-    // never to Dig, so clicking a ripe plant still harvests it.
-    if (sel !== 'dig' && !(seedsOwned[sel] > 0)) sel = owned.length ? owned[0].key : 'hand';
-    owned.forEach(function (s) {
-      var b = document.createElement('button');
-      b.className = 'chip' + (sel === s.key ? ' on' : '');
-      b.innerHTML =
-        '<span class="c-emoji">' + s.emoji + '</span>' +
-        '<span class="c-name">' + s.name + '</span>' +
-        '<span class="c-meta">×' + seedsOwned[s.key] + (s.multi ? ' ♻️' : '') + '</span>';
-      b.title = s.name + ' seed — click soil to plant';
-      b.addEventListener('click', function () {
-        sel = s.key;
-        setMsg(s.name + ' seed selected — click an empty spot of soil to plant.');
-        renderToolbar();
-      });
-      shopEl.appendChild(b);
-    });
-    var dig = document.createElement('button');
-    dig.className = 'chip' + (sel === 'dig' ? ' on' : '');
-    dig.innerHTML = '<span class="c-emoji">⛏️</span><span class="c-name">Dig</span><span class="c-meta">clear</span>';
-    dig.title = 'Dig up a plant (no refund)';
-    dig.addEventListener('click', function () {
-      sel = 'dig';
-      setMsg('Dig mode: click a plant to remove it.');
-      renderToolbar();
-    });
-    shopEl.appendChild(dig);
-  }
-
-  var msgTimer = null;
-  function setMsg(text) {
-    msgEl.textContent = text;
-    if (msgTimer) clearTimeout(msgTimer);
-    msgTimer = setTimeout(function () { msgEl.textContent = ' '; }, 4000);
-  }
-
-  // ---------- plot ----------
-  function buildPlot() {
-    cols = meters * SPOTS_PER_M;
-    plotEl.innerHTML = '';
-    cellEls = [];
-    plotEl.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
-    for (var i = 0; i < cols * cols; i++) {
-      var col = i % cols, row = (i / cols) | 0;
-      var b = document.createElement('button');
-      b.className = 'cell' +
-        (col % SPOTS_PER_M === SPOTS_PER_M - 1 && col !== cols - 1 ? ' m-r' : '') +
-        (row % SPOTS_PER_M === SPOTS_PER_M - 1 && row !== cols - 1 ? ' m-b' : '');
-      b.innerHTML = '<span class="plant"></span><span class="bar" hidden><i></i></span><span class="badge" hidden></span>';
-      (function (idx) {
-        b.addEventListener('click', function () { clickCell(idx); });
-      })(i);
-      plotEl.appendChild(b);
-      cellEls.push(b);
-    }
-    rulerEl.innerHTML = '⟵&nbsp;&nbsp;' + meters + ' m&nbsp;&nbsp;⟶';
-    sizeCells();
-  }
-  function sizeCells() {
-    var w = plotEl.clientWidth - 22; // frame + padding
-    plotEl.style.fontSize = Math.max(10, w / cols) + 'px';
-  }
-  window.addEventListener('resize', sizeCells);
-
-  function expandGarden() {
-    if (sheckles < EXPAND_COST) {
-      setMsg('Expanding costs ' + money(EXPAND_COST) + ' — you have ' + money(sheckles) + '.');
-      return;
-    }
-    sheckles -= EXPAND_COST;
-    var oldCols = cols, oldGrid = grid;
-    meters++;
-    cols = meters * SPOTS_PER_M;
-    grid = new Array(cols * cols).fill(null);
-    for (var r = 0; r < oldCols; r++) {
-      for (var c = 0; c < oldCols; c++) {
-        grid[r * cols + c] = oldGrid[r * oldCols + c];
+        trail.length = 0;
       }
     }
-    buildPlot();
-    setMsg('Garden expanded to ' + meters + ' m × ' + meters + ' m! (' + (cols * cols) + ' spots)');
-    refresh();
+
+    draw();
+    requestAnimationFrame(frame);
   }
-
-  function clickCell(i) {
-    var p = grid[i];
-    if (sel === 'dig') {
-      if (!p) { setMsg('Nothing to dig here.'); return; }
-      grid[i] = null;
-      setMsg('Dug up the ' + CROPS[p.t].name.toLowerCase() + '.');
-      refresh();
-      return;
-    }
-    if (p) {
-      if (p.state === 'ripe') { harvest(i); refresh(); }
-      else if (p.state === 'regrow') setMsg('The stem is regrowing a new ' + CROPS[p.t].name.toLowerCase() + '…');
-      else setMsg('Still growing — give it a moment.');
-      return;
-    }
-    var c = CROPS[sel];
-    if (!c) { setMsg('Buy seeds at the Seed Shop first!'); return; }
-    if (!(seedsOwned[sel] > 0)) { setMsg('No ' + c.name.toLowerCase() + ' seeds left — buy more at the Seed Shop.'); return; }
-    seedsOwned[sel]--;
-    grid[i] = { t: sel, state: 'grow', end: Date.now() + c.grow * 1000 };
-    refresh();
-  }
-
-  function harvest(i) {
-    var p = grid[i], c = CROPS[p.t];
-    basket[p.t] = (basket[p.t] || 0) + 1;
-    popup(i, '+1 ' + c.emoji);
-    if (c.multi) {
-      // the stem stays behind and regrows, forever
-      p.state = 'regrow';
-      p.end = Date.now() + c.regrow * 1000;
-      setMsg('Picked a ' + c.name.toLowerCase() + '! The stem will regrow another.');
-    } else {
-      grid[i] = null;
-      setMsg('Harvested the ' + c.name.toLowerCase() + '! It went into your basket.');
-    }
-  }
-
-  function popup(i, text) {
-    var s = document.createElement('span');
-    s.className = 'pop';
-    s.textContent = text;
-    cellEls[i].appendChild(s);
-    setTimeout(function () { s.remove(); }, 900);
-  }
-
-  // ---------- sell shop ----------
-  function renderSellShop() {
-    invListEl.innerHTML = '';
-    var keys = SEEDS.filter(function (s) { return (basket[s.key] || 0) > 0; }).map(function (s) { return s.key; });
-    if (held && !(basket[held] > 0)) held = null;
-    if (!keys.length) {
-      held = null;
-      var empty = document.createElement('p');
-      empty.style.cssText = 'color:var(--muted);font-size:0.85rem;padding:6px 2px 10px;';
-      empty.textContent = 'Your basket is empty. Go harvest something!';
-      invListEl.appendChild(empty);
-    }
-    keys.forEach(function (k) {
-      var c = CROPS[k];
-      var b = document.createElement('button');
-      b.className = 'stack' + (held === k ? ' held' : '');
-      b.innerHTML =
-        '<span class="st-emoji">' + c.emoji + '</span>' +
-        '<span class="st-count">×' + basket[k] + '</span>' +
-        '<span class="st-name">' + c.name + '</span>';
-      b.addEventListener('click', function () {
-        held = k;
-        sellBubble.textContent = 'You’re holding a ' + c.name.toLowerCase() + '. What would you like to do?';
-        renderSellShop();
-      });
-      invListEl.appendChild(b);
-    });
-    heldActions.hidden = !held;
-  }
-
-  function basketTotal() {
-    var total = 0;
-    Object.keys(basket).forEach(function (k) {
-      if (CROPS[k]) total += basket[k] * CROPS[k].sell;
-    });
-    return total;
-  }
-
-  document.getElementById('btn-worth').addEventListener('click', function () {
-    if (!held) return;
-    var c = CROPS[held];
-    sellBubble.textContent = 'Lemme see… a ' + c.name.toLowerCase() + ' like this is worth ' + money(c.sell) + '.';
-  });
-  document.getElementById('btn-sellthis').addEventListener('click', function () {
-    if (!held) return;
-    var c = CROPS[held];
-    basket[held]--;
-    sheckles += c.sell;
-    sellBubble.textContent = 'Sold! One ' + c.name.toLowerCase() + ' for ' + money(c.sell) + '. Pleasure doin’ business!';
-    if (!(basket[held] > 0)) { delete basket[held]; held = null; }
-    renderSellShop();
-    refresh();
-  });
-  document.getElementById('btn-nevermind').addEventListener('click', function () {
-    held = null;
-    sellBubble.textContent = 'No worries. Anything else catch your eye?';
-    renderSellShop();
-  });
-  document.getElementById('btn-sellall').addEventListener('click', function () {
-    var total = basketTotal();
-    if (total <= 0) { sellBubble.textContent = 'Your basket’s empty, friend — nothin’ to sell!'; return; }
-    sheckles += total;
-    basket = {};
-    held = null;
-    sellBubble.textContent = 'The whole basket! That’ll be ' + money(total) + '. Come back soon!';
-    renderSellShop();
-    refresh();
-  });
-
-  // ---------- modals ----------
-  function openSeedShop() {
-    seedBubble.textContent = 'These are the seeds that are in stock!';
-    renderSeedShop();
-    ovSeed.hidden = false;
-  }
-  function openSellShop() {
-    held = null;
-    sellBubble.textContent = 'Howdy! Whatcha got in that basket for me?';
-    renderSellShop();
-    ovSell.hidden = false;
-  }
-  document.getElementById('btn-seedshop').addEventListener('click', openSeedShop);
-  document.getElementById('btn-sellshop').addEventListener('click', openSellShop);
-  document.getElementById('btn-expand').addEventListener('click', expandGarden);
-  document.getElementById('close-seed').addEventListener('click', function () { ovSeed.hidden = true; });
-  document.getElementById('close-sell').addEventListener('click', function () { ovSell.hidden = true; });
-  ovSeed.addEventListener('click', function (e) { if (e.target === ovSeed) ovSeed.hidden = true; });
-  ovSell.addEventListener('click', function (e) { if (e.target === ovSell) ovSell.hidden = true; });
-
-  // ---------- render ----------
-  function updateCell(i) {
-    var el = cellEls[i];
-    var plant = el.firstChild, bar = plant.nextSibling, badge = bar.nextSibling;
-    var p = grid[i];
-    el.classList.remove('ripe');
-    if (!p) {
-      plant.textContent = '';
-      bar.hidden = true;
-      badge.hidden = true;
-      el.title = 'Empty soil — click to plant';
-      return;
-    }
-    var c = CROPS[p.t], now = Date.now();
-    if (p.state !== 'ripe' && now >= p.end) p.state = 'ripe';
-
-    if (p.state === 'ripe') {
-      plant.textContent = c.emoji;
-      plant.style.transform = 'scale(1)';
-      plant.style.opacity = '1';
-      plant.style.filter = 'none';
-      bar.hidden = true;
-      el.classList.add('ripe');
-      badge.hidden = !c.multi;
-      if (c.multi) badge.textContent = '♻️';
-      el.title = c.name + ' — ripe! Click to harvest' + (c.multi ? ' (stem regrows)' : '');
-      return;
-    }
-
-    var dur = (p.state === 'regrow' ? c.regrow : c.grow) * 1000;
-    var pr = Math.min(1, Math.max(0, 1 - (p.end - now) / dur));
-    badge.hidden = true;
-    bar.hidden = false;
-    bar.firstChild.style.width = (pr * 100).toFixed(0) + '%';
-
-    if (p.state === 'regrow') {
-      // the stem left behind after harvest
-      plant.textContent = '🌿';
-      plant.style.transform = 'scale(0.68)';
-      plant.style.opacity = '0.6';
-      plant.style.filter = 'none';
-      el.title = c.name + ' stem — regrowing (' + Math.ceil((p.end - now) / 1000) + 's)';
-      return;
-    }
-    if (pr < 0.3) {
-      plant.textContent = '🌱';
-      plant.style.transform = 'scale(0.55)';
-      plant.style.opacity = '0.95';
-      plant.style.filter = 'none';
-    } else if (pr < 0.65) {
-      plant.textContent = '🌿';
-      plant.style.transform = 'scale(0.72)';
-      plant.style.opacity = '1';
-      plant.style.filter = 'none';
-    } else {
-      plant.textContent = c.emoji;
-      plant.style.transform = 'scale(0.82)';
-      plant.style.opacity = '0.85';
-      plant.style.filter = 'grayscale(0.55)';
-    }
-    el.title = c.name + ' — growing (' + Math.ceil((p.end - now) / 1000) + 's to ripe)';
-  }
-
-  function tick() {
-    if (Date.now() >= nextRestock) doRestock();
-    for (var i = 0; i < grid.length; i++) updateCell(i);
-    coinsEl.textContent = '🪙 ' + money(sheckles);
-    if (!ovSeed.hidden) {
-      var left = Math.max(0, nextRestock - Date.now());
-      var m = (left / 60000) | 0, s = Math.ceil((left % 60000) / 1000);
-      if (s === 60) { m++; s = 0; }
-      restockEl.textContent = 'Restock in ' + m + ':' + (s < 10 ? '0' : '') + s;
-    }
-  }
-
-  function refresh() {
-    // Soft-lock rescue: broke, seedless, and nothing growing or in the basket
-    var anyPlant = grid.some(Boolean);
-    var anySeed = Object.keys(seedsOwned).some(function (k) { return seedsOwned[k] > 0; });
-    var anyCrop = Object.keys(basket).some(function (k) { return basket[k] > 0; });
-    if (!anyPlant && !anySeed && !anyCrop && sheckles < 10) {
-      sheckles = 20;
-      setMsg('A kind neighbor gifted you 🪙20¢ to start over!');
-    }
-    renderToolbar();
-    if (!ovSeed.hidden) renderSeedShop();
-    tick();
-    save();
-  }
-
-  // ---------- boot ----------
-  load();
-  buildPlot();
-  if (!nextRestock || !Object.keys(stock).length) doRestock();
-  refresh();
-  setInterval(tick, 250);
-  setInterval(save, 5000);
-
-  // small debug/test handle
-  window.__g = {
-    grid: function () { return grid; },
-    sheckles: function () { return sheckles; },
-    stock: function () { return stock; },
-    basket: function () { return basket; },
-    seeds: function () { return seedsOwned; },
-    meters: function () { return meters; },
-    give: function (n) { sheckles += n; refresh(); },
-    restock: doRestock
-  };
+  requestAnimationFrame(frame);
 })();
 </script>
-
+</body>
 </html>
