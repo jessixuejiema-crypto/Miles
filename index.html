@@ -197,6 +197,11 @@
       <button id="chainBtn" class="primary">Find chain</button>
     </div>
     <div class="sep"></div>
+    <div class="control-group" title="How many one-letter steps to highlight around a tapped word">
+      <span style="color:var(--text-secondary)">Steps:</span>
+      <input type="number" id="nbrDepth" min="1" max="5" value="1">
+    </div>
+    <div class="sep"></div>
     <div class="control-group" id="lenRange">
       <span style="color:var(--text-secondary)">Letters:</span>
       <input type="number" id="minLen" min="1" value="1">
@@ -522,6 +527,7 @@ function rebuildVisible() {
   // group nodes by color bucket so far-view dots draw with few style changes
   colorBuckets = Array.from({ length: COLOR_CAP + 1 }, () => []);
   for (let i = 0; i < N; i++) if (visible[i]) colorBuckets[degBucket(i)].push(i);
+  visStamp++;
   updateLegend();
   updateHubs();
   if (selected !== -1 && !visible[selected]) selected = -1;
@@ -744,6 +750,40 @@ function findNode(sx, sy) {
   return best;
 }
 
+/* ---- neighborhood: all words within nbrDepth one-letter steps ---- */
+let nbrDepth = 1;
+let visStamp = 0; // bumped when filters change
+const hoodCache = { sel: -1, depth: -1, stamp: -1, set: null };
+function getHood() {
+  if (selected === -1) return null;
+  if (hoodCache.sel === selected && hoodCache.depth === nbrDepth && hoodCache.stamp === visStamp)
+    return hoodCache.set;
+  const set = new Set([selected]);
+  let frontier = [selected];
+  outer:
+  for (let step = 0; step < nbrDepth && frontier.length; step++) {
+    const next = [];
+    for (const v of frontier) {
+      for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
+        const u = csrNbr[k];
+        if (!visible[u] || set.has(u)) continue;
+        set.add(u); next.push(u);
+        if (set.size > 4000) break outer; // hub safety valve
+      }
+    }
+    frontier = next;
+  }
+  hoodCache.sel = selected; hoodCache.depth = nbrDepth; hoodCache.stamp = visStamp; hoodCache.set = set;
+  return set;
+}
+function announceHood() {
+  if (selected === -1) return;
+  const n = getHood().size - 1;
+  document.getElementById("chainResult").innerHTML =
+    `<b>${ALL_WORDS[selected]}</b>: ${n.toLocaleString()} word${n === 1 ? "" : "s"} within ` +
+    `${nbrDepth} step${nbrDepth === 1 ? "" : "s"}`;
+}
+
 /* ================= drawing ================= */
 let drawQueued = false;
 function requestDraw() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(draw); } }
@@ -755,10 +795,17 @@ function drawHighlightOverlay(T, special) {
   ctx.scale(scale, scale);
   ctx.translate(-camX, -camY);
   if (selected !== -1) {
+    const hood = getHood();
     ctx.strokeStyle = T.edgeActive;
     ctx.lineWidth = 1.6 / scale;
     ctx.beginPath();
-    for (const u of nbrsOf(selected)) { ctx.moveTo(px[selected], py[selected]); ctx.lineTo(px[u], py[u]); }
+    for (const v of hood) {
+      for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
+        const u = csrNbr[k];
+        if (u <= v || !hood.has(u)) continue;
+        ctx.moveTo(px[v], py[v]); ctx.lineTo(px[u], py[u]);
+      }
+    }
     ctx.stroke();
   }
   if (chainPath) {
@@ -786,12 +833,20 @@ function drawHighlightOverlay(T, special) {
 function specialSet() {
   const s = new Set();
   if (hovered !== -1 && visible[hovered]) s.add(hovered);
-  if (selected !== -1) { s.add(selected); for (const u of nbrsOf(selected)) s.add(u); }
+  if (selected !== -1) { for (const u of getHood()) s.add(u); }
   if (chainPath) for (const i of chainPath) s.add(i);
   return s;
 }
 
 function drawLabels(T, special, focusOrChain) {
+  if (special.size > 90) {
+    // too many highlighted words to label them all
+    const s2 = new Set();
+    if (selected !== -1) s2.add(selected);
+    if (hovered !== -1 && visible[hovered]) s2.add(hovered);
+    if (chainPath) for (const i of chainPath) s2.add(i);
+    special = s2;
+  }
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.font = "11px system-ui, -apple-system, 'Segoe UI', sans-serif";
   ctx.textBaseline = "middle";
@@ -864,7 +919,7 @@ function draw() {
   const wx0 = camX - (W / 2) / scale - marg, wx1 = camX + (W / 2) / scale + marg;
   const wy0 = camY - (H / 2) / scale - marg, wy1 = camY + (H / 2) / scale + marg;
 
-  const nbrs = focus ? new Set(nbrsOf(selected)) : null;
+  const nbrs = focus ? getHood() : null;
 
   ctx.lineWidth = 1 / scale;
   ctx.strokeStyle = focusOrChain ? T.dimEdge : T.edge;
@@ -875,7 +930,7 @@ function draw() {
     const ax = px[a], ay = py[a], bx = px[b], by = py[b];
     if ((ax < wx0 || ax > wx1 || ay < wy0 || ay > wy1) &&
         (bx < wx0 || bx > wx1 || by < wy0 || by > wy1)) continue;
-    if (focus && (a === selected || b === selected)) continue;
+    if (focus && nbrs.has(a) && nbrs.has(b)) continue;
     if (chainEdgeSet && chainEdgeSet.has(edgeKey(a, b))) continue;
     ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
   }
@@ -885,7 +940,13 @@ function draw() {
     ctx.strokeStyle = T.edgeActive;
     ctx.lineWidth = 1.6 / scale;
     ctx.beginPath();
-    for (const u of nbrs) { ctx.moveTo(px[selected], py[selected]); ctx.lineTo(px[u], py[u]); }
+    for (const v of nbrs) {
+      for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
+        const u = csrNbr[k];
+        if (u <= v || !nbrs.has(u)) continue;
+        ctx.moveTo(px[v], py[v]); ctx.lineTo(px[u], py[u]);
+      }
+    }
     ctx.stroke();
   }
   if (chainPath) {
@@ -1117,6 +1178,8 @@ function endPointer(e) {
   const moved = Math.hypot(e.offsetX - downX, e.offsetY - downY) > 4;
   if (dragNode !== -1 && !moved) {
     selected = (selected === dragNode) ? -1 : dragNode;
+    if (selected !== -1) { clearChain(); announceHood(); }
+    else document.getElementById("chainResult").textContent = "";
     requestDraw();
   } else if (panning && !moved) {
     selected = -1; clearChain(); requestDraw();
@@ -1177,6 +1240,7 @@ function flyTo(i) {
   camX = px[i]; camY = py[i];
   scale = Math.max(scale, 2.2);
   selected = i;
+  announceHood();
   requestDraw();
 }
 function doSearch() {
@@ -1264,6 +1328,12 @@ for (const id of ["minLen", "maxLen"]) {
   el.addEventListener("change", onLenChange);
 }
 document.getElementById("maxLen").value = MAXLEN;
+document.getElementById("nbrDepth").addEventListener("change", (e) => {
+  nbrDepth = Math.max(1, Math.min(5, +e.target.value || 1));
+  e.target.value = nbrDepth;
+  if (selected !== -1) announceHood();
+  requestDraw();
+});
 document.getElementById("showIsolated").addEventListener("change", (e) => {
   showIsolated = e.target.checked;
   rebuildVisible();
