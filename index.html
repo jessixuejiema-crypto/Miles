@@ -111,11 +111,16 @@
 <canvas id="canvas"></canvas>
 
 <div id="hud">
-  <h1>Triple Pendulum</h1>
+  <h1 id="title">Triple Pendulum</h1>
   <p>Grab any bob, drag it, and let go to fling it.</p>
 </div>
 
 <div id="panel">
+  <div class="row">
+    <label for="links">Links</label>
+    <input type="range" id="links" min="1" max="100" step="1" value="3">
+    <output id="linksOut">3</output>
+  </div>
   <div class="row">
     <label for="gravity">Gravity</label>
     <input type="range" id="gravity" min="100" max="2500" step="10" value="1200">
@@ -147,16 +152,8 @@
   // ---------------------------------------------------------------
   // State
   // ---------------------------------------------------------------
-  const N = 3;
-  const L = [150, 120, 95];          // rod lengths (px)
-  const M = [1.0, 0.85, 0.7];        // bob masses
-  const BOB_R = [16, 14, 12];        // bob radii (px)
-  const BOB_COLOR = ["#6ea8ff", "#b78bff", "#ff7eb3"];
-
-  let theta = [Math.PI * 0.55, Math.PI * 0.75, Math.PI * 0.9]; // from downward vertical
-  let omega = [0, 0, 0];
-
-  let g = 1200;        // px/s^2
+  let N = 3;             // number of links
+  let g = 1200;          // px/s^2
   let damping = 0;
   let trailMax = 300;
   let paused = false;
@@ -164,177 +161,143 @@
   let pivot = { x: 0, y: 0 };
   let dpr = 1;
 
+  // Chain: index 0 is the pivot, 1..N are the bobs.
+  let px = [], py = [];      // positions
+  let ppx = [], ppy = [];    // previous positions (Verlet)
+  let linkLen = [];          // linkLen[i] = rest length of rod between i and i+1
+  let bobR = 16;
+  let bobColor = [];
+
   const trail = [];
 
-  // Dragging
-  let dragIndex = -1;           // which bob is grabbed (0..2)
-  let dragPos = { x: 0, y: 0 };
-  const angleHistory = [];      // [{t, theta:[...] }] while dragging, for fling velocity
+  // Dragging (bob index 1..N, or -1)
+  let dragIndex = -1;
+  let dragPos = { x: 0, y: 0 };  // latest pointer position (clamped to reach)
+  let dragCur = { x: 0, y: 0 };  // per-substep interpolated pin position
 
   // ---------------------------------------------------------------
-  // Geometry helpers
+  // Tuple names: single, double, triple ... centuple
   // ---------------------------------------------------------------
-  function bobPositions(th) {
-    const pts = [];
+  function tupleName(n) {
+    const ones = ["", "un", "duo", "tre", "quattuor", "quin", "sex", "septen", "octo", "novem"];
+    const small = ["single", "double", "triple", "quadruple", "quintuple",
+                   "sextuple", "septuple", "octuple", "nonuple", "decuple"];
+    let name;
+    if (n <= 10) name = small[n - 1];
+    else if (n < 20) name = ones[n - 10] + "decuple";
+    else if (n === 100) name = "centuple";
+    else {
+      const tens = ["vigint", "trigint", "quadragint", "quinquagint",
+                    "sexagint", "septuagint", "octogint", "nonagint"];
+      name = ones[n % 10] + tens[Math.floor(n / 10) - 2] + "uple";
+    }
+    return name[0].toUpperCase() + name.slice(1);
+  }
+
+  function updateTitle() {
+    const t = tupleName(N) + " Pendulum";
+    document.getElementById("title").textContent = t;
+    document.title = t;
+  }
+
+  // ---------------------------------------------------------------
+  // Chain construction
+  // ---------------------------------------------------------------
+  function totalLength() {
+    return Math.min(365, window.innerHeight * 0.55, window.innerWidth * 0.42);
+  }
+
+  function buildChain() {
+    const total = totalLength();
+    const len = total / N;
+    linkLen = new Array(N).fill(len);
+    bobR = Math.max(3.5, Math.min(16, 4 + 38 / N));
+    bobColor = [];
+    for (let i = 0; i < N; i++) {
+      const t = N === 1 ? 1 : i / (N - 1);
+      bobColor.push(`hsl(${Math.round(215 + 115 * t)}, 85%, 72%)`);
+    }
+
+    // Start in a raised arc off to the side, like a wound-up pendulum.
+    px = [pivot.x]; py = [pivot.y];
     let x = pivot.x, y = pivot.y;
     for (let i = 0; i < N; i++) {
-      x += L[i] * Math.sin(th[i]);
-      y += L[i] * Math.cos(th[i]);
-      pts.push({ x, y });
+      const t = N === 1 ? 0 : i / (N - 1);
+      const th = Math.PI * (0.55 + 0.35 * t);  // from downward vertical
+      x += len * Math.sin(th);
+      y += len * Math.cos(th);
+      px.push(x); py.push(y);
     }
-    return pts;
+    ppx = px.slice(); ppy = py.slice();
+    trail.length = 0;
   }
 
   // ---------------------------------------------------------------
-  // Physics: n-link point-mass pendulum (Lagrangian), RK4 integration
-  //
-  //   sum_j M_ij * a_j = b_i
-  //   M_ij = c_ij l_i l_j cos(th_i - th_j),  c_ij = sum_{k>=max(i,j)} m_k
-  //   b_i  = -sum_j c_ij l_i l_j sin(th_i - th_j) w_j^2
-  //          - g l_i sin(th_i) * sum_{k>=i} m_k  - damping term
+  // Physics: Verlet integration + iterative rod-length constraints.
+  // Unconditionally stable, O(N) per substep, so 1..100 links all
+  // run at full speed. The pivot (index 0) and a dragged bob are
+  // treated as infinite-mass during projection.
   // ---------------------------------------------------------------
-  const cumMass = [];
-  for (let i = 0; i < N; i++) {
-    let s = 0;
-    for (let k = i; k < N; k++) s += M[k];
-    cumMass[i] = s;
-  }
+  const PHYS_DT = 1 / 480;
+  const ITER = 30;
 
-  function accelerations(th, w) {
-    const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-    const b = [0, 0, 0];
-    for (let i = 0; i < N; i++) {
-      for (let j = 0; j < N; j++) {
-        const c = cumMass[Math.max(i, j)];
-        A[i][j] = c * L[i] * L[j] * Math.cos(th[i] - th[j]);
-        b[i] -= c * L[i] * L[j] * Math.sin(th[i] - th[j]) * w[j] * w[j];
-      }
-      b[i] -= g * L[i] * Math.sin(th[i]) * cumMass[i];
-      b[i] -= damping * L[i] * L[i] * cumMass[i] * w[i];
-    }
-    return solve3(A, b);
-  }
-
-  function solve3(A, b) {
-    // Gaussian elimination with partial pivoting on a 3x3 system
-    const m = [
-      [A[0][0], A[0][1], A[0][2], b[0]],
-      [A[1][0], A[1][1], A[1][2], b[1]],
-      [A[2][0], A[2][1], A[2][2], b[2]],
-    ];
-    for (let col = 0; col < 3; col++) {
-      let piv = col;
-      for (let r = col + 1; r < 3; r++)
-        if (Math.abs(m[r][col]) > Math.abs(m[piv][col])) piv = r;
-      if (piv !== col) { const t = m[col]; m[col] = m[piv]; m[piv] = t; }
-      const d = m[col][col];
-      if (Math.abs(d) < 1e-12) return [0, 0, 0];
-      for (let r = col + 1; r < 3; r++) {
-        const f = m[r][col] / d;
-        for (let c = col; c < 4; c++) m[r][c] -= f * m[col][c];
-      }
-    }
-    const x = [0, 0, 0];
-    for (let r = 2; r >= 0; r--) {
-      let s = m[r][3];
-      for (let c = r + 1; c < 3; c++) s -= m[r][c] * x[c];
-      x[r] = s / m[r][r];
-    }
-    return x;
-  }
-
-  function derivatives(th, w) {
-    return { dth: w, dw: accelerations(th, w) };
-  }
-
-  function rk4Step(dt) {
-    const k1 = derivatives(theta, omega);
-    const th2 = theta.map((t, i) => t + k1.dth[i] * dt / 2);
-    const w2 = omega.map((w, i) => w + k1.dw[i] * dt / 2);
-    const k2 = derivatives(th2, w2);
-    const th3 = theta.map((t, i) => t + k2.dth[i] * dt / 2);
-    const w3 = omega.map((w, i) => w + k2.dw[i] * dt / 2);
-    const k3 = derivatives(th3, w3);
-    const th4 = theta.map((t, i) => t + k3.dth[i] * dt);
-    const w4 = omega.map((w, i) => w + k3.dw[i] * dt);
-    const k4 = derivatives(th4, w4);
-    for (let i = 0; i < N; i++) {
-      theta[i] += (dt / 6) * (k1.dth[i] + 2 * k2.dth[i] + 2 * k3.dth[i] + k4.dth[i]);
-      omega[i] += (dt / 6) * (k1.dw[i] + 2 * k2.dw[i] + 2 * k3.dw[i] + k4.dw[i]);
+  function integrate(dt) {
+    const damp = Math.max(0, 1 - damping * 8 * dt);
+    for (let i = 1; i <= N; i++) {
+      const vx = (px[i] - ppx[i]) / dt * damp;
+      const vy = (py[i] - ppy[i]) / dt * damp;
+      ppx[i] = px[i]; ppy[i] = py[i];
+      px[i] += vx * dt;
+      py[i] += vy * dt + g * dt * dt;
     }
   }
 
-  // ---------------------------------------------------------------
-  // Dragging: FABRIK inverse kinematics on the sub-chain up to the
-  // grabbed bob; deeper segments keep their absolute angles.
-  // ---------------------------------------------------------------
-  function applyDragIK() {
-    const k = dragIndex;
-    const n = k + 1; // links in the constrained sub-chain
-    const pts = [{ x: pivot.x, y: pivot.y }, ...bobPositions(theta).slice(0, n)];
-
-    // Clamp target to reach
-    let reach = 0;
-    for (let i = 0; i < n; i++) reach += L[i];
-    let tx = dragPos.x, ty = dragPos.y;
-    const dx = tx - pivot.x, dy = ty - pivot.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist > reach) {
-      tx = pivot.x + dx / dist * reach;
-      ty = pivot.y + dy / dist * reach;
-    }
-
-    for (let iter = 0; iter < 12; iter++) {
-      // Backward: pin end to target
-      pts[n] = { x: tx, y: ty };
-      for (let i = n - 1; i >= 1; i--) {
-        const ddx = pts[i].x - pts[i + 1].x;
-        const ddy = pts[i].y - pts[i + 1].y;
-        const d = Math.hypot(ddx, ddy) || 1e-9;
-        pts[i] = { x: pts[i + 1].x + ddx / d * L[i], y: pts[i + 1].y + ddy / d * L[i] };
-      }
-      // Forward: pin base to pivot
-      pts[0] = { x: pivot.x, y: pivot.y };
-      for (let i = 1; i <= n; i++) {
-        const ddx = pts[i].x - pts[i - 1].x;
-        const ddy = pts[i].y - pts[i - 1].y;
-        const d = Math.hypot(ddx, ddy) || 1e-9;
-        pts[i] = { x: pts[i - 1].x + ddx / d * L[i - 1], y: pts[i - 1].y + ddy / d * L[i - 1] };
-      }
-    }
-
-    for (let i = 0; i < n; i++) {
-      theta[i] = Math.atan2(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
-    }
-    omega = [0, 0, 0];
-
-    angleHistory.push({ t: performance.now(), theta: theta.slice() });
-    while (angleHistory.length > 12) angleHistory.shift();
+  function projectRod(i) {
+    // rod between points i-1 and i
+    const dx = px[i] - px[i - 1];
+    const dy = py[i] - py[i - 1];
+    const d = Math.hypot(dx, dy) || 1e-9;
+    const diff = (d - linkLen[i - 1]) / d;
+    const w0 = (i - 1 === 0 || i - 1 === dragIndex) ? 0 : 1;
+    const w1 = (i === dragIndex) ? 0 : 1;
+    const ws = w0 + w1;
+    if (!ws) return;
+    px[i - 1] += dx * diff * (w0 / ws);
+    py[i - 1] += dy * diff * (w0 / ws);
+    px[i] -= dx * diff * (w1 / ws);
+    py[i] -= dy * diff * (w1 / ws);
   }
 
-  function releaseFling() {
-    // Estimate angular velocities from recent drag motion so the
-    // pendulum flies off in the direction it was being swung.
-    if (angleHistory.length < 2) return;
-    const last = angleHistory[angleHistory.length - 1];
-    let ref = angleHistory[0];
-    for (const s of angleHistory) {
-      if (last.t - s.t <= 90) { ref = s; break; }
+  function pinDrag() {
+    if (dragIndex >= 1) { px[dragIndex] = dragCur.x; py[dragIndex] = dragCur.y; }
+  }
+
+  function constrain() {
+    px[0] = pivot.x; py[0] = pivot.y;
+    pinDrag();
+    for (let iter = 0; iter < ITER; iter++) {
+      if (iter % 2 === 0) { for (let i = 1; i <= N; i++) projectRod(i); }
+      else { for (let i = N; i >= 1; i--) projectRod(i); }
+      pinDrag();
     }
-    const dt = (last.t - ref.t) / 1000;
-    if (dt < 1e-3) return;
-    const MAX_W = 25;
-    for (let i = 0; i < N; i++) {
-      let d = last.theta[i] - ref.theta[i];
-      while (d > Math.PI) d -= 2 * Math.PI;
-      while (d < -Math.PI) d += 2 * Math.PI;
-      omega[i] = Math.max(-MAX_W, Math.min(MAX_W, d / dt));
-    }
+  }
+
+  function physStep(dt) {
+    integrate(dt);
+    constrain();
   }
 
   // ---------------------------------------------------------------
   // Input
   // ---------------------------------------------------------------
+  function clampToReach(p) {
+    const total = linkLen.reduce((a, b) => a + b, 0) - 0.5;
+    const dx = p.x - pivot.x, dy = p.y - pivot.y;
+    const d = Math.hypot(dx, dy);
+    if (d <= total) return p;
+    return { x: pivot.x + dx / d * total, y: pivot.y + dy / d * total };
+  }
+
   function pointerPos(e) {
     const r = canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -342,30 +305,28 @@
 
   canvas.addEventListener("pointerdown", (e) => {
     const p = pointerPos(e);
-    const pts = bobPositions(theta);
+    const slack = Math.max(bobR + 18, 24);
     let best = -1, bestD = Infinity;
-    for (let i = 0; i < N; i++) {
-      const d = Math.hypot(p.x - pts[i].x, p.y - pts[i].y);
-      if (d < BOB_R[i] + 18 && d < bestD) { best = i; bestD = d; }
+    for (let i = 1; i <= N; i++) {
+      const d = Math.hypot(p.x - px[i], p.y - py[i]);
+      if (d < slack && d < bestD) { best = i; bestD = d; }
     }
-    if (best >= 0) {
+    if (best >= 1) {
       dragIndex = best;
-      dragPos = p;
-      angleHistory.length = 0;
+      dragPos = clampToReach(p);
+      dragCur = { x: dragPos.x, y: dragPos.y };
       canvas.classList.add("dragging");
       canvas.setPointerCapture(e.pointerId);
     }
   });
 
   canvas.addEventListener("pointermove", (e) => {
-    if (dragIndex >= 0) dragPos = pointerPos(e);
+    if (dragIndex >= 1) dragPos = clampToReach(pointerPos(e));
   });
 
   function endDrag() {
     if (dragIndex < 0) return;
-    releaseFling();
     dragIndex = -1;
-    angleHistory.length = 0;
     canvas.classList.remove("dragging");
   }
   canvas.addEventListener("pointerup", endDrag);
@@ -376,6 +337,13 @@
   // ---------------------------------------------------------------
   const $ = (id) => document.getElementById(id);
 
+  $("links").addEventListener("input", (e) => {
+    endDrag();
+    N = +e.target.value;
+    $("linksOut").textContent = N;
+    updateTitle();
+    buildChain();
+  });
   $("gravity").addEventListener("input", (e) => {
     g = +e.target.value;
     $("gravityOut").textContent = g;
@@ -395,9 +363,8 @@
     $("pauseBtn").classList.toggle("active", paused);
   });
   $("resetBtn").addEventListener("click", () => {
-    theta = [Math.PI * 0.55, Math.PI * 0.75, Math.PI * 0.9];
-    omega = [0, 0, 0];
-    trail.length = 0;
+    endDrag();
+    buildChain();
   });
 
   // ---------------------------------------------------------------
@@ -407,11 +374,19 @@
     dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(window.innerWidth * dpr);
     canvas.height = Math.round(window.innerHeight * dpr);
+    const oldPivot = { x: pivot.x, y: pivot.y };
     pivot.x = window.innerWidth / 2;
     pivot.y = window.innerHeight * 0.32;
+    const dx = pivot.x - oldPivot.x, dy = pivot.y - oldPivot.y;
+    for (let i = 0; i <= N && i < px.length; i++) {
+      px[i] += dx; py[i] += dy;
+      ppx[i] += dx; ppy[i] += dy;
+    }
+    const len = totalLength() / N;
+    linkLen = new Array(N).fill(len);
+    trail.length = 0;
   }
   window.addEventListener("resize", resize);
-  resize();
 
   function draw() {
     const w = window.innerWidth, h = window.innerHeight;
@@ -424,8 +399,6 @@
     grad.addColorStop(1, "#0b0e17");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
-
-    const pts = bobPositions(theta);
 
     // Trail of the last bob
     if (trail.length > 1) {
@@ -444,16 +417,12 @@
 
     // Rods
     ctx.lineCap = "round";
-    let prev = pivot;
-    for (let i = 0; i < N; i++) {
-      ctx.strokeStyle = "rgba(220, 228, 245, 0.85)";
-      ctx.lineWidth = 3.5 - i * 0.7;
-      ctx.beginPath();
-      ctx.moveTo(prev.x, prev.y);
-      ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.stroke();
-      prev = pts[i];
-    }
+    ctx.strokeStyle = "rgba(220, 228, 245, 0.85)";
+    ctx.lineWidth = Math.max(1.2, Math.min(3.5, 10 / Math.sqrt(N)));
+    ctx.beginPath();
+    ctx.moveTo(px[0], py[0]);
+    for (let i = 1; i <= N; i++) ctx.lineTo(px[i], py[i]);
+    ctx.stroke();
 
     // Pivot mount
     ctx.fillStyle = "#39415a";
@@ -466,33 +435,39 @@
     ctx.fill();
 
     // Bobs
-    for (let i = 0; i < N; i++) {
-      const r = BOB_R[i];
-      const glow = ctx.createRadialGradient(pts[i].x, pts[i].y, r * 0.2, pts[i].x, pts[i].y, r * 2.6);
-      glow.addColorStop(0, BOB_COLOR[i] + "55");
-      glow.addColorStop(1, "transparent");
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(pts[i].x, pts[i].y, r * 2.6, 0, Math.PI * 2);
-      ctx.fill();
+    const drawGlow = N <= 24;
+    for (let i = 1; i <= N; i++) {
+      const bx = px[i], by = py[i];
+      const color = bobColor[i - 1];
 
-      const body = ctx.createRadialGradient(
-        pts[i].x - r * 0.35, pts[i].y - r * 0.35, r * 0.15,
-        pts[i].x, pts[i].y, r
-      );
-      body.addColorStop(0, "#ffffff");
-      body.addColorStop(0.25, BOB_COLOR[i]);
-      body.addColorStop(1, BOB_COLOR[i]);
-      ctx.fillStyle = body;
+      if (drawGlow) {
+        const glow = ctx.createRadialGradient(bx, by, bobR * 0.2, bx, by, bobR * 2.6);
+        glow.addColorStop(0, color.replace("hsl", "hsla").replace(")", ", 0.33)"));
+        glow.addColorStop(1, "transparent");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(bx, by, bobR * 2.6, 0, Math.PI * 2);
+        ctx.fill();
+
+        const body = ctx.createRadialGradient(
+          bx - bobR * 0.35, by - bobR * 0.35, bobR * 0.15, bx, by, bobR
+        );
+        body.addColorStop(0, "#ffffff");
+        body.addColorStop(0.25, color);
+        body.addColorStop(1, color);
+        ctx.fillStyle = body;
+      } else {
+        ctx.fillStyle = color;
+      }
       ctx.beginPath();
-      ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
+      ctx.arc(bx, by, bobR, 0, Math.PI * 2);
       ctx.fill();
 
       if (i === dragIndex) {
         ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(pts[i].x, pts[i].y, r + 5, 0, Math.PI * 2);
+        ctx.arc(bx, by, bobR + 5, 0, Math.PI * 2);
         ctx.stroke();
       }
     }
@@ -501,7 +476,6 @@
   // ---------------------------------------------------------------
   // Main loop — fixed-timestep physics, capped catch-up
   // ---------------------------------------------------------------
-  const PHYS_DT = 1 / 480;
   let acc = 0;
   let lastT = performance.now();
 
@@ -510,21 +484,36 @@
     lastT = now;
     if (elapsed > 0.1) elapsed = 0.1;
 
-    if (dragIndex >= 0) {
-      applyDragIK();
-      acc = 0;
-    } else if (!paused) {
-      acc += elapsed;
-      while (acc >= PHYS_DT) {
-        rk4Step(PHYS_DT);
-        acc -= PHYS_DT;
+    if (paused) {
+      if (dragIndex >= 1) {
+        // Move the grabbed bob and settle the chain, but keep it frozen.
+        dragCur = { x: dragPos.x, y: dragPos.y };
+        constrain();
+        ppx = px.slice(); ppy = py.slice();
       }
+      acc = 0;
+    } else {
+      acc += elapsed;
+      const steps = Math.floor(acc / PHYS_DT);
+      const dragFrom = { x: dragCur.x, y: dragCur.y };
+      for (let s = 1; s <= steps; s++) {
+        if (dragIndex >= 1) {
+          // Spread the pointer motion across substeps so the pin moves
+          // smoothly and the release velocity comes out right.
+          const t = s / steps;
+          dragCur = {
+            x: dragFrom.x + (dragPos.x - dragFrom.x) * t,
+            y: dragFrom.y + (dragPos.y - dragFrom.y) * t,
+          };
+        }
+        physStep(PHYS_DT);
+      }
+      acc -= steps * PHYS_DT;
     }
 
-    if (!paused || dragIndex >= 0) {
-      const pts = bobPositions(theta);
+    if (!paused || dragIndex >= 1) {
       if (trailMax > 0) {
-        trail.push({ x: pts[N - 1].x, y: pts[N - 1].y });
+        trail.push({ x: px[N], y: py[N] });
         while (trail.length > trailMax) trail.shift();
       } else {
         trail.length = 0;
@@ -534,6 +523,13 @@
     draw();
     requestAnimationFrame(frame);
   }
+
+  // Debug/testing handle
+  window.__pend = () => ({ N, px: px.slice(), py: py.slice() });
+
+  resize();
+  buildChain();
+  updateTitle();
   requestAnimationFrame(frame);
 })();
 </script>
