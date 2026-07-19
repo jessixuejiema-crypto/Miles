@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Infinituple — count from single to infinity</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg1: #0b0e1a;
+    --bg2: #16123a;
+    --card: rgba(255, 255, 255, 0.05);
+    --border: rgba(255, 255, 255, 0.12);
+    --text: #eef0ff;
+    --muted: #9aa0c3;
+    --accent1: #7dd3fc;
+    --accent2: #c084fc;
+    --accent3: #f9a8d4;
+  }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: radial-gradient(1200px 800px at 20% -10%, var(--bg2), var(--bg1) 60%);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow-x: hidden;
+  }
+
+  .stars {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .star {
+    position: absolute;
+    border-radius: 50%;
+    background: white;
+    opacity: 0.5;
+    animation: twinkle 3s ease-in-out infinite;
+  }
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.15; }
+    50% { opacity: 0.7; }
+  }
+
+  .app {
+    position: relative;
+    z-index: 1;
+    width: min(680px, 100%);
+    text-align: center;
+  }
+
+  h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .tagline {
+    font-size: 0.85rem;
+    color: var(--muted);
+    opacity: 0.8;
+    margin-bottom: 28px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 36px 24px 28px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .number {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: clamp(2rem, 9vw, 4.5rem);
+    line-height: 1.1;
+    word-break: break-all;
+    color: var(--text);
+    min-height: 1.1em;
+    transition: font-size 0.2s;
+  }
+  .number.long { font-size: clamp(1.1rem, 4.5vw, 2rem); }
+  .number.infinity {
+    font-size: clamp(4rem, 20vw, 9rem);
+    background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent3), var(--accent1));
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer 3s linear infinite;
+  }
+
+  .tuple-name {
+    margin-top: 10px;
+    font-size: clamp(1.3rem, 6vw, 2.4rem);
+    font-weight: 700;
+    word-break: break-all;
+    background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent3));
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer 6s linear infinite;
+    min-height: 1.2em;
+  }
+  @keyframes shimmer {
+    0% { background-position: 0% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .aka {
+    margin-top: 8px;
+    font-size: 0.9rem;
+    color: var(--muted);
+    min-height: 1.2em;
+  }
+
+  .controls {
+    margin-top: 28px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  button {
+    font: inherit;
+    font-weight: 600;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 18px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    user-select: none;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.16); }
+  button:active { transform: scale(0.96); }
+
+  button.primary {
+    background: linear-gradient(90deg, #38bdf8, #a855f7);
+    border: none;
+  }
+  button.primary:hover { filter: brightness(1.15); }
+
+  button.infinity-btn {
+    background: linear-gradient(90deg, #a855f7, #ec4899);
+    border: none;
+  }
+  button.infinity-btn.pulse {
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.6); }
+    50% { box-shadow: 0 0 0 14px rgba(236, 72, 153, 0); }
+  }
+
+  .jump {
+    margin-top: 18px;
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .jump input {
+    font: inherit;
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 14px;
+    width: 200px;
+    text-align: center;
+  }
+  .jump input:focus { outline: 2px solid var(--accent2); border-color: transparent; }
+
+  .hint {
+    margin-top: 20px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    min-height: 1.4em;
+  }
+  .hint em { color: var(--accent3); font-style: normal; font-weight: 600; }
+
+  .ticker {
+    margin-top: 24px;
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    min-height: 30px;
+  }
+  .chip {
+    font-size: 0.78rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    animation: chipIn 0.3s ease-out;
+    white-space: nowrap;
+  }
+  @keyframes chipIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="stars" id="stars"></div>
+
+<div class="app">
+  <h1>Infinituple</h1>
+  <div class="tagline">single &middot; double &middot; triple &middot; quadruple &middot; &hellip; &middot; &infin;</div>
+
+  <div class="card">
+    <div class="number" id="number">1</div>
+    <div class="tuple-name" id="tupleName">single</div>
+    <div class="aka" id="aka">a 1-tuple</div>
+
+    <div class="controls">
+      <button id="minus">&minus;1</button>
+      <button id="plus" class="primary">+1</button>
+      <button id="plus10">+10</button>
+      <button id="plus100">+100</button>
+      <button id="plus1000">+1000</button>
+    </div>
+
+    <div class="controls">
+      <button id="play">&#9654; Auto-count</button>
+      <button id="warp">&#128640; Warp speed</button>
+      <button id="infinityBtn" class="infinity-btn">&infin; Skip to infinity</button>
+      <button id="reset">&#8634; Reset</button>
+    </div>
+
+    <div class="jump">
+      <input id="jumpInput" type="text" inputmode="numeric" placeholder="Jump to any number&hellip;">
+      <button id="jumpBtn">Name it</button>
+    </div>
+
+    <div class="hint" id="hint">Every number gets its proper Latin tuple name &mdash; up to 999,999. Past that, the Romans ran out of words.</div>
+  </div>
+
+  <div class="ticker" id="ticker"></div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- Tuple-name generator ---------- */
+
+const BASE = ["nulluple", "single", "double", "triple", "quadruple",
+  "quintuple", "sextuple", "septuple", "octuple", "nonuple"];
+
+const UNIT_PREFIX = ["", "un", "duo", "tre", "quattuor",
+  "quin", "sex", "septen", "octo", "novem"];
+
+const TENS = ["", "dec", "vigint", "trigint", "quadragint",
+  "quinquagint", "sexagint", "septuagint", "octogint", "nonagint"];
+
+const HUNDREDS = ["", "cent", "ducent", "trecent", "quadringent",
+  "quingent", "sescent", "septingent", "octingent", "nongent"];
+
+// Latin prefix stem for 1..999 (no "uple" suffix), used for composition.
+function stem(n) {
+  const h = Math.floor(n / 100);
+  const r = n % 100;
+  const t = Math.floor(r / 10);
+  const u = r % 10;
+  let s = HUNDREDS[h];
+  if (r === 0) return s;
+  s += UNIT_PREFIX[u];
+  s += TENS[t];
+  return s;
+}
+
+// Full tuple name for a BigInt >= 0, or null if the Latin runs out.
+function tupleName(n) {
+  if (n < 0n) return null;
+  if (n < 10n) return BASE[Number(n)];
+  if (n < 1000n) return stem(Number(n)) + "uple";
+  if (n < 1000000n) {
+    const k = Number(n / 1000n);
+    const r = Number(n % 1000n);
+    const thousands = (k === 1 ? "" : stem(k)) + "mill";
+    return thousands + (r === 0 ? "" : stem(r)) + "uple";
+  }
+  return null;
+}
+
+function formatNumber(n) {
+  return n.toLocaleString("en-US");
+}
+
+/* ---------- State ---------- */
+
+let count = 1n;
+let atInfinity = false;
+let timer = null;
+let warpTimer = null;
+let warpIncrement = 1n;
+let warpNudged = false;
+
+const el = {
+  number: document.getElementById("number"),
+  tupleName: document.getElementById("tupleName"),
+  aka: document.getElementById("aka"),
+  hint: document.getElementById("hint"),
+  ticker: document.getElementById("ticker"),
+  play: document.getElementById("play"),
+  warp: document.getElementById("warp"),
+  infinityBtn: document.getElementById("infinityBtn"),
+  jumpInput: document.getElementById("jumpInput"),
+};
+
+const WARP_NUDGE_AT = 10n ** 42n;
+
+/* ---------- Rendering ---------- */
+
+function render() {
+  if (atInfinity) {
+    el.number.textContent = "∞";
+    el.number.className = "number infinity";
+    el.tupleName.textContent = "infinituple";
+    el.aka.textContent = "the tuple to end all tuples";
+    el.hint.innerHTML = "You made it. An <em>infinituple</em> has one entry for every counting number — and somehow, room for more.";
+    return;
+  }
+
+  const numStr = formatNumber(count);
+  el.number.textContent = numStr;
+  el.number.className = "number" + (numStr.length > 14 ? " long" : "");
+
+  const name = tupleName(count);
+  if (name !== null) {
+    el.tupleName.textContent = name;
+    el.aka.textContent = (count === 1n ? "a 1-tuple" : "a " + numStr + "-tuple");
+  } else {
+    el.tupleName.textContent = numStr + "-tuple";
+    el.aka.textContent = "past 999,999 the Latin gives up — but the counting never does";
+  }
+
+  if (warpTimer && count > WARP_NUDGE_AT && !warpNudged) {
+    warpNudged = true;
+    el.hint.innerHTML = "You have counted past a <em>tredecillion</em> and infinity is no closer. There is a shortcut…";
+    el.infinityBtn.classList.add("pulse");
+  }
+}
+
+let lastChipName = null;
+function pushChip() {
+  const name = tupleName(count);
+  if (name === null || name === lastChipName) return;
+  lastChipName = name;
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.textContent = formatNumber(count) + " · " + name;
+  el.ticker.prepend(chip);
+  while (el.ticker.children.length > 6) el.ticker.lastChild.remove();
+}
+
+/* ---------- Actions ---------- */
+
+function leaveInfinity() {
+  if (!atInfinity) return;
+  atInfinity = false;
+  el.hint.innerHTML = "Back among the finite numbers. They missed you.";
+}
+
+function bump(delta) {
+  leaveInfinity();
+  count += delta;
+  if (count < 0n) count = 0n;
+  pushChip();
+  render();
+}
+
+function stopAuto() {
+  if (timer) { clearInterval(timer); timer = null; }
+  el.play.innerHTML = "&#9654; Auto-count";
+}
+
+function stopWarp() {
+  if (warpTimer) { clearInterval(warpTimer); warpTimer = null; }
+  warpIncrement = 1n;
+  el.warp.innerHTML = "&#128640; Warp speed";
+}
+
+el.play.addEventListener("click", () => {
+  if (timer) { stopAuto(); return; }
+  stopWarp();
+  leaveInfinity();
+  el.play.innerHTML = "&#10074;&#10074; Pause";
+  timer = setInterval(() => { bump(1n); }, 150);
+});
+
+el.warp.addEventListener("click", () => {
+  if (warpTimer) { stopWarp(); return; }
+  stopAuto();
+  leaveInfinity();
+  el.warp.innerHTML = "&#9632; Drop out of warp";
+  el.hint.innerHTML = "Warp engaged: the step size <em>doubles</em> every tick. Watch the names fly by…";
+  warpIncrement = 1n;
+  warpTimer = setInterval(() => {
+    bump(warpIncrement);
+    warpIncrement *= 2n;
+  }, 120);
+});
+
+el.infinityBtn.addEventListener("click", () => {
+  stopAuto();
+  stopWarp();
+  atInfinity = true;
+  warpNudged = false;
+  el.infinityBtn.classList.remove("pulse");
+  render();
+});
+
+document.getElementById("reset").addEventListener("click", () => {
+  stopAuto();
+  stopWarp();
+  atInfinity = false;
+  warpNudged = false;
+  el.infinityBtn.classList.remove("pulse");
+  count = 1n;
+  lastChipName = null;
+  el.ticker.innerHTML = "";
+  el.hint.innerHTML = "Every number gets its proper Latin tuple name — up to 999,999. Past that, the Romans ran out of words.";
+  render();
+});
+
+document.getElementById("minus").addEventListener("click", () => bump(-1n));
+document.getElementById("plus").addEventListener("click", () => bump(1n));
+document.getElementById("plus10").addEventListener("click", () => bump(10n));
+document.getElementById("plus100").addEventListener("click", () => bump(100n));
+document.getElementById("plus1000").addEventListener("click", () => bump(1000n));
+
+function jump() {
+  const raw = el.jumpInput.value.replace(/[,\s_]/g, "");
+  if (!/^\d+$/.test(raw)) {
+    el.hint.innerHTML = "That doesn't look like a number. Even <em>infinituple</em> has standards.";
+    return;
+  }
+  stopAuto();
+  stopWarp();
+  leaveInfinity();
+  count = BigInt(raw);
+  pushChip();
+  render();
+}
+document.getElementById("jumpBtn").addEventListener("click", jump);
+el.jumpInput.addEventListener("keydown", (e) => { if (e.key === "Enter") jump(); });
+
+/* ---------- Starfield ---------- */
+
+const stars = document.getElementById("stars");
+for (let i = 0; i < 60; i++) {
+  const s = document.createElement("div");
+  s.className = "star";
+  const size = 1 + Math.random() * 2;
+  s.style.width = size + "px";
+  s.style.height = size + "px";
+  s.style.left = Math.random() * 100 + "%";
+  s.style.top = Math.random() * 100 + "%";
+  s.style.animationDelay = Math.random() * 3 + "s";
+  stars.appendChild(s);
+}
+
+render();
+</script>
+</body>
+</html>
