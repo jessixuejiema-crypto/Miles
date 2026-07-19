@@ -217,7 +217,8 @@
     const total = totalLength();
     const len = total / N;
     linkLen = new Array(N).fill(len);
-    bobR = Math.max(3.5, Math.min(16, 4 + 38 / N));
+    // Cap radius below half the link spacing so adjacent bobs never touch.
+    bobR = Math.max(1.2, Math.min(16, 4 + 38 / N, len * 0.42));
     bobColor = [];
     for (let i = 0; i < N; i++) {
       const t = N === 1 ? 1 : i / (N - 1);
@@ -455,7 +456,7 @@
     // Rods
     ctx.lineCap = "round";
     ctx.strokeStyle = "rgba(220, 228, 245, 0.85)";
-    ctx.lineWidth = Math.max(1.2, Math.min(3.5, 10 / Math.sqrt(N)));
+    ctx.lineWidth = Math.max(0.75, Math.min(3.5, 10 / Math.sqrt(N), bobR * 0.75));
     ctx.beginPath();
     ctx.moveTo(px[0], py[0]);
     for (let i = 1; i <= N; i++) ctx.lineTo(px[i], py[i]);
