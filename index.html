@@ -1214,6 +1214,64 @@ function pinchInfo() {
     midY: (p1.y + p2.y) / 2,
   };
 }
+/* ---- jelly drag: neighbors follow the dragged word, fading with depth ---- */
+let jelly = null, jellyRunning = false;
+const JELLY_FALL = [1, 0.55, 0.32, 0.17, 0.08];
+function startJelly(root) {
+  const nodes = [root], depths = [0];
+  const seenJ = new Set([root]);
+  let qi = 0;
+  while (qi < nodes.length && nodes.length < 800) {
+    const v = nodes[qi], dv = depths[qi]; qi++;
+    if (dv >= JELLY_FALL.length - 1) continue;
+    for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
+      const u = csrNbr[k];
+      if (!visible[u] || seenJ.has(u)) continue;
+      seenJ.add(u);
+      nodes.push(u); depths.push(dv + 1);
+      if (nodes.length >= 800) break;
+    }
+  }
+  const n = nodes.length;
+  jelly = {
+    nodes: Int32Array.from(nodes),
+    depths: Uint8Array.from(depths),
+    ox: new Float32Array(n), oy: new Float32Array(n),
+    dx: 0, dy: 0,
+    active: true,
+  };
+  for (let k = 0; k < n; k++) { jelly.ox[k] = px[nodes[k]]; jelly.oy[k] = py[nodes[k]]; }
+}
+function jellyTick() {
+  if (!jelly) { jellyRunning = false; return; }
+  const { nodes, depths, ox, oy, dx, dy } = jelly;
+  let maxMove = 0;
+  for (let k = 0; k < nodes.length; k++) {
+    const i = nodes[k];
+    const f = JELLY_FALL[depths[k]];
+    const tx = ox[k] + dx * f, ty = oy[k] + dy * f;
+    const mx = (tx - px[i]) * (k === 0 ? 0.75 : 0.28);
+    const my = (ty - py[i]) * (k === 0 ? 0.75 : 0.28);
+    px[i] += mx; py[i] += my;
+    const m = Math.abs(mx) + Math.abs(my);
+    if (m > maxMove) maxMove = m;
+  }
+  requestDraw();
+  if (jelly.active || maxMove * scale > 0.35) {
+    requestAnimationFrame(jellyTick);
+  } else {
+    jelly = null;
+    jellyRunning = false;
+  }
+}
+function jellyTo(wx, wy) {
+  if (!jelly) return;
+  jelly.dx = wx - jelly.ox[0];
+  jelly.dy = wy - jelly.oy[0];
+  if (!jellyRunning) { jellyRunning = true; requestAnimationFrame(jellyTick); }
+}
+function endJelly() { if (jelly) jelly.active = false; }
+
 function scheduleBGRefresh() {
   if (bgRefreshTimer) clearTimeout(bgRefreshTimer);
   bgRefreshTimer = setTimeout(() => { bgDirty = true; requestDraw(); }, 1200);
@@ -1234,7 +1292,7 @@ canvas.addEventListener("pointerdown", (e) => {
   lastX = e.offsetX; lastY = e.offsetY;
   downX = e.offsetX; downY = e.offsetY;
   const hit = scale >= VEC_T ? findNode(e.offsetX, e.offsetY) : -1;
-  if (hit !== -1) dragNode = hit;
+  if (hit !== -1) { dragNode = hit; startJelly(hit); }
   else { panning = true; canvas.classList.add("dragging"); }
 });
 canvas.addEventListener("pointermove", (e) => {
@@ -1254,9 +1312,8 @@ canvas.addEventListener("pointermove", (e) => {
   }
   if (dragNode !== -1) {
     const [wx, wy] = toWorld(e.offsetX, e.offsetY);
-    px[dragNode] = wx; py[dragNode] = wy;
+    jellyTo(wx, wy);
     scheduleBGRefresh();
-    requestDraw();
   } else if (panning) {
     camX -= (e.offsetX - lastX) / scale;
     camY -= (e.offsetY - lastY) / scale;
@@ -1282,6 +1339,7 @@ function endPointer(e) {
       }
     }
     dragNode = -1;
+    endJelly();
     if (!panning) canvas.classList.remove("dragging");
     return;
   }
@@ -1295,6 +1353,7 @@ function endPointer(e) {
     selected = -1; clearChain(); requestDraw();
   }
   dragNode = -1; panning = false;
+  endJelly();
   canvas.classList.remove("dragging");
 }
 canvas.addEventListener("pointerup", endPointer);
