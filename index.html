@@ -279,6 +279,7 @@
       <input type="color" id="linkColor" value="#898781">
     </div>
     <button id="resetColors" title="Back to the default colors and gradients">&#8634; colors</button>
+    <button id="attractBtn" title="Tap a word, then suck its whole network into it, ring by ring">&#127744; Attract</button>
     <div class="sep"></div>
     <label class="len-toggle"><input type="checkbox" id="showIsolated">show words with no links</label>
     <div class="sep"></div>
@@ -664,6 +665,7 @@ function rebuildVisible() {
   colorBuckets = Array.from({ length: COLOR_CAP + 1 }, () => []);
   for (let i = 0; i < N; i++) if (visible[i]) colorBuckets[degBucket(i)].push(i);
   visStamp++;
+  cancelAttract();
   updateLegend();
   updateHubs();
   if (selected !== -1 && !visible[selected]) selected = -1;
@@ -837,6 +839,7 @@ function renderFarCache() {
     let any = false;
     for (let n = 0; n < arr.length; n++) {
       const i = arr[n];
+      if (attractLaunched !== null && attractLaunched[i]) continue;
       const X = px[i], Y = py[i];
       if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
       const sx = X * KX + CX, sy = Y * KX + CY;
@@ -877,6 +880,7 @@ function findNode(sx, sy) {
   const x0 = wx - reach, x1 = wx + reach, y0 = wy - reach, y1 = wy + reach;
   for (let i = 0; i < N; i++) {
     if (!visible[i]) continue;
+    if (attractLaunched !== null && attractLaunched[i] && i !== (attract && attract.root)) continue;
     const X = px[i], Y = py[i];
     if (X < x0 || X > x1 || Y < y0 || Y > y1) continue;
     const dx = X - wx, dy = Y - wy;
@@ -1017,6 +1021,207 @@ defCard.addEventListener("click", (e) => {
   if (e.target.dataset && e.target.dataset.close) hideDefinition();
 });
 
+/* ---- Attract: suck the selected word's whole component into it,
+   ring by ring, collapsing into one growing circle; press again to
+   release everything back to its place ---- */
+let attract = null;          // { root, order, depths, ox, oy, state, ... }
+let attractParked = null;    // 1 = absorbed into the blob
+let attractLaunched = null;  // 1 = in flight or absorbed (leaves normal rendering)
+function updateAttractBtn() {
+  const b = document.getElementById("attractBtn");
+  b.innerHTML = !attract ? "&#127744; Attract"
+    : attract.state === "releasing" ? "&hellip;releasing"
+    : "&#9209; Release";
+}
+function startAttract(root) {
+  // BFS the root's whole visible component, recording rings
+  const order = [], depths = [];
+  const seenA = new Uint8Array(N);
+  seenA[root] = 1;
+  let frontier = [root], depth = 0;
+  while (frontier.length) {
+    const next = [];
+    depth++;
+    for (const v of frontier) {
+      for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
+        const u = csrNbr[k];
+        if (!visible[u] || seenA[u]) continue;
+        seenA[u] = 1;
+        order.push(u); depths.push(depth);
+        next.push(u);
+      }
+    }
+    frontier = next;
+  }
+  const n = order.length;
+  if (!n) return;
+  attract = {
+    root,
+    order: Int32Array.from(order),
+    depths: Int32Array.from(depths),
+    ox: new Float32Array(n), oy: new Float32Array(n),
+    state: "sucking", frame: 0, launched: 0, released: 0, parkedCount: 0, ringsDone: 0,
+  };
+  for (let k = 0; k < n; k++) { attract.ox[k] = px[order[k]]; attract.oy[k] = py[order[k]]; }
+  attractParked = new Uint8Array(N);
+  attractLaunched = new Uint8Array(N);
+  selected = -1; // no dim wash: let the words fly in full color
+  hideDefinition();
+  document.getElementById("chainResult").innerHTML =
+    `<b>${ALL_WORDS[root]}</b> is swallowing its whole network&hellip;`;
+  updateAttractBtn();
+  requestAnimationFrame(attractTick);
+}
+function attractTick() {
+  if (!attract) return;
+  const a = attract;
+  a.frame++;
+  const n = a.order.length;
+  if (a.state === "sucking") {
+    if ((a.frame === 1 || a.frame % 4 === 0) && a.launched < n) {
+      // the black hole speeds up: each pulse swallows more rings
+      let take = 1 + (a.ringsDone >> 3);
+      a.ringsDone++;
+      const was = a.launched;
+      while (take-- > 0 && a.launched < n) {
+        const dNow = a.depths[a.launched];
+        while (a.launched < n && a.depths[a.launched] === dNow) a.launched++;
+      }
+      for (let k = was; k < a.launched; k++) attractLaunched[a.order[k]] = 1;
+      invalidateFar();
+    }
+    const tx = px[a.root], ty = py[a.root];
+    let flying = false;
+    for (let k = 0; k < a.launched; k++) {
+      const i = a.order[k];
+      if (attractParked[i]) continue;
+      const dx = tx - px[i], dy = ty - py[i];
+      if (dx * dx + dy * dy < 625) {
+        px[i] = tx; py[i] = ty;
+        attractParked[i] = 1; a.parkedCount++;
+        continue;
+      }
+      px[i] += dx * 0.13; py[i] += dy * 0.13; // fast from far, easing in close
+      flying = true;
+    }
+    requestDraw();
+    if (a.launched >= n && !flying) {
+      a.state = "holding";
+      updateAttractBtn();
+      invalidateFar();
+      requestDraw();
+      return; // loop pauses while holding
+    }
+  } else if (a.state === "releasing") {
+    if ((a.frame === 1 || a.frame % 3 === 0) && a.released < n) {
+      // outermost rings burst free first, accelerating as it empties
+      let take = 1 + (a.ringsDone >> 3);
+      a.ringsDone++;
+      let idx = n - 1 - a.released;
+      while (take-- > 0 && idx >= 0) {
+        const dNow = a.depths[idx];
+        while (idx >= 0 && a.depths[idx] === dNow) {
+          const i = a.order[idx];
+          if (attractParked[i]) { attractParked[i] = 0; a.parkedCount--; }
+          idx--;
+        }
+      }
+      a.released = n - 1 - idx;
+      invalidateFar();
+    }
+    let flying = false;
+    for (let k = n - a.released; k < n; k++) {
+      const i = a.order[k];
+      const dx = a.ox[k] - px[i], dy = a.oy[k] - py[i];
+      if (dx * dx + dy * dy < 2) { px[i] = a.ox[k]; py[i] = a.oy[k]; continue; }
+      px[i] += dx * 0.14; py[i] += dy * 0.14;
+      flying = true;
+    }
+    requestDraw();
+    if (a.released >= n && !flying) {
+      for (let k = 0; k < n; k++) { px[a.order[k]] = a.ox[k]; py[a.order[k]] = a.oy[k]; }
+      attract = null; attractParked = null; attractLaunched = null;
+      document.getElementById("chainResult").textContent = "";
+      updateAttractBtn();
+      invalidateFar();
+      requestDraw();
+      return;
+    }
+  } else {
+    return; // holding: no animation
+  }
+  requestAnimationFrame(attractTick);
+}
+function cancelAttract() {
+  if (!attract) return;
+  for (let k = 0; k < attract.order.length; k++) {
+    px[attract.order[k]] = attract.ox[k];
+    py[attract.order[k]] = attract.oy[k];
+  }
+  attract = null; attractParked = null; attractLaunched = null;
+  updateAttractBtn();
+  invalidateFar();
+}
+function drawAttract(T) {
+  if (!attract) return;
+  const a = attract;
+  ctx.save();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // flying words as small dots
+  const KX = scale, CX = -camX * scale + W / 2, CY = -camY * scale + H / 2;
+  ctx.fillStyle = nodeColor(a.root, T);
+  const from = a.state === "releasing" ? a.order.length - a.released : 0;
+  const to = a.state === "releasing" ? a.order.length : a.launched;
+  for (let k = from; k < to; k++) {
+    const i = a.order[k];
+    if (attractParked[i]) continue;
+    const sx = px[i] * KX + CX, sy = py[i] * KX + CY;
+    if (sx < -8 || sx > W + 8 || sy < -8 || sy > H + 8) continue;
+    ctx.fillRect(sx - 2, sy - 2, 4, 4);
+  }
+  // the swallow-circle grows with every absorbed word
+  if (a.parkedCount > 0 || a.state !== "releasing") {
+    const sx = px[a.root] * KX + CX, sy = py[a.root] * KX + CY;
+    const base = Math.max(8, nodeRadius(a.root) * scale);
+    const r = Math.min(140, base + Math.sqrt(a.parkedCount) * 0.9);
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fillStyle = nodeColor(a.root, T);
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = OUTLINE_CSS[themeName];
+    ctx.stroke();
+    if (a.parkedCount > 0) {
+      const txt = `${ALL_WORDS[a.root]} · ${(a.parkedCount + 1).toLocaleString()} words`;
+      ctx.font = "bold 12px system-ui, -apple-system, 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.strokeStyle = T.labelHalo;
+      ctx.lineWidth = 3;
+      ctx.strokeText(txt, sx, sy + r + 5);
+      ctx.fillStyle = T.labelInk;
+      ctx.fillText(txt, sx, sy + r + 5);
+    }
+  }
+  ctx.restore();
+}
+document.getElementById("attractBtn").addEventListener("click", () => {
+  if (!attract) {
+    if (selected === -1) {
+      document.getElementById("chainResult").textContent = "Tap a word first, then press Attract.";
+      return;
+    }
+    startAttract(selected);
+  } else if (attract.state === "sucking" || attract.state === "holding") {
+    const wasHolding = attract.state === "holding";
+    attract.state = "releasing";
+    attract.frame = 0;
+    attract.ringsDone = 0;
+    updateAttractBtn();
+    if (wasHolding) requestAnimationFrame(attractTick);
+  }
+});
+
 /* ================= drawing ================= */
 let drawQueued = false;
 function requestDraw() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(draw); } }
@@ -1089,6 +1294,7 @@ function drawLabels(T, special, focusOrChain) {
   const hubBar = Math.max(8, maxDeg * 0.55);
   for (let i = 0; i < N; i++) {
     if (!visible[i]) continue;
+    if (attractLaunched !== null && attractLaunched[i]) continue;
     const isSpecial = special.has(i);
     if (!isSpecial && !(labelAll || (labelHubs && deg[i] >= hubBar))) continue;
     if (focusOrChain && !isSpecial) continue;
@@ -1134,6 +1340,7 @@ function draw() {
     const bx = (ox - camX) * scale + W / 2, by = (oy - camY) * scale + H / 2;
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(farCanvas, bx, by, CW * r2, CH * r2);
+    drawAttract(T);
     if (focusOrChain) {
       ctx.fillStyle = themeName === "light" ? "rgba(252,252,251,0.88)" : "rgba(26,26,25,0.88)";
       ctx.fillRect(0, 0, W, H);
@@ -1160,6 +1367,7 @@ function draw() {
   const EL = visEdges.length;
   for (let e = 0; e < EL; e += 2) {
     const a = visEdges[e], b = visEdges[e + 1];
+    if (attractLaunched !== null && (attractLaunched[a] || attractLaunched[b])) continue;
     const ax = px[a], ay = py[a], bx = px[b], by = py[b];
     if ((ax < wx0 || ax > wx1 || ay < wy0 || ay > wy1) &&
         (bx < wx0 || bx > wx1 || by < wy0 || by > wy1)) continue;
@@ -1202,6 +1410,7 @@ function draw() {
     ctx.strokeStyle = T.surface;
     for (let i = 0; i < N; i++) {
       if (!visible[i]) continue;
+      if (attractLaunched !== null && attractLaunched[i]) continue;
       const X = px[i], Y = py[i];
       if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
       const d = deg[i];
@@ -1246,6 +1455,7 @@ function draw() {
       let any = false;
       for (let i = 0; i < N; i++) {
         if (!visible[i] || special.has(i)) continue;
+        if (attractLaunched !== null && attractLaunched[i]) continue;
         const X = px[i], Y = py[i];
         if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
         const sx = X * KX2 + CX2, sy = Y * KX2 + CY2;
@@ -1269,6 +1479,7 @@ function draw() {
         let any = false;
         for (let n = 0; n < arr.length; n++) {
           const i = arr[n];
+          if (attractLaunched !== null && attractLaunched[i]) continue;
           const X = px[i], Y = py[i];
           if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
           if (special.has(i)) continue; // repainted as crisp arcs below
@@ -1321,6 +1532,7 @@ function draw() {
     ctx.strokeStyle = T.hoverRing;
     ctx.stroke();
   }
+  drawAttract(T);
   drawLabels(T, special, focusOrChain);
 }
 
@@ -1452,7 +1664,7 @@ canvas.addEventListener("pointerdown", (e) => {
   if (pointers.size > 2) return;
   lastX = e.offsetX; lastY = e.offsetY;
   downX = e.offsetX; downY = e.offsetY;
-  const hit = scale >= VEC_T ? findNode(e.offsetX, e.offsetY) : -1;
+  const hit = (scale >= VEC_T && !attract) ? findNode(e.offsetX, e.offsetY) : -1;
   if (hit !== -1) { dragNode = hit; startJelly(hit); }
   else { panning = true; canvas.classList.add("dragging"); }
 });
