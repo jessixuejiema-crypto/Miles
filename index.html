@@ -434,6 +434,7 @@
 
   <div class="actions">
     <button class="act primary" id="btn-seedshop">🌱 Seed Shop</button>
+    <button class="act primary" id="btn-gearshop">🛠️ Gear Shop</button>
     <button class="act primary" id="btn-sellshop">🧺 Sell Shop</button>
     <button class="act" id="btn-expand">📐 Expand Garden (100¢)</button>
   </div>
@@ -449,7 +450,8 @@
   <p class="legend">
     Seeds marked <b>♻️</b> are multi-harvest: pick them when ripe and the <b>stem stays behind</b> and regrows a new crop, forever.
     Single-harvest crops leave the soil empty. Harvests go in your <b>🧺 basket</b> — sell them at the Sell Shop.
-    The Seed Shop <b>restocks every 10 seconds</b>; rare seeds are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
+    The <b>🛠️ Gear Shop</b> sells tools — pick a targeted tool (like the watering can) and click a plant to use it; instant tools fire the moment you click them in the toolbar.
+    Both shops <b>restock every 10 seconds</b>; rare items are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
   </p>
 </div>
 
@@ -466,6 +468,22 @@
       <span id="restock">Restock in 0:10</span>
     </div>
     <div class="m-body" id="seedlist"></div>
+  </div>
+</div>
+
+<!-- Gear shop -->
+<div class="overlay" id="ov-gear" hidden>
+  <div class="modal" role="dialog" aria-label="Gear shop">
+    <div class="m-head">
+      <div class="m-face">🤖</div>
+      <div class="m-bubble" id="gear-bubble">Beep boop! This is the gear that is in stock!</div>
+      <button class="m-close" id="close-gear" aria-label="Close gear shop">✖</button>
+    </div>
+    <div class="m-sub">
+      <span>Gear in stock</span>
+      <span id="restock2">Restock in 0:10</span>
+    </div>
+    <div class="m-body" id="gearlist"></div>
   </div>
 </div>
 
@@ -530,6 +548,17 @@
   var CROPS = {};
   SEEDS.forEach(function (s) { CROPS[s.key] = s; });
 
+  // Gear: target=true means select it, then click a plant; target=false is used instantly
+  var GEAR = [
+    { key: 'wateringcan', name: 'Watering Can', emoji: '🫗', price: 10,   stock: [1, 3], chance: 100, target: true,  desc: 'Water one plant — halves its remaining grow time' },
+    { key: 'fertilizer',  name: 'Fertilizer',   emoji: '🧪', price: 50,   stock: [1, 2], chance: 80,  target: true,  desc: 'Instantly ripens one growing plant' },
+    { key: 'goldscythe',  name: 'Golden Scythe', emoji: '🌾', price: 500,  stock: [1, 1], chance: 50,  target: false, desc: 'Harvests every ripe crop in one sweep' },
+    { key: 'luckycharm',  name: 'Lucky Charm',  emoji: '🍀', price: 1000, stock: [1, 1], chance: 30,  target: false, desc: 'Forces the shops to restock right now' },
+    { key: 'timecrystal', name: 'Time Crystal', emoji: '⏳', price: 5000, stock: [1, 1], chance: 10,  target: false, desc: 'Instantly ripens every plant in the garden' }
+  ];
+  var GEARMAP = {};
+  GEAR.forEach(function (g) { GEARMAP[g.key] = g; });
+
   var SPOTS_PER_M = 3;         // 3x3 planting spots per square meter
   var EXPAND_COST = 100;       // always 100¢, forever
   var RESTOCK_MS = 10 * 1000;
@@ -540,8 +569,9 @@
   var cols = meters * SPOTS_PER_M;
   var grid = new Array(cols * cols).fill(null); // {t, state:'grow'|'ripe'|'regrow', end}
   var seedsOwned = {};  // key -> count of seeds in your bag
+  var gearOwned = {};   // key -> count of gear in your shed
   var basket = {};      // key -> count of harvested crops
-  var stock = {};       // key -> count in shop right now
+  var stock = {};       // key -> count in shop right now (seeds and gear)
   var nextRestock = 0;
   var sel = 'dig';
   var held = null;      // crop key selected in the sell shop
@@ -552,12 +582,16 @@
   var plotEl = document.getElementById('plot');
   var rulerEl = document.getElementById('ruler');
   var seedBubble = document.getElementById('seed-bubble');
+  var gearBubble = document.getElementById('gear-bubble');
   var sellBubble = document.getElementById('sell-bubble');
   var seedListEl = document.getElementById('seedlist');
+  var gearListEl = document.getElementById('gearlist');
   var invListEl = document.getElementById('invlist');
   var heldActions = document.getElementById('held-actions');
   var restockEl = document.getElementById('restock');
+  var restock2El = document.getElementById('restock2');
   var ovSeed = document.getElementById('ov-seed');
+  var ovGear = document.getElementById('ov-gear');
   var ovSell = document.getElementById('ov-sell');
   var cellEls = [];
 
@@ -580,7 +614,7 @@
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         sheckles: sheckles, meters: meters, grid: grid,
-        seedsOwned: seedsOwned, basket: basket,
+        seedsOwned: seedsOwned, gearOwned: gearOwned, basket: basket,
         stock: stock, nextRestock: nextRestock
       }));
     } catch (e) { /* storage unavailable — play without saving */ }
@@ -599,6 +633,7 @@
         grid = new Array(cols * cols).fill(null);
       }
       if (d.seedsOwned) seedsOwned = d.seedsOwned;
+      if (d.gearOwned) gearOwned = d.gearOwned;
       if (d.basket) basket = d.basket;
       if (d.stock) stock = d.stock;
       if (typeof d.nextRestock === 'number') nextRestock = d.nextRestock;
@@ -607,13 +642,17 @@
 
   // ---------- seed shop stock ----------
   function doRestock() {
-    SEEDS.forEach(function (s) {
+    SEEDS.concat(GEAR).forEach(function (s) {
       stock[s.key] = (Math.random() * 100 < s.chance) ? randInt(s.stock[0], s.stock[1]) : 0;
     });
     nextRestock = Date.now() + RESTOCK_MS;
     if (!ovSeed.hidden) {
       seedBubble.textContent = 'Fresh delivery! These are the seeds that are in stock!';
       renderSeedShop();
+    }
+    if (!ovGear.hidden) {
+      gearBubble.textContent = 'Beep boop! Restock complete! This is the gear that is in stock!';
+      renderGearShop();
     }
     save();
   }
@@ -653,13 +692,89 @@
     refresh();
   }
 
+  // ---------- gear shop ----------
+  function renderGearShop() {
+    gearListEl.innerHTML = '';
+    GEAR.forEach(function (g) {
+      var inStock = (stock[g.key] || 0) > 0;
+      var row = document.createElement('div');
+      row.className = 'srow' + (inStock ? '' : ' oos');
+      row.innerHTML =
+        '<span class="s-emoji">' + g.emoji + '</span>' +
+        '<span class="s-info"><span class="s-name">' + g.name + '</span><br>' +
+        '<span class="s-tags">' + g.desc + '</span></span>' +
+        '<span class="s-stock">' + (inStock ? '×' + stock[g.key] : 'NO STOCK') + '</span>';
+      var buy = document.createElement('button');
+      buy.className = 's-buy';
+      buy.textContent = money(g.price);
+      buy.disabled = !inStock || sheckles < g.price;
+      buy.addEventListener('click', function () { buyGear(g.key); });
+      row.appendChild(buy);
+      gearListEl.appendChild(row);
+    });
+  }
+
+  function buyGear(key) {
+    var g = GEARMAP[key];
+    if ((stock[key] || 0) < 1) { gearBubble.textContent = 'Beep! No ' + g.name.toLowerCase() + ' in stock right now!'; return; }
+    if (sheckles < g.price) { gearBubble.textContent = 'Beep boop — that costs ' + money(g.price) + '. Insufficient sheckles detected!'; return; }
+    sheckles -= g.price;
+    stock[key]--;
+    gearOwned[key] = (gearOwned[key] || 0) + 1;
+    gearBubble.textContent = 'One ' + g.name.toLowerCase() + ', dispensed! ' + (g.target ? 'Select it, then click a plant.' : 'Click it in your toolbar to use it.');
+    renderGearShop();
+    refresh();
+  }
+
+  // Instant-use gear (no plant target)
+  function useGlobalGear(key) {
+    var g = GEARMAP[key];
+    if (key === 'goldscythe') {
+      var reaped = 0;
+      for (var i = 0; i < grid.length; i++) {
+        var p = grid[i];
+        if (p && p.state !== 'ripe' && Date.now() >= p.end) p.state = 'ripe';
+        if (p && p.state === 'ripe') { harvest(i); reaped++; }
+      }
+      if (!reaped) { setMsg('Nothing is ripe — the scythe stays in the shed.'); return; }
+      setMsg('🌾 Scythed ' + reaped + ' crop' + (reaped > 1 ? 's' : '') + ' into your basket!');
+    } else if (key === 'luckycharm') {
+      doRestock();
+      setMsg('🍀 The lucky charm made the shops restock!');
+    } else if (key === 'timecrystal') {
+      var sped = 0;
+      grid.forEach(function (p) {
+        if (p && p.state !== 'ripe' && Date.now() < p.end) { p.end = Date.now(); sped++; }
+      });
+      if (!sped) { setMsg('Nothing is growing — the time crystal stays put.'); return; }
+      setMsg('⏳ Time warped! ' + sped + ' plant' + (sped > 1 ? 's' : '') + ' ripened instantly.');
+    }
+    gearOwned[key]--;
+    refresh();
+  }
+
+  // Targeted gear, applied to the plant at cell i
+  function useTargetedGear(key, i) {
+    var p = grid[i], c = CROPS[p.t], now = Date.now();
+    if (key === 'wateringcan') {
+      p.end = now + Math.max(0, p.end - now) / 2;
+      setMsg('🫗 Watered the ' + c.name.toLowerCase() + ' — remaining time halved!');
+    } else if (key === 'fertilizer') {
+      p.end = now;
+      setMsg('🧪 Fertilized the ' + c.name.toLowerCase() + ' — ripe right now!');
+    }
+    gearOwned[key]--;
+    refresh();
+  }
+
   // ---------- owned-seed toolbar ----------
   function renderToolbar() {
     shopEl.innerHTML = '';
     var owned = SEEDS.filter(function (s) { return (seedsOwned[s.key] || 0) > 0; });
-    // Out of the selected seed? Fall back to another seed or an empty hand —
-    // never to Dig, so clicking a ripe plant still harvests it.
-    if (sel !== 'dig' && !(seedsOwned[sel] > 0)) sel = owned.length ? owned[0].key : 'hand';
+    // Out of the selected seed/gear? Fall back to another seed or an empty
+    // hand — never to Dig, so clicking a ripe plant still harvests it.
+    var selValid = sel === 'dig' || seedsOwned[sel] > 0 || (GEARMAP[sel] && gearOwned[sel] > 0);
+    if (!selValid) sel = owned.length ? owned[0].key : 'hand';
     owned.forEach(function (s) {
       var b = document.createElement('button');
       b.className = 'chip' + (sel === s.key ? ' on' : '');
@@ -672,6 +787,25 @@
         sel = s.key;
         setMsg(s.name + ' seed selected — click an empty spot of soil to plant.');
         renderToolbar();
+      });
+      shopEl.appendChild(b);
+    });
+    GEAR.filter(function (g) { return (gearOwned[g.key] || 0) > 0; }).forEach(function (g) {
+      var b = document.createElement('button');
+      b.className = 'chip' + (sel === g.key ? ' on' : '');
+      b.innerHTML =
+        '<span class="c-emoji">' + g.emoji + '</span>' +
+        '<span class="c-name">' + g.name + '</span>' +
+        '<span class="c-meta">×' + gearOwned[g.key] + ' 🛠️</span>';
+      b.title = g.desc;
+      b.addEventListener('click', function () {
+        if (g.target) {
+          sel = g.key;
+          setMsg(g.name + ' ready — click a growing plant to use it.');
+          renderToolbar();
+        } else {
+          useGlobalGear(g.key);
+        }
       });
       shopEl.appendChild(b);
     });
@@ -752,11 +886,17 @@
       return;
     }
     if (p) {
-      if (p.state === 'ripe') { harvest(i); refresh(); }
-      else if (p.state === 'regrow') setMsg('The stem is regrowing a new ' + CROPS[p.t].name.toLowerCase() + '…');
+      if (p.state === 'ripe') { harvest(i); refresh(); return; }
+      if (GEARMAP[sel] && GEARMAP[sel].target) {
+        if (!(gearOwned[sel] > 0)) { setMsg('No ' + GEARMAP[sel].name.toLowerCase() + ' left — buy more at the Gear Shop.'); return; }
+        useTargetedGear(sel, i);
+        return;
+      }
+      if (p.state === 'regrow') setMsg('The stem is regrowing a new ' + CROPS[p.t].name.toLowerCase() + '…');
       else setMsg('Still growing — give it a moment.');
       return;
     }
+    if (GEARMAP[sel]) { setMsg('Use the ' + GEARMAP[sel].name.toLowerCase() + ' on a planted spot, not empty soil.'); return; }
     var c = CROPS[sel];
     if (!c) { setMsg('Buy seeds at the Seed Shop first!'); return; }
     if (!(seedsOwned[sel] > 0)) { setMsg('No ' + c.name.toLowerCase() + ' seeds left — buy more at the Seed Shop.'); return; }
@@ -863,6 +1003,11 @@
     renderSeedShop();
     ovSeed.hidden = false;
   }
+  function openGearShop() {
+    gearBubble.textContent = 'Beep boop! This is the gear that is in stock!';
+    renderGearShop();
+    ovGear.hidden = false;
+  }
   function openSellShop() {
     held = null;
     sellBubble.textContent = 'Howdy! Whatcha got in that basket for me?';
@@ -870,11 +1015,14 @@
     ovSell.hidden = false;
   }
   document.getElementById('btn-seedshop').addEventListener('click', openSeedShop);
+  document.getElementById('btn-gearshop').addEventListener('click', openGearShop);
   document.getElementById('btn-sellshop').addEventListener('click', openSellShop);
   document.getElementById('btn-expand').addEventListener('click', expandGarden);
   document.getElementById('close-seed').addEventListener('click', function () { ovSeed.hidden = true; });
+  document.getElementById('close-gear').addEventListener('click', function () { ovGear.hidden = true; });
   document.getElementById('close-sell').addEventListener('click', function () { ovSell.hidden = true; });
   ovSeed.addEventListener('click', function (e) { if (e.target === ovSeed) ovSeed.hidden = true; });
+  ovGear.addEventListener('click', function (e) { if (e.target === ovGear) ovGear.hidden = true; });
   ovSell.addEventListener('click', function (e) { if (e.target === ovSell) ovSell.hidden = true; });
 
   // ---------- render ----------
@@ -944,11 +1092,13 @@
     if (Date.now() >= nextRestock) doRestock();
     for (var i = 0; i < grid.length; i++) updateCell(i);
     coinsEl.textContent = '🪙 ' + money(sheckles);
-    if (!ovSeed.hidden) {
+    if (!ovSeed.hidden || !ovGear.hidden) {
       var left = Math.max(0, nextRestock - Date.now());
       var m = (left / 60000) | 0, s = Math.ceil((left % 60000) / 1000);
       if (s === 60) { m++; s = 0; }
-      restockEl.textContent = 'Restock in ' + m + ':' + (s < 10 ? '0' : '') + s;
+      var txt = 'Restock in ' + m + ':' + (s < 10 ? '0' : '') + s;
+      restockEl.textContent = txt;
+      restock2El.textContent = txt;
     }
   }
 
@@ -963,6 +1113,7 @@
     }
     renderToolbar();
     if (!ovSeed.hidden) renderSeedShop();
+    if (!ovGear.hidden) renderGearShop();
     tick();
     save();
   }
@@ -982,6 +1133,7 @@
     stock: function () { return stock; },
     basket: function () { return basket; },
     seeds: function () { return seedsOwned; },
+    gear: function () { return gearOwned; },
     meters: function () { return meters; },
     give: function (n) { sheckles += n; refresh(); },
     restock: doRestock
