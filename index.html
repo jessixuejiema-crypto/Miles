@@ -1214,55 +1214,84 @@ function pinchInfo() {
     midY: (p1.y + p2.y) / 2,
   };
 }
-/* ---- jelly drag: neighbors follow the dragged word, fading with depth ---- */
+/* ---- jelly drag: rubber-band chains.
+   Pull travels along the links: the grabbed word tows its one-letter
+   neighbors, they tow theirs, and so on. A neighbor stretched FAR rushes
+   in fast and eases off as its link shortens; a close neighbor barely
+   moves. Letting go springs the whole patch back home. ---- */
 let jelly = null, jellyRunning = false;
-const JELLY_FALL = [1, 0.55, 0.32, 0.17, 0.08];
+const JELLY_MAX_DEPTH = 4, JELLY_MAX_NODES = 400;
 function startJelly(root) {
-  const nodes = [root], depths = [0];
-  const seenJ = new Set([root]);
+  const nodes = [root], depths = [0], parents = [-1];
+  const local = new Map([[root, 0]]);
   let qi = 0;
-  while (qi < nodes.length && nodes.length < 800) {
-    const v = nodes[qi], dv = depths[qi]; qi++;
-    if (dv >= JELLY_FALL.length - 1) continue;
+  while (qi < nodes.length && nodes.length < JELLY_MAX_NODES) {
+    const v = nodes[qi], dv = depths[qi], lv = qi; qi++;
+    if (dv >= JELLY_MAX_DEPTH) continue;
     for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
       const u = csrNbr[k];
-      if (!visible[u] || seenJ.has(u)) continue;
-      seenJ.add(u);
-      nodes.push(u); depths.push(dv + 1);
-      if (nodes.length >= 800) break;
+      if (!visible[u] || local.has(u)) continue;
+      local.set(u, nodes.length);
+      nodes.push(u); depths.push(dv + 1); parents.push(lv);
+      if (nodes.length >= JELLY_MAX_NODES) break;
     }
   }
   const n = nodes.length;
   jelly = {
     nodes: Int32Array.from(nodes),
     depths: Uint8Array.from(depths),
+    parents: Int32Array.from(parents),
     ox: new Float32Array(n), oy: new Float32Array(n),
     vx: new Float32Array(n), vy: new Float32Array(n),
-    dx: 0, dy: 0,
+    tx: px[root], ty: py[root],
     active: true,
   };
   for (let k = 0; k < n; k++) { jelly.ox[k] = px[nodes[k]]; jelly.oy[k] = py[nodes[k]]; }
 }
 function jellyTick() {
   if (!jelly) { jellyRunning = false; return; }
-  const { nodes, depths, ox, oy, vx, vy, dx, dy } = jelly;
+  const { nodes, depths, parents, ox, oy, vx, vy } = jelly;
+  const REST = 70;    // natural link length: closer than this feels no pull
+  const PULL = 0.045; // stretch force: far = strong and fast, near = gentle
+  const DAMP = 0.8;
+  const VCAP = 30;
+  if (jelly.active) {
+    // grabbed word rides the pointer; each word is towed by its parent
+    // in the chain (word -> 1st neighbors -> 2nd -> ...)
+    px[nodes[0]] = jelly.tx; py[nodes[0]] = jelly.ty;
+    vx[0] = 0; vy[0] = 0;
+    for (let k = 1; k < nodes.length; k++) {
+      const i = nodes[k], p = nodes[parents[k]];
+      const dx = px[p] - px[i], dy = py[p] - py[i];
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      if (d > REST) {
+        const f = ((d - REST) * PULL) / d;
+        vx[k] += dx * f; vy[k] += dy * f;
+      }
+      // faint memory of home keeps the patch from knotting
+      vx[k] += (ox[k] - px[i]) * 0.002;
+      vy[k] += (oy[k] - py[i]) * 0.002;
+    }
+  } else {
+    // released: everything except the dropped word springs back home,
+    // fast at first, easing out as it lands
+    for (let k = 1; k < nodes.length; k++) {
+      const i = nodes[k];
+      vx[k] += (ox[k] - px[i]) * 0.05;
+      vy[k] += (oy[k] - py[i]) * 0.05;
+    }
+  }
   let energy = 0;
-  for (let k = 0; k < nodes.length; k++) {
+  for (let k = 1; k < nodes.length; k++) {
     const i = nodes[k];
-    const f = JELLY_FALL[depths[k]];
-    const tx = ox[k] + dx * f, ty = oy[k] + dy * f;
-    // spring integration: accelerates in, glides, settles out with a
-    // soft wobble (ease-in-out with a jelly bounce)
-    const stiff = k === 0 ? 0.3 : 0.11;
-    const damp = k === 0 ? 0.68 : 0.8;
-    vx[k] = (vx[k] + (tx - px[i]) * stiff) * damp;
-    vy[k] = (vy[k] + (ty - py[i]) * stiff) * damp;
+    vx[k] *= DAMP; vy[k] *= DAMP;
+    const sp = Math.abs(vx[k]) + Math.abs(vy[k]);
+    if (sp > VCAP) { vx[k] *= VCAP / sp; vy[k] *= VCAP / sp; }
     px[i] += vx[k]; py[i] += vy[k];
-    const e = Math.abs(vx[k]) + Math.abs(vy[k]) + Math.abs(tx - px[i]) * 0.1;
-    if (e > energy) energy = e;
+    if (sp > energy) energy = sp;
   }
   requestDraw();
-  if (jelly.active || energy * scale > 0.3) {
+  if (jelly.active || energy * scale > 0.25) {
     requestAnimationFrame(jellyTick);
   } else {
     jelly = null;
@@ -1271,11 +1300,15 @@ function jellyTick() {
 }
 function jellyTo(wx, wy) {
   if (!jelly) return;
-  jelly.dx = wx - jelly.ox[0];
-  jelly.dy = wy - jelly.oy[0];
+  jelly.tx = wx; jelly.ty = wy;
   if (!jellyRunning) { jellyRunning = true; requestAnimationFrame(jellyTick); }
 }
-function endJelly() { if (jelly) jelly.active = false; }
+function endJelly() {
+  if (!jelly) return;
+  jelly.active = false;
+  if (!jellyRunning) { jellyRunning = true; requestAnimationFrame(jellyTick); }
+  scheduleBGRefresh();
+}
 
 function scheduleBGRefresh() {
   if (bgRefreshTimer) clearTimeout(bgRefreshTimer);
