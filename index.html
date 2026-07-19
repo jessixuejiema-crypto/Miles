@@ -230,6 +230,7 @@
     }
     ppx = px.slice(); ppy = py.slice();
     trail.length = 0;
+    resetEnergyRef();
   }
 
   // ---------------------------------------------------------------
@@ -240,6 +241,39 @@
   // ---------------------------------------------------------------
   const PHYS_DT = 1 / 480;
   const ITER = 30;
+
+  // Total mechanical energy reference. The constraint solver bleeds a
+  // tiny bit of energy numerically; with damping at zero we rescale
+  // velocities each frame to hold total energy exactly, so the
+  // pendulum is truly frictionless and swings forever.
+  let E0 = 0;
+
+  function currentEnergy() {
+    let ke = 0, pe = 0;
+    for (let i = 1; i <= N; i++) {
+      const vx = (px[i] - ppx[i]) / PHYS_DT;
+      const vy = (py[i] - ppy[i]) / PHYS_DT;
+      ke += 0.5 * (vx * vx + vy * vy);
+      pe += -g * (py[i] - pivot.y);
+    }
+    return { E: ke + pe, ke, pe };
+  }
+
+  function resetEnergyRef() {
+    E0 = currentEnergy().E;
+  }
+
+  function conserveEnergy() {
+    const { ke, pe } = currentEnergy();
+    const keTarget = E0 - pe;
+    if (ke < 1e-6) return;
+    let s = Math.sqrt(Math.max(0, keTarget) / ke);
+    s = Math.max(0.95, Math.min(1.05, s));  // gentle per-frame correction
+    for (let i = 1; i <= N; i++) {
+      ppx[i] = px[i] - (px[i] - ppx[i]) * s;
+      ppy[i] = py[i] - (py[i] - ppy[i]) * s;
+    }
+  }
 
   function integrate(dt) {
     const damp = Math.max(0, 1 - damping * 8 * dt);
@@ -328,6 +362,7 @@
     if (dragIndex < 0) return;
     dragIndex = -1;
     canvas.classList.remove("dragging");
+    resetEnergyRef();
   }
   canvas.addEventListener("pointerup", endDrag);
   canvas.addEventListener("pointercancel", endDrag);
@@ -347,10 +382,12 @@
   $("gravity").addEventListener("input", (e) => {
     g = +e.target.value;
     $("gravityOut").textContent = g;
+    resetEnergyRef();
   });
   $("damping").addEventListener("input", (e) => {
     damping = +e.target.value;
     $("dampingOut").textContent = damping.toFixed(2);
+    resetEnergyRef();
   });
   $("trail").addEventListener("input", (e) => {
     trailMax = +e.target.value;
@@ -385,6 +422,7 @@
     const len = totalLength() / N;
     linkLen = new Array(N).fill(len);
     trail.length = 0;
+    resetEnergyRef();
   }
   window.addEventListener("resize", resize);
 
@@ -509,6 +547,7 @@
         physStep(PHYS_DT);
       }
       acc -= steps * PHYS_DT;
+      if (steps > 0 && damping === 0 && dragIndex < 0) conserveEnergy();
     }
 
     if (!paused || dragIndex >= 1) {
@@ -525,7 +564,7 @@
   }
 
   // Debug/testing handle
-  window.__pend = () => ({ N, px: px.slice(), py: py.slice() });
+  window.__pend = () => ({ N, px: px.slice(), py: py.slice(), E: currentEnergy().E, E0 });
 
   resize();
   buildChain();
