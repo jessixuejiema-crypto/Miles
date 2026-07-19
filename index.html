@@ -1907,9 +1907,13 @@ document.getElementById("maxLen").value = MAXLEN;
   let pickTarget = null; // {kind, i} or "iso"
   let drag = null;       // {kind, i, bar, dot, moved}
 
-  function openPicker(target, current) {
+  function openPicker(target, current, x, y) {
     pickTarget = target;
     stopPicker.value = current;
+    // anchor the (invisible) input at the tap point so mobile browsers
+    // open the picker next to the dot
+    stopPicker.style.left = (x || 40) + "px";
+    stopPicker.style.top = (y || 40) + "px";
     stopPicker.click();
   }
   stopPicker.addEventListener("input", () => {
@@ -1930,15 +1934,17 @@ document.getElementById("maxLen").value = MAXLEN;
     const kind = dot.dataset.ed, i = +dot.dataset.i;
     selStop[kind] = i;
     ensureCustom(kind);
-    drag = { kind, i, dot, bar: dot.closest(".grad-bar"), moved: false };
+    drag = { kind, i, dot, bar: dot.closest(".grad-bar"), moved: false, startX: e.clientX, startY: e.clientY };
     try { dot.setPointerCapture(e.pointerId); } catch (_) {}
   });
   lr.addEventListener("pointermove", (e) => {
     if (!drag) return;
+    // a real drag needs ~6px of travel; finger jitter on a tap stays a tap
+    if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 6) return;
+    drag.moved = true;
     const rect = drag.bar.getBoundingClientRect();
     const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const stops = ensureCustom(drag.kind);
-    if (Math.abs(t - stops[drag.i].t) > 0.004) drag.moved = true;
     stops[drag.i].t = t;
     drag.dot.style.left = (t * 100).toFixed(1) + "%";
     drag.bar.style.background = `linear-gradient(90deg, ${gradCSS(stops)})`;
@@ -1949,14 +1955,14 @@ document.getElementById("maxLen").value = MAXLEN;
     const { kind, i, moved } = drag;
     drag = null;
     if (!moved) {
-      openPicker({ kind, i }, getStops(kind)[i].hex);
+      openPicker({ kind, i }, getStops(kind)[i].hex, e.clientX, e.clientY);
     }
     updateLegend();
     styleChanged(false);
   });
   lr.addEventListener("click", (e) => {
     if (e.target.id === "isoSwatch") {
-      openPicker("iso", isoCSS().startsWith("#") ? isoCSS() : "#d9d8d2");
+      openPicker("iso", isoCSS().startsWith("#") ? isoCSS() : "#d9d8d2", e.clientX, e.clientY);
       return;
     }
     const btn = e.target.closest(".gbtn");
