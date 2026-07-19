@@ -1237,6 +1237,7 @@ function startJelly(root) {
     nodes: Int32Array.from(nodes),
     depths: Uint8Array.from(depths),
     ox: new Float32Array(n), oy: new Float32Array(n),
+    vx: new Float32Array(n), vy: new Float32Array(n),
     dx: 0, dy: 0,
     active: true,
   };
@@ -1244,20 +1245,24 @@ function startJelly(root) {
 }
 function jellyTick() {
   if (!jelly) { jellyRunning = false; return; }
-  const { nodes, depths, ox, oy, dx, dy } = jelly;
-  let maxMove = 0;
+  const { nodes, depths, ox, oy, vx, vy, dx, dy } = jelly;
+  let energy = 0;
   for (let k = 0; k < nodes.length; k++) {
     const i = nodes[k];
     const f = JELLY_FALL[depths[k]];
     const tx = ox[k] + dx * f, ty = oy[k] + dy * f;
-    const mx = (tx - px[i]) * (k === 0 ? 0.75 : 0.28);
-    const my = (ty - py[i]) * (k === 0 ? 0.75 : 0.28);
-    px[i] += mx; py[i] += my;
-    const m = Math.abs(mx) + Math.abs(my);
-    if (m > maxMove) maxMove = m;
+    // spring integration: accelerates in, glides, settles out with a
+    // soft wobble (ease-in-out with a jelly bounce)
+    const stiff = k === 0 ? 0.3 : 0.11;
+    const damp = k === 0 ? 0.68 : 0.8;
+    vx[k] = (vx[k] + (tx - px[i]) * stiff) * damp;
+    vy[k] = (vy[k] + (ty - py[i]) * stiff) * damp;
+    px[i] += vx[k]; py[i] += vy[k];
+    const e = Math.abs(vx[k]) + Math.abs(vy[k]) + Math.abs(tx - px[i]) * 0.1;
+    if (e > energy) energy = e;
   }
   requestDraw();
-  if (jelly.active || maxMove * scale > 0.35) {
+  if (jelly.active || energy * scale > 0.3) {
     requestAnimationFrame(jellyTick);
   } else {
     jelly = null;
