@@ -144,6 +144,30 @@
   .legend-grad { height: 12px; width: 170px; border-radius: 6px; border: 1px solid var(--border); }
   .legend-ends { display: flex; justify-content: space-between; width: 172px; margin-top: 3px; font-variant-numeric: tabular-nums; }
   .legend-iso { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .grad-wrap { display: flex; align-items: center; gap: 6px; }
+  .grad-bar { position: relative; overflow: visible; cursor: default; }
+  .grad-dot {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1.5px rgba(0,0,0,0.45);
+    cursor: grab;
+    touch-action: none;
+  }
+  .grad-dot.sel { box-shadow: 0 0 0 2.5px var(--accent); }
+  .gbtn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    line-height: 1;
+    font-size: 14px;
+    border-radius: 6px;
+  }
+  #isoSwatch { cursor: pointer; width: 15px; height: 15px; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
   .legend-swatch { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--border); display: inline-block; }
   #stats { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--hairline); color: var(--text-muted); line-height: 1.5; }
   #hubs {
@@ -229,14 +253,6 @@
       <span style="color:var(--text-secondary)">Links:</span>
       <input type="color" id="linkColor" value="#898781">
     </div>
-    <div class="control-group" title="One color for all word circles (replaces the connection gradient)">
-      <span style="color:var(--text-secondary)">Words:</span>
-      <input type="color" id="wordColor" value="#2a78d6">
-    </div>
-    <div class="control-group" title="One color for all island circles (replaces the size gradient)">
-      <span style="color:var(--text-secondary)">Islands:</span>
-      <input type="color" id="islandColor" value="#00b8d4">
-    </div>
     <button id="resetColors" title="Back to the default colors and gradients">&#8634; colors</button>
     <div class="sep"></div>
     <label class="len-toggle"><input type="checkbox" id="showIsolated">show words with no links</label>
@@ -249,8 +265,8 @@
 <main>
   <canvas id="graph"></canvas>
   <div id="tooltip"></div>
+  <input type="color" id="stopPicker" style="position:fixed; left:-100px; top:-100px; width:1px; height:1px; opacity:0">
   <div id="legend">
-    <div class="legend-title">Connections per word</div>
     <div id="legendRows"></div>
     <div id="stats"></div>
   </div>
@@ -441,10 +457,63 @@ function islandRgb(size) {
   return ISLAND_STOPS[ISLAND_STOPS.length - 1][1];
 }
 const OUTLINE_CSS = { light: "rgb(122,120,114)", dark: "rgb(104,103,98)" };
-/* user-picked overrides; null = defaults (gradients / theme gray) */
+/* user-picked overrides; null = defaults */
 let linkColor = null;
-let wordColor = null;    // flat color for all linked word circles
-let islandColor = null;  // flat color for all island markers
+let wordStops = null;     // custom gradient stops for word circles [{t,hex}]
+let islandStops = null;   // custom gradient stops for island markers
+let isolatedColor = null; // custom color for words with no links
+const selStop = { word: -1, island: -1 };
+
+function rgbToHex(c) {
+  return "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+function defaultWordStops() {
+  const T = THEMES[themeName];
+  return ANCHOR_DEGS.map((d, k) => ({ t: (d - 1) / (COLOR_CAP - 1), hex: T.bins[k] }));
+}
+function defaultIslandStops() {
+  return ISLAND_STOPS.map(([s, c]) => ({ t: (s - 1) / 99, hex: rgbToHex(c) }));
+}
+function getStops(kind) {
+  return kind === "word" ? (wordStops || defaultWordStops()) : (islandStops || defaultIslandStops());
+}
+function ensureCustom(kind) {
+  if (kind === "word") { if (!wordStops) wordStops = defaultWordStops().map(s => ({ ...s })); return wordStops; }
+  if (!islandStops) islandStops = defaultIslandStops().map(s => ({ ...s }));
+  return islandStops;
+}
+function interpStops(stops, t) {
+  const s = [...stops].sort((a, b) => a.t - b.t);
+  if (t <= s[0].t) return hexToRgb(s[0].hex);
+  if (t >= s[s.length - 1].t) return hexToRgb(s[s.length - 1].hex);
+  for (let k = 0; k < s.length - 1; k++) {
+    if (t <= s[k + 1].t) {
+      const f = (t - s[k].t) / Math.max(1e-6, s[k + 1].t - s[k].t);
+      const a = hexToRgb(s[k].hex), b = hexToRgb(s[k + 1].hex);
+      return a.map((v, j) => Math.round(v + (b[j] - v) * f));
+    }
+  }
+  return hexToRgb(s[s.length - 1].hex);
+}
+function isoCSS() { return isolatedColor || THEMES[themeName].isolated; }
+/* rebuild the color lookup tables from the current stops */
+function refreshRamps() {
+  for (const name of Object.keys(THEMES)) {
+    const arr = colorByDeg[name] || (colorByDeg[name] = []);
+    for (let d = 1; d <= COLOR_CAP; d++) {
+      const t = (d - 1) / (COLOR_CAP - 1);
+      const c = wordStops
+        ? interpStops(wordStops, t)
+        : interpStops(ANCHOR_DEGS.map((ad, k) => ({ t: (ad - 1) / (COLOR_CAP - 1), hex: THEMES[name].bins[k] })), t);
+      arr[d] = `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+  }
+  const ist = getStops("island");
+  for (let k = 0; k < 12; k++) {
+    const c = interpStops(ist, (k * 9 + 5 - 1) / 99);
+    ISLAND_BUCKET_COLORS[k] = `rgb(${c[0]},${c[1]},${c[2]})`;
+  }
+}
 function edgeColor(kind) {
   if (linkColor) {
     const r = parseInt(linkColor.slice(1, 3), 16);
@@ -472,11 +541,8 @@ function blendRgbAt(d, hexes) {
   const a = rgbs[lo], b = rgbs[lo + 1];
   return a.map((v, k) => Math.round(v + (b[k] - v) * t));
 }
-for (const name of Object.keys(THEMES)) {
-  const arr = [];
-  for (let d = 1; d <= COLOR_CAP; d++) arr[d] = blendAt(d, THEMES[name].bins);
-  colorByDeg[name] = arr;
-}
+refreshRamps();
+
 const rgbDim = {};
 for (const name of Object.keys(THEMES)) {
   const t = new Uint8Array((COLOR_CAP + 1) * 3);
@@ -492,8 +558,8 @@ for (const name of Object.keys(THEMES)) {
 function degBucket(i) { return deg[i] <= 0 ? 0 : Math.min(deg[i], COLOR_CAP); }
 function nodeColor(i, T) {
   const d = deg[i];
-  if (d <= 0) return T.isolated;
-  return wordColor || colorByDeg[themeName][Math.min(d, COLOR_CAP)];
+  if (d <= 0) return isoCSS();
+  return colorByDeg[themeName][Math.min(d, COLOR_CAP)];
 }
 function nodeRadius(i) { return 3 + Math.sqrt(Math.min(deg[i], 40)) * 1.15; }
 
@@ -715,7 +781,7 @@ function renderFarCache() {
   if (mAf > 0.02) {
     c.globalAlpha = 0.85 * mAf;
     for (let bkt = 0; bkt < ISLAND_BUCKET_COLORS.length; bkt++) {
-      c.fillStyle = islandColor || ISLAND_BUCKET_COLORS[bkt];
+      c.fillStyle = ISLAND_BUCKET_COLORS[bkt];
       c.beginPath();
       let any = false;
       for (let m = 0, mi = 0; m < islandMarks.length; m += 2, mi++) {
@@ -753,7 +819,7 @@ function renderFarCache() {
       any = true;
     }
     if (!any) continue;
-    L.fillStyle = d === 0 ? T.isolated : (wordColor || ramp2[d]);
+    L.fillStyle = d === 0 ? isoCSS() : ramp2[d];
     L.fill(path);
     paths.push(path);
   }
@@ -1029,7 +1095,7 @@ function draw() {
         ctx.stroke();
         continue;
       }
-      ctx.fillStyle = d <= 0 ? T.isolated : (wordColor || ramp[d < COLOR_CAP ? d : COLOR_CAP]);
+      ctx.fillStyle = d <= 0 ? isoCSS() : ramp[d < COLOR_CAP ? d : COLOR_CAP];
       ctx.beginPath();
       ctx.arc(X, Y, r, 0, Math.PI * 2);
       ctx.fill();
@@ -1089,7 +1155,7 @@ function draw() {
           any = true;
         }
         if (!any) continue;
-        L.fillStyle = d === 0 ? T.isolated : (wordColor || ramp2[d]);
+        L.fillStyle = d === 0 ? isoCSS() : ramp2[d];
         L.fill(path);
         paths.push(path);
       }
@@ -1375,13 +1441,13 @@ document.getElementById("maxLen").value = MAXLEN;
 {
   let styleTimer = null;
   function styleChanged(needsBitmap) {
+    refreshRamps();
     requestDraw(); // near views recolor instantly
     if (styleTimer) clearTimeout(styleTimer);
     styleTimer = setTimeout(() => {
       styleTimer = null;
       if (needsBitmap) bgDirty = true; // edge bitmap only depends on link color
       invalidateFar();
-      updateLegend();
       requestDraw();
     }, 300);
   }
@@ -1389,23 +1455,99 @@ document.getElementById("maxLen").value = MAXLEN;
     linkColor = e.target.value;
     styleChanged(true);
   });
-  document.getElementById("wordColor").addEventListener("input", (e) => {
-    wordColor = e.target.value;
-    styleChanged(false);
-  });
-  document.getElementById("islandColor").addEventListener("input", (e) => {
-    islandColor = e.target.value;
-    styleChanged(false);
-  });
   document.getElementById("resetColors").addEventListener("click", () => {
-    linkColor = wordColor = islandColor = null;
+    linkColor = null;
+    wordStops = null; islandStops = null; isolatedColor = null;
+    selStop.word = selStop.island = -1;
     document.getElementById("linkColor").value = "#898781";
-    document.getElementById("wordColor").value = "#2a78d6";
-    document.getElementById("islandColor").value = "#00b8d4";
+    refreshRamps();
     bgDirty = true;
     invalidateFar();
     updateLegend();
     requestDraw();
+  });
+
+  /* ---- gradient-dot editor on the legend bars ---- */
+  const lr = document.getElementById("legendRows");
+  const stopPicker = document.getElementById("stopPicker");
+  let pickTarget = null; // {kind, i} or "iso"
+  let drag = null;       // {kind, i, bar, dot, moved}
+
+  function openPicker(target, current) {
+    pickTarget = target;
+    stopPicker.value = current;
+    stopPicker.click();
+  }
+  stopPicker.addEventListener("input", () => {
+    if (!pickTarget) return;
+    if (pickTarget === "iso") {
+      isolatedColor = stopPicker.value;
+    } else {
+      ensureCustom(pickTarget.kind)[pickTarget.i].hex = stopPicker.value;
+    }
+    updateLegend();
+    styleChanged(false);
+  });
+
+  lr.addEventListener("pointerdown", (e) => {
+    const dot = e.target.closest(".grad-dot");
+    if (!dot) return;
+    e.preventDefault();
+    const kind = dot.dataset.ed, i = +dot.dataset.i;
+    selStop[kind] = i;
+    ensureCustom(kind);
+    drag = { kind, i, dot, bar: dot.closest(".grad-bar"), moved: false };
+    try { dot.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  lr.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const rect = drag.bar.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const stops = ensureCustom(drag.kind);
+    if (Math.abs(t - stops[drag.i].t) > 0.004) drag.moved = true;
+    stops[drag.i].t = t;
+    drag.dot.style.left = (t * 100).toFixed(1) + "%";
+    drag.bar.style.background = `linear-gradient(90deg, ${gradCSS(stops)})`;
+    styleChanged(false);
+  });
+  lr.addEventListener("pointerup", (e) => {
+    if (!drag) return;
+    const { kind, i, moved } = drag;
+    drag = null;
+    if (!moved) {
+      openPicker({ kind, i }, getStops(kind)[i].hex);
+    }
+    updateLegend();
+    styleChanged(false);
+  });
+  lr.addEventListener("click", (e) => {
+    if (e.target.id === "isoSwatch") {
+      openPicker("iso", isoCSS().startsWith("#") ? isoCSS() : "#d9d8d2");
+      return;
+    }
+    const btn = e.target.closest(".gbtn");
+    if (!btn) return;
+    const kind = btn.dataset.ed;
+    const stops = ensureCustom(kind);
+    if (btn.dataset.act === "add") {
+      // insert in the middle of the widest gap, with the blended color there
+      const sorted = [...stops].sort((a, b) => a.t - b.t);
+      let bestGap = 0, bestT = 0.5;
+      for (let k = 0; k < sorted.length - 1; k++) {
+        const gap = sorted[k + 1].t - sorted[k].t;
+        if (gap > bestGap) { bestGap = gap; bestT = (sorted[k].t + sorted[k + 1].t) / 2; }
+      }
+      const c = interpStops(stops, bestT);
+      stops.push({ t: bestT, hex: rgbToHex(c) });
+      selStop[kind] = stops.length - 1;
+    } else {
+      if (stops.length <= 2) return; // a gradient needs at least two dots
+      const i = selStop[kind] >= 0 && selStop[kind] < stops.length ? selStop[kind] : stops.length - 1;
+      stops.splice(i, 1);
+      selStop[kind] = -1;
+    }
+    updateLegend();
+    styleChanged(false);
   });
 }
 document.getElementById("nbrDepth").addEventListener("change", (e) => {
@@ -1439,28 +1581,27 @@ if (window.matchMedia) {
 }
 
 /* ================= legend / stats / hubs ================= */
+function gradCSS(stops) {
+  return [...stops].sort((a, b) => a.t - b.t)
+    .map((s) => `${s.hex} ${(s.t * 100).toFixed(1)}%`).join(", ");
+}
+function editorHTML(kind, title, endLabels) {
+  const stops = getStops(kind);
+  const dots = stops.map((s, i) =>
+    `<span class="grad-dot${selStop[kind] === i ? " sel" : ""}" data-ed="${kind}" data-i="${i}"` +
+    ` style="left:${(s.t * 100).toFixed(1)}%; background:${s.hex}"></span>`).join("");
+  return `<div class="legend-title" style="margin-top:6px">${title}</div>` +
+    `<div class="grad-wrap">` +
+    `<div class="legend-grad grad-bar" data-ed="${kind}" style="background:linear-gradient(90deg, ${gradCSS(stops)})">${dots}</div>` +
+    `<button class="gbtn" data-ed="${kind}" data-act="add" title="Add a color dot">+</button>` +
+    `<button class="gbtn" data-ed="${kind}" data-act="del" title="Delete the selected dot">&minus;</button>` +
+    `</div>` +
+    `<div class="legend-ends">${endLabels.map((l) => `<span>${l}</span>`).join("")}</div>`;
+}
 function updateLegend() {
-  const T = THEMES[themeName];
-  let html;
-  if (wordColor) {
-    html = `<div class="legend-iso"><span class="legend-swatch" style="background:${wordColor}"></span> custom word color</div>`;
-  } else {
-    const stops = T.bins.map((c, k) => `${c} ${((ANCHOR_DEGS[k] - 1) / (COLOR_CAP - 1) * 100).toFixed(1)}%`).join(", ");
-    html =
-      `<div class="legend-grad" style="background:linear-gradient(90deg, ${stops})"></div>` +
-      `<div class="legend-ends"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span><span>${COLOR_CAP}+</span></div>`;
-  }
-  html += `<div class="legend-title" style="margin-top:8px">Island size (words)</div>`;
-  if (islandColor) {
-    html += `<div class="legend-iso"><span class="legend-swatch" style="background:${islandColor}"></span> custom island color</div>`;
-  } else {
-    html +=
-      `<div class="legend-grad" style="background:linear-gradient(90deg,` +
-      ISLAND_STOPS.map(([s, c]) => `rgb(${c[0]},${c[1]},${c[2]}) ${s}%`).join(",") + `)"></div>` +
-      `<div class="legend-ends"><span>1</span><span>25</span><span>50</span><span>75</span><span>100</span></div>`;
-  }
-  if (showIsolated)
-    html += `<div class="legend-iso"><span class="legend-swatch" style="background:${T.isolated}"></span> no links</div>`;
+  let html = editorHTML("word", "Connections per word", ["1", "5", "10", "15", "20", COLOR_CAP + "+"]);
+  html += editorHTML("island", "Island size (words)", ["1", "25", "50", "75", "100"]);
+  html += `<div class="legend-iso"><span class="legend-swatch" id="isoSwatch" style="background:${isoCSS()}" title="Tap to change"></span> no links &middot; tap dots to recolor, drag to move</div>`;
   document.getElementById("legendRows").innerHTML = html;
   document.getElementById("stats").innerHTML =
     `${visCount.toLocaleString()} words &middot; ${(visEdges.length / 2).toLocaleString()} links` +
