@@ -512,6 +512,7 @@
     The <b>🛠️ Gear Shop</b> sells tools — pick a targeted tool (like the watering can) and click a plant to use it; instant tools fire the moment you click them in the toolbar.
     The <b>weather</b> changes every ~3 minutes (139 kinds, including the Grow&nbsp;a&nbsp;Garden set!) and several can strike at once — 50% chance of 2, 25% of 3, and so on. Every 10 seconds each active weather may <b>✨ mutate</b> a plant, and mutations stack for multiplied value — but harvesting takes them with the crop, so a regrown stem starts fresh.
     You also earn <b>🎟️ tokens</b>: digging up a single-harvest plant pays 1–4, harvesting common–rare multi-harvest crops pays 4–10, and legendary or better pays 50–1000 — spend them in any shop with the purple price button.
+    The <b>token shop stocks separately</b> from the sheckle shop, and its restock odds are multiplied by the active weather multipliers — a ×3 and a ×5 weather together mean ×15 token-stock luck!
     Both shops <b>restock every 10 seconds</b>; rare items are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
   </p>
 </div>
@@ -525,7 +526,7 @@
       <button class="m-close" id="close-seed" aria-label="Close seed shop">✖</button>
     </div>
     <div class="m-sub">
-      <span>Seller's stock</span>
+      <span id="seed-luck">Seller's stock</span>
       <span id="restock">Restock in 0:10</span>
     </div>
     <div class="m-body" id="seedlist"></div>
@@ -541,7 +542,7 @@
       <button class="m-close" id="close-gear" aria-label="Close gear shop">✖</button>
     </div>
     <div class="m-sub">
-      <span>Gear in stock</span>
+      <span id="gear-luck">Gear in stock</span>
       <span id="restock2">Restock in 0:10</span>
     </div>
     <div class="m-body" id="gearlist"></div>
@@ -813,7 +814,9 @@
   var seedsOwned = {};  // key -> count of seeds in your bag
   var gearOwned = {};   // key -> count of gear in your shed
   var basket = {};      // key -> count of harvested crops
-  var stock = {};       // key -> count in shop right now (seeds and gear)
+  var stock = {};       // key -> count in the sheckle shop right now (seeds and gear)
+  var stockTok = {};    // key -> count in the token shop — rolled independently,
+                        // with the chance boosted by the active weather multipliers
   var nextRestock = 0;
   var sel = 'hand';
   var held = null;       // basket stack key selected in the sell shop
@@ -835,6 +838,8 @@
   var heldActions = document.getElementById('held-actions');
   var restockEl = document.getElementById('restock');
   var restock2El = document.getElementById('restock2');
+  var seedLuckEl = document.getElementById('seed-luck');
+  var gearLuckEl = document.getElementById('gear-luck');
   var weatherEl = document.getElementById('weather-banner');
   var wInfoEl = document.getElementById('w-info');
   var wTimeEl = document.getElementById('w-time');
@@ -870,7 +875,7 @@
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         sheckles: sheckles, tokens: tokens, meters: meters, grid: grid,
         seedsOwned: seedsOwned, gearOwned: gearOwned, basket: basket,
-        stock: stock, nextRestock: nextRestock, weather: weather
+        stock: stock, stockTok: stockTok, nextRestock: nextRestock, weather: weather
       }));
     } catch (e) { /* storage unavailable — play without saving */ }
   }
@@ -892,6 +897,7 @@
       if (d.gearOwned) gearOwned = d.gearOwned;
       if (d.basket) basket = d.basket;
       if (d.stock) stock = d.stock;
+      if (d.stockTok) stockTok = d.stockTok;
       if (typeof d.nextRestock === 'number') nextRestock = d.nextRestock;
       if (d.weather) {
         var wkeys = d.weather.keys || (d.weather.key ? [d.weather.key] : []);
@@ -902,9 +908,17 @@
   }
 
   // ---------- seed shop stock ----------
+  // Product of all active weather multipliers, e.g. a 3x and a 5x weather = 15x
+  function weatherLuck() {
+    if (!weather) return 1;
+    return activeWeathers().reduce(function (a, w) { return a * w.mult; }, 1);
+  }
   function doRestock() {
+    var luck = weatherLuck();
     SEEDS.concat(GEAR).forEach(function (s) {
       stock[s.key] = (Math.random() * 100 < s.chance) ? randInt(s.stock[0], s.stock[1]) : 0;
+      // token shop rolls separately, with weather-boosted odds
+      stockTok[s.key] = (Math.random() * 100 < s.chance * luck) ? randInt(s.stock[0], s.stock[1]) : 0;
     });
     nextRestock = Date.now() + RESTOCK_MS;
     if (!ovSeed.hidden) {
@@ -920,28 +934,30 @@
 
   function renderSeedShop() {
     seedListEl.innerHTML = '';
+    var luck = weatherLuck();
+    seedLuckEl.textContent = luck > 1 ? 'Token-stock luck ×' + trim(luck) : 'Seller’s stock';
     SEEDS.forEach(function (s) {
-      var inStock = (stock[s.key] || 0) > 0;
+      var sc = stock[s.key] || 0, tc = stockTok[s.key] || 0;
       var row = document.createElement('div');
-      row.className = 'srow' + (inStock ? '' : ' oos');
+      row.className = 'srow' + (sc < 1 && tc < 1 ? ' oos' : '');
       row.innerHTML =
         '<span class="s-emoji">' + s.emoji + '</span>' +
         '<span class="s-info"><span class="s-name">' + s.name + '</span><br>' +
         '<span class="s-tags">' + (s.multi ? '♻️ multi-harvest' : '🚫 single harvest') +
         ' · grows in ' + s.grow + 's</span></span>' +
-        '<span class="s-stock">' + (inStock ? '×' + stock[s.key] : 'NO STOCK') + '</span>';
+        '<span class="s-stock">' + (sc < 1 && tc < 1 ? 'NO STOCK' : '') + '</span>';
       var buy = document.createElement('button');
       buy.className = 's-buy';
-      buy.textContent = money(s.price);
-      buy.disabled = !inStock || sheckles < s.price;
-      buy.title = 'Buy with sheckles';
+      buy.textContent = money(s.price) + (sc > 0 ? ' ×' + sc : '');
+      buy.disabled = sc < 1 || sheckles < s.price;
+      buy.title = sc < 1 ? 'Out of stock in the sheckle shop' : 'Buy with sheckles';
       buy.addEventListener('click', function () { buySeed(s.key, false); });
       row.appendChild(buy);
       var buyT = document.createElement('button');
       buyT.className = 's-buy tok';
-      buyT.textContent = '🎟️' + tokFmt(s.tok);
-      buyT.disabled = !inStock || tokens < s.tok;
-      buyT.title = 'Buy with tokens';
+      buyT.textContent = '🎟️' + tokFmt(s.tok) + (tc > 0 ? ' ×' + tc : '');
+      buyT.disabled = tc < 1 || tokens < s.tok;
+      buyT.title = tc < 1 ? 'Out of stock in the token shop' : 'Buy with tokens';
       buyT.addEventListener('click', function () { buySeed(s.key, true); });
       row.appendChild(buyT);
       seedListEl.appendChild(row);
@@ -950,7 +966,8 @@
 
   function buySeed(key, useTok) {
     var s = CROPS[key];
-    if ((stock[key] || 0) < 1) { seedBubble.textContent = 'Sorry, no ' + s.name.toLowerCase() + ' seeds in stock right now!'; return; }
+    var pool = useTok ? stockTok : stock;
+    if ((pool[key] || 0) < 1) { seedBubble.textContent = 'Sorry, no ' + s.name.toLowerCase() + ' seeds in the ' + (useTok ? 'token' : 'sheckle') + ' stock right now!'; return; }
     if (useTok) {
       if (tokens < s.tok) { seedBubble.textContent = 'That one costs ' + tokFmt(s.tok) + ' tokens — go dig and harvest some more!'; return; }
       tokens -= s.tok;
@@ -958,7 +975,7 @@
       if (sheckles < s.price) { seedBubble.textContent = 'That one costs ' + money(s.price) + ' — come back with more sheckles!'; return; }
       sheckles -= s.price;
     }
-    stock[key]--;
+    pool[key]--;
     seedsOwned[key] = (seedsOwned[key] || 0) + 1;
     seedBubble.textContent = 'One ' + s.name.toLowerCase() + ' seed, all yours! Anything else?';
     if (sel === 'dig' || sel === 'hand') sel = key;
@@ -969,27 +986,29 @@
   // ---------- gear shop ----------
   function renderGearShop() {
     gearListEl.innerHTML = '';
+    var luck = weatherLuck();
+    gearLuckEl.textContent = luck > 1 ? 'Token-stock luck ×' + trim(luck) : 'Gear in stock';
     GEAR.forEach(function (g) {
-      var inStock = (stock[g.key] || 0) > 0;
+      var sc = stock[g.key] || 0, tc = stockTok[g.key] || 0;
       var row = document.createElement('div');
-      row.className = 'srow' + (inStock ? '' : ' oos');
+      row.className = 'srow' + (sc < 1 && tc < 1 ? ' oos' : '');
       row.innerHTML =
         '<span class="s-emoji">' + g.emoji + '</span>' +
         '<span class="s-info"><span class="s-name">' + g.name + '</span><br>' +
         '<span class="s-tags">' + g.desc + '</span></span>' +
-        '<span class="s-stock">' + (inStock ? '×' + stock[g.key] : 'NO STOCK') + '</span>';
+        '<span class="s-stock">' + (sc < 1 && tc < 1 ? 'NO STOCK' : '') + '</span>';
       var buy = document.createElement('button');
       buy.className = 's-buy';
-      buy.textContent = money(g.price);
-      buy.disabled = !inStock || sheckles < g.price;
-      buy.title = 'Buy with sheckles';
+      buy.textContent = money(g.price) + (sc > 0 ? ' ×' + sc : '');
+      buy.disabled = sc < 1 || sheckles < g.price;
+      buy.title = sc < 1 ? 'Out of stock in the sheckle shop' : 'Buy with sheckles';
       buy.addEventListener('click', function () { buyGear(g.key, false); });
       row.appendChild(buy);
       var buyT = document.createElement('button');
       buyT.className = 's-buy tok';
-      buyT.textContent = '🎟️' + tokFmt(g.tok);
-      buyT.disabled = !inStock || tokens < g.tok;
-      buyT.title = 'Buy with tokens';
+      buyT.textContent = '🎟️' + tokFmt(g.tok) + (tc > 0 ? ' ×' + tc : '');
+      buyT.disabled = tc < 1 || tokens < g.tok;
+      buyT.title = tc < 1 ? 'Out of stock in the token shop' : 'Buy with tokens';
       buyT.addEventListener('click', function () { buyGear(g.key, true); });
       row.appendChild(buyT);
       gearListEl.appendChild(row);
@@ -998,7 +1017,8 @@
 
   function buyGear(key, useTok) {
     var g = GEARMAP[key];
-    if ((stock[key] || 0) < 1) { gearBubble.textContent = 'Beep! No ' + g.name.toLowerCase() + ' in stock right now!'; return; }
+    var pool = useTok ? stockTok : stock;
+    if ((pool[key] || 0) < 1) { gearBubble.textContent = 'Beep! No ' + g.name.toLowerCase() + ' in the ' + (useTok ? 'token' : 'sheckle') + ' stock right now!'; return; }
     if (useTok) {
       if (tokens < g.tok) { gearBubble.textContent = 'Beep boop — that costs ' + tokFmt(g.tok) + ' tokens. Insufficient tokens detected!'; return; }
       tokens -= g.tok;
@@ -1006,7 +1026,7 @@
       if (sheckles < g.price) { gearBubble.textContent = 'Beep boop — that costs ' + money(g.price) + '. Insufficient sheckles detected!'; return; }
       sheckles -= g.price;
     }
-    stock[key]--;
+    pool[key]--;
     gearOwned[key] = (gearOwned[key] || 0) + 1;
     gearBubble.textContent = 'One ' + g.name.toLowerCase() + ', dispensed! ' + (g.target ? 'Select it, then click a plant.' : 'Click it in your toolbar to use it.');
     renderGearShop();
@@ -1599,8 +1619,9 @@
   // ---------- boot ----------
   load();
   buildPlot();
-  if (!nextRestock || !Object.keys(stock).length) doRestock();
+  // weather first: the token shop's restock odds depend on it
   if (!weather || Date.now() >= weather.until) newWeather(false); else renderWeather();
+  if (!nextRestock || !Object.keys(stock).length) doRestock();
   lastMutRoll = Date.now();
   refresh();
   setInterval(tick, 250);
@@ -1613,6 +1634,8 @@
     tokens: function () { return tokens; },
     giveTok: function (n) { tokens += n; refresh(); },
     stock: function () { return stock; },
+    stockTok: function () { return stockTok; },
+    luck: weatherLuck,
     basket: function () { return basket; },
     seeds: function () { return seedsOwned; },
     gear: function () { return gearOwned; },
