@@ -103,12 +103,18 @@
     margin-bottom: 8px;
   }
   h1 { font-size: 1.5rem; letter-spacing: 0.3px; text-wrap: balance; }
+  .money { text-align: right; }
   .coins {
     font-size: 1.05rem;
     font-weight: 800;
     color: var(--gold);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+  .coins.tokens { color: #9d7ae8; font-size: 0.92rem; }
+  .s-buy.tok {
+    background: #9d7ae8;
+    margin-left: 4px;
   }
 
   .actions {
@@ -471,7 +477,10 @@
 <div class="game">
   <header>
     <h1>🌻 My Little Garden</h1>
-    <div class="coins" id="coins">🪙 20¢</div>
+    <div class="money">
+      <div class="coins" id="coins">🪙 20¢</div>
+      <div class="coins tokens" id="tokens">🎟️ 0</div>
+    </div>
   </header>
 
   <div class="actions">
@@ -502,6 +511,7 @@
     Single-harvest crops leave the soil empty. Harvests go in your <b>🧺 basket</b> — sell them at the Sell Shop.
     The <b>🛠️ Gear Shop</b> sells tools — pick a targeted tool (like the watering can) and click a plant to use it; instant tools fire the moment you click them in the toolbar.
     The <b>weather</b> changes every ~3 minutes (139 kinds, including the Grow&nbsp;a&nbsp;Garden set!) and several can strike at once — 50% chance of 2, 25% of 3, and so on. Every 10 seconds each active weather may <b>✨ mutate</b> a plant, and mutations stack for multiplied value — but harvesting takes them with the crop, so a regrown stem starts fresh.
+    You also earn <b>🎟️ tokens</b>: digging up a single-harvest plant pays 1–4, harvesting common–rare multi-harvest crops pays 4–10, and legendary or better pays 50–1000 — spend them in any shop with the purple price button.
     Both shops <b>restock every 10 seconds</b>; rare items are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
   </p>
 </div>
@@ -609,6 +619,29 @@
   ];
   var GEARMAP = {};
   GEAR.forEach(function (g) { GEARMAP[g.key] = g; });
+
+  // Rarity tiers (drive token rewards) and token prices for every shop item
+  var TIERS = {
+    carrot: 'common', strawberry: 'common',
+    blueberry: 'uncommon', buttercup: 'uncommon', tomato: 'uncommon', corn: 'uncommon',
+    daffodil: 'rare', watermelon: 'rare', pumpkin: 'rare', apple: 'rare', bamboo: 'rare',
+    coconut: 'legendary', cactus: 'legendary', dragonfruit: 'legendary', mango: 'legendary', grape: 'legendary',
+    mushroom: 'mythical', pepper: 'mythical', cacao: 'mythical', sunflower: 'mythical', beanstalk: 'mythical',
+    emberlily: 'divine', sugarapple: 'divine', burningbud: 'divine', giantpinecone: 'divine', elderstrawberry: 'divine',
+    romanesco: 'transcendental', crimsonthorn: 'transcendental', zebrazinkle: 'transcendental', octobloom: 'transcendental', alienapple: 'transcendental'
+  };
+  var LOW_TIERS = { common: 1, uncommon: 1, rare: 1 }; // 4-10 tokens; higher tiers pay 50-1000
+  var TOK_SEED = {
+    carrot: 10, strawberry: 25, blueberry: 35, buttercup: 50, tomato: 100, corn: 200,
+    daffodil: 250, watermelon: 350, pumpkin: 500, apple: 650, bamboo: 800,
+    coconut: 1000, cactus: 1200, dragonfruit: 1500, mango: 1800, grape: 2200,
+    mushroom: 2800, pepper: 3500, cacao: 4200, sunflower: 5000, beanstalk: 6000,
+    emberlily: 7000, sugarapple: 7500, burningbud: 8000, giantpinecone: 8500, elderstrawberry: 9000,
+    romanesco: 9500, crimsonthorn: 9800, zebrazinkle: 10000, octobloom: 12000, alienapple: 50000
+  };
+  var TOK_GEAR = { wateringcan: 10, fertilizer: 40, goldscythe: 300, luckycharm: 500, timecrystal: 1500 };
+  SEEDS.forEach(function (s) { s.tier = TIERS[s.key] || 'common'; s.tok = TOK_SEED[s.key] || 10; });
+  GEAR.forEach(function (g) { g.tok = TOK_GEAR[g.key] || 10; });
 
   // Weather: [name, emoji, mutation, value multiplier, weight, growth speed, mutation chance per 10s, color]
   // Average duration is 3 minutes (2-4 min roll). Higher weight = more common.
@@ -773,6 +806,7 @@
   var SAVE_KEY = 'garden-game-v2';
 
   var sheckles = 20;
+  var tokens = 0;
   var meters = 3;
   var cols = meters * SPOTS_PER_M;
   var grid = new Array(cols * cols).fill(null); // {t, state:'grow'|'ripe'|'regrow', end}
@@ -787,6 +821,7 @@
   var lastMutRoll = 0;   // last 10-second mutation roll
 
   var coinsEl = document.getElementById('coins');
+  var tokensEl = document.getElementById('tokens');
   var shopEl = document.getElementById('shop');
   var msgEl = document.getElementById('msg');
   var plotEl = document.getElementById('plot');
@@ -823,12 +858,17 @@
   function trim(x) {
     return (Math.round(x * 100) / 100).toString();
   }
+  function tokFmt(n) {
+    if (n >= 1e6) return trim(n / 1e6) + 'M';
+    if (n >= 1e4) return trim(n / 1e3) + 'k';
+    return String(n);
+  }
 
   // ---------- persistence ----------
   function save() {
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
-        sheckles: sheckles, meters: meters, grid: grid,
+        sheckles: sheckles, tokens: tokens, meters: meters, grid: grid,
         seedsOwned: seedsOwned, gearOwned: gearOwned, basket: basket,
         stock: stock, nextRestock: nextRestock, weather: weather
       }));
@@ -840,6 +880,7 @@
       if (!raw) return;
       var d = JSON.parse(raw);
       if (typeof d.sheckles === 'number') sheckles = d.sheckles;
+      if (typeof d.tokens === 'number') tokens = d.tokens;
       if (typeof d.meters === 'number' && d.meters >= 3) meters = d.meters;
       cols = meters * SPOTS_PER_M;
       if (Array.isArray(d.grid) && d.grid.length === cols * cols) {
@@ -893,17 +934,30 @@
       buy.className = 's-buy';
       buy.textContent = money(s.price);
       buy.disabled = !inStock || sheckles < s.price;
-      buy.addEventListener('click', function () { buySeed(s.key); });
+      buy.title = 'Buy with sheckles';
+      buy.addEventListener('click', function () { buySeed(s.key, false); });
       row.appendChild(buy);
+      var buyT = document.createElement('button');
+      buyT.className = 's-buy tok';
+      buyT.textContent = '🎟️' + tokFmt(s.tok);
+      buyT.disabled = !inStock || tokens < s.tok;
+      buyT.title = 'Buy with tokens';
+      buyT.addEventListener('click', function () { buySeed(s.key, true); });
+      row.appendChild(buyT);
       seedListEl.appendChild(row);
     });
   }
 
-  function buySeed(key) {
+  function buySeed(key, useTok) {
     var s = CROPS[key];
     if ((stock[key] || 0) < 1) { seedBubble.textContent = 'Sorry, no ' + s.name.toLowerCase() + ' seeds in stock right now!'; return; }
-    if (sheckles < s.price) { seedBubble.textContent = 'That one costs ' + money(s.price) + ' — come back with more sheckles!'; return; }
-    sheckles -= s.price;
+    if (useTok) {
+      if (tokens < s.tok) { seedBubble.textContent = 'That one costs ' + tokFmt(s.tok) + ' tokens — go dig and harvest some more!'; return; }
+      tokens -= s.tok;
+    } else {
+      if (sheckles < s.price) { seedBubble.textContent = 'That one costs ' + money(s.price) + ' — come back with more sheckles!'; return; }
+      sheckles -= s.price;
+    }
     stock[key]--;
     seedsOwned[key] = (seedsOwned[key] || 0) + 1;
     seedBubble.textContent = 'One ' + s.name.toLowerCase() + ' seed, all yours! Anything else?';
@@ -928,17 +982,30 @@
       buy.className = 's-buy';
       buy.textContent = money(g.price);
       buy.disabled = !inStock || sheckles < g.price;
-      buy.addEventListener('click', function () { buyGear(g.key); });
+      buy.title = 'Buy with sheckles';
+      buy.addEventListener('click', function () { buyGear(g.key, false); });
       row.appendChild(buy);
+      var buyT = document.createElement('button');
+      buyT.className = 's-buy tok';
+      buyT.textContent = '🎟️' + tokFmt(g.tok);
+      buyT.disabled = !inStock || tokens < g.tok;
+      buyT.title = 'Buy with tokens';
+      buyT.addEventListener('click', function () { buyGear(g.key, true); });
+      row.appendChild(buyT);
       gearListEl.appendChild(row);
     });
   }
 
-  function buyGear(key) {
+  function buyGear(key, useTok) {
     var g = GEARMAP[key];
     if ((stock[key] || 0) < 1) { gearBubble.textContent = 'Beep! No ' + g.name.toLowerCase() + ' in stock right now!'; return; }
-    if (sheckles < g.price) { gearBubble.textContent = 'Beep boop — that costs ' + money(g.price) + '. Insufficient sheckles detected!'; return; }
-    sheckles -= g.price;
+    if (useTok) {
+      if (tokens < g.tok) { gearBubble.textContent = 'Beep boop — that costs ' + tokFmt(g.tok) + ' tokens. Insufficient tokens detected!'; return; }
+      tokens -= g.tok;
+    } else {
+      if (sheckles < g.price) { gearBubble.textContent = 'Beep boop — that costs ' + money(g.price) + '. Insufficient sheckles detected!'; return; }
+      sheckles -= g.price;
+    }
     stock[key]--;
     gearOwned[key] = (gearOwned[key] || 0) + 1;
     gearBubble.textContent = 'One ' + g.name.toLowerCase() + ', dispensed! ' + (g.target ? 'Select it, then click a plant.' : 'Click it in your toolbar to use it.');
@@ -1152,7 +1219,16 @@
     if (sel === 'dig') {
       if (!p) { setMsg('Nothing to dig here.'); return; }
       grid[i] = null;
-      setMsg('Dug up the ' + CROPS[p.t].name.toLowerCase() + '.');
+      var digC = CROPS[p.t];
+      if (!digC.multi) {
+        // digging up single-harvest plants pays out a few tokens
+        var digTk = randInt(1, 4);
+        tokens += digTk;
+        popup(i, '+' + digTk + '🎟️');
+        setMsg('Dug up the ' + digC.name.toLowerCase() + ' — found ' + digTk + ' token' + (digTk > 1 ? 's' : '') + '!');
+      } else {
+        setMsg('Dug up the ' + digC.name.toLowerCase() + '.');
+      }
       refresh();
       return;
     }
@@ -1242,7 +1318,13 @@
     // mutations travel with the crop into the basket
     var stackKey = p.t + (p.muts && p.muts.length ? '|' + p.muts.join('+') : '');
     basket[stackKey] = (basket[stackKey] || 0) + 1;
-    popup(i, '+1 ' + c.emoji + (p.muts && p.muts.length ? '✨' : ''));
+    // multi-harvest crops pay tokens: common-rare 4-10, legendary+ 50-1000
+    var tk = 0;
+    if (c.multi) {
+      tk = LOW_TIERS[c.tier] ? randInt(4, 10) : randInt(50, 1000);
+      tokens += tk;
+    }
+    popup(i, '+1 ' + c.emoji + (p.muts && p.muts.length ? '✨' : '') + (tk ? ' +' + tk + '🎟️' : ''));
     if (c.multi) {
       // the stem stays behind and regrows, forever — but the mutations left
       // with the harvested crop, so the regrown one starts fresh
@@ -1487,6 +1569,7 @@
 
     for (var i = 0; i < grid.length; i++) updateCell(i);
     coinsEl.textContent = '🪙 ' + money(sheckles);
+    tokensEl.textContent = '🎟️ ' + tokFmt(tokens);
     if (!ovSeed.hidden || !ovGear.hidden) {
       var left = Math.max(0, nextRestock - Date.now());
       var m = (left / 60000) | 0, s = Math.ceil((left % 60000) / 1000);
@@ -1527,6 +1610,8 @@
   window.__g = {
     grid: function () { return grid; },
     sheckles: function () { return sheckles; },
+    tokens: function () { return tokens; },
+    giveTok: function (n) { tokens += n; refresh(); },
     stock: function () { return stock; },
     basket: function () { return basket; },
     seeds: function () { return seedsOwned; },
