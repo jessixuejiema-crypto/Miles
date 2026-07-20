@@ -184,6 +184,32 @@
     margin-bottom: 12px;
   }
 
+  /* Weather banner */
+  .weather {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--panel);
+    border: 1.5px solid var(--border);
+    border-left: 5px solid var(--accent);
+    border-radius: 12px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 0.82rem;
+    text-align: left;
+    line-height: 1.4;
+  }
+  .weather b { font-size: 0.92rem; }
+  .weather .w-time {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    font-weight: 700;
+  }
+  .stack .st-val { font-size: 0.62rem; color: var(--gold); font-weight: 800; }
+  .stack .st-name { max-width: 86px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   /* Plot */
   .plot-wrap { position: relative; margin: 0 auto 8px; max-width: 460px; }
   .ruler-top {
@@ -439,6 +465,11 @@
     <button class="act" id="btn-expand">📐 Expand Garden (100¢)</button>
   </div>
 
+  <div class="weather" id="weather-banner">
+    <span id="w-info"></span>
+    <span class="w-time" id="w-time"></span>
+  </div>
+
   <div class="shop" id="shop"></div>
   <p class="msg" id="msg">Visit the Seed Shop to buy your first seeds!</p>
 
@@ -451,6 +482,7 @@
     Seeds marked <b>♻️</b> are multi-harvest: pick them when ripe and the <b>stem stays behind</b> and regrows a new crop, forever.
     Single-harvest crops leave the soil empty. Harvests go in your <b>🧺 basket</b> — sell them at the Sell Shop.
     The <b>🛠️ Gear Shop</b> sells tools — pick a targeted tool (like the watering can) and click a plant to use it; instant tools fire the moment you click them in the toolbar.
+    The <b>weather</b> changes every ~3 minutes (113 kinds!): every 10 seconds it may <b>✨ mutate</b> a plant, multiplying its sell value — mutations stack and stay on the plant through every harvest.
     Both shops <b>restock every 10 seconds</b>; rare items are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
   </p>
 </div>
@@ -559,6 +591,136 @@
   var GEARMAP = {};
   GEAR.forEach(function (g) { GEARMAP[g.key] = g; });
 
+  // Weather: [name, emoji, mutation, value multiplier, weight, growth speed, mutation chance per 10s, color]
+  // Average duration is 3 minutes (2-4 min roll). Higher weight = more common.
+  var WEATHERS = [
+    // common skies
+    ['Sun', '☀️', 'Sundried', 1.5, 15, 1, 0.03, '#f5c542'],
+    ['Raining', '🌧️', 'Wet', 2, 12, 1.5, 0.2, '#4d8fd1'],
+    ['Cloudy', '☁️', 'Shaded', 1.3, 10, 1, 0.2, '#9aa5b1'],
+    ['Night', '🌙', 'Moonlit', 2.5, 10, 1, 0.2, '#7d8fd6'],
+    ['Drizzle', '🌦️', 'Dewy', 1.6, 8, 1.2, 0.2, '#6fa8d6'],
+    ['Breeze', '🍃', 'Windswept', 1.4, 8, 1, 0.2, '#79c98b'],
+    ['Fog', '🌫️', 'Misty', 1.8, 8, 1, 0.2, '#aeb8c2'],
+    ['Overcast', '🌥️', 'Dim', 1.4, 7, 1, 0.2, '#8f9aa6'],
+    ['Morning Dew', '💧', 'Glistening', 1.7, 7, 1, 0.2, '#63c6d8'],
+    ['Sunset', '🌇', 'Amber', 1.6, 7, 1, 0.2, '#f08c42'],
+    ['Sunrise', '🌅', 'Golden', 1.8, 7, 1, 0.2, '#f3b13f'],
+    ['Warm Front', '🌤️', 'Cozy', 1.5, 6, 1.1, 0.2, '#f0a35e'],
+    ['Cold Front', '🌬️', 'Crisp', 1.6, 6, 1, 0.2, '#6db3d1'],
+    ['Humid Day', '💦', 'Sticky', 1.5, 6, 1.1, 0.2, '#5bb8a5'],
+    ['Gentle Rain', '☔', 'Rinsed', 1.8, 6, 1.3, 0.2, '#5a86c9'],
+    // uncommon
+    ['Thunderstorm', '⛈️', 'Shocked', 3, 5, 1.4, 0.2, '#f7e463'],
+    ['Hail', '🧊', 'Dented', 2.5, 4, 1, 0.2, '#bfe3f0'],
+    ['Snow', '❄️', 'Frozen', 3, 4, 1, 0.2, '#cfe8f5'],
+    ['Windstorm', '💨', 'Tousled', 2.2, 4, 1, 0.2, '#9fb8ac'],
+    ['Rainbow', '🌈', 'Prismatic', 4, 3, 1, 0.2, '#d06bd6'],
+    ['Heatwave', '🥵', 'Scorched', 2.8, 4, 1, 0.2, '#e8683e'],
+    ['Cold Snap', '🥶', 'Chilled', 2.8, 4, 1, 0.2, '#6fc3e8'],
+    ['Downpour', '🌊', 'Soaked', 2.6, 4, 1.6, 0.2, '#3f74c4'],
+    ['Mud Rain', '🟤', 'Muddy', 2.2, 3, 1.2, 0.2, '#8a6a45'],
+    ['Pollen Storm', '🌼', 'Pollinated', 2.4, 3, 1.2, 0.2, '#e5d05a'],
+    ['Frost', '🍂', 'Frosted', 2.6, 4, 1, 0.2, '#a8d8e8'],
+    ['Sleet', '🌨️', 'Slushy', 2.3, 3, 1, 0.2, '#9fc4d8'],
+    ['Gale', '🍥', 'Gusty', 2.5, 3, 1, 0.2, '#85a8a0'],
+    ['Monsoon', '🌀', 'Drenched', 2.8, 3, 1.7, 0.2, '#3f86c4'],
+    ['Dust Devil', '🌪️', 'Dusty', 2.4, 3, 1, 0.2, '#c4a25e'],
+    ['Sandstorm', '🏜️', 'Sandy', 2.6, 3, 1, 0.2, '#d1b06b'],
+    ['Full Moon', '🌕', 'Lunar', 3, 3, 1, 0.2, '#e8e3c4'],
+    ['New Moon', '🌑', 'Shadowed', 3, 3, 1, 0.2, '#4a4a5e'],
+    ['Harvest Moon', '🌾', 'Bountiful', 3.5, 3, 1, 0.2, '#e0a83f'],
+    ['Starry Night', '✨', 'Starlit', 3, 3, 1, 0.2, '#8f9fe8'],
+    ['Shooting Star', '🌠', 'Starstruck', 4, 2, 1, 0.2, '#b9a8f0'],
+    ['Static Storm', '⚡', 'Charged', 3.2, 3, 1, 0.2, '#f0e05a'],
+    ['Thundersnow', '🌩️', 'Thunderfrost', 4, 2, 1, 0.2, '#9fd0f0'],
+    ['Spring Shower', '🌷', 'Blooming', 2.5, 3, 1.3, 0.2, '#e88fb8'],
+    ['Autumn Wind', '🍁', 'Rustic', 2.4, 3, 1, 0.2, '#d1793f'],
+    ['Summer Haze', '😎', 'Hazy', 2.2, 3, 1, 0.2, '#e8c46b'],
+    // rare
+    ['Earthquake', '🪨', 'Cracked', 5, 2, 1, 0.2, '#8a7a63'],
+    ['Tornado', '🌪', 'Twisted', 6, 1.5, 1, 0.2, '#7a8f8a'],
+    ['Hurricane', '🛟', 'Cyclonic', 6, 1.5, 1.3, 0.2, '#4f7ac4'],
+    ['Blizzard', '⛄', 'Frostbitten', 6, 1.5, 1, 0.2, '#b8dff0'],
+    ['Aurora', '🌌', 'Aurora', 8, 1.5, 1, 0.25, '#6be8c8'],
+    ['Eclipse', '🌒', 'Eclipsed', 8, 1.2, 1, 0.2, '#5e5a8f'],
+    ['Solar Eclipse', '🕶️', 'Corona', 9, 1, 1, 0.2, '#f0b83f'],
+    ['Lunar Eclipse', '🌘', 'Umbral', 9, 1, 1, 0.2, '#8f6bd6'],
+    ['Meteor Shower', '☄️', 'Celestial', 10, 1, 1, 0.25, '#e8955a'],
+    ['Blood Moon', '🔴', 'Bloodlit', 10, 1, 1, 0.25, '#d64545'],
+    ['Volcanic Ash', '🌋', 'Ashen', 7, 1.2, 1, 0.2, '#6b5e5a'],
+    ['Lava Rain', '🔥', 'Molten', 9, 1, 1, 0.2, '#e86038'],
+    ['Flood', '🚣', 'Waterlogged', 6, 1.3, 1.5, 0.2, '#3f6ac4'],
+    ['Firestorm', '🎆', 'Charred', 8, 1, 1, 0.2, '#e0703f'],
+    ['Ice Storm', '🥌', 'Glazed', 7, 1.2, 1, 0.2, '#a0d8f0'],
+    ['Acid Rain', '☣️', 'Corroded', 8, 1, 1.2, 0.2, '#9fd63f'],
+    ['Ball Lightning', '🔮', 'Plasma', 9, 1, 1, 0.2, '#c46be8'],
+    ['Heat Lightning', '🌡️', 'Flickering', 6, 1.3, 1, 0.2, '#e8a53f'],
+    ['Waterspout', '⛲', 'Whirled', 7, 1.1, 1.2, 0.2, '#55a0c9'],
+    ['Sun Halo', '😇', 'Haloed', 8, 1, 1, 0.2, '#f0d75a'],
+    ['Moonbow', '🌉', 'Opalescent', 9, 1, 1, 0.2, '#a8c4e8'],
+    ['Fire Rainbow', '🎨', 'Radiant', 9, 1, 1, 0.2, '#e88f5a'],
+    ['Polar Vortex', '🧭', 'Polar', 8, 1, 1, 0.2, '#6bc4e8'],
+    ['Mirage', '🏝️', 'Illusory', 7, 1.1, 1, 0.2, '#d8c46b'],
+    ['Heat Dome', '⛱️', 'Baked', 6, 1.2, 1, 0.2, '#e09553'],
+    ['Sun Shower', '🌂', 'Sprinkled', 6, 1.3, 1.3, 0.2, '#8fc9a8'],
+    ['Freezing Rain', '🧣', 'Icebound', 7, 1.1, 1, 0.2, '#7ab8d8'],
+    ['Graupel', '🫧', 'Peppered', 6, 1.2, 1, 0.2, '#c4d0d8'],
+    ['Rime', '🕸️', 'Silverfrost', 7, 1.1, 1, 0.2, '#c8d8e0'],
+    ['Cloudburst', '💥', 'Bursting', 7, 1.1, 1.5, 0.2, '#5a86d1'],
+    ['Jet Stream', '✈️', 'Streamlined', 6, 1.2, 1.2, 0.2, '#8fa8c4'],
+    ['Microburst', '🎐', 'Flattened', 7, 1, 1, 0.2, '#a0b8b0'],
+    ['Derecho', '🚩', 'Leveled', 8, 0.9, 1, 0.2, '#b8926b'],
+    ['Bomb Cyclone', '💣', 'Stormforged', 10, 0.8, 1.2, 0.2, '#5e6a8f'],
+    ['Dust Bowl', '🥣', 'Parched', 7, 1, 1, 0.2, '#c4a05a'],
+    ['Whiteout', '📄', 'Blanked', 8, 0.9, 1, 0.2, '#e8eef0'],
+    ['Green Flash', '🟢', 'Verdant', 9, 0.8, 1, 0.2, '#4fc46b'],
+    ['Fogbow', '⚪', 'Ghostly', 8, 0.9, 1, 0.2, '#d0d8e0'],
+    ['Zodiacal Light', '💫', 'Zodiac', 10, 0.8, 1, 0.2, '#b89fe8'],
+    ['Noctilucent Clouds', '🌃', 'Noctilucent', 10, 0.8, 1, 0.2, '#6b8fd6'],
+    // mythic
+    ['Meteor Strike', '☄', 'Meteoric', 15, 0.5, 1, 0.3, '#e07a45'],
+    ['Solar Storm', '🌞', 'Sunfire', 15, 0.5, 1, 0.3, '#f0a03f'],
+    ['Gamma Burst', '☢️', 'Irradiated', 18, 0.4, 1, 0.3, '#9fe83f'],
+    ['Cosmic Rays', '📡', 'Cosmic', 16, 0.4, 1, 0.3, '#6bd6e8'],
+    ['Stardust', '🌟', 'Stardusted', 15, 0.5, 1, 0.3, '#f0e08f'],
+    ['Nebula Sky', '🪻', 'Nebular', 18, 0.4, 1, 0.3, '#b86be8'],
+    ['Galaxy Night', '🪐', 'Galactic', 20, 0.4, 1, 0.3, '#7a6be8'],
+    ['Black Hole', '🕳️', 'Voidtouched', 50, 0.15, 1, 0.3, '#3a3a4a'],
+    ['Supernova', '🧨', 'Nova', 40, 0.2, 1, 0.3, '#f0d05a'],
+    ['Alien Rain', '👽', 'Alien', 60, 0.15, 1, 0.3, '#6be86b'],
+    ['UFO Sighting', '🛸', 'Beamed', 45, 0.2, 1, 0.3, '#8fe8d6'],
+    ['Rainbow Meteor', '🎏', 'Chromatic', 35, 0.2, 1, 0.3, '#d66bc4'],
+    ['Time Storm', '⏰', 'Temporal', 30, 0.25, 1, 0.3, '#c4b86b'],
+    ['Gravity Flux', '🎈', 'Weightless', 25, 0.3, 1, 0.3, '#a8c46b'],
+    ['Magnetic Storm', '🧲', 'Magnetized', 22, 0.3, 1, 0.3, '#d67a6b'],
+    ['Plasma Storm', '🔆', 'Ionized', 25, 0.3, 1, 0.3, '#e8926b'],
+    ['Void Fog', '🖤', 'Void', 35, 0.2, 1, 0.3, '#4a3a5e'],
+    ['Dream Mist', '😴', 'Dreamy', 20, 0.3, 1, 0.3, '#b8a8e8'],
+    ['Fairy Dust', '🧚', 'Fae', 25, 0.3, 1, 0.3, '#e8a8d6'],
+    ['Dragon Breath', '🐲', 'Dragonfire', 30, 0.25, 1, 0.3, '#e86b4a'],
+    ['Phoenix Wind', '🎇', 'Phoenix', 35, 0.2, 1, 0.3, '#f0854a'],
+    ['Spirit Rain', '👻', 'Spectral', 22, 0.3, 1, 0.3, '#a8d0d8'],
+    ['Golden Hour', '🏆', 'Gilded', 20, 0.3, 1, 0.3, '#f0c43f'],
+    ['Diamond Dust', '💎', 'Diamond', 30, 0.25, 1, 0.3, '#c4e8f0'],
+    ['Sakura Wind', '🌸', 'Blossomed', 18, 0.35, 1, 0.3, '#f0a8c4'],
+    ['Honey Rain', '🍯', 'Honeyed', 18, 0.35, 1, 0.3, '#e8b53f'],
+    ['Chocolate Rain', '🍩', 'Chocolatey', 16, 0.35, 1, 0.3, '#8a5e3f'],
+    ['Candy Storm', '🍬', 'Sugared', 18, 0.35, 1, 0.3, '#e88fb0'],
+    ['Confetti Storm', '🎉', 'Festive', 16, 0.35, 1, 0.3, '#d66b8f'],
+    ['Bubble Storm', '🛁', 'Bubbly', 15, 0.4, 1, 0.3, '#a8d6e8'],
+    ['Glitter Storm', '💖', 'Glittered', 20, 0.3, 1, 0.3, '#e8d08f'],
+    ['Moonquake', '🌖', 'Moonstruck', 25, 0.3, 1, 0.3, '#b8b8d6']
+  ].map(function (r) {
+    return {
+      key: r[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
+      name: r[0], emoji: r[1], mutName: r[2], mult: r[3],
+      weight: r[4], speed: r[5], mutChance: r[6], color: r[7]
+    };
+  });
+  var WMAP = {};
+  WEATHERS.forEach(function (w) { WMAP[w.key] = w; });
+
   var SPOTS_PER_M = 3;         // 3x3 planting spots per square meter
   var EXPAND_COST = 100;       // always 100¢, forever
   var RESTOCK_MS = 10 * 1000;
@@ -574,7 +736,9 @@
   var stock = {};       // key -> count in shop right now (seeds and gear)
   var nextRestock = 0;
   var sel = 'dig';
-  var held = null;      // crop key selected in the sell shop
+  var held = null;       // basket stack key selected in the sell shop
+  var weather = null;    // {key, until}
+  var lastMutRoll = 0;   // last 10-second mutation roll
 
   var coinsEl = document.getElementById('coins');
   var shopEl = document.getElementById('shop');
@@ -590,6 +754,9 @@
   var heldActions = document.getElementById('held-actions');
   var restockEl = document.getElementById('restock');
   var restock2El = document.getElementById('restock2');
+  var weatherEl = document.getElementById('weather-banner');
+  var wInfoEl = document.getElementById('w-info');
+  var wTimeEl = document.getElementById('w-time');
   var ovSeed = document.getElementById('ov-seed');
   var ovGear = document.getElementById('ov-gear');
   var ovSell = document.getElementById('ov-sell');
@@ -615,7 +782,7 @@
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         sheckles: sheckles, meters: meters, grid: grid,
         seedsOwned: seedsOwned, gearOwned: gearOwned, basket: basket,
-        stock: stock, nextRestock: nextRestock
+        stock: stock, nextRestock: nextRestock, weather: weather
       }));
     } catch (e) { /* storage unavailable — play without saving */ }
   }
@@ -637,6 +804,7 @@
       if (d.basket) basket = d.basket;
       if (d.stock) stock = d.stock;
       if (typeof d.nextRestock === 'number') nextRestock = d.nextRestock;
+      if (d.weather && WMAP[d.weather.key]) weather = d.weather;
     } catch (e) { /* corrupt save — start fresh */ }
   }
 
@@ -905,10 +1073,59 @@
     refresh();
   }
 
+  // ---------- weather ----------
+  function pickWeather() {
+    var pool = WEATHERS.filter(function (w) { return !weather || w.key !== weather.key; });
+    var total = 0;
+    pool.forEach(function (w) { total += w.weight; });
+    var r = Math.random() * total;
+    for (var i = 0; i < pool.length; i++) {
+      r -= pool[i].weight;
+      if (r <= 0) return pool[i];
+    }
+    return pool[pool.length - 1];
+  }
+  function newWeather(announce) {
+    var w = pickWeather();
+    // 2-4 minutes, averaging 3
+    weather = { key: w.key, until: Date.now() + (120 + Math.random() * 120) * 1000 };
+    renderWeather();
+    if (announce) setMsg('The weather changed: ' + w.emoji + ' ' + w.name + '!');
+    save();
+  }
+  function renderWeather() {
+    var w = WMAP[weather.key];
+    var fx = [];
+    if (w.speed > 1) fx.push('plants grow ' + w.speed + '× faster');
+    fx.push((w.mutChance <= 0.05 ? 'tiny chance of' : 'may cause') + ' ' + w.mutName + ' mutation (value ×' + w.mult + ')');
+    wInfoEl.innerHTML = '<b>' + w.emoji + ' ' + w.name + '</b> — ' + fx.join(', ');
+    weatherEl.style.borderLeftColor = w.color;
+  }
+  function tryMutate(w) {
+    var idxs = [];
+    for (var i = 0; i < grid.length; i++) {
+      var p = grid[i];
+      if (p && (p.muts || []).indexOf(w.key) < 0) idxs.push(i);
+    }
+    if (!idxs.length) return;
+    var hit = idxs[randInt(0, idxs.length - 1)];
+    var p2 = grid[hit];
+    p2.muts = p2.muts || [];
+    p2.muts.push(w.key);
+    popup(hit, '✨ ' + w.mutName + '!');
+    setMsg('✨ Your ' + CROPS[p2.t].name.toLowerCase() + ' mutated: ' + w.mutName + ' (value ×' + w.mult + ')!');
+    save();
+  }
+  function mutNames(p) {
+    return (p.muts || []).map(function (k) { return WMAP[k] ? WMAP[k].mutName : k; });
+  }
+
   function harvest(i) {
     var p = grid[i], c = CROPS[p.t];
-    basket[p.t] = (basket[p.t] || 0) + 1;
-    popup(i, '+1 ' + c.emoji);
+    // mutations travel with the crop into the basket
+    var stackKey = p.t + (p.muts && p.muts.length ? '|' + p.muts.join('+') : '');
+    basket[stackKey] = (basket[stackKey] || 0) + 1;
+    popup(i, '+1 ' + c.emoji + (p.muts && p.muts.length ? '✨' : ''));
     if (c.multi) {
       // the stem stays behind and regrows, forever
       p.state = 'regrow';
@@ -929,9 +1146,30 @@
   }
 
   // ---------- sell shop ----------
+  // Basket stacks are keyed "crop" or "crop|mut1+mut2" so mutated crops sell separately
+  function stackInfo(k) {
+    var parts = k.split('|');
+    var c = CROPS[parts[0]];
+    var muts = parts[1] ? parts[1].split('+') : [];
+    var mult = 1;
+    var names = muts.map(function (m) {
+      if (WMAP[m]) { mult *= WMAP[m].mult; return WMAP[m].mutName; }
+      return m;
+    });
+    return {
+      crop: c,
+      muts: muts,
+      value: Math.max(1, Math.round(c.sell * mult)),
+      label: (names.length ? names.join(' ') + ' ' : '') + c.name
+    };
+  }
+
   function renderSellShop() {
     invListEl.innerHTML = '';
-    var keys = SEEDS.filter(function (s) { return (basket[s.key] || 0) > 0; }).map(function (s) { return s.key; });
+    var keys = Object.keys(basket).filter(function (k) {
+      return basket[k] > 0 && CROPS[k.split('|')[0]];
+    });
+    keys.sort(function (a, b) { return stackInfo(b).value - stackInfo(a).value; });
     if (held && !(basket[held] > 0)) held = null;
     if (!keys.length) {
       held = null;
@@ -941,16 +1179,18 @@
       invListEl.appendChild(empty);
     }
     keys.forEach(function (k) {
-      var c = CROPS[k];
+      var info = stackInfo(k);
       var b = document.createElement('button');
       b.className = 'stack' + (held === k ? ' held' : '');
       b.innerHTML =
-        '<span class="st-emoji">' + c.emoji + '</span>' +
+        '<span class="st-emoji">' + info.crop.emoji + (info.muts.length ? '✨' : '') + '</span>' +
         '<span class="st-count">×' + basket[k] + '</span>' +
-        '<span class="st-name">' + c.name + '</span>';
+        '<span class="st-name">' + info.label + '</span>' +
+        '<span class="st-val">' + money(info.value) + '</span>';
+      b.title = info.label + ' — worth ' + money(info.value) + ' each';
       b.addEventListener('click', function () {
         held = k;
-        sellBubble.textContent = 'You’re holding a ' + c.name.toLowerCase() + '. What would you like to do?';
+        sellBubble.textContent = 'You’re holding a ' + info.label.toLowerCase() + '. What would you like to do?';
         renderSellShop();
       });
       invListEl.appendChild(b);
@@ -961,22 +1201,22 @@
   function basketTotal() {
     var total = 0;
     Object.keys(basket).forEach(function (k) {
-      if (CROPS[k]) total += basket[k] * CROPS[k].sell;
+      if (basket[k] > 0 && CROPS[k.split('|')[0]]) total += basket[k] * stackInfo(k).value;
     });
     return total;
   }
 
   document.getElementById('btn-worth').addEventListener('click', function () {
     if (!held) return;
-    var c = CROPS[held];
-    sellBubble.textContent = 'Lemme see… a ' + c.name.toLowerCase() + ' like this is worth ' + money(c.sell) + '.';
+    var info = stackInfo(held);
+    sellBubble.textContent = 'Lemme see… a ' + info.label.toLowerCase() + ' like this is worth ' + money(info.value) + '.';
   });
   document.getElementById('btn-sellthis').addEventListener('click', function () {
     if (!held) return;
-    var c = CROPS[held];
+    var info = stackInfo(held);
     basket[held]--;
-    sheckles += c.sell;
-    sellBubble.textContent = 'Sold! One ' + c.name.toLowerCase() + ' for ' + money(c.sell) + '. Pleasure doin’ business!';
+    sheckles += info.value;
+    sellBubble.textContent = 'Sold! One ' + info.label.toLowerCase() + ' for ' + money(info.value) + '. Pleasure doin’ business!';
     if (!(basket[held] > 0)) { delete basket[held]; held = null; }
     renderSellShop();
     refresh();
@@ -1035,11 +1275,24 @@
       plant.textContent = '';
       bar.hidden = true;
       badge.hidden = true;
+      el.style.outline = '';
       el.title = 'Empty soil — click to plant';
       return;
     }
     var c = CROPS[p.t], now = Date.now();
     if (p.state !== 'ripe' && now >= p.end) p.state = 'ripe';
+
+    // mutation glow + tooltip suffix
+    var muts = p.muts || [];
+    var mutSuffix = '';
+    if (muts.length) {
+      var lastMut = WMAP[muts[muts.length - 1]];
+      el.style.outline = '2px solid ' + (lastMut ? lastMut.color : '#fff');
+      el.style.outlineOffset = '-2px';
+      mutSuffix = ' ✨ ' + mutNames(p).join(', ');
+    } else {
+      el.style.outline = '';
+    }
 
     if (p.state === 'ripe') {
       plant.textContent = c.emoji;
@@ -1050,7 +1303,7 @@
       el.classList.add('ripe');
       badge.hidden = !c.multi;
       if (c.multi) badge.textContent = '♻️';
-      el.title = c.name + ' — ripe! Click to harvest' + (c.multi ? ' (stem regrows)' : '');
+      el.title = c.name + ' — ripe! Click to harvest' + (c.multi ? ' (stem regrows)' : '') + mutSuffix;
       return;
     }
 
@@ -1066,7 +1319,7 @@
       plant.style.transform = 'scale(0.68)';
       plant.style.opacity = '0.6';
       plant.style.filter = 'none';
-      el.title = c.name + ' stem — regrowing (' + Math.ceil((p.end - now) / 1000) + 's)';
+      el.title = c.name + ' stem — regrowing (' + Math.ceil((p.end - now) / 1000) + 's)' + mutSuffix;
       return;
     }
     if (pr < 0.3) {
@@ -1085,11 +1338,31 @@
       plant.style.opacity = '0.85';
       plant.style.filter = 'grayscale(0.55)';
     }
-    el.title = c.name + ' — growing (' + Math.ceil((p.end - now) / 1000) + 's to ripe)';
+    el.title = c.name + ' — growing (' + Math.ceil((p.end - now) / 1000) + 's to ripe)' + mutSuffix;
   }
 
   function tick() {
-    if (Date.now() >= nextRestock) doRestock();
+    var now = Date.now();
+    if (now >= nextRestock) doRestock();
+
+    // weather cycle
+    if (!weather || now >= weather.until) newWeather(!!weather);
+    var w = WMAP[weather.key];
+    // growth speed boost (e.g. rain = 1.5x): shave extra time off every tick
+    if (w.speed > 1) {
+      var boost = (w.speed - 1) * 250;
+      for (var b = 0; b < grid.length; b++) {
+        if (grid[b] && grid[b].state !== 'ripe') grid[b].end -= boost;
+      }
+    }
+    // every 10 seconds: roll this weather's mutation chance
+    if (now - lastMutRoll >= 10000) {
+      lastMutRoll = now;
+      if (Math.random() < w.mutChance) tryMutate(w);
+    }
+    var wLeft = Math.max(0, weather.until - now);
+    wTimeEl.textContent = ((wLeft / 60000) | 0) + ':' + ('0' + (Math.ceil(wLeft / 1000) % 60)).slice(-2);
+
     for (var i = 0; i < grid.length; i++) updateCell(i);
     coinsEl.textContent = '🪙 ' + money(sheckles);
     if (!ovSeed.hidden || !ovGear.hidden) {
@@ -1122,6 +1395,8 @@
   load();
   buildPlot();
   if (!nextRestock || !Object.keys(stock).length) doRestock();
+  if (!weather || Date.now() >= weather.until) newWeather(false); else renderWeather();
+  lastMutRoll = Date.now();
   refresh();
   setInterval(tick, 250);
   setInterval(save, 5000);
@@ -1134,6 +1409,10 @@
     basket: function () { return basket; },
     seeds: function () { return seedsOwned; },
     gear: function () { return gearOwned; },
+    weather: function () { return weather; },
+    weathers: function () { return WEATHERS; },
+    setWeather: function (k) { if (WMAP[k]) { weather = { key: k, until: Date.now() + 180000 }; renderWeather(); } },
+    mutate: function () { tryMutate(WMAP[weather.key]); },
     meters: function () { return meters; },
     give: function (n) { sheckles += n; refresh(); },
     restock: doRestock
