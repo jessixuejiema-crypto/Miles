@@ -482,7 +482,7 @@
     Seeds marked <b>♻️</b> are multi-harvest: pick them when ripe and the <b>stem stays behind</b> and regrows a new crop, forever.
     Single-harvest crops leave the soil empty. Harvests go in your <b>🧺 basket</b> — sell them at the Sell Shop.
     The <b>🛠️ Gear Shop</b> sells tools — pick a targeted tool (like the watering can) and click a plant to use it; instant tools fire the moment you click them in the toolbar.
-    The <b>weather</b> changes every ~3 minutes (113 kinds!): every 10 seconds it may <b>✨ mutate</b> a plant, multiplying its sell value — mutations stack and stay on the plant through every harvest.
+    The <b>weather</b> changes every ~3 minutes (139 kinds, including the Grow&nbsp;a&nbsp;Garden set!): every 10 seconds it may <b>✨ mutate</b> a plant, multiplying its sell value — mutations stack and stay on the plant through every harvest.
     Both shops <b>restock every 10 seconds</b>; rare items are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
   </p>
 </div>
@@ -620,7 +620,7 @@
     ['Cold Snap', '🥶', 'Chilled', 2.8, 4, 1, 0.2, '#6fc3e8'],
     ['Downpour', '🌊', 'Soaked', 2.6, 4, 1.6, 0.2, '#3f74c4'],
     ['Mud Rain', '🟤', 'Muddy', 2.2, 3, 1.2, 0.2, '#8a6a45'],
-    ['Pollen Storm', '🌼', 'Pollinated', 2.4, 3, 1.2, 0.2, '#e5d05a'],
+    ['Pollen Storm', '🌼', 'Sneezy', 2.4, 3, 1.2, 0.2, '#e5d05a'],
     ['Frost', '🍂', 'Frosted', 2.6, 4, 1, 0.2, '#a8d8e8'],
     ['Sleet', '🌨️', 'Slushy', 2.3, 3, 1, 0.2, '#9fc4d8'],
     ['Gale', '🍥', 'Gusty', 2.5, 3, 1, 0.2, '#85a8a0'],
@@ -654,7 +654,7 @@
     ['Firestorm', '🎆', 'Charred', 8, 1, 1, 0.2, '#e0703f'],
     ['Ice Storm', '🥌', 'Glazed', 7, 1.2, 1, 0.2, '#a0d8f0'],
     ['Acid Rain', '☣️', 'Corroded', 8, 1, 1.2, 0.2, '#9fd63f'],
-    ['Ball Lightning', '🔮', 'Plasma', 9, 1, 1, 0.2, '#c46be8'],
+    ['Ball Lightning', '🔮', 'Orbed', 9, 1, 1, 0.2, '#c46be8'],
     ['Heat Lightning', '🌡️', 'Flickering', 6, 1.3, 1, 0.2, '#e8a53f'],
     ['Waterspout', '⛲', 'Whirled', 7, 1.1, 1.2, 0.2, '#55a0c9'],
     ['Sun Halo', '😇', 'Haloed', 8, 1, 1, 0.2, '#f0d75a'],
@@ -710,7 +710,34 @@
     ['Confetti Storm', '🎉', 'Festive', 16, 0.35, 1, 0.3, '#d66b8f'],
     ['Bubble Storm', '🛁', 'Bubbly', 15, 0.4, 1, 0.3, '#a8d6e8'],
     ['Glitter Storm', '💖', 'Glittered', 20, 0.3, 1, 0.3, '#e8d08f'],
-    ['Moonquake', '🌖', 'Moonstruck', 25, 0.3, 1, 0.3, '#b8b8d6']
+    ['Moonquake', '🌖', 'Moonstruck', 25, 0.3, 1, 0.3, '#b8b8d6'],
+    // Grow a Garden weathers
+    ['Bee Swarm', '🐝', 'Pollinated', 3, 2, 1, 0.25, '#f0c33f'],
+    ['Working Bee Swarm', '🍯', 'Honey Glazed', 5, 1, 1, 0.25, '#e8a53f'],
+    ['Disco', '🪩', 'Disco', 15, 0.5, 1, 0.3, '#d65ad6'],
+    ['DJ Party', '🎧', 'Remixed', 12, 0.5, 1, 0.3, '#8f5ad6'],
+    ['Windy', '🎋', 'Windstruck', 2, 4, 1, 0.2, '#9fc4a8'],
+    ['Tropical Rain', '🌴', 'Tropical', 3, 2, 1.5, 0.2, '#4fb88a'],
+    ['Drought', '🦴', 'Withered', 2.5, 2, 1, 0.2, '#c9a06b'],
+    ['Summer Harvest', '🍑', 'Sunkissed', 3, 2, 1, 0.2, '#f0925e'],
+    ['Alien Invasion', '👾', 'Alienlike', 30, 0.2, 1, 0.3, '#7ae86b'],
+    ['Space Travel', '🚀', 'Astro', 20, 0.3, 1, 0.3, '#6b8fe8'],
+    ['Crystal Beams', '🔷', 'Crystalline', 25, 0.3, 1, 0.3, '#6bd0e8'],
+    ['Volcano', '🗻', 'Magma', 12, 0.6, 1, 0.25, '#d65a3f'],
+    ['Zen Aura', '🧘', 'Tranquil', 10, 0.8, 1, 0.25, '#8fd6b8'],
+    ['Corrupt Zen Aura', '👹', 'Corrupt', 18, 0.4, 1, 0.3, '#b84a6b'],
+    ['Laser Storm', '🔦', 'Plasma', 15, 0.5, 1, 0.3, '#e85ad6'],
+    ['Sheckle Rain', '🪙', 'Sheckled', 10, 0.6, 1, 0.25, '#e8c43f'],
+    ['Chicken Rain', '🐔', 'Feathered', 8, 0.8, 1, 0.25, '#f0e0c4'],
+    ['Zombie Invasion', '🧟', 'Zombified', 25, 0.3, 1, 0.3, '#7a9f4a'],
+    ['Sun God', '👑', 'Dawnbound', 150, 0.1, 1, 0.3, '#f0d75a'],
+    ['Armageddon', '💀', 'Apocalyptic', 40, 0.15, 1, 0.3, '#6b4a4a'],
+    ['Pool Party', '🏊', 'Splashed', 4, 1.5, 1.2, 0.2, '#5aa0d6'],
+    ['Under the Sea', '🐠', 'Oceanic', 8, 0.8, 1, 0.25, '#4a8fd6'],
+    ['Obby', '🏁', 'Bouncy', 6, 0.8, 1, 0.25, '#d6b84a'],
+    ['Jandel Storm', '🃏', 'Jandeled', 20, 0.3, 1, 0.3, '#d64a8f'],
+    ['Starfall', '⭐', 'Starfallen', 12, 0.6, 1, 0.25, '#f0e05a'],
+    ['Frost Dawn', '🌁', 'Frostproof', 14, 0.5, 1, 0.25, '#b8d8e8']
   ].map(function (r) {
     return {
       key: r[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
