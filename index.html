@@ -219,16 +219,32 @@
     font-variant-numeric: tabular-nums;
     margin-bottom: 4px;
   }
+  .plot-viewport {
+    overflow: auto;
+    max-height: min(70vh, 520px);
+    border-radius: 16px;
+    cursor: grab;
+  }
+  .plot-viewport.dragging { cursor: grabbing; }
+  .plot-viewport::-webkit-scrollbar { width: 9px; height: 9px; }
+  .plot-viewport::-webkit-scrollbar-thumb { background: var(--frame); border-radius: 5px; }
+  .plot-viewport::-webkit-scrollbar-track { background: transparent; }
+  .pan-hint {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-top: 6px;
+  }
   #plot {
     display: grid;
     gap: 2px;
+    width: max-content;
+    margin: 0 auto;
     background: var(--soil-dark);
     border: 9px solid var(--frame);
     border-radius: 14px;
     padding: 2px;
     box-shadow: 0 14px 30px var(--shadow);
     user-select: none;
-    touch-action: manipulation;
   }
   .cell {
     position: relative;
@@ -475,7 +491,10 @@
 
   <div class="plot-wrap">
     <div class="ruler-top" id="ruler">⟵&nbsp;&nbsp;3 m&nbsp;&nbsp;⟶</div>
-    <div id="plot"></div>
+    <div class="plot-viewport" id="plot-viewport">
+      <div id="plot"></div>
+    </div>
+    <p class="pan-hint" id="pan-hint" hidden>🖐️ Drag to look around your garden</p>
   </div>
 
   <p class="legend">
@@ -784,6 +803,8 @@
   var weatherEl = document.getElementById('weather-banner');
   var wInfoEl = document.getElementById('w-info');
   var wTimeEl = document.getElementById('w-time');
+  var plotVp = document.getElementById('plot-viewport');
+  var panHintEl = document.getElementById('pan-hint');
   var ovSeed = document.getElementById('ov-seed');
   var ovGear = document.getElementById('ov-gear');
   var ovSell = document.getElementById('ov-sell');
@@ -1065,11 +1086,46 @@
     rulerEl.innerHTML = '⟵&nbsp;&nbsp;' + meters + ' m&nbsp;&nbsp;⟶';
     sizeCells();
   }
+  // Cells keep a fixed size; a bigger garden pans inside the viewport
+  // instead of zooming out to fit.
   function sizeCells() {
-    var w = plotEl.clientWidth - 22; // frame + padding
-    plotEl.style.fontSize = Math.max(10, w / cols) + 'px';
+    var avail = plotVp.clientWidth - 22; // frame + padding
+    var px = Math.max(24, Math.min(46, Math.floor(avail / (3 * SPOTS_PER_M))));
+    plotEl.style.gridTemplateColumns = 'repeat(' + cols + ', ' + px + 'px)';
+    plotEl.style.fontSize = px + 'px';
+    panHintEl.hidden = !(plotVp.scrollWidth > plotVp.clientWidth + 4 || plotVp.scrollHeight > plotVp.clientHeight + 4);
   }
   window.addEventListener('resize', sizeCells);
+
+  // Mouse drag-to-pan (touch devices pan natively via scrolling)
+  var panDrag = null, panMoved = false;
+  plotVp.addEventListener('pointerdown', function (e) {
+    if (e.pointerType !== 'mouse') return;
+    panDrag = { x: e.clientX, y: e.clientY, sl: plotVp.scrollLeft, st: plotVp.scrollTop };
+    panMoved = false;
+  });
+  window.addEventListener('pointermove', function (e) {
+    if (!panDrag) return;
+    var dx = e.clientX - panDrag.x, dy = e.clientY - panDrag.y;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) panMoved = true;
+    if (panMoved) {
+      plotVp.scrollLeft = panDrag.sl - dx;
+      plotVp.scrollTop = panDrag.st - dy;
+      plotVp.classList.add('dragging');
+    }
+  });
+  window.addEventListener('pointerup', function () {
+    panDrag = null;
+    plotVp.classList.remove('dragging');
+  });
+  // After a drag, swallow the click so it doesn't plant/harvest a cell
+  plotVp.addEventListener('click', function (e) {
+    if (panMoved) {
+      e.stopPropagation();
+      e.preventDefault();
+      panMoved = false;
+    }
+  }, true);
 
   function expandGarden() {
     if (sheckles < EXPAND_COST) {
