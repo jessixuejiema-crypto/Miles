@@ -785,20 +785,23 @@ const FAR_M = 1.35; // cache covers the viewport plus a pan margin
    UNDER them (destination-over), so rims trace visible circle boundaries
    instead of piling into gray when thousands overlap */
 let layerCanvas = null, layerCtx = null;
-function getLayer(wCss, hCss) {
-  const w = Math.round(wCss * DPR), h = Math.round(hCss * DPR);
+function getLayer2(wCss, hCss, dpr) {
+  const w = Math.round(wCss * dpr), h = Math.round(hCss * dpr);
   if (!layerCanvas || layerCanvas.width !== w || layerCanvas.height !== h) {
     layerCanvas = document.createElement("canvas");
     layerCanvas.width = w; layerCanvas.height = h;
     layerCtx = layerCanvas.getContext("2d");
   }
-  layerCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  layerCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   layerCtx.globalCompositeOperation = "source-over";
   layerCtx.clearRect(0, 0, wCss, hCss);
   return layerCtx;
 }
+function getLayer(wCss, hCss) { return getLayer2(wCss, hCss, DPR); }
 let farCanvas = null, farCtx = null;
+let quickCanvas = null, quickCtx = null, quickImg = null, quick32 = null;
 let farScale = 0, farCamX = 0, farCamY = 0, farValid = false, farTimer = null;
+let farQuality = "crisp", lastFarStamp = 0, farQuickCount = 0;
 function invalidateFar() {
   farValid = false;
   if (farTimer) { clearTimeout(farTimer); farTimer = null; }
@@ -807,20 +810,28 @@ function scheduleFarRender() {
   if (farTimer) clearTimeout(farTimer);
   farTimer = setTimeout(() => {
     farTimer = null;
-    if (scale < VEC_T) { renderFarCache(); requestDraw(); }
-  }, 140);
+    if (scale >= VEC_T) return;
+    // at extreme zoom-out the dots are a few px: the splat is already
+    // indistinguishable from arcs, so skip the expensive crisp pass
+    if (farQuality === "quick" && farQuickCount > 50000) return;
+    renderFarCache(false);
+    requestDraw();
+  }, 150);
 }
-function renderFarCache() {
+function renderFarCache(quick) {
   const T = THEMES[themeName];
   const CW = Math.ceil(W * FAR_M), CH = Math.ceil(H * FAR_M);
-  const cw = Math.round(CW * DPR), ch = Math.round(CH * DPR);
+  // the far view never needs full Retina density; the quick pass renders
+  // at 1x so mid-gesture refreshes stay cheap
+  const cdpr = quick ? 1 : Math.min(DPR, 1.5);
+  const cw = Math.round(CW * cdpr), ch = Math.round(CH * cdpr);
   if (!farCanvas || farCanvas.width !== cw || farCanvas.height !== ch) {
     farCanvas = document.createElement("canvas");
     farCanvas.width = cw; farCanvas.height = ch;
     farCtx = farCanvas.getContext("2d");
   }
   const c = farCtx;
-  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.setTransform(cdpr, 0, 0, cdpr, 0, 0);
   c.fillStyle = T.surface;
   c.fillRect(0, 0, CW, CH);
   const KX = scale, CX = -camX * scale + CW / 2, CY = -camY * scale + CH / 2;
@@ -837,6 +848,65 @@ function renderFarCache() {
   const deepFade = Math.min(1, Math.max(0, (scale - 0.004) / 0.006));
   const growth = Math.min(3, Math.max(1, scale / (VEC_T * 0.35)));
   const mAf = markerFade * deepFade;
+  if (quick) {
+    // transient low-cost render used mid-gesture: raw pixel splats,
+    // fast on every canvas backend; crisp arcs follow at rest
+    if (!quickCanvas || quickCanvas.width !== CW || quickCanvas.height !== CH) {
+      quickCanvas = document.createElement("canvas");
+      quickCanvas.width = CW; quickCanvas.height = CH;
+      quickCtx = quickCanvas.getContext("2d");
+      quickImg = quickCtx.createImageData(CW, CH);
+      quick32 = new Uint32Array(quickImg.data.buffer);
+    }
+    quick32.fill(0);
+    const packCSS = (css, alpha) => {
+      const m = css.match(/(\d+)[^\d]+(\d+)[^\d]+(\d+)/);
+      return ((alpha << 24) | ((+m[3]) << 16) | ((+m[2]) << 8) | (+m[1])) >>> 0;
+    };
+    const splat = (sx, sy, half, packed) => {
+      const y0 = Math.max(0, sy - half), y1 = Math.min(CH - 1, sy + half);
+      for (let y = y0; y <= y1; y++) {
+        // shave the corner pixels so dots read as round
+        const rowHalf = half - (Math.abs(y - sy) === half && half > 1 ? 1 : 0);
+        const x0 = Math.max(0, sx - rowHalf), x1 = Math.min(CW - 1, sx + rowHalf);
+        const base = y * CW;
+        for (let x = x0; x <= x1; x++) quick32[base + x] = packed;
+      }
+    };
+    let drawn = 0;
+    if (mAf > 0.05) {
+      const mA = (216 * mAf) | 0;
+      const markerPack = ISLAND_BUCKET_COLORS.map((css) => packCSS(css, mA));
+      for (let m = 0, mi = 0; m < islandMarks.length; m += 2, mi++) {
+        const X = islandMarks[m], Y = islandMarks[m + 1];
+        if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
+        splat((X * KX + CX) | 0, (Y * KX + CY) | 0,
+              Math.round(islandMarkHalf[mi] * growth * 0.7), markerPack[islandMarkBucket[mi]]);
+      }
+    }
+    const ramp2q = colorByDeg[themeName];
+    for (let d = 0; d <= COLOR_CAP; d++) {
+      const arr = colorBuckets[d];
+      if (!arr.length) continue;
+      const packed = packCSS(d === 0 ? isoCSS() : ramp2q[d], 255);
+      const half = Math.max(2, Math.round(Math.max((3 + Math.sqrt(d < 40 ? d : 40) * 1.15) * scale, MINPX)) - 1);
+      for (let n = 0; n < arr.length; n++) {
+        const i = arr[n];
+        if (attractLaunched !== null && attractLaunched[i]) continue;
+        const X = px[i], Y = py[i];
+        if (X < wx0 || X > wx1 || Y < wy0 || Y > wy1) continue;
+        splat((X * KX + CX) | 0, (Y * KX + CY) | 0, half, packed);
+        drawn++;
+      }
+    }
+    farQuickCount = drawn;
+    quickCtx.putImageData(quickImg, 0, 0);
+    c.drawImage(quickCanvas, 0, 0, CW, CH);
+    farScale = scale; farCamX = camX; farCamY = camY; farValid = true;
+    farQuality = "quick";
+    lastFarStamp = performance.now();
+    return;
+  }
   if (mAf > 0.02) {
     c.globalAlpha = 0.85 * mAf;
     for (let bkt = 0; bkt < ISLAND_BUCKET_COLORS.length; bkt++) {
@@ -859,7 +929,7 @@ function renderFarCache() {
   }
   // word circles per color bucket on a transparent layer: fills first,
   // then outline strokes composited UNDER the fills
-  const L = getLayer(CW, CH);
+  const L = getLayer2(CW, CH, cdpr);
   const paths = [];
   const ramp2 = colorByDeg[themeName];
   for (let d = 0; d <= COLOR_CAP; d++) {
@@ -890,6 +960,8 @@ function renderFarCache() {
   L.globalCompositeOperation = "source-over";
   c.drawImage(layerCanvas, 0, 0, CW, CH);
   farScale = scale; farCamX = camX; farCamY = camY; farValid = true;
+  farQuality = "crisp";
+  lastFarStamp = performance.now();
 }
 
 /* ================= interaction state ================= */
@@ -1685,14 +1757,18 @@ function draw() {
   if (scale < VEC_T) {
     /* ---- far view: blit the crisp cache; refresh when the camera rests ---- */
     if (bgDirty) { renderBitmaps(); invalidateFar(); }
-    if (!farValid) renderFarCache();
+    if (!farValid) { renderFarCache(true); scheduleFarRender(); }
     const ratio = scale / farScale;
     const drift = Math.abs(camX - farCamX) * scale > W * (FAR_M - 1) * 0.45 ||
                   Math.abs(camY - farCamY) * scale > H * (FAR_M - 1) * 0.45 ||
                   ratio < 0.999 || ratio > 1.001;
     if (drift) {
-      if (ratio > 2.2 || ratio < 0.45) renderFarCache(); // too stale to stretch
-      else scheduleFarRender();
+      // too stale to stretch: refresh with the cheap pass, rate-limited,
+      // and let the debounce paint the crisp version at rest
+      if ((ratio > 2 || ratio < 0.5) && performance.now() - lastFarStamp > 350) renderFarCache(true);
+      scheduleFarRender();
+    } else if (farQuality === "quick" && !farTimer) {
+      scheduleFarRender();
     }
     const r2 = scale / farScale;
     const CW = Math.ceil(W * FAR_M), CH = Math.ceil(H * FAR_M);
@@ -1810,6 +1886,7 @@ function draw() {
     const KX2 = scale, CX2 = -camX * scale + W / 2, CY2 = -camY * scale + H / 2;
     const L = getLayer(W, H);
     const paths = [];
+    let inViewCount = 0;
     if (focusOrChain) {
       // everything except the highlighted set renders dimmed
       const path = new Path2D();
@@ -1824,6 +1901,7 @@ function draw() {
         path.moveTo(sx + rr, sy);
         path.arc(sx, sy, rr, 0, TAU);
         any = true;
+        inViewCount++;
       }
       if (any) {
         L.fillStyle = T.dimNode;
@@ -1848,6 +1926,7 @@ function draw() {
           path.moveTo(sx + rr, sy);
           path.arc(sx, sy, rr, 0, TAU);
           any = true;
+          inViewCount++;
         }
         if (!any) continue;
         L.fillStyle = d === 0 ? isoCSS() : ramp2[d];
@@ -1855,11 +1934,14 @@ function draw() {
         paths.push(path);
       }
     }
-    L.globalCompositeOperation = "destination-over";
-    L.lineWidth = 1.6;
-    L.strokeStyle = OUTLINE_CSS[themeName];
-    for (const path of paths) L.stroke(path);
-    L.globalCompositeOperation = "source-over";
+    if (inViewCount <= 14000) {
+      // outlines are invisible noise (and costly) beyond this density
+      L.globalCompositeOperation = "destination-over";
+      L.lineWidth = 1.6;
+      L.strokeStyle = OUTLINE_CSS[themeName];
+      for (const path of paths) L.stroke(path);
+      L.globalCompositeOperation = "source-over";
+    }
     ctx.drawImage(layerCanvas, 0, 0, W, H);
     // back to world space for the highlight passes below
     ctx.translate(W / 2, H / 2);
@@ -1900,6 +1982,7 @@ function draw() {
 
 /* ================= events (mouse + touch) ================= */
 let panning = false, lastX = 0, lastY = 0, downX = 0, downY = 0;
+let lastHitTest = 0;
 const pointers = new Map();
 let inPinch = false, pinchDist = 0;
 
@@ -2056,7 +2139,11 @@ canvas.addEventListener("pointermove", (e) => {
     lastX = e.offsetX; lastY = e.offsetY;
     requestDraw();
   } else {
-    const hit = scale >= VEC_T ? findNode(e.offsetX, e.offsetY) : -1;
+    if (scale < VEC_T) return;
+    const now = performance.now();
+    if (now - lastHitTest < 60) return;
+    lastHitTest = now;
+    const hit = findNode(e.offsetX, e.offsetY);
     if (hit !== hovered) { hovered = hit; updateTooltip(e); requestDraw(); }
     else if (hit !== -1) positionTooltip(e);
   }
