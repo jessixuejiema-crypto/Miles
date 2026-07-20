@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grow a Garden 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #7ec8f0; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #hud .pill {
+    background: rgba(20, 30, 20, 0.72); color: #fff; border-radius: 999px;
+    padding: 8px 16px; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  #title {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    font-size: 18px; letter-spacing: 0.5px;
+  }
+  #coins {
+    position: absolute; top: 12px; left: 12px; font-size: 18px;
+    transition: transform 0.15s;
+  }
+  #coins.bump { transform: scale(1.18); }
+  #back {
+    position: absolute; top: 12px; right: 12px; font-size: 13px;
+    pointer-events: auto; text-decoration: none; opacity: 0.85;
+  }
+  #back:hover { opacity: 1; }
+
+  #hotbar {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; pointer-events: auto;
+  }
+  .slot {
+    width: 76px; padding: 7px 4px 6px; border-radius: 12px; text-align: center;
+    background: rgba(20, 30, 20, 0.72); color: #fff; cursor: pointer;
+    border: 2px solid transparent; transition: transform 0.12s, border-color 0.12s;
+  }
+  .slot:hover { transform: translateY(-3px); }
+  .slot.sel { border-color: #ffd75e; background: rgba(45, 70, 40, 0.85); }
+  .slot.locked { opacity: 0.45; }
+  .slot .em { font-size: 22px; line-height: 1.1; }
+  .slot .nm { font-size: 10.5px; font-weight: 700; margin-top: 1px; }
+  .slot .pr { font-size: 10.5px; color: #ffd75e; font-weight: 700; }
+  .slot .key { font-size: 9px; color: #b9c9b4; }
+
+  #toast {
+    position: absolute; bottom: 108px; left: 50%; transform: translateX(-50%);
+    background: rgba(20, 30, 20, 0.85); color: #fff; padding: 8px 18px;
+    border-radius: 10px; font-size: 14px; font-weight: 600; opacity: 0;
+    transition: opacity 0.25s; white-space: nowrap; max-width: 92vw;
+  }
+  #toast.show { opacity: 1; }
+
+  #hint {
+    position: absolute; bottom: 108px; right: 14px; color: #fff; font-size: 11.5px;
+    background: rgba(20, 30, 20, 0.55); padding: 6px 10px; border-radius: 8px;
+    line-height: 1.6; text-align: right;
+  }
+  @media (max-width: 720px) {
+    #hint { display: none; }
+    .slot { width: 58px; }
+    .slot .nm { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div id="coins" class="pill">🪙 20</div>
+  <div id="title" class="pill">🌱 Grow a Garden 3D</div>
+  <a id="back" class="pill" href="index.html">↩ 2D Garden</a>
+  <div id="hint">🕹️ WASD / arrows — walk<br>⚡ E or Space — plant &amp; harvest<br>🖱️ Click a plot to walk there<br>🔢 1–6 — pick a seed</div>
+  <div id="hotbar"></div>
+  <div id="toast"></div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   GROW A GARDEN 3D — a blocky Roblox-style garden game.
+   Custom canvas 3D renderer (boxes + painter's algorithm),
+   fixed camera, and one very trusty bacon hair.
+   ============================================================ */
+
+// ---------- tiny vector math ----------
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// ---------- fixed camera ----------
+const CAM = { pos: [0, 30, 38], target: [0, 1, -2], fovV: 45 };
+let camFwd, camRight, camUp, focal;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+let W = 0, H = 0;
+
+function setupCamera() {
+  camFwd = norm(sub(CAM.target, CAM.pos));
+  camRight = norm(cross(camFwd, [0, 1, 0]));
+  camUp = cross(camRight, camFwd);
+  focal = (H / 2) / Math.tan((CAM.fovV / 2) * Math.PI / 180);
+}
+function resize() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  setupCamera();
+}
+window.addEventListener("resize", resize);
+resize();
+
+// world point -> screen {x, y, z(depth)}
+function project(p) {
+  const d = sub(p, CAM.pos);
+  const z = dot(d, camFwd);
+  if (z < 0.5) return null;
+  const f = focal / z;
+  return { x: W / 2 + dot(d, camRight) * f, y: H / 2 - dot(d, camUp) * f, z };
+}
+// screen point -> point on the ground plane (y = 0)
+function screenToGround(sx, sy) {
+  const dir = norm(add(camFwd, add(
+    camRight.map(v => v * (sx - W / 2) / focal),
+    camUp.map(v => v * (H / 2 - sy) / focal))));
+  if (dir[1] > -0.001) return null;
+  const t = -CAM.pos[1] / dir[1];
+  return [CAM.pos[0] + dir[0] * t, 0, CAM.pos[2] + dir[2] * t];
+}
+
+// ---------- renderer ----------
+const LIGHT = norm([0.45, 0.9, 0.35]);
+let drawList = [];   // faces + custom draw items, painter-sorted per layer
+
+const FACES = [
+  { i: [1, 5, 7, 3], n: [1, 0, 0] }, { i: [0, 2, 6, 4], n: [-1, 0, 0] },
+  { i: [2, 3, 7, 6], n: [0, 1, 0] }, { i: [0, 4, 5, 1], n: [0, -1, 0] },
+  { i: [4, 6, 7, 5], n: [0, 0, 1] }, { i: [0, 1, 3, 2], n: [0, 0, -1] },
+];
+function rotXv(v, c, s) { return [v[0], v[1] * c - v[2] * s, v[1] * s + v[2] * c]; }
+function rotYv(v, c, s) { return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c]; }
+
+// box({pos, off, size, ry, rx, color, emissive, layer})
+// pos = world pivot; off = box center relative to pivot (rotates with rx/ry)
+function box(o) {
+  const [sx, sy, sz] = o.size, hx = sx / 2, hy = sy / 2, hz = sz / 2;
+  const off = o.off || [0, 0, 0];
+  const cy = Math.cos(o.ry || 0), sy_ = Math.sin(o.ry || 0);
+  const cx = Math.cos(o.rx || 0), sx_ = Math.sin(o.rx || 0);
+  const verts = [];
+  for (let i = 0; i < 8; i++) {
+    let v = [off[0] + (i & 1 ? hx : -hx), off[1] + (i & 2 ? hy : -hy), off[2] + (i & 4 ? hz : -hz)];
+    if (o.rx) v = rotXv(v, cx, sx_);
+    if (o.ry) v = rotYv(v, cy, sy_);
+    verts.push(add(v, o.pos));
+  }
+  const pts = verts.map(project);
+  for (const f of FACES) {
+    let n = f.n;
+    if (o.rx) n = rotXv(n, cx, sx_);
+    if (o.ry) n = rotYv(n, cy, sy_);
+    const c0 = verts[f.i[0]];
+    if (dot(n, sub(c0, CAM.pos)) >= 0) continue; // backface
+    const p = f.i.map(i => pts[i]);
+    if (p.some(q => !q)) continue;
+    const depth = (p[0].z + p[1].z + p[2].z + p[3].z) / 4;
+    let b = 0.5 + 0.5 * Math.max(0, dot(n, LIGHT));
+    if (o.emissive) b = Math.max(b, o.emissive);
+    const col = o.color;
+    drawList.push({
+      layer: o.layer ?? 1, depth, pts: p,
+      fill: `rgb(${col[0] * b | 0},${col[1] * b | 0},${col[2] * b | 0})`,
+      stroke: `rgb(${col[0] * b * 0.8 | 0},${col[1] * b * 0.8 | 0},${col[2] * b * 0.8 | 0})`,
+    });
+  }
+}
+function custom(layer, depth, fn) { drawList.push({ layer, depth, fn }); }
+
+function flush() {
+  drawList.sort((a, b) => (a.layer - b.layer) || (b.depth - a.depth));
+  for (const it of drawList) {
+    if (it.fn) { it.fn(); continue; }
+    ctx.beginPath();
+    ctx.moveTo(it.pts[0].x, it.pts[0].y);
+    for (let i = 1; i < 4; i++) ctx.lineTo(it.pts[i].x, it.pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = it.fill;
+    ctx.strokeStyle = it.stroke;
+    ctx.lineWidth = 1;
+    ctx.fill(); ctx.stroke();
+  }
+  drawList = [];
+}
+
+// ---------- game data ----------
+const SEEDS = [
+  { name: "Carrot",    emoji: "🥕", cost: 5,   sell: 12,   time: 12  },
+  { name: "Tomato",    emoji: "🍅", cost: 12,  sell: 30,   time: 25  },
+  { name: "Corn",      emoji: "🌽", cost: 30,  sell: 80,   time: 45  },
+  { name: "Sunflower", emoji: "🌻", cost: 75,  sell: 210,  time: 80  },
+  { name: "Melon",     emoji: "🍉", cost: 180, sell: 560,  time: 140 },
+  { name: "Golden",    emoji: "✨", cost: 500, sell: 2000, time: 240 },
+];
+const SHINY_CHANCE = 0.12, SHINY_MULT = 2.5;
+const SOIL_TOP = 0.53;
+
+const PLOTS = [];
+for (const z of [-11, -5, 1]) for (const x of [-9, -3, 3, 9]) PLOTS.push({ x, z, plant: null });
+
+let coins = 20, selected = 0;
+
+// ---------- save / load ----------
+const SAVE_KEY = "gag3d-save-v1";
+function save() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      c: coins, sel: selected,
+      plots: PLOTS.map(p => p.plant ? { t: p.plant.type, t0: p.plant.t0, sh: p.plant.shiny ? 1 : 0 } : null),
+    }));
+  } catch (e) { /* private mode etc. */ }
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (!d) return;
+    coins = d.c ?? 20; selected = d.sel ?? 0;
+    (d.plots || []).forEach((s, i) => {
+      if (s && PLOTS[i] && SEEDS[s.t]) PLOTS[i].plant = { type: s.t, t0: s.t0, shiny: !!s.sh };
+    });
+  } catch (e) { /* corrupt save — start fresh */ }
+}
+load();
+
+// ---------- sound ----------
+let audio = null;
+function beep(freq, dur = 0.09, type = "square", vol = 0.12, delay = 0) {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = audio.currentTime + delay;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g); g.connect(audio.destination);
+    o.start(t0); o.stop(t0 + dur);
+  } catch (e) { /* no audio */ }
+}
+const sndPlant = () => { beep(330, 0.08); beep(415, 0.1, "square", 0.12, 0.07); };
+const sndHarvest = () => { beep(523, 0.09); beep(659, 0.09, "square", 0.12, 0.08); beep(784, 0.14, "square", 0.12, 0.16); };
+const sndShiny = () => { beep(880, 0.1, "sine", 0.15); beep(1175, 0.12, "sine", 0.15, 0.09); beep(1568, 0.2, "sine", 0.15, 0.18); };
+const sndError = () => beep(140, 0.18, "sawtooth", 0.1);
+
+// ---------- HUD ----------
+const elCoins = document.getElementById("coins");
+const elToast = document.getElementById("toast");
+const elHotbar = document.getElementById("hotbar");
+let toastTimer = null;
+function toast(msg, ms = 2200) {
+  elToast.textContent = msg;
+  elToast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => elToast.classList.remove("show"), ms);
+}
+function refreshCoins(bump) {
+  elCoins.textContent = "🪙 " + coins;
+  if (bump) { elCoins.classList.remove("bump"); void elCoins.offsetWidth; elCoins.classList.add("bump"); }
+  [...elHotbar.children].forEach((s, i) => s.classList.toggle("locked", coins < SEEDS[i].cost));
+}
+SEEDS.forEach((s, i) => {
+  const d = document.createElement("div");
+  d.className = "slot";
+  d.innerHTML = `<div class="em">${s.emoji}</div><div class="nm">${s.name}</div>` +
+    `<div class="pr">🪙${s.cost}</div><div class="key">[${i + 1}]</div>`;
+  d.addEventListener("click", e => { e.stopPropagation(); selectSeed(i); });
+  elHotbar.appendChild(d);
+});
+function selectSeed(i) {
+  selected = i;
+  [...elHotbar.children].forEach((s, j) => s.classList.toggle("sel", j === i));
+  save();
+}
+selectSeed(selected);
+refreshCoins(false);
+
+// ---------- particles ----------
+const particles = [];
+function burst(pos, color, n, speed, up, size) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    particles.push({
+      p: [...pos],
+      v: [Math.cos(a) * speed * (0.3 + Math.random()), up * (0.6 + Math.random() * 0.8), Math.sin(a) * speed * (0.3 + Math.random())],
+      life: 0.8 + Math.random() * 0.5, age: 0, color, size,
+    });
+  }
+}
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const q = particles[i];
+    q.age += dt;
+    if (q.age > q.life) { particles.splice(i, 1); continue; }
+    q.v[1] -= 14 * dt;
+    q.p = add(q.p, q.v.map(v => v * dt));
+    if (q.p[1] < 0.05) { q.p[1] = 0.05; q.v[1] *= -0.35; }
+  }
+}
+function drawParticles() {
+  for (const q of particles) {
+    const s = project(q.p);
+    if (!s) continue;
+    const r = Math.max(1, q.size * focal / s.z);
+    const alpha = 1 - q.age / q.life;
+    custom(1, s.z, () => {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = q.color;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, 7); ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+  }
+}
+
+// ---------- player (the bacon) ----------
+const player = { x: 0, z: 8, yaw: 0, phase: 0, swing: 0, target: null, pendingPlot: null };
+const SKIN = [244, 205, 48], TORSO = [42, 110, 205], LEGS = [161, 196, 62], BACON = [107, 66, 34];
+const PLAYER_SPEED = 7;
+
+function drawPlayer(t) {
+  const px = player.x, pz = player.z, yaw = player.yaw;
+  const bob = Math.abs(Math.sin(player.phase)) * 0.12 * Math.min(1, Math.abs(player.swing) * 3);
+  const y0 = bob;
+  const sw = player.swing;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  function world(local) { const v = rotYv(local, cy, sy); return [px + v[0], v[1] + y0, pz + v[2]]; }
+
+  // blob shadow
+  const sh = project([px, 0.02, pz]);
+  if (sh) {
+    const r = 1.5 * focal / sh.z;
+    custom(0.5, sh.z, () => {
+      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      ctx.beginPath(); ctx.ellipse(sh.x, sh.y, r, r * 0.45, 0, 0, 7); ctx.fill();
+    });
+  }
+  // legs (pivot at hip)
+  box({ pos: world([-0.5, 2, 0]), off: [0, -1, 0], size: [0.9, 2, 0.9], rx: sw, ry: yaw, color: LEGS });
+  box({ pos: world([0.5, 2, 0]),  off: [0, -1, 0], size: [0.9, 2, 0.9], rx: -sw, ry: yaw, color: LEGS });
+  // torso
+  box({ pos: world([0, 3, 0]), size: [1.9, 2, 1], ry: yaw, color: TORSO });
+  // arms (pivot at shoulder)
+  box({ pos: world([-1.42, 3.9, 0]), off: [0, -1, 0], size: [0.85, 2, 0.85], rx: -sw * 0.8, ry: yaw, color: SKIN });
+  box({ pos: world([1.42, 3.9, 0]),  off: [0, -1, 0], size: [0.85, 2, 0.85], rx: sw * 0.8, ry: yaw, color: SKIN });
+  // head
+  const headC = world([0, 4.72, 0]);
+  box({ pos: headC, size: [1.45, 1.25, 1.25], ry: yaw, color: SKIN });
+  // THE bacon hair: middle-parted brown waves
+  box({ pos: world([0, 5.42, -0.06]), size: [1.62, 0.34, 1.42], ry: yaw, color: BACON });              // top slab
+  box({ pos: world([-0.86, 4.85, -0.1]), size: [0.3, 1.05, 1.3], ry: yaw, color: BACON });            // left side
+  box({ pos: world([0.86, 4.85, -0.1]),  size: [0.3, 1.05, 1.3], ry: yaw, color: BACON });            // right side
+  box({ pos: world([0, 4.8, -0.78]), size: [1.6, 1.1, 0.3], ry: yaw, color: BACON });                 // back
+  box({ pos: world([-0.42, 5.12, 0.6]), size: [0.5, 0.5, 0.28], rx: 0.15, ry: yaw, color: BACON });   // left bang
+  box({ pos: world([0.42, 5.12, 0.6]),  size: [0.5, 0.5, 0.28], rx: 0.15, ry: yaw, color: BACON });   // right bang
+
+  // face decal (front of head is local +z)
+  const front = rotYv([0, 0, 1], cy, sy);
+  if (dot(front, norm(sub(CAM.pos, headC))) > 0.15) {
+    const fz = 0.65;
+    const eL = project(world([-0.3, 4.85, fz])), eR = project(world([0.3, 4.85, fz]));
+    const mo = project(world([0, 4.45, fz]));
+    if (eL && eR && mo) {
+      const r = 0.085 * focal / eL.z;
+      custom(1, eL.z - 0.05, () => {
+        ctx.fillStyle = "#1c1c1c";
+        ctx.beginPath(); ctx.arc(eL.x, eL.y, r, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.arc(eR.x, eR.y, r, 0, 7); ctx.fill();
+        ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = Math.max(1, r * 0.5); ctx.lineCap = "round";
+        ctx.beginPath(); ctx.arc(mo.x, mo.y - r * 2, r * 3, 0.25 * Math.PI, 0.75 * Math.PI); ctx.stroke();
+      });
+    }
+  }
+  // roblox-style nametag
+  const tag = project([px, 6.6 + bob, pz]);
+  if (tag) {
+    const fs = clamp(0.42 * focal / tag.z, 9, 20);
+    custom(1, tag.z - 0.1, () => {
+      ctx.font = `700 ${fs}px "Segoe UI", sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.lineWidth = fs / 5; ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.strokeText("bacon", tag.x, tag.y);
+      ctx.fillStyle = "#fff";
+      ctx.fillText("bacon", tag.x, tag.y);
+    });
+  }
+}
+
+// ---------- world / scenery ----------
+function drawScenery(t) {
+  // grass baseplate
+  box({ pos: [0, -0.5, 0], size: [64, 1, 64], color: [88, 168, 74], layer: 0 });
+  // checker tiles for that baseplate feel
+  for (let gx = -3; gx <= 3; gx++) for (let gz = -3; gz <= 3; gz++) {
+    if ((gx + gz) & 1) continue;
+    box({ pos: [gx * 8, 0.012, gz * 8], size: [8, 0.02, 8], color: [96, 178, 82], layer: 0 });
+  }
+  // dirt path from spawn to the beds
+  box({ pos: [0, 0.03, 7], size: [3, 0.05, 10], color: [196, 168, 116], layer: 0 });
+
+  // raised soil beds (layer 0.2 so the big flat ground tiles can never paint over them)
+  for (const p of PLOTS) {
+    box({ pos: [p.x, 0.24, p.z], size: [5.3, 0.48, 5.3], color: [140, 96, 54], layer: 0.2 }); // wooden rim
+    box({ pos: [p.x, 0.3, p.z], size: [4.5, 0.46, 4.5], color: [94, 62, 38], layer: 0.3 });   // soil
+  }
+
+  // fence
+  const fenceCol = [222, 214, 196];
+  const post = (x, z) => box({ pos: [x, 1, z], size: [0.55, 2, 0.55], color: fenceCol });
+  const railX = (x, z) => box({ pos: [x, 1.35, z], size: [4, 0.28, 0.22], color: fenceCol });
+  const railZ = (x, z) => box({ pos: [x, 1.35, z], size: [0.22, 0.28, 4], color: fenceCol });
+  for (let x = -16; x <= 16; x += 4) {
+    post(x, -16);
+    if (x < 16) railX(x + 2, -16);
+    if (Math.abs(x) > 4) { post(x, 12); if (x < 16 && x !== 2 && x !== -6) railX(x + 2, 12); }
+  }
+  post(-4.6, 12); post(4.6, 12); // gate posts
+  for (let z = -16; z <= 12; z += 4) {
+    post(-16, z); post(16, z);
+    if (z < 12) { railZ(-16, z + 2); railZ(16, z + 2); }
+  }
+
+  // trees in the back corners
+  for (const [tx, tz] of [[-13.5, -13.5], [13.5, -13.5]]) {
+    box({ pos: [tx, 1.6, tz], size: [1.1, 3.2, 1.1], color: [110, 74, 44] });
+    box({ pos: [tx, 4.2, tz], size: [3.6, 2.6, 3.6], color: [64, 142, 66] });
+    box({ pos: [tx, 5.9, tz], size: [2.3, 1.6, 2.3], color: [78, 160, 74] });
+  }
+  // seed stand (decorative shop)
+  box({ pos: [13.2, 1.1, 6.5], size: [3.4, 2.2, 1.6], color: [168, 118, 66] });
+  box({ pos: [12, 2.9, 6.5], size: [0.3, 1.6, 0.3], color: [130, 90, 50] });
+  box({ pos: [14.4, 2.9, 6.5], size: [0.3, 1.6, 0.3], color: [130, 90, 50] });
+  box({ pos: [13.2, 3.85, 6.5], size: [4.2, 0.3, 2.4], rx: 0, color: [214, 70, 60] });
+  box({ pos: [13.2, 4.05, 6.5], size: [1.4, 0.32, 2.42], color: [240, 236, 226] });
+  // tulips along the front
+  const tulips = [[-14, 9.5, [235, 90, 100]], [-12.5, 10.5, [250, 200, 70]], [14, 9.5, [200, 90, 220]], [12.5, 10.5, [235, 90, 100]], [-14.5, 5, [250, 200, 70]], [14.5, 4, [235, 90, 100]]];
+  for (const [fx, fz, col] of tulips) {
+    box({ pos: [fx, 0.45, fz], size: [0.14, 0.9, 0.14], color: [70, 140, 60] });
+    box({ pos: [fx, 1.05, fz], size: [0.45, 0.45, 0.45], color: col });
+  }
+  // drifting clouds
+  for (let i = 0; i < 4; i++) {
+    const cx = ((i * 23 + t * 0.7) % 90) - 45;
+    const cz = -26 - i * 3, cyy = 11 + (i % 2) * 2.5;
+    box({ pos: [cx, cyy, cz], size: [7, 1.6, 3], color: [252, 252, 255], emissive: 0.95 });
+    box({ pos: [cx + 2.4, cyy + 0.9, cz + 0.4], size: [3.6, 1.4, 2.4], color: [252, 252, 255], emissive: 0.95 });
+  }
+}
+
+// ---------- plants ----------
+function plantScale(s) { return 0.25 + 0.75 * (1 - Math.pow(1 - s, 2)); }
+
+function drawPlant(plot, t) {
+  const pl = plot.plant;
+  const seed = SEEDS[pl.type];
+  const elapsed = (Date.now() - pl.t0) / 1000;
+  const s = clamp(elapsed / seed.time, 0, 1);
+  const ripe = s >= 1;
+  const k = plantScale(s);
+  const bobY = ripe ? Math.abs(Math.sin(t * 3 + plot.x)) * 0.14 : 0;
+  const x = plot.x, z = plot.z, y = SOIL_TOP + bobY;
+  const shiny = ripe && pl.shiny;
+  const tint = c => shiny ? [lerp(c[0], 255, 0.55), lerp(c[1], 208, 0.55), lerp(c[2], 60, 0.55)] : c;
+  const em = shiny ? 0.85 : 0;
+
+  // ripe glow ring on the soil
+  if (ripe) {
+    const g = project([x, SOIL_TOP + 0.02, z]);
+    if (g) {
+      const r = (1.7 + Math.sin(t * 4) * 0.15) * focal / g.z;
+      custom(0.5, g.z, () => {
+        ctx.strokeStyle = shiny ? "rgba(255,215,80,0.9)" : "rgba(255,244,180,0.75)";
+        ctx.lineWidth = Math.max(1.5, r * 0.09);
+        ctx.beginPath(); ctx.ellipse(g.x, g.y, r, r * 0.45, 0, 0, 7); ctx.stroke();
+      });
+    }
+    if (shiny && Math.random() < 0.06) burst([x, y + 1.5, z], "#ffe066", 1, 1, 1.5, 0.14);
+  }
+
+  const type = seed.name;
+  if (type === "Carrot") {
+    for (let i = 0; i < 3; i++)
+      box({ pos: [x, y, z], off: [0, 0.65 * k, 0], size: [0.18 * k, 1.3 * k, 0.18 * k], rx: 0.45, ry: i * 2.1 + x, color: tint([74, 158, 62]), emissive: em });
+    if (s > 0.45)
+      box({ pos: [x, y + 0.32 * k, z], size: [0.78 * k, 0.6 * k, 0.78 * k], color: tint([232, 120, 34]), emissive: em });
+  } else if (type === "Tomato") {
+    box({ pos: [x, y + 0.9 * k, z], size: [0.26, 1.8 * k, 0.26], color: tint([56, 120, 52]), emissive: em });
+    const fr = ripe ? [214, 48, 42] : [120, 168, 90];
+    const fs = (0.28 + 0.32 * s) * k;
+    box({ pos: [x + 0.42 * k, y + 0.75 * k, z + 0.1], size: [fs, fs, fs], color: tint(fr), emissive: em });
+    box({ pos: [x - 0.4 * k, y + 1.05 * k, z - 0.15], size: [fs, fs, fs], color: tint(fr), emissive: em });
+    box({ pos: [x + 0.08, y + 1.45 * k, z + 0.35 * k], size: [fs, fs, fs], color: tint(fr), emissive: em });
+  } else if (type === "Corn") {
+    box({ pos: [x, y + 1.5 * k, z], size: [0.3, 3 * k, 0.3], color: tint([88, 158, 66]), emissive: em });
+    box({ pos: [x, y, z], off: [0, 0.8 * k, 0], size: [0.14, 1.6 * k, 0.14], rx: 0.6, ry: 0.8, color: tint([98, 170, 74]), emissive: em });
+    box({ pos: [x, y, z], off: [0, 0.7 * k, 0], size: [0.14, 1.4 * k, 0.14], rx: 0.6, ry: 3.6, color: tint([98, 170, 74]), emissive: em });
+    if (s > 0.5) {
+      box({ pos: [x + 0.32 * k, y + 1.9 * k, z], size: [0.5 * k, 1.05 * k, 0.5 * k], color: tint([244, 205, 62]), emissive: em });
+      box({ pos: [x + 0.32 * k, y + 2.55 * k, z], size: [0.3 * k, 0.4 * k, 0.3 * k], color: tint([120, 180, 80]), emissive: em });
+    }
+  } else if (type === "Sunflower") {
+    box({ pos: [x, y + 1.3 * k, z], size: [0.26, 2.6 * k, 0.26], color: tint([70, 140, 58]), emissive: em });
+    box({ pos: [x, y, z], off: [0, 0.6 * k, 0], size: [0.14, 1.2 * k, 0.14], rx: 0.7, ry: 1.2, color: tint([80, 150, 64]), emissive: em });
+    const hy = y + 2.6 * k;
+    if (s > 0.35) {
+      for (let i = 0; i < 8; i++)
+        box({ pos: [x, hy, z], size: [1.5 * k, 0.13, 0.4 * k], ry: i * Math.PI / 4, color: tint([250, 200, 46]), emissive: em || 0.6 });
+      box({ pos: [x, hy + 0.08, z], size: [0.8 * k, 0.22, 0.8 * k], color: tint([120, 76, 40]), emissive: em });
+    }
+  } else if (type === "Melon") {
+    const my = y + 0.62 * k;
+    box({ pos: [x, my, z], size: [1.9 * k, 1.25 * k, 1.5 * k], color: tint([70, 150, 62]), emissive: em });
+    for (const ox of [-0.55, 0, 0.55])
+      box({ pos: [x + ox * k, my, z], size: [0.26 * k, 1.27 * k, 1.52 * k], color: tint([48, 110, 46]), emissive: em });
+    box({ pos: [x - 0.8 * k, y + 1.3 * k, z], size: [0.16, 0.5 * k, 0.16], rx: 0.5, color: tint([90, 140, 60]), emissive: em });
+  } else { // Golden
+    box({ pos: [x, y + 0.5 * k, z], size: [0.2, 1 * k, 0.2], color: tint([150, 130, 60]), emissive: 0.5 });
+    box({ pos: [x, y + (1.35 + Math.sin(t * 2) * 0.12) * k, z], size: [0.95 * k, 0.95 * k, 0.95 * k], ry: t * 1.2, color: [255, 208, 64], emissive: 0.95 });
+    if (s > 0.2 && Math.random() < 0.05) burst([x, y + 1.4 * k, z], "#fff3b0", 1, 0.8, 1.2, 0.12);
+  }
+}
+
+// ---------- input ----------
+const keys = {};
+window.addEventListener("keydown", e => {
+  if (e.repeat) return;
+  keys[e.code] = true;
+  if (e.code === "KeyE" || e.code === "Space") { interact(); e.preventDefault(); }
+  const n = "123456".indexOf(e.key);
+  if (n >= 0) selectSeed(n);
+});
+window.addEventListener("keyup", e => { keys[e.code] = false; });
+
+canvas.addEventListener("pointerdown", e => {
+  const g = screenToGround(e.clientX, e.clientY);
+  if (!g) return;
+  const plot = PLOTS.find(p => Math.abs(g[0] - p.x) < 2.9 && Math.abs(g[2] - p.z) < 2.9);
+  if (plot) {
+    const dir = norm([player.x - plot.x, 0, player.z - plot.z]);
+    player.target = [plot.x + dir[0] * 3.4, plot.z + dir[2] * 3.4];
+    player.pendingPlot = plot;
+  } else {
+    player.target = [clamp(g[0], -15, 15), clamp(g[2], -15, 11)];
+    player.pendingPlot = null;
+  }
+});
+
+function nearestPlot() {
+  let best = null, bd = 3.4;
+  for (const p of PLOTS) {
+    const d = Math.hypot(player.x - p.x, player.z - p.z);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+function interact(plot) {
+  plot = plot || nearestPlot();
+  if (!plot) { toast("Walk up to a plot first! 🚶"); return; }
+  if (!plot.plant) {
+    const seed = SEEDS[selected];
+    if (coins < seed.cost) { sndError(); toast(`Not enough coins for ${seed.name} ${seed.emoji} (need 🪙${seed.cost})`); return; }
+    coins -= seed.cost;
+    plot.plant = { type: selected, t0: Date.now(), shiny: Math.random() < SHINY_CHANCE };
+    sndPlant();
+    burst([plot.x, SOIL_TOP + 0.4, plot.z], "#7bc86b", 10, 2, 2, 0.16);
+    toast(`Planted ${seed.name} ${seed.emoji} — ready in ${SEEDS[selected].time}s`);
+    refreshCoins(true); save();
+    return;
+  }
+  const seed = SEEDS[plot.plant.type];
+  const elapsed = (Date.now() - plot.plant.t0) / 1000;
+  if (elapsed < seed.time) {
+    toast(`${seed.emoji} ${seed.name} is still growing… ${Math.ceil(seed.time - elapsed)}s left`);
+    return;
+  }
+  const shiny = plot.plant.shiny;
+  const gain = Math.round(seed.sell * (shiny ? SHINY_MULT : 1));
+  coins += gain;
+  plot.plant = null;
+  if (shiny) { sndShiny(); toast(`🌟 SHINY ${seed.name}! Sold for 🪙${gain}!`); }
+  else { sndHarvest(); toast(`Harvested ${seed.name} ${seed.emoji} → +🪙${gain}`); }
+  burst([plot.x, SOIL_TOP + 0.8, plot.z], shiny ? "#ffe066" : "#ffd75e", shiny ? 22 : 12, 2.5, 3, 0.2);
+  refreshCoins(true); save();
+}
+
+// ---------- update ----------
+function updatePlayer(dt) {
+  let dx = 0, dz = 0;
+  if (keys.KeyW || keys.ArrowUp) dz -= 1;
+  if (keys.KeyS || keys.ArrowDown) dz += 1;
+  if (keys.KeyA || keys.ArrowLeft) dx -= 1;
+  if (keys.KeyD || keys.ArrowRight) dx += 1;
+
+  if (dx || dz) { player.target = null; player.pendingPlot = null; }
+  else if (player.target) {
+    const tx = player.target[0] - player.x, tz = player.target[1] - player.z;
+    const d = Math.hypot(tx, tz);
+    if (d < 0.2) {
+      player.target = null;
+      if (player.pendingPlot) { interact(player.pendingPlot); player.pendingPlot = null; }
+    } else { dx = tx / d; dz = tz / d; }
+  }
+
+  const moving = !!(dx || dz);
+  if (moving) {
+    const l = Math.hypot(dx, dz);
+    player.x += (dx / l) * PLAYER_SPEED * dt;
+    player.z += (dz / l) * PLAYER_SPEED * dt;
+    player.yaw = Math.atan2(dx, dz);
+    player.phase += dt * 9;
+    player.swing = Math.sin(player.phase) * 0.75;
+  } else {
+    player.swing *= Math.max(0, 1 - dt * 10);
+  }
+
+  // stay inside the fence
+  player.x = clamp(player.x, -15, 15);
+  player.z = clamp(player.z, -15, 11);
+  // don't trample the beds (push the player out along the shallow axis)
+  for (const p of PLOTS) {
+    const hb = 2.75, r = 0.01;
+    if (Math.abs(player.x - p.x) < hb && Math.abs(player.z - p.z) < hb) {
+      const ox = hb - Math.abs(player.x - p.x), oz = hb - Math.abs(player.z - p.z);
+      if (ox < oz) player.x += (player.x > p.x ? ox : -ox) + (player.x > p.x ? r : -r);
+      else player.z += (player.z > p.z ? oz : -oz) + (player.z > p.z ? r : -r);
+      player.target = null;
+    }
+  }
+}
+
+// ---------- highlight nearest plot ----------
+function drawHighlight(t) {
+  const p = nearestPlot();
+  if (!p) return;
+  const g = project([p.x, SOIL_TOP + 0.03, p.z]);
+  if (!g) return;
+  const ripe = p.plant && (Date.now() - p.plant.t0) / 1000 >= SEEDS[p.plant.type].time;
+  const r = (2.2 + Math.sin(t * 5) * 0.12) * focal / g.z;
+  custom(0.5, g.z, () => {
+    ctx.strokeStyle = ripe ? "rgba(255,215,90,0.95)" : "rgba(255,255,255,0.85)";
+    ctx.lineWidth = Math.max(2, r * 0.05);
+    ctx.setLineDash([r * 0.25, r * 0.16]);
+    ctx.beginPath(); ctx.ellipse(g.x, g.y, r, r * 0.45, 0, 0, 7); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+}
+
+// ---------- sky ----------
+function drawSky() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, "#5db4ec");
+  grad.addColorStop(0.45, "#a5d8f5");
+  grad.addColorStop(1, "#d8eefb");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  // sun
+  const sx = W * 0.82, sy2 = H * 0.12;
+  const sg = ctx.createRadialGradient(sx, sy2, 0, sx, sy2, 90);
+  sg.addColorStop(0, "rgba(255,244,190,1)");
+  sg.addColorStop(0.4, "rgba(255,230,140,0.85)");
+  sg.addColorStop(1, "rgba(255,230,140,0)");
+  ctx.fillStyle = sg;
+  ctx.beginPath(); ctx.arc(sx, sy2, 90, 0, 7); ctx.fill();
+}
+
+// ---------- main loop ----------
+let last = performance.now();
+let welcomed = false;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const t = now / 1000;
+
+  updatePlayer(dt);
+  updateParticles(dt);
+
+  drawSky();
+  drawScenery(t);
+  drawHighlight(t);
+  for (const p of PLOTS) if (p.plant) drawPlant(p, t);
+  drawPlayer(t);
+  drawParticles();
+  flush();
+
+  if (!welcomed) {
+    welcomed = true;
+    toast("Welcome, bacon! Pick a seed below, walk to a plot and press E 🌱", 5000);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
