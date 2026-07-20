@@ -170,10 +170,29 @@
   #isoSwatch { cursor: pointer; width: 15px; height: 15px; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
   .legend-swatch { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--border); display: inline-block; }
   #stats { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--hairline); color: var(--text-muted); line-height: 1.5; }
-  #hubs {
+  #favs {
     position: absolute;
     right: 12px;
     top: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 12px;
+    z-index: 6;
+    max-width: 190px;
+  }
+  #favs summary { cursor: pointer; font-weight: 600; font-size: 12px; user-select: none; color: #c99700; }
+  #favs .fav-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--text-secondary); }
+  #favs .fav-w { cursor: pointer; flex: 1; }
+  #favs .fav-w:hover { color: var(--accent); text-decoration: underline; }
+  #favs .fav-x { cursor: pointer; color: var(--text-muted); padding: 0 3px; }
+  #favs .fav-empty { color: var(--text-muted); margin-top: 4px; }
+  #defCard .def-star { float: right; cursor: pointer; font-size: 17px; color: #eda100; padding: 0 4px; user-select: none; }
+  #hubs {
+    position: absolute;
+    right: 12px;
+    top: 44px;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -239,6 +258,7 @@
   }
   @media (max-width: 720px) {
     #hubs, #hint { display: none; }
+    #favs { top: 8px; right: 8px; }
   }
 </style>
 </head>
@@ -280,6 +300,10 @@
     </div>
     <button id="resetColors" title="Back to the default colors and gradients">&#8634; colors</button>
     <button id="attractBtn" title="Tap a word, then suck its whole network into it, ring by ring">&#127744; Attract</button>
+    <button id="explodeBtn" title="Tap a word, then blast its neighborhood outward">&#128165; Explode</button>
+    <button id="orbitBtn" title="Tap a word, then set its neighbors orbiting it like planets">&#129680; Orbit</button>
+    <button id="longestBtn" title="Highlight the longest chain in the whole graph (no loops)">&#9939; Longest chain</button>
+    <button id="soundBtn" title="Sound effects on/off">&#128266;</button>
     <div class="sep"></div>
     <label class="len-toggle"><input type="checkbox" id="showIsolated">show words with no links</label>
     <div class="sep"></div>
@@ -296,6 +320,10 @@
     <div id="legendRows"></div>
     <div id="stats"></div>
   </div>
+  <details id="favs">
+    <summary>&#9733; Favorites</summary>
+    <div id="favList"></div>
+  </details>
   <details id="hubs" open>
     <summary>Most connected words</summary>
     <table id="hubsTable"></table>
@@ -600,6 +628,7 @@ let deg = new Int32Array(N);
 let maxDeg = 1;
 let visCount = 0, isolatedHidden = 0, visComps = 0;
 let mainBox = null;          // bbox of the biggest visible component
+let mainSeed = -1;           // a word inside the biggest component
 let colorBuckets = [];       // node indices grouped by degree bucket (far-view dots)
 let islandMarks = new Float32Array(0);     // centroids of 2-100 word islands [x,y,...]
 let islandMarkBucket = new Uint8Array(0);  // quantized gradient color bucket per marker
@@ -650,7 +679,7 @@ function rebuildVisible() {
           if (visible[u] && !seenC[u]) { seenC[u] = 1; stack[top++] = u; }
         }
       }
-      if (size > bestSize) { bestSize = size; mainBox = [x0, y0, x1, y1]; }
+      if (size > bestSize) { bestSize = size; mainBox = [x0, y0, x1, y1]; mainSeed = s; }
       if (size >= 2 && size <= 100) {
         marks.push(sx / size, sy / size);
         markColors.push(islandBucket(size));
@@ -666,6 +695,8 @@ function rebuildVisible() {
   for (let i = 0; i < N; i++) if (visible[i]) colorBuckets[degBucket(i)].push(i);
   visStamp++;
   cancelAttract();
+  cancelOrbit();
+  cancelExplode();
   updateLegend();
   updateHubs();
   if (selected !== -1 && !visible[selected]) selected = -1;
@@ -975,7 +1006,10 @@ function defFooter(word) {
   return `<a class="def-link" href="https://en.wiktionary.org/wiki/${encodeURIComponent(word)}" target="_blank" rel="noopener">Look up on Wiktionary &#8599;</a>`;
 }
 function renderDef(word, html) {
-  defCard.innerHTML = `<span class="def-close" data-close="1">&#10005;</span><div class="def-word">${word}</div>` + html;
+  const star = favorites.has(word) ? "&#9733;" : "&#9734;";
+  defCard.innerHTML = `<span class="def-close" data-close="1">&#10005;</span>` +
+    `<span class="def-star" data-starword="${word}" title="Star this word">${star}</span>` +
+    `<div class="def-word">${word}</div>` + html;
   defCard.style.display = "block";
 }
 async function showDefinition(i) {
@@ -1019,6 +1053,15 @@ async function showDefinition(i) {
 }
 defCard.addEventListener("click", (e) => {
   if (e.target.dataset && e.target.dataset.close) hideDefinition();
+  const sw = e.target.dataset && e.target.dataset.starword;
+  if (sw) {
+    if (favorites.has(sw)) { favorites.delete(sw); blip(320, 0.07); }
+    else { favorites.add(sw); blip(720, 0.08); blip(950, 0.1); }
+    saveFavs();
+    updateFavPanel();
+    e.target.innerHTML = favorites.has(sw) ? "&#9733;" : "&#9734;";
+    requestDraw();
+  }
 });
 
 /* ---- Attract: suck the selected word's whole component into it,
@@ -1063,6 +1106,8 @@ function startAttract(root) {
     state: "sucking", frame: 0, launched: 0, released: 0, parkedCount: 0, ringsDone: 0,
   };
   for (let k = 0; k < n; k++) { attract.ox[k] = px[order[k]]; attract.oy[k] = py[order[k]]; }
+  cancelOrbit();
+  cancelExplode();
   attractParked = new Uint8Array(N);
   attractLaunched = new Uint8Array(N);
   selected = -1; // no dim wash: let the words fly in full color
@@ -1088,6 +1133,7 @@ function attractTick() {
         while (a.launched < n && a.depths[a.launched] === dNow) a.launched++;
       }
       for (let k = was; k < a.launched; k++) attractLaunched[a.order[k]] = 1;
+      blip(180 + 700 * (a.launched / n), 0.06, "square", 0.025);
       invalidateFar();
     }
     const tx = px[a.root], ty = py[a.root];
@@ -1107,6 +1153,7 @@ function attractTick() {
     requestDraw();
     if (a.launched >= n && !flying) {
       a.state = "holding";
+      blip(880, 0.12); blip(1100, 0.16);
       updateAttractBtn();
       invalidateFar();
       requestDraw();
@@ -1222,8 +1269,321 @@ document.getElementById("attractBtn").addEventListener("click", () => {
   }
 });
 
+/* ---- sound blips (tiny WebAudio synth) ---- */
+let audioOn = (localStorage.getItem("wcg-sound") || "1") === "1";
+let audioCtx = null;
+function blip(freq, dur, type, vol) {
+  if (!audioOn) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const t0 = audioCtx.currentTime;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type || "sine";
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(vol || 0.04, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + (dur || 0.07));
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t0); o.stop(t0 + (dur || 0.07) + 0.02);
+  } catch (_) {}
+}
+function updateSoundBtn() {
+  document.getElementById("soundBtn").innerHTML = audioOn ? "&#128266;" : "&#128263;";
+}
+document.getElementById("soundBtn").addEventListener("click", () => {
+  audioOn = !audioOn;
+  localStorage.setItem("wcg-sound", audioOn ? "1" : "0");
+  updateSoundBtn();
+  if (audioOn) blip(600, 0.08);
+});
+updateSoundBtn();
+
+/* ---- favorites: starred words with gold rings, kept in localStorage ---- */
+let favorites = new Set();
+try { favorites = new Set(JSON.parse(localStorage.getItem("wcg-favs") || "[]")); } catch (_) {}
+function saveFavs() { localStorage.setItem("wcg-favs", JSON.stringify([...favorites])); }
+function updateFavPanel() {
+  const el = document.getElementById("favList");
+  if (!favorites.size) { el.innerHTML = `<div class="fav-empty">Tap a word, then its &#9734; to star it.</div>`; return; }
+  el.innerHTML = [...favorites].sort().map((w) =>
+    `<div class="fav-row"><span class="fav-w" data-w="${w}">${w}</span><span class="fav-x" data-x="${w}">&#10005;</span></div>`).join("");
+}
+document.getElementById("favList").addEventListener("click", (e) => {
+  const w = e.target.dataset && e.target.dataset.w;
+  const x = e.target.dataset && e.target.dataset.x;
+  if (w) { const i = wordIndex(w); if (i !== -1 && visible[i]) flyTo(i); }
+  if (x) { favorites.delete(x); saveFavs(); updateFavPanel(); blip(300, 0.06); requestDraw(); }
+});
+function drawFavRings(T) {
+  if (!favorites.size) return;
+  ctx.save();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.strokeStyle = "#f5b800";
+  ctx.lineWidth = 2.4;
+  for (const w of favorites) {
+    const i = wordIndex(w);
+    if (i === -1 || !visible[i]) continue;
+    if (attractLaunched !== null && attractLaunched[i]) continue;
+    const sx = (px[i] - camX) * scale + W / 2, sy = (py[i] - camY) * scale + H / 2;
+    if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+    const r = Math.max(nodeRadius(i) * scale, MINPX) + 3.5;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ---- explode: blast the neighborhood outward, then drift back ---- */
+let explode = null;
+const EXPLODE_FALL = [0, 1, 0.6, 0.35, 0.18];
+function startExplode(root) {
+  if (attract || orbit || explode) return;
+  const nodes = [], depths = [];
+  const seenE = new Uint8Array(N);
+  seenE[root] = 1;
+  let frontier = [root], depth = 0;
+  while (frontier.length && depth < 4 && nodes.length < 700) {
+    const next = [];
+    depth++;
+    for (const v of frontier) {
+      for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
+        const u = csrNbr[k];
+        if (!visible[u] || seenE[u]) continue;
+        seenE[u] = 1;
+        nodes.push(u); depths.push(depth); next.push(u);
+        if (nodes.length >= 700) break;
+      }
+    }
+    frontier = next;
+  }
+  const n = nodes.length;
+  if (!n) return;
+  explode = {
+    nodes: Int32Array.from(nodes),
+    ox: new Float32Array(n), oy: new Float32Array(n),
+    vx: new Float32Array(n), vy: new Float32Array(n),
+    frame: 0,
+  };
+  const rx = px[root], ry = py[root];
+  for (let k = 0; k < n; k++) {
+    const i = nodes[k];
+    explode.ox[k] = px[i]; explode.oy[k] = py[i];
+    let dx = px[i] - rx, dy = py[i] - ry;
+    let d = Math.sqrt(dx * dx + dy * dy);
+    if (d < 1) { const a = Math.random() * Math.PI * 2; dx = Math.cos(a); dy = Math.sin(a); d = 1; }
+    const sp = (16 + Math.random() * 22) * EXPLODE_FALL[depths[k]];
+    explode.vx[k] = (dx / d) * sp;
+    explode.vy[k] = (dy / d) * sp;
+  }
+  blip(110, 0.25, "sawtooth", 0.07);
+  blip(70, 0.35, "triangle", 0.06);
+  requestAnimationFrame(explodeTick);
+}
+function explodeTick() {
+  if (!explode) return;
+  const e = explode;
+  e.frame++;
+  let energy = 0;
+  for (let k = 0; k < e.nodes.length; k++) {
+    const i = e.nodes[k];
+    if (e.frame > 40) {
+      // drift home, easing out as it lands
+      e.vx[k] += (e.ox[k] - px[i]) * 0.02;
+      e.vy[k] += (e.oy[k] - py[i]) * 0.02;
+      e.vx[k] *= 0.86; e.vy[k] *= 0.86;
+    } else {
+      e.vx[k] *= 0.92; e.vy[k] *= 0.92;
+    }
+    px[i] += e.vx[k]; py[i] += e.vy[k];
+    const sp = Math.abs(e.vx[k]) + Math.abs(e.vy[k]) + (e.frame > 40 ? (Math.abs(e.ox[k] - px[i]) + Math.abs(e.oy[k] - py[i])) * 0.02 : 1);
+    if (sp > energy) energy = sp;
+  }
+  requestDraw();
+  if (e.frame < 45 || energy * scale > 0.3) {
+    requestAnimationFrame(explodeTick);
+  } else {
+    for (let k = 0; k < e.nodes.length; k++) { px[e.nodes[k]] = e.ox[k]; py[e.nodes[k]] = e.oy[k]; }
+    explode = null;
+    invalidateFar();
+    requestDraw();
+  }
+}
+function cancelExplode() {
+  if (!explode) return;
+  for (let k = 0; k < explode.nodes.length; k++) { px[explode.nodes[k]] = explode.ox[k]; py[explode.nodes[k]] = explode.oy[k]; }
+  explode = null;
+  invalidateFar();
+}
+document.getElementById("explodeBtn").addEventListener("click", () => {
+  if (selected === -1) {
+    document.getElementById("chainResult").textContent = "Tap a word first, then press Explode.";
+    return;
+  }
+  startExplode(selected);
+});
+
+/* ---- orbit: neighbors circle the chosen word like planets ---- */
+let orbit = null;
+function startOrbit(root) {
+  if (attract || explode) return;
+  const nodes = [], depths = [];
+  const seenO = new Uint8Array(N);
+  seenO[root] = 1;
+  let frontier = [root], depth = 0;
+  while (frontier.length && depth < 2 && nodes.length < 220) {
+    const next = [];
+    depth++;
+    for (const v of frontier) {
+      for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
+        const u = csrNbr[k];
+        if (!visible[u] || seenO[u]) continue;
+        seenO[u] = 1;
+        nodes.push(u); depths.push(depth); next.push(u);
+        if (nodes.length >= 220) break;
+      }
+    }
+    frontier = next;
+  }
+  const n = nodes.length;
+  if (!n) return;
+  orbit = {
+    root,
+    nodes: Int32Array.from(nodes),
+    ox: new Float32Array(n), oy: new Float32Array(n),
+    ang: new Float32Array(n), angV: new Float32Array(n), rad: new Float32Array(n),
+    t: 0, active: true,
+  };
+  const ringCount = [0, 0, 0];
+  for (let k = 0; k < n; k++) ringCount[depths[k]]++;
+  const ringIdx = [0, 0, 0];
+  for (let k = 0; k < n; k++) {
+    const i = nodes[k], d = depths[k];
+    orbit.ox[k] = px[i]; orbit.oy[k] = py[i];
+    orbit.ang[k] = (ringIdx[d]++ / Math.max(1, ringCount[d])) * Math.PI * 2;
+    orbit.rad[k] = (d === 1 ? 90 : 175) + (k % 4) * 14;
+    orbit.angV[k] = (d === 1 ? 0.035 : -0.02) * (0.85 + (k % 7) * 0.05);
+  }
+  blip(500, 0.1); blip(650, 0.1);
+  updateOrbitBtn();
+  requestAnimationFrame(orbitTick);
+}
+function orbitTick() {
+  if (!orbit) return;
+  const o = orbit;
+  o.t++;
+  const rx = px[o.root], ry = py[o.root];
+  let energy = 0;
+  if (o.active) {
+    for (let k = 0; k < o.nodes.length; k++) {
+      const i = o.nodes[k];
+      const a = o.ang[k] + o.angV[k] * o.t;
+      const tx = rx + Math.cos(a) * o.rad[k];
+      const ty = ry + Math.sin(a) * o.rad[k];
+      px[i] += (tx - px[i]) * 0.12;
+      py[i] += (ty - py[i]) * 0.12;
+    }
+    energy = 1;
+  } else {
+    for (let k = 0; k < o.nodes.length; k++) {
+      const i = o.nodes[k];
+      const dx = o.ox[k] - px[i], dy = o.oy[k] - py[i];
+      if (dx * dx + dy * dy < 2) { px[i] = o.ox[k]; py[i] = o.oy[k]; continue; }
+      px[i] += dx * 0.13; py[i] += dy * 0.13;
+      energy = 1;
+    }
+  }
+  requestDraw();
+  if (o.active || energy) {
+    requestAnimationFrame(orbitTick);
+  } else {
+    for (let k = 0; k < o.nodes.length; k++) { px[o.nodes[k]] = o.ox[k]; py[o.nodes[k]] = o.oy[k]; }
+    orbit = null;
+    updateOrbitBtn();
+    invalidateFar();
+    requestDraw();
+  }
+}
+function cancelOrbit() {
+  if (!orbit) return;
+  for (let k = 0; k < orbit.nodes.length; k++) { px[orbit.nodes[k]] = orbit.ox[k]; py[orbit.nodes[k]] = orbit.oy[k]; }
+  orbit = null;
+  updateOrbitBtn();
+  invalidateFar();
+}
+function updateOrbitBtn() {
+  document.getElementById("orbitBtn").innerHTML =
+    orbit && orbit.active ? "&#9209; Stop orbit" : "&#129680; Orbit";
+}
+document.getElementById("orbitBtn").addEventListener("click", () => {
+  if (orbit) {
+    if (orbit.active) { orbit.active = false; blip(400, 0.08); blip(280, 0.1); updateOrbitBtn(); }
+    return;
+  }
+  if (selected === -1) {
+    document.getElementById("chainResult").textContent = "Tap a word first, then press Orbit.";
+    return;
+  }
+  startOrbit(selected);
+});
+
+/* ---- longest chain (graph diameter, double-sweep BFS; a simple path,
+   so no loops) ---- */
+const longestCache = { stamp: -1, path: null };
+function bfsFarthest(start) {
+  const prev = new Int32Array(N).fill(-2);
+  prev[start] = -1;
+  let frontier = [start], last = start;
+  while (frontier.length) {
+    const next = [];
+    for (const v of frontier) {
+      for (let k = csrOff[v]; k < csrOff[v + 1]; k++) {
+        const u = csrNbr[k];
+        if (!visible[u] || prev[u] !== -2) continue;
+        prev[u] = v;
+        next.push(u);
+      }
+    }
+    if (next.length) last = next[next.length - 1];
+    frontier = next;
+  }
+  return { far: last, prev };
+}
+document.getElementById("longestBtn").addEventListener("click", () => {
+  if (mainSeed === -1) return;
+  let path = longestCache.stamp === visStamp ? longestCache.path : null;
+  if (!path) {
+    const a = bfsFarthest(mainSeed).far;
+    const r = bfsFarthest(a);
+    path = [];
+    let cur = r.far;
+    while (cur !== -1) { path.push(cur); cur = r.prev[cur]; }
+    longestCache.stamp = visStamp;
+    longestCache.path = path;
+  }
+  selected = -1;
+  hideDefinition();
+  chainPath = path;
+  chainEdgeSet = new Set();
+  for (let k = 0; k < path.length - 1; k++) chainEdgeSet.add(edgeKey(path[k], path[k + 1]));
+  const first = ALL_WORDS[path[0]], last = ALL_WORDS[path[path.length - 1]];
+  const preview = path.slice(1, 4).map((i) => ALL_WORDS[i]).join(" → ");
+  document.getElementById("chainResult").innerHTML =
+    `Longest chain: <span class="chain-word">${first}</span> → ${preview} → &hellip; → ` +
+    `<span class="chain-word">${last}</span> <span style="color:var(--text-muted)">(${path.length - 1} steps, no word repeats)</span>`;
+  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  for (const i of path) {
+    minX = Math.min(minX, px[i]); maxX = Math.max(maxX, px[i]);
+    minY = Math.min(minY, py[i]); maxY = Math.max(maxY, py[i]);
+  }
+  fitBox([minX, minY, maxX, maxY], 400);
+  blip(500, 0.09); blip(700, 0.12);
+  requestDraw();
+});
+
 /* ================= drawing ================= */
 let drawQueued = false;
+
 function requestDraw() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(draw); } }
 
 function drawHighlightOverlay(T, special) {
@@ -1341,6 +1701,7 @@ function draw() {
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(farCanvas, bx, by, CW * r2, CH * r2);
     drawAttract(T);
+    drawFavRings(T);
     if (focusOrChain) {
       ctx.fillStyle = themeName === "light" ? "rgba(252,252,251,0.88)" : "rgba(26,26,25,0.88)";
       ctx.fillRect(0, 0, W, H);
@@ -1533,6 +1894,7 @@ function draw() {
     ctx.stroke();
   }
   drawAttract(T);
+  drawFavRings(T);
   drawLabels(T, special, focusOrChain);
 }
 
@@ -1640,6 +2002,7 @@ function jellyTo(wx, wy) {
 }
 function endJelly() {
   if (!jelly) return;
+  blip(250, 0.08, "triangle");
   jelly.active = false;
   if (!jellyRunning) { jellyRunning = true; requestAnimationFrame(jellyTick); }
   scheduleBGRefresh();
@@ -1664,8 +2027,8 @@ canvas.addEventListener("pointerdown", (e) => {
   if (pointers.size > 2) return;
   lastX = e.offsetX; lastY = e.offsetY;
   downX = e.offsetX; downY = e.offsetY;
-  const hit = (scale >= VEC_T && !attract) ? findNode(e.offsetX, e.offsetY) : -1;
-  if (hit !== -1) { dragNode = hit; startJelly(hit); }
+  const hit = (scale >= VEC_T && !attract && !orbit && !explode) ? findNode(e.offsetX, e.offsetY) : -1;
+  if (hit !== -1) { dragNode = hit; startJelly(hit); blip(340, 0.05, "triangle"); }
   else { panning = true; canvas.classList.add("dragging"); }
 });
 canvas.addEventListener("pointermove", (e) => {
@@ -1719,7 +2082,7 @@ function endPointer(e) {
   const moved = Math.hypot(e.offsetX - downX, e.offsetY - downY) > 4;
   if (dragNode !== -1 && !moved) {
     selected = (selected === dragNode) ? -1 : dragNode;
-    if (selected !== -1) { clearChain(); announceHood(); showDefinition(selected); }
+    if (selected !== -1) { clearChain(); announceHood(); showDefinition(selected); blip(520, 0.06); }
     else { document.getElementById("chainResult").textContent = ""; hideDefinition(); }
     requestDraw();
   } else if (panning && !moved) {
@@ -2106,6 +2469,7 @@ const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
   await frame(); await frame();
   document.documentElement.dataset.theme = themeName;
   rebuildVisible();
+  updateFavPanel();
   settleMsg.innerHTML = "Drawing the map&hellip;";
   await frame(); await frame();
   renderBitmaps();
