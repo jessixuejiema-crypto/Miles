@@ -762,7 +762,7 @@
   var basket = {};      // key -> count of harvested crops
   var stock = {};       // key -> count in shop right now (seeds and gear)
   var nextRestock = 0;
-  var sel = 'dig';
+  var sel = 'hand';
   var held = null;       // basket stack key selected in the sell shop
   var weather = null;    // {key, until}
   var lastMutRoll = 0;   // last 10-second mutation roll
@@ -882,7 +882,7 @@
     stock[key]--;
     seedsOwned[key] = (seedsOwned[key] || 0) + 1;
     seedBubble.textContent = 'One ' + s.name.toLowerCase() + ' seed, all yours! Anything else?';
-    if (sel === 'dig') sel = key;
+    if (sel === 'dig' || sel === 'hand') sel = key;
     renderSeedShop();
     refresh();
   }
@@ -968,7 +968,7 @@
     var owned = SEEDS.filter(function (s) { return (seedsOwned[s.key] || 0) > 0; });
     // Out of the selected seed/gear? Fall back to another seed or an empty
     // hand — never to Dig, so clicking a ripe plant still harvests it.
-    var selValid = sel === 'dig' || seedsOwned[sel] > 0 || (GEARMAP[sel] && gearOwned[sel] > 0);
+    var selValid = sel === 'dig' || sel === 'hand' || seedsOwned[sel] > 0 || (GEARMAP[sel] && gearOwned[sel] > 0);
     if (!selValid) sel = owned.length ? owned[0].key : 'hand';
     owned.forEach(function (s) {
       var b = document.createElement('button');
@@ -979,8 +979,14 @@
         '<span class="c-meta">×' + seedsOwned[s.key] + (s.multi ? ' ♻️' : '') + '</span>';
       b.title = s.name + ' seed — click soil to plant';
       b.addEventListener('click', function () {
-        sel = s.key;
-        setMsg(s.name + ' seed selected — click an empty spot of soil to plant.');
+        if (sel === s.key) {
+          // clicking the selected chip again puts it away
+          sel = 'hand';
+          setMsg('Put the ' + s.name.toLowerCase() + ' seeds away.');
+        } else {
+          sel = s.key;
+          setMsg(s.name + ' seed selected — click an empty spot of soil to plant.');
+        }
         renderToolbar();
       });
       shopEl.appendChild(b);
@@ -995,8 +1001,13 @@
       b.title = g.desc;
       b.addEventListener('click', function () {
         if (g.target) {
-          sel = g.key;
-          setMsg(g.name + ' ready — click a growing plant to use it.');
+          if (sel === g.key) {
+            sel = 'hand';
+            setMsg('Put the ' + g.name.toLowerCase() + ' away.');
+          } else {
+            sel = g.key;
+            setMsg(g.name + ' ready — click a growing plant to use it.');
+          }
           renderToolbar();
         } else {
           useGlobalGear(g.key);
@@ -1009,8 +1020,13 @@
     dig.innerHTML = '<span class="c-emoji">⛏️</span><span class="c-name">Dig</span><span class="c-meta">clear</span>';
     dig.title = 'Dig up a plant (no refund)';
     dig.addEventListener('click', function () {
-      sel = 'dig';
-      setMsg('Dig mode: click a plant to remove it.');
+      if (sel === 'dig') {
+        sel = 'hand';
+        setMsg('Put the pickaxe away.');
+      } else {
+        sel = 'dig';
+        setMsg('Dig mode: click a plant to remove it.');
+      }
       renderToolbar();
     });
     shopEl.appendChild(dig);
