@@ -482,7 +482,7 @@
     Seeds marked <b>♻️</b> are multi-harvest: pick them when ripe and the <b>stem stays behind</b> and regrows a new crop, forever.
     Single-harvest crops leave the soil empty. Harvests go in your <b>🧺 basket</b> — sell them at the Sell Shop.
     The <b>🛠️ Gear Shop</b> sells tools — pick a targeted tool (like the watering can) and click a plant to use it; instant tools fire the moment you click them in the toolbar.
-    The <b>weather</b> changes every ~3 minutes (139 kinds, including the Grow&nbsp;a&nbsp;Garden set!): every 10 seconds it may <b>✨ mutate</b> a plant, multiplying its sell value — mutations stack and stay on the plant through every harvest.
+    The <b>weather</b> changes every ~3 minutes (139 kinds, including the Grow&nbsp;a&nbsp;Garden set!) and several can strike at once — 50% chance of 2, 25% of 3, and so on. Every 10 seconds each active weather may <b>✨ mutate</b> a plant, and mutations stack for multiplied value — but harvesting takes them with the crop, so a regrown stem starts fresh.
     Both shops <b>restock every 10 seconds</b>; rare items are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
   </p>
 </div>
@@ -831,7 +831,11 @@
       if (d.basket) basket = d.basket;
       if (d.stock) stock = d.stock;
       if (typeof d.nextRestock === 'number') nextRestock = d.nextRestock;
-      if (d.weather && WMAP[d.weather.key]) weather = d.weather;
+      if (d.weather) {
+        var wkeys = d.weather.keys || (d.weather.key ? [d.weather.key] : []);
+        wkeys = wkeys.filter(function (k) { return WMAP[k]; });
+        if (wkeys.length) weather = { keys: wkeys, until: d.weather.until };
+      }
     } catch (e) { /* corrupt save — start fresh */ }
   }
 
@@ -1117,8 +1121,8 @@
   }
 
   // ---------- weather ----------
-  function pickWeather() {
-    var pool = WEATHERS.filter(function (w) { return !weather || w.key !== weather.key; });
+  function pickWeather(excludeKeys) {
+    var pool = WEATHERS.filter(function (w) { return excludeKeys.indexOf(w.key) < 0; });
     var total = 0;
     pool.forEach(function (w) { total += w.weight; });
     var r = Math.random() * total;
@@ -1128,21 +1132,35 @@
     }
     return pool[pool.length - 1];
   }
+  function activeWeathers() {
+    return weather.keys.map(function (k) { return WMAP[k]; }).filter(Boolean);
+  }
   function newWeather(announce) {
-    var w = pickWeather();
+    // 50% chance of 2 simultaneous weathers, 25% of 3, 12.5% of 4, and so on
+    var count = 1;
+    while (Math.random() < 0.5 && count < 6) count++;
+    var keys = [];
+    for (var i = 0; i < count; i++) {
+      var w = pickWeather(keys);
+      if (w) keys.push(w.key);
+    }
     // 2-4 minutes, averaging 3
-    weather = { key: w.key, until: Date.now() + (120 + Math.random() * 120) * 1000 };
+    weather = { keys: keys, until: Date.now() + (120 + Math.random() * 120) * 1000 };
     renderWeather();
-    if (announce) setMsg('The weather changed: ' + w.emoji + ' ' + w.name + '!');
+    if (announce) {
+      setMsg('The weather changed: ' + keys.map(function (k) { return WMAP[k].emoji + ' ' + WMAP[k].name; }).join(' + ') + '!');
+    }
     save();
   }
   function renderWeather() {
-    var w = WMAP[weather.key];
-    var fx = [];
-    if (w.speed > 1) fx.push('plants grow ' + w.speed + '× faster');
-    fx.push((w.mutChance <= 0.05 ? 'tiny chance of' : 'may cause') + ' ' + w.mutName + ' mutation (value ×' + w.mult + ')');
-    wInfoEl.innerHTML = '<b>' + w.emoji + ' ' + w.name + '</b> — ' + fx.join(', ');
-    weatherEl.style.borderLeftColor = w.color;
+    var ws = activeWeathers();
+    var speed = ws.reduce(function (a, w) { return a * w.speed; }, 1);
+    var parts = ws.map(function (w) {
+      return '<b>' + w.emoji + ' ' + w.name + '</b> (' + w.mutName + ' ×' + w.mult + ')';
+    });
+    var fx = speed > 1 ? ' — plants grow ' + (Math.round(speed * 100) / 100) + '× faster' : '';
+    wInfoEl.innerHTML = parts.join(' + ') + fx;
+    weatherEl.style.borderLeftColor = ws.length ? ws[0].color : 'var(--accent)';
   }
   function tryMutate(w) {
     var idxs = [];
@@ -1170,9 +1188,11 @@
     basket[stackKey] = (basket[stackKey] || 0) + 1;
     popup(i, '+1 ' + c.emoji + (p.muts && p.muts.length ? '✨' : ''));
     if (c.multi) {
-      // the stem stays behind and regrows, forever
+      // the stem stays behind and regrows, forever — but the mutations left
+      // with the harvested crop, so the regrown one starts fresh
       p.state = 'regrow';
       p.end = Date.now() + c.regrow * 1000;
+      p.muts = [];
       setMsg('Picked a ' + c.name.toLowerCase() + '! The stem will regrow another.');
     } else {
       grid[i] = null;
@@ -1388,20 +1408,23 @@
     var now = Date.now();
     if (now >= nextRestock) doRestock();
 
-    // weather cycle
+    // weather cycle (possibly several at once)
     if (!weather || now >= weather.until) newWeather(!!weather);
-    var w = WMAP[weather.key];
-    // growth speed boost (e.g. rain = 1.5x): shave extra time off every tick
-    if (w.speed > 1) {
-      var boost = (w.speed - 1) * 250;
+    var ws = activeWeathers();
+    // growth speed boosts multiply (e.g. rain 1.5x + monsoon 1.7x = 2.55x)
+    var speed = ws.reduce(function (a, x) { return a * x.speed; }, 1);
+    if (speed > 1) {
+      var boost = (speed - 1) * 250;
       for (var b = 0; b < grid.length; b++) {
         if (grid[b] && grid[b].state !== 'ripe') grid[b].end -= boost;
       }
     }
-    // every 10 seconds: roll this weather's mutation chance
+    // every 10 seconds: each active weather rolls its own mutation chance
     if (now - lastMutRoll >= 10000) {
       lastMutRoll = now;
-      if (Math.random() < w.mutChance) tryMutate(w);
+      ws.forEach(function (x) {
+        if (Math.random() < x.mutChance) tryMutate(x);
+      });
     }
     var wLeft = Math.max(0, weather.until - now);
     wTimeEl.textContent = ((wLeft / 60000) | 0) + ':' + ('0' + (Math.ceil(wLeft / 1000) % 60)).slice(-2);
@@ -1454,8 +1477,11 @@
     gear: function () { return gearOwned; },
     weather: function () { return weather; },
     weathers: function () { return WEATHERS; },
-    setWeather: function (k) { if (WMAP[k]) { weather = { key: k, until: Date.now() + 180000 }; renderWeather(); } },
-    mutate: function () { tryMutate(WMAP[weather.key]); },
+    setWeather: function (k) {
+      var keys = (Array.isArray(k) ? k : [k]).filter(function (x) { return WMAP[x]; });
+      if (keys.length) { weather = { keys: keys, until: Date.now() + 180000 }; renderWeather(); }
+    },
+    mutate: function (k) { tryMutate(WMAP[k || weather.keys[0]]); },
     meters: function () { return meters; },
     give: function (n) { sheckles += n; refresh(); },
     restock: doRestock
