@@ -126,6 +126,7 @@ let colonySeq = 0;
 const COLONY_TINTS = ['#e8e0cf', '#a8d8ff', '#ffb8d8', '#b8f0a0', '#d8c0ff', '#ffe08a', '#90e8d0', '#ff9f8a', '#c0c8ff', '#d0e890'];
 let playing = false, simTime = 0, speedMul = 1, showTrails = true;
 let delivered = 0, tool = 'colony';
+let selectedColony = null; // empty-handed click on a colony highlights its ants
 
 const pherCv = document.createElement('canvas');
 const wallCv = document.createElement('canvas');
@@ -632,8 +633,15 @@ function render() {
     ctx.beginPath(); ctx.arc(f.x - f.r * 0.3, f.y - f.r * 0.3, f.r * 0.22, 0, TAU); ctx.fill();
   }
 
+  const pulse = 0.55 + 0.35 * Math.sin(performance.now() / 180);
+  const selGlow = 'rgba(255,235,140,' + pulse.toFixed(2) + ')';
+
   // colonies
   for (const c of colonies) {
+    if (c === selectedColony) {
+      ctx.strokeStyle = selGlow; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, 29, 18, 0, 0, TAU); ctx.stroke();
+    }
     ctx.fillStyle = '#6b4e2e';
     ctx.beginPath(); ctx.ellipse(c.x, c.y + 3, 24, 14, 0, 0, TAU); ctx.fill();
     ctx.fillStyle = '#8a6a40';
@@ -662,6 +670,10 @@ function render() {
     if (a.chase) {
       ctx.strokeStyle = 'rgba(255,92,70,.8)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, TAU); ctx.stroke();
+    }
+    if (a.colony === selectedColony) {
+      ctx.strokeStyle = selGlow; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, TAU); ctx.stroke();
     }
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -694,10 +706,12 @@ function updateHUD() {
 
   let msg = '';
   if (flashTimer > performance.now()) msg = flashMsg;
-  else if (colonies.length === 0) msg = '① Click anywhere to place a colony (ant hill)';
+  else if (selectedColony) msg = 'Highlighting the selected colony\u2019s ' + selectedColony.alive + (selectedColony.alive === 1 ? ' ant' : ' ants') + ' \u2014 click empty ground to deselect';
+  else if (colonies.length === 0) msg = '\u2460 Click anywhere to place a colony (ant hill)';
   else if (foods.length === 0 && delivered === 0) msg = '② Pick 🍓 Food and click to drop food for the ants';
   else if (!playing && ants.length === 0) msg = '③ Press ▶ Play — one ant will crawl out and start exploring';
   else if (!playing) msg = 'Paused — press ▶ Play to resume';
+  else if (!tool) msg = 'Empty hands — click a colony to highlight its ants';
   hintEl.textContent = msg;
   hintEl.classList.toggle('hide', msg === '');
 }
@@ -746,10 +760,18 @@ function erase(x, y) {
     for (const a of ants) if (!colonies.includes(a.colony)) a.dead = true;
     ants = ants.filter(a => !a.dead);
     for (const f of foods) if (f.owner && !colonies.includes(f.owner)) f.owner = null;
+    if (selectedColony && !colonies.includes(selectedColony)) selectedColony = null;
   }
   paintWall(x, y, false);
 }
 function applyTool(p, isDown) {
+  if (!tool) {
+    if (!isDown) return;
+    let hit = null;
+    for (const c of colonies) if (Math.hypot(c.x - p.x, c.y - p.y) < 30) { hit = c; break; }
+    selectedColony = hit === selectedColony ? null : hit;
+    return;
+  }
   if (tool === 'colony') { if (isDown) addColony(p.x, p.y); }
   else if (tool === 'food') {
     if (isDown || !lastFood || Math.hypot(lastFood.x - p.x, lastFood.y - p.y) > 26) {
@@ -772,8 +794,9 @@ cv.addEventListener('pointercancel', () => { dragging = false; });
 /* ---- toolbar ---- */
 document.getElementById('tools').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  tool = b.dataset.tool;
-  for (const x of document.querySelectorAll('#tools .tb')) x.classList.toggle('active', x === b);
+  tool = tool === b.dataset.tool ? null : b.dataset.tool; // re-click empties your hand
+  for (const x of document.querySelectorAll('#tools .tb')) x.classList.toggle('active', x.dataset.tool === tool);
+  cv.style.cursor = tool ? 'crosshair' : 'pointer';
 });
 
 const playBtn = document.getElementById('play');
@@ -793,7 +816,7 @@ document.getElementById('reset').addEventListener('click', () => {
 });
 document.getElementById('clearAll').addEventListener('click', () => {
   ants = []; colonies = []; foods = []; effects = []; delivered = 0; simTime = 0; playing = false;
-  colonySeq = 0;
+  colonySeq = 0; selectedColony = null;
   playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
   foodP.fill(0); traffic.fill(0); walls.fill(0); redrawWalls();
 });
