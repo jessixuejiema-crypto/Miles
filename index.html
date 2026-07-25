@@ -93,7 +93,7 @@
     <span class="bands">blue 1–5 · cyan 6–15 · green 16–26 · yellow 27–40 · orange 41–80 · red 81+</span><br>
     <span class="dot" style="background:#f5a83c"></span>explorer ant (20%) — blazes new paths
     <span class="dot" style="background:#e8e0cf"></span>follower ant (80%) — follows popular trails<br>
-    <span class="dot" style="background:#ff5c46"></span>rival colonies sometimes fight on contact — only one walks away
+    <span class="dot" style="background:#ff5c46"></span>rivals sometimes fight on contact, and stealing a claimed food pile gets you chased — only one walks away
   </div>
   <div id="hint"></div>
 </div>
@@ -203,7 +203,7 @@ function addColony(x, y) {
   if (playing) spawnAnt(col);
 }
 function addFood(x, y) {
-  const f = { x, y, amount: 30 };
+  const f = { x, y, amount: 30, owner: null };
   f.r = foodRadius(f.amount);
   foods.push(f);
 }
@@ -220,7 +220,7 @@ function spawnAnt(col) {
     phase: Math.random() * TAU, wfreq: 4.5 + Math.random() * 2.5,
     sway: 0, swayAmp: 0.15, lastCell: -1,
     wpX: 0, wpY: 0, wpT: 0, hits: 0, streak: 0, lastHitT: -9, guided: false,
-    fightCd: 2, dead: false
+    fightCd: 2, dead: false, chase: null, chaseT: 0
   });
 }
 
@@ -287,6 +287,7 @@ function turnToward(h, target, maxTurn) {
 }
 
 function stepAnt(a) {
+  if (a.dead) return;
   a.sinceHome += STEP; a.sinceFood += STEP;
   if (a.fightCd > 0) a.fightCd -= STEP;
   const col = a.colony;
@@ -319,6 +320,18 @@ function stepAnt(a) {
       spawnAnt(col); // food delivered -> the colony grows by one ant
     }
   } else {
+    if (a.chase && (a.chase.dead || !a.chase.carrying || a.chaseT <= 0)) a.chase = null;
+    if (a.chase) {
+      // run the food thief down and settle it
+      a.chaseT -= STEP;
+      const cdx = a.chase.x - a.x, cdy = a.chase.y - a.y;
+      if (cdx * cdx + cdy * cdy < 81) forceFight(a, a.chase);
+      else {
+        a.h = turnToward(a.h, Math.atan2(cdy, cdx), 9 * STEP);
+        a.h += (Math.random() - 0.5) * 0.06;
+        a.swayAmp = 0.2;
+      }
+    } else {
     // nearby food is spotted on sight, no trail needed
     let sawFood = false, foodAng = 0;
     for (const f of foods) {
@@ -379,12 +392,15 @@ function stepAnt(a) {
     for (let i = 0; i < foods.length; i++) {
       const f = foods[i], dx = f.x - a.x, dy = f.y - a.y;
       if (dx * dx + dy * dy < (f.r + 3) * (f.r + 3)) {
+        if (!f.owner) f.owner = a.colony;          // first colony to harvest claims the pile
+        else if (f.owner !== a.colony) startChase(a, f); // stealing claimed food gets you chased
         f.amount--;
         if (f.amount <= 0) foods.splice(i, 1); else f.r = foodRadius(f.amount);
         a.carrying = true; a.sinceFood = 0; a.h += Math.PI;
         a.wpT = 0; a.hits = 0; a.streak = 0;
         break;
       }
+    }
     }
   }
 
@@ -405,8 +421,9 @@ function stepAnt(a) {
 
   a.sway = Math.sin(simTime * a.wfreq + a.phase) * a.swayAmp;
   const dir = a.h + a.sway;
-  const nx = a.x + Math.cos(dir) * ANT_SPEED * STEP;
-  const ny = a.y + Math.sin(dir) * ANT_SPEED * STEP;
+  const spd = a.chase ? ANT_SPEED * 1.25 : ANT_SPEED; // chasers sprint
+  const nx = a.x + Math.cos(dir) * spd * STEP;
+  const ny = a.y + Math.sin(dir) * spd * STEP;
   if (blocked(nx, ny)) {
     a.h += Math.PI + (Math.random() - 0.5);
     a.lastHitT = simTime;
@@ -444,7 +461,7 @@ function fightList(A, B) {
         const lose = Math.random() < 0.5 ? a : b, win = lose === a ? b : a;
         lose.dead = true;
         lose.colony.alive--;
-        if (lose.carrying) { const f = { x: lose.x, y: lose.y, amount: 1, r: foodRadius(1) }; foods.push(f); }
+        if (lose.carrying) foods.push({ x: lose.x, y: lose.y, amount: 1, r: foodRadius(1), owner: win.colony });
         win.fightCd = 3;
         win.h = Math.random() * TAU;
         effects.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0 });
@@ -455,6 +472,27 @@ function fightList(A, B) {
     }
   }
 }
+function forceFight(a, b) {
+  // a chase caught up: this one always comes to blows
+  const lose = Math.random() < 0.5 ? a : b, win = lose === a ? b : a;
+  lose.dead = true;
+  lose.colony.alive--;
+  if (lose.carrying) foods.push({ x: lose.x, y: lose.y, amount: 1, r: foodRadius(1), owner: win.colony });
+  win.fightCd = 3;
+  win.chase = null;
+  effects.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0 });
+}
+function startChase(thief, f) {
+  // up to four idle defenders near the pile drop everything and give chase
+  let n = 0;
+  for (const g of ants) {
+    if (n >= 4) break;
+    if (g.colony !== f.owner || g.carrying || g.dead || g.chase) continue;
+    const dx = g.x - f.x, dy = g.y - f.y;
+    if (dx * dx + dy * dy > 32400) continue; // within 180px of the pile
+    g.chase = thief; g.chaseT = 12; n++;
+  }
+}
 function resolveFights() {
   const cs = 14, bw = Math.ceil(W / cs) || 1;
   const buckets = new Map();
@@ -463,7 +501,6 @@ function resolveFights() {
     const b = buckets.get(k);
     if (b) b.push(a); else buckets.set(k, [a]);
   }
-  let died = false;
   for (const [k, list] of buckets) {
     fightList(list, list);
     // pair each bucket only with its E/SW/S/SE neighbours so no pair is checked twice
@@ -473,8 +510,6 @@ function resolveFights() {
     if (so) fightList(list, so);
     if (se) fightList(list, se);
   }
-  for (const a of ants) if (a.dead) { died = true; break; }
-  if (died) ants = ants.filter(a => !a.dead);
 }
 
 /* ---- sim step ---- */
@@ -487,6 +522,7 @@ function step() {
   }
   for (const a of ants) stepAnt(a);
   if (colonies.length > 1) resolveFights();
+  for (const a of ants) if (a.dead) { ants = ants.filter(x => !x.dead); break; }
   if (effects.length) {
     for (const e of effects) e.age += STEP;
     effects = effects.filter(e => e.age < 0.5);
@@ -623,6 +659,10 @@ function render() {
       ctx.fillStyle = '#ff5f56';
       ctx.beginPath(); ctx.arc(3.6, 0, 2.3, 0, TAU); ctx.fill();
     }
+    if (a.chase) {
+      ctx.strokeStyle = 'rgba(255,92,70,.8)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, TAU); ctx.stroke();
+    }
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
@@ -702,7 +742,11 @@ function erase(x, y) {
   foods = foods.filter(f => Math.hypot(f.x - x, f.y - y) > f.r + 12);
   const before = colonies.length;
   colonies = colonies.filter(c => Math.hypot(c.x - x, c.y - y) > 26);
-  if (colonies.length !== before) ants = ants.filter(a => colonies.includes(a.colony));
+  if (colonies.length !== before) {
+    for (const a of ants) if (!colonies.includes(a.colony)) a.dead = true;
+    ants = ants.filter(a => !a.dead);
+    for (const f of foods) if (f.owner && !colonies.includes(f.owner)) f.owner = null;
+  }
   paintWall(x, y, false);
 }
 function applyTool(p, isDown) {
