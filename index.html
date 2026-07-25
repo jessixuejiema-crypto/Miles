@@ -145,6 +145,16 @@ function sense(grid, a, off) {
   if (i < 0 || walls[i]) return 0;
   return grid[i];
 }
+function clearLine(x0, y0, x1, y1) {
+  // walls block line of sight
+  const dx = x1 - x0, dy = y1 - y0;
+  const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (CELL * 0.8)));
+  for (let k = 1; k <= n; k++) {
+    const i = cellIdx(x0 + dx * k / n, y0 + dy * k / n);
+    if (i >= 0 && walls[i]) return false;
+  }
+  return true;
+}
 function deposit(grid, a, w) {
   if (w <= 0) return;
   const i = cellIdx(a.x, a.y);
@@ -203,7 +213,8 @@ function spawnAnt(col) {
     carrying: false, explorer, colony: col,
     sinceHome: 0, sinceFood: 0,
     phase: Math.random() * TAU, wfreq: 4.5 + Math.random() * 2.5,
-    sway: 0, swayAmp: 0.15, lastCell: -1
+    sway: 0, swayAmp: 0.15, lastCell: -1,
+    detour: 0, detourDir: 1, hits: 0, streak: 0, lastHitT: -9
   });
 }
 
@@ -218,32 +229,36 @@ function turnToward(h, target, maxTurn) {
 function stepAnt(a) {
   a.sinceHome += STEP; a.sinceFood += STEP;
   const col = a.colony;
+  let goal = NaN; // where the ant is trying to get (home, or food it spotted)
 
   if (a.carrying) {
     // head home, marking the food trail behind it as it goes
-    const home = Math.atan2(col.y - a.y, col.x - a.x);
-    a.h = turnToward(a.h, home, 5 * STEP);
-    a.h += (Math.random() - 0.5) * 0.10;
-    a.swayAmp = 0.55; // serpentine weave on the way home, no beelines
+    goal = Math.atan2(col.y - a.y, col.x - a.x);
+    if (a.detour <= 0) {
+      a.h = turnToward(a.h, goal, 5 * STEP);
+      a.h += (Math.random() - 0.5) * 0.10;
+      a.swayAmp = 0.55; // serpentine weave on the way home, no beelines
+    }
     deposit(foodP, a, 1 - a.sinceFood / 70);
     if (Math.hypot(col.x - a.x, col.y - a.y) < 15) {
       a.carrying = false; delivered++; col.stored++;
       a.sinceHome = 0; a.h = Math.random() * TAU;
+      a.detour = 0; a.hits = 0; a.streak = 0;
       spawnAnt(col); // food delivered -> the colony grows by one ant
     }
   } else {
     // nearby food is spotted on sight, no trail needed
-    let sawFood = false;
+    let sawFood = false, foodAng = 0;
     for (const f of foods) {
       const dx = f.x - a.x, dy = f.y - a.y, R = f.r + 80;
-      if (dx * dx + dy * dy < R * R) {
-        a.h = turnToward(a.h, Math.atan2(dy, dx), 10 * STEP);
+      if (dx * dx + dy * dy < R * R && clearLine(a.x, a.y, f.x, f.y)) {
+        foodAng = Math.atan2(dy, dx);
         sawFood = true;
         break;
       }
     }
     let onTrail = false;
-    if (!sawFood && !a.explorer) {
+    if (!sawFood && !a.explorer && a.detour <= 0) {
       // followers sniff the food trail: strongest scent wins, so popular paths dominate
       const l = sense(foodP, a, -SENSOR_ANG), c = sense(foodP, a, 0), r = sense(foodP, a, SENSOR_ANG);
       if (Math.max(l, c, r) > 0.03) {
@@ -253,12 +268,18 @@ function stepAnt(a) {
         else a.h += 0.15;
       }
     }
-    if (sawFood) {
+    if (sawFood) goal = foodAng;
+    else if (a.sinceHome > 200 && !onTrail) goal = Math.atan2(col.y - a.y, col.x - a.x);
+
+    if (a.detour > 0) {
+      // steering is handled by the detour block below
+    } else if (sawFood) {
+      a.h = turnToward(a.h, goal, 10 * STEP);
       a.h += (Math.random() - 0.5) * 0.05;
       a.swayAmp = 0.2;
-    } else if (a.sinceHome > 200 && !onTrail) {
+    } else if (!Number.isNaN(goal)) {
       // lost too long: trek home to regroup
-      a.h = turnToward(a.h, Math.atan2(col.y - a.y, col.x - a.x), 4 * STEP);
+      a.h = turnToward(a.h, goal, 4 * STEP);
       a.h += (Math.random() - 0.5) * 0.10;
       a.swayAmp = 0.5;
     } else if (onTrail) {
@@ -279,17 +300,41 @@ function stepAnt(a) {
         f.amount--;
         if (f.amount <= 0) foods.splice(i, 1); else f.r = foodRadius(f.amount);
         a.carrying = true; a.sinceFood = 0; a.h += Math.PI;
+        a.detour = 0; a.hits = 0; a.streak = 0;
         break;
       }
     }
   }
 
+  // detour mode: a wall kept blocking the straight line, so slide around it
+  // at ~80 degrees off the goal instead of grinding into the same spot
+  if (a.detour > 0) {
+    a.detour -= STEP;
+    if (!Number.isNaN(goal)) {
+      a.h = turnToward(a.h, goal + a.detourDir * 1.45, 6 * STEP);
+      a.h += (Math.random() - 0.5) * 0.15;
+      a.swayAmp = 0.25;
+    }
+  }
+  if (simTime - a.lastHitT > 5) { a.hits = 0; a.streak = 0; } // clear of walls for a while: forgiven
+
   a.sway = Math.sin(simTime * a.wfreq + a.phase) * a.swayAmp;
   const dir = a.h + a.sway;
   const nx = a.x + Math.cos(dir) * ANT_SPEED * STEP;
   const ny = a.y + Math.sin(dir) * ANT_SPEED * STEP;
-  if (blocked(nx, ny)) a.h += Math.PI + (Math.random() - 0.5);
-  else {
+  if (blocked(nx, ny)) {
+    a.h += Math.PI + (Math.random() - 0.5);
+    a.lastHitT = simTime;
+    if (!Number.isNaN(goal) && ++a.hits >= 3) {
+      // three strikes on this wall: pick a side and commit to going around.
+      // every retry lasts longer and re-flips the direction coin sometimes,
+      // so an ant can never ping-pong between the same two spots forever
+      a.hits = 0;
+      a.streak = Math.min(a.streak + 1, 5);
+      a.detour = (1.2 + Math.random()) * (1 + a.streak);
+      if (a.streak === 1 || Math.random() < 0.3) a.detourDir = Math.random() < 0.5 ? 1 : -1;
+    }
+  } else {
     a.x = nx; a.y = ny;
     const ci = cellIdx(nx, ny);
     if (ci !== a.lastCell) { // one tick per ant per cell: the marker map counts ant traffic
