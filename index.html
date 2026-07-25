@@ -93,7 +93,8 @@
     <span class="bands">blue 1–5 · cyan 6–15 · green 16–26 · yellow 27–40 · orange 41–80 · red 81+</span><br>
     <span class="dot" style="background:#f5a83c"></span>explorer ant (20%) — blazes new paths
     <span class="dot" style="background:#e8e0cf"></span>follower ant (80%) — follows popular trails<br>
-    <span class="dot" style="background:#ff5c46"></span>rivals sometimes fight on contact, and stealing a claimed food pile gets you chased — only one walks away
+    <span class="dot" style="background:#ff5c46"></span>rivals sometimes fight on contact, and stealing a claimed food pile gets you chased — only one walks away<br>
+    <span class="dot" style="background:#8a8272"></span>an ant that searches 1 minute without finding food starves; an emptied colony sends out a fresh worker
   </div>
   <div id="hint"></div>
 </div>
@@ -115,6 +116,7 @@ const DEP_RATE = 7;        // deposit per second at full weight
 const ANT_SPEED = 46;      // px/s
 const SENSOR_DIST = 15, SENSOR_ANG = 0.5;
 const ANT_CAP = 200;       // per colony, keeps the sim smooth
+const STARVE = 60;         // seconds of fruitless searching before an ant starves
 const EXPLORER_EVERY = 5;  // every 5th ant = explorer (20%)
 
 /* ---- state ---- */
@@ -221,7 +223,7 @@ function spawnAnt(col) {
     phase: Math.random() * TAU, wfreq: 4.5 + Math.random() * 2.5,
     sway: 0, swayAmp: 0.15, lastCell: -1,
     wpX: 0, wpY: 0, wpT: 0, hits: 0, streak: 0, lastHitT: -9, guided: false,
-    fightCd: 2, dead: false, chase: null, chaseT: 0
+    fightCd: 2, dead: false, chase: null, chaseT: 0, hunger: 0
   });
 }
 
@@ -289,6 +291,15 @@ function turnToward(h, target, maxTurn) {
 
 function stepAnt(a) {
   if (a.dead) return;
+  if (!a.carrying) {
+    a.hunger += STEP; // the clock only runs while searching: carried food is food
+    if (a.hunger > STARVE) {
+      a.dead = true;
+      a.colony.alive--;
+      effects.push({ x: a.x, y: a.y, age: 0, kind: 's' });
+      return;
+    }
+  }
   a.sinceHome += STEP; a.sinceFood += STEP;
   if (a.fightCd > 0) a.fightCd -= STEP;
   const col = a.colony;
@@ -316,7 +327,7 @@ function stepAnt(a) {
     deposit(foodP, a, 1 - a.sinceFood / 70);
     if (Math.hypot(col.x - a.x, col.y - a.y) < 15) {
       a.carrying = false; delivered++; col.stored++;
-      a.sinceHome = 0; a.h = Math.random() * TAU;
+      a.hunger = 0; a.sinceHome = 0; a.h = Math.random() * TAU;
       a.wpT = 0; a.hits = 0; a.streak = 0;
       spawnAnt(col); // food delivered -> the colony grows by one ant
     }
@@ -397,7 +408,7 @@ function stepAnt(a) {
         else if (f.owner !== a.colony) startChase(a, f); // stealing claimed food gets you chased
         f.amount--;
         if (f.amount <= 0) foods.splice(i, 1); else f.r = foodRadius(f.amount);
-        a.carrying = true; a.sinceFood = 0; a.h += Math.PI;
+        a.carrying = true; a.hunger = 0; a.sinceFood = 0; a.h += Math.PI;
         a.wpT = 0; a.hits = 0; a.streak = 0;
         break;
       }
@@ -522,6 +533,12 @@ function step() {
     const t = traffic[i] * DECAY; traffic[i] = t < 0.002 ? 0 : t;
   }
   for (const a of ants) stepAnt(a);
+  for (const c of colonies) {
+    if (c.alive === 0 && c.spawned > 0) {
+      c.respawnT = (c.respawnT || 0) + STEP;
+      if (c.respawnT > 10) { c.respawnT = 0; spawnAnt(c); }
+    } else c.respawnT = 0;
+  }
   if (colonies.length > 1) resolveFights();
   for (const a of ants) if (a.dead) { ants = ants.filter(x => !x.dead); break; }
   if (effects.length) {
@@ -678,9 +695,14 @@ function render() {
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // skirmish flashes
+  // skirmish flashes and starvation fades
   for (const e of effects) {
     const t = e.age / 0.5;
+    if (e.kind === 's') {
+      ctx.fillStyle = 'rgba(205,195,175,' + (0.65 * (1 - t)).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(e.x, e.y, 0.5 + 2.6 * (1 - t), 0, TAU); ctx.fill();
+      continue;
+    }
     ctx.strokeStyle = 'rgba(255,92,70,' + (1 - t).toFixed(2) + ')';
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(e.x, e.y, 3 + t * 10, 0, TAU); ctx.stroke();
