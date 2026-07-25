@@ -92,7 +92,8 @@
     <span class="grad"></span>marker map — ant traffic, fades in ~2 min<br>
     <span class="bands">blue 1–5 · cyan 6–15 · green 16–26 · yellow 27–40 · orange 41–80 · red 81+</span><br>
     <span class="dot" style="background:#f5a83c"></span>explorer ant (20%) — blazes new paths
-    <span class="dot" style="background:#e8e0cf"></span>follower ant (80%) — follows popular trails
+    <span class="dot" style="background:#e8e0cf"></span>follower ant (80%) — follows popular trails<br>
+    <span class="dot" style="background:#ff5c46"></span>rival colonies sometimes fight on contact — only one walks away
   </div>
   <div id="hint"></div>
 </div>
@@ -120,7 +121,9 @@ const EXPLORER_EVERY = 5;  // every 5th ant = explorer (20%)
 let W = 0, H = 0, gw = 0, gh = 0;
 let foodP = new Float32Array(0), traffic = new Float32Array(0), walls = new Uint8Array(0);
 let blurA = new Float32Array(0), blurB = new Float32Array(0);
-let colonies = [], foods = [], ants = [];
+let colonies = [], foods = [], ants = [], effects = [];
+let colonySeq = 0;
+const COLONY_TINTS = ['#e8e0cf', '#a8d8ff', '#ffb8d8', '#b8f0a0', '#d8c0ff', '#ffe08a', '#90e8d0', '#ff9f8a', '#c0c8ff', '#d0e890'];
 let playing = false, simTime = 0, speedMul = 1, showTrails = true;
 let delivered = 0, tool = 'colony';
 
@@ -194,7 +197,7 @@ function resize() {
 function addColony(x, y) {
   for (const c of colonies) if (Math.hypot(c.x - x, c.y - y) < 70) { flashHint('Too close to another colony'); return; }
   if (colonies.length >= 10) { flashHint('Max 10 colonies'); return; }
-  const col = { x, y, stored: 0, spawned: 0, alive: 0, field: null };
+  const col = { x, y, stored: 0, spawned: 0, alive: 0, field: null, tint: COLONY_TINTS[colonySeq++ % COLONY_TINTS.length] };
   colonies.push(col);
   fieldsDirty = true;
   if (playing) spawnAnt(col);
@@ -216,7 +219,8 @@ function spawnAnt(col) {
     sinceHome: 0, sinceFood: 0,
     phase: Math.random() * TAU, wfreq: 4.5 + Math.random() * 2.5,
     sway: 0, swayAmp: 0.15, lastCell: -1,
-    wpX: 0, wpY: 0, wpT: 0, hits: 0, streak: 0, lastHitT: -9, guided: false
+    wpX: 0, wpY: 0, wpT: 0, hits: 0, streak: 0, lastHitT: -9, guided: false,
+    fightCd: 2, dead: false
   });
 }
 
@@ -284,6 +288,7 @@ function turnToward(h, target, maxTurn) {
 
 function stepAnt(a) {
   a.sinceHome += STEP; a.sinceFood += STEP;
+  if (a.fightCd > 0) a.fightCd -= STEP;
   const col = a.colony;
   a.guided = false;
   let goal = NaN, goalX = 0, goalY = 0; // where the ant is trying to get (home, or food it spotted)
@@ -423,6 +428,55 @@ function stepAnt(a) {
   }
 }
 
+/* ---- combat: rival colonies sometimes fight on contact, one wins ---- */
+function fightList(A, B) {
+  const same = A === B;
+  for (let i = 0; i < A.length; i++) {
+    const a = A[i];
+    if (a.dead || a.fightCd > 0) continue;
+    for (let j = same ? i + 1 : 0; j < B.length; j++) {
+      const b = B[j];
+      if (b.dead || b.fightCd > 0 || b.colony === a.colony) continue;
+      const dx = a.x - b.x, dy = a.y - b.y;
+      if (dx * dx + dy * dy > 64) continue;
+      if (Math.random() < 0.5) {
+        // it comes to blows: even odds, only one walks away
+        const lose = Math.random() < 0.5 ? a : b, win = lose === a ? b : a;
+        lose.dead = true;
+        lose.colony.alive--;
+        if (lose.carrying) { const f = { x: lose.x, y: lose.y, amount: 1, r: foodRadius(1) }; foods.push(f); }
+        win.fightCd = 3;
+        win.h = Math.random() * TAU;
+        effects.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0 });
+      } else {
+        a.fightCd = 1.5; b.fightCd = 1.5; // sized each other up and moved on
+      }
+      break;
+    }
+  }
+}
+function resolveFights() {
+  const cs = 14, bw = Math.ceil(W / cs) || 1;
+  const buckets = new Map();
+  for (const a of ants) {
+    const k = ((a.y / cs) | 0) * bw + ((a.x / cs) | 0);
+    const b = buckets.get(k);
+    if (b) b.push(a); else buckets.set(k, [a]);
+  }
+  let died = false;
+  for (const [k, list] of buckets) {
+    fightList(list, list);
+    // pair each bucket only with its E/SW/S/SE neighbours so no pair is checked twice
+    const e = buckets.get(k + 1), sw = buckets.get(k + bw - 1), so = buckets.get(k + bw), se = buckets.get(k + bw + 1);
+    if (e) fightList(list, e);
+    if (sw) fightList(list, sw);
+    if (so) fightList(list, so);
+    if (se) fightList(list, se);
+  }
+  for (const a of ants) if (a.dead) { died = true; break; }
+  if (died) ants = ants.filter(a => !a.dead);
+}
+
 /* ---- sim step ---- */
 function step() {
   simTime += STEP;
@@ -432,6 +486,11 @@ function step() {
     const t = traffic[i] * DECAY; traffic[i] = t < 0.002 ? 0 : t;
   }
   for (const a of ants) stepAnt(a);
+  if (colonies.length > 1) resolveFights();
+  if (effects.length) {
+    for (const e of effects) e.age += STEP;
+    effects = effects.filter(e => e.age < 0.5);
+  }
 }
 
 /* ---- rendering ---- */
@@ -545,7 +604,9 @@ function render() {
     ctx.beginPath(); ctx.ellipse(c.x, c.y, 20, 11, 0, 0, TAU); ctx.fill();
     ctx.fillStyle = '#0c0905';
     ctx.beginPath(); ctx.ellipse(c.x, c.y, 7, 4.5, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#ffd98a';
+    ctx.strokeStyle = c.tint; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, 11, 7, 0, 0, TAU); ctx.stroke();
+    ctx.fillStyle = c.tint;
     ctx.font = '11px system-ui,sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('🐜' + c.alive + '  🍓' + c.stored, c.x, c.y - 18);
@@ -556,7 +617,7 @@ function render() {
     const ang = a.h + a.sway;
     const cos = Math.cos(ang), sin = Math.sin(ang);
     ctx.setTransform(cos, sin, -sin, cos, a.x, a.y);
-    ctx.fillStyle = a.explorer ? '#f5a83c' : '#e8e0cf';
+    ctx.fillStyle = a.explorer ? '#f5a83c' : a.colony.tint;
     ctx.fillRect(-3, -1.1, 6, 2.2);
     if (a.carrying) {
       ctx.fillStyle = '#ff5f56';
@@ -564,6 +625,16 @@ function render() {
     }
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // skirmish flashes
+  for (const e of effects) {
+    const t = e.age / 0.5;
+    ctx.strokeStyle = 'rgba(255,92,70,' + (1 - t).toFixed(2) + ')';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(e.x, e.y, 3 + t * 10, 0, TAU); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,220,180,' + (0.8 * (1 - t)).toFixed(2) + ')';
+    ctx.beginPath(); ctx.arc(e.x, e.y, 1.6, 0, TAU); ctx.fill();
+  }
 }
 
 /* ---- HUD ---- */
@@ -671,13 +742,14 @@ playBtn.addEventListener('click', () => {
 });
 
 document.getElementById('reset').addEventListener('click', () => {
-  ants = []; delivered = 0; simTime = 0; playing = false;
+  ants = []; effects = []; delivered = 0; simTime = 0; playing = false;
   playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
   foodP.fill(0); traffic.fill(0);
   for (const c of colonies) { c.stored = 0; c.spawned = 0; c.alive = 0; }
 });
 document.getElementById('clearAll').addEventListener('click', () => {
-  ants = []; colonies = []; foods = []; delivered = 0; simTime = 0; playing = false;
+  ants = []; colonies = []; foods = []; effects = []; delivered = 0; simTime = 0; playing = false;
+  colonySeq = 0;
   playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
   foodP.fill(0); traffic.fill(0); walls.fill(0); redrawWalls();
 });
