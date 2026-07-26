@@ -94,7 +94,8 @@
     <span class="dot" style="background:#f5a83c"></span>explorer ant (20%) — blazes new paths
     <span class="dot" style="background:#e8e0cf"></span>follower ant (80%) — follows popular trails<br>
     <span class="dot" style="background:#ff5c46"></span>rivals sometimes fight on contact, and stealing a claimed food pile gets you chased — only one walks away<br>
-    <span class="dot" style="background:#8a8272"></span>an ant that searches 1 minute without finding food starves; an emptied colony sends out a fresh worker
+    <span class="dot" style="background:#8a8272"></span>an ant that searches 1 minute without finding food starves; an emptied colony sends out a fresh worker<br>
+    <span class="dot" style="background:#c8b88a"></span>ants sharpen with age — eyesight grows 20→50 px, they learn from every wall they hit, and blocked ants head for gaps they can see
   </div>
   <div id="hint"></div>
 </div>
@@ -222,26 +223,46 @@ function spawnAnt(col) {
     phase: Math.random() * TAU, wfreq: 4.5 + Math.random() * 2.5,
     sway: 0, swayAmp: 0.15, lastCell: -1,
     wpX: 0, wpY: 0, wpT: 0, hits: 0, streak: 0, lastHitT: -9, guided: false,
-    fightCd: 2, dead: false, chase: null, chaseT: 0, hunger: 0
+    fightCd: 2, dead: false, chase: null, chaseT: 0, hunger: 0,
+    age: 0, xp: 0
   });
 }
 
 /* ---- ant brain ---- */
+function vision(a) {
+  // eyesight sharpens with age and with every mistake survived:
+  // 20px as a newborn, 50px as a veteran
+  return 20 + 30 * Math.min(1, (a.age + a.xp) / 120);
+}
+
 function pickWaypoint(a, gx, gy) {
-  // a wall keeps blocking the way: pick a fresh spot the ant can walk to,
-  // farther away on every retry. Best case: a spot that can SEE the goal.
-  // Otherwise: the farthest reachable candidate, so retries never dither.
-  let fx = NaN, fy = 0, fd = 0;
-  for (let t = 0; t < 16; t++) {
-    const ang = Math.random() * TAU;
-    const d = 120 + Math.random() * (140 + 90 * a.streak);
-    const x = a.x + Math.cos(ang) * d, y = a.y + Math.sin(ang) * d;
-    if (x < 10 || y < 10 || x > W - 10 || y > H - 10) continue;
-    if (blocked(x, y) || !clearLine(a.x, a.y, x, y)) continue;
-    if (clearLine(x, y, gx, gy)) { fx = x; fy = y; fd = d; break; } // goal visible from there
-    if (d > fd) { fx = x; fy = y; fd = d; }
+  // blocked ants don't gamble on random spots: they look around as far as
+  // their eyes reach and walk toward a visible gap, never at a wall.
+  // Failed retries push the search wider (they learn from their mistakes).
+  const reach = vision(a) * (1 + 0.6 * a.streak);
+  const goalAng = Math.atan2(gy - a.y, gx - a.x);
+  const base = Math.random() * TAU;
+  const stepLen = CELL * 0.8;
+  let bx = NaN, by = 0, bs = 0;
+  for (let r = 0; r < 14; r++) {
+    const ang = base + r * TAU / 14;
+    let free = 0;
+    for (let d = stepLen; d <= reach; d += stepLen) {
+      const x = a.x + Math.cos(ang) * d, y = a.y + Math.sin(ang) * d;
+      if (x < 8 || y < 8 || x > W - 8 || y > H - 8) break;
+      const i = cellIdx(x, y);
+      if (i >= 0 && walls[i]) break;
+      free = d;
+    }
+    if (free < 16) continue; // that way is wall, not gap
+    let dd = ang - goalAng;
+    while (dd > Math.PI) dd -= TAU;
+    while (dd < -Math.PI) dd += TAU;
+    const ex = a.x + Math.cos(ang) * free * 0.85, ey = a.y + Math.sin(ang) * free * 0.85;
+    const score = free * (1.2 + Math.cos(dd)) * (clearLine(ex, ey, gx, gy) ? 2.5 : 1);
+    if (score > bs) { bs = score; bx = ex; by = ey; }
   }
-  if (!Number.isNaN(fx)) { a.wpX = fx; a.wpY = fy; a.wpT = 3 + fd / ANT_SPEED; }
+  if (!Number.isNaN(bx)) { a.wpX = bx; a.wpY = by; a.wpT = 3 + Math.hypot(bx - a.x, by - a.y) / ANT_SPEED; }
 }
 
 /* each colony gets a BFS distance field over the wall grid: a lost ant
@@ -290,6 +311,7 @@ function turnToward(h, target, maxTurn) {
 
 function stepAnt(a) {
   if (a.dead) return;
+  a.age += STEP;
   if (!a.carrying) {
     a.hunger += STEP; // the clock only runs while searching: carried food is food
     if (a.hunger > STARVE) {
@@ -346,7 +368,7 @@ function stepAnt(a) {
     // nearby food is spotted on sight, no trail needed
     let sawFood = false, foodAng = 0;
     for (const f of foods) {
-      const dx = f.x - a.x, dy = f.y - a.y, R = f.r + 80;
+      const dx = f.x - a.x, dy = f.y - a.y, R = f.r + vision(a);
       if (dx * dx + dy * dy < R * R && clearLine(a.x, a.y, f.x, f.y)) {
         foodAng = Math.atan2(dy, dx); goalX = f.x; goalY = f.y;
         sawFood = true;
@@ -430,6 +452,16 @@ function stepAnt(a) {
   if (simTime - a.lastHitT > 5) a.hits = 0;      // brief clearance forgives the strike count
   if (simTime - a.lastHitT > 25) a.streak = 0;   // but hops keep growing across nearby retries
 
+  // walls in sight dead ahead get dodged before impact; elders see farther
+  const look = 8 + vision(a) * 0.55;
+  if (!clearLine(a.x, a.y, a.x + Math.cos(a.h) * look, a.y + Math.sin(a.h) * look)) {
+    const lOk = clearLine(a.x, a.y, a.x + Math.cos(a.h - 0.7) * look, a.y + Math.sin(a.h - 0.7) * look);
+    const rOk = clearLine(a.x, a.y, a.x + Math.cos(a.h + 0.7) * look, a.y + Math.sin(a.h + 0.7) * look);
+    if (lOk && !rOk) a.h -= 5 * STEP;
+    else if (rOk && !lOk) a.h += 5 * STEP;
+    else if (lOk && rOk) a.h += (Math.random() < 0.5 ? -5 : 5) * STEP;
+  }
+
   a.sway = Math.sin(simTime * a.wfreq + a.phase) * a.swayAmp;
   const dir = a.h + a.sway;
   const spd = a.chase ? ANT_SPEED * 1.25 : ANT_SPEED; // chasers sprint
@@ -438,6 +470,7 @@ function stepAnt(a) {
   if (blocked(nx, ny)) {
     a.h += Math.PI + (Math.random() - 0.5);
     a.lastHitT = simTime;
+    a.xp = Math.min(120, a.xp + 2); // mistakes make the next look sharper
     if (!Number.isNaN(goal) && !a.guided && ++a.hits >= 3) {
       // three strikes on this wall: stop trying this spot entirely and
       // relocate to a random reachable point, farther away every retry,
