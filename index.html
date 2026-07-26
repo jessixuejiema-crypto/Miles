@@ -96,7 +96,7 @@
     <span class="dot" style="background:#ff5c46"></span>rivals sometimes fight on contact, and stealing a claimed food pile gets you chased — only one walks away<br>
     <span class="dot" style="background:#8a8272"></span>an ant that searches 1 minute without finding food starves; an emptied colony sends out a fresh worker<br>
     <span class="dot" style="background:#c8b88a"></span>ants sharpen with age — eyesight grows 20→50 px, they learn from every wall they hit, and blocked ants head for gaps they can see<br>
-    <span class="dot" style="background:#9ac8e0"></span>everything an ant sees or bumps into joins its colony's shared map, and re-seeing a changed spot updates the memory<br>
+    <span class="dot" style="background:#9ac8e0"></span>everything an ant sees or bumps into joins its colony's shared map, re-seeing a changed spot updates the memory — and nobody steers into a wall that's already on the map<br>
     <span class="dot" style="background:#ff9d7a"></span>food gives off a scent that drifts through gaps (warm haze) — ants smell it from afar and home in
   </div>
   <div id="hint"></div>
@@ -255,6 +255,7 @@ function pickWaypoint(a, gx, gy) {
   const goalAng = Math.atan2(gy - a.y, gx - a.x);
   const base = Math.random() * TAU;
   const stepLen = CELL * 0.8;
+  const kn = a.colony.known;
   let bx = NaN, by = 0, bs = 0;
   for (let r = 0; r < 14; r++) {
     const ang = base + r * TAU / 14;
@@ -263,7 +264,7 @@ function pickWaypoint(a, gx, gy) {
       const x = a.x + Math.cos(ang) * d, y = a.y + Math.sin(ang) * d;
       if (x < 8 || y < 8 || x > W - 8 || y > H - 8) break;
       const i = cellIdx(x, y);
-      if (i >= 0 && walls[i]) break;
+      if (i >= 0 && (walls[i] || kn[i] === 2)) break;
       free = d;
     }
     if (free < 16) continue; // that way is wall, not gap
@@ -317,6 +318,23 @@ function observe(a) {
     i = cellIdx(px, py);
     if (i >= 0) kn[i] = walls[i] ? 2 : 1;
   }
+}
+
+function pathBlocked(a, d, off, v) {
+  // blocked by anything the colony REMEMBERS as wall, or any rock actually
+  // visible within eyesight v - and seeing it writes it onto the map
+  const kn = a.colony.known, ang = a.h + off;
+  const n = Math.max(1, Math.ceil(d / (CELL * 0.8)));
+  for (let k = 1; k <= n; k++) {
+    const dd = d * k / n;
+    const x = a.x + Math.cos(ang) * dd, y = a.y + Math.sin(ang) * dd;
+    if (x < 4 || y < 4 || x > W - 4 || y > H - 4) return true;
+    const i = cellIdx(x, y);
+    if (i < 0) continue;
+    if (kn[i] === 2) return true;                        // once bumped or seen: never again
+    if (dd <= v && walls[i]) { kn[i] = 2; return true; } // spotted now, remembered forever
+  }
+  return false;
 }
 
 function foodNear(x, y) {
@@ -522,14 +540,16 @@ function stepAnt(a) {
   if (simTime - a.lastHitT > 5) a.hits = 0;      // brief clearance forgives the strike count
   if (simTime - a.lastHitT > 25) a.streak = 0;   // but hops keep growing across nearby retries
 
-  // walls in sight dead ahead get dodged before impact; elders see farther
-  const look = 8 + vision(a) * 0.55;
-  if (!clearLine(a.x, a.y, a.x + Math.cos(a.h) * look, a.y + Math.sin(a.h) * look)) {
-    const lOk = clearLine(a.x, a.y, a.x + Math.cos(a.h - 0.7) * look, a.y + Math.sin(a.h - 0.7) * look);
-    const rOk = clearLine(a.x, a.y, a.x + Math.cos(a.h + 0.7) * look, a.y + Math.sin(a.h + 0.7) * look);
-    if (lOk && !rOk) a.h -= 5 * STEP;
-    else if (rOk && !lOk) a.h += 5 * STEP;
-    else if (lOk && rOk) a.h += (Math.random() < 0.5 ? -5 : 5) * STEP;
+  // walls in sight OR on the colony's map get dodged before impact:
+  // once a wall is bumped or seen, nobody steers into it again
+  const v = vision(a);
+  const look = 6 + v;
+  if (pathBlocked(a, look, 0, v)) {
+    const lBad = pathBlocked(a, look, -0.7, v), rBad = pathBlocked(a, look, 0.7, v);
+    if (!lBad && rBad) a.h -= 7 * STEP;
+    else if (!rBad && lBad) a.h += 7 * STEP;
+    else if (!lBad && !rBad) a.h += (Math.random() < 0.5 ? -7 : 7) * STEP;
+    else a.h += (Math.random() < 0.5 ? -10 : 10) * STEP; // walled in: swing hard away
   }
 
   a.sway = Math.sin(simTime * a.wfreq + a.phase) * a.swayAmp;
