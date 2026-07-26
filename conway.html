@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conway's Game of Life</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid-line: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --series-1: #2a78d6;
+    --cell-dead: #f1f0ec;
+    --good: #0ca30c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --grid-line: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --series-1: #3987e5;
+      --cell-dead: #232322;
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid-line: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --cell-dead: #232322;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 48px;
+  }
+  main { width: 100%; max-width: 880px; }
+
+  h1 { font-size: 1.35rem; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); font-size: 0.9rem; margin: 0 0 16px; }
+  .subtitle a { color: var(--series-1); }
+  .subtitle code {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 0.85em;
+  }
+
+  .panel {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button {
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 6px 14px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--series-1); }
+  button.primary {
+    background: var(--series-1);
+    border-color: var(--series-1);
+    color: #fff;
+  }
+  select {
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 6px 8px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-primary);
+  }
+  .speed { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-secondary); }
+  input[type="range"] { accent-color: var(--series-1); width: 110px; }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .tile {
+    flex: 1 1 140px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  .tile .label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .tile .value { font-size: 1.3rem; font-weight: 600; }
+  .tile .value.stable { color: var(--good); font-size: 1.05rem; }
+
+  #board {
+    display: block;
+    width: 100%;
+    border-radius: 8px;
+    cursor: crosshair;
+    touch-action: none;
+  }
+
+  .rules { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 0.82rem; }
+  .rule-group { display: flex; align-items: center; gap: 5px; }
+  .rule-group .rule-name { color: var(--text-secondary); font-weight: 600; margin-right: 2px; }
+  .rule-chip {
+    width: 26px; height: 26px;
+    padding: 0;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+  .rule-chip[aria-pressed="true"] {
+    background: var(--series-1);
+    border-color: var(--series-1);
+    color: #fff;
+    font-weight: 600;
+  }
+  .rule-string { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .chart-title { font-size: 0.85rem; font-weight: 600; margin: 0 0 8px; }
+  .chart-wrap { position: relative; }
+  #chart { display: block; width: 100%; height: 140px; }
+  #tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    display: none;
+    transform: translate(-50%, -130%);
+  }
+  #tooltip .pop { font-weight: 600; }
+
+  .hint { color: var(--muted); font-size: 0.78rem; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Conway's Game of Life</h1>
+  <p class="subtitle">
+    Classic rule <code>B3/S23</code>: a dead cell is <strong>B</strong>orn with exactly 3 live
+    neighbors; a live cell <strong>S</strong>urvives with 2 or 3. The grid is bounded (edges are
+    permanently dead), so nothing can grow to infinity — every start eventually settles into a
+    still life or a repeating oscillation, which the tracker below detects.
+    Curious how other rules behave? See the <a href="rulespace.html">rule-space map</a>.
+  </p>
+
+  <div class="stats">
+    <div class="tile">
+      <div class="label">Generation</div>
+      <div class="value" id="genVal">0</div>
+    </div>
+    <div class="tile">
+      <div class="label">Population</div>
+      <div class="value" id="popVal">0</div>
+    </div>
+    <div class="tile">
+      <div class="label">Status</div>
+      <div class="value" id="statusVal">Paused</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <button class="primary" id="playBtn">Play</button>
+      <button id="stepBtn">Step</button>
+      <button id="randomBtn">Random</button>
+      <button id="clearBtn">Clear</button>
+      <select id="preset" aria-label="Pattern preset">
+        <option value="">Preset pattern…</option>
+        <option value="rpentomino">R-pentomino (long chaos, then settles)</option>
+        <option value="acorn">Acorn (very long-lived)</option>
+        <option value="glider">Glider (dies at the wall)</option>
+        <option value="gosper">Gosper glider gun</option>
+        <option value="pulsar">Pulsar (period-3 oscillator)</option>
+        <option value="pentadecathlon">Pentadecathlon (period 15)</option>
+        <option value="block">Block (still life)</option>
+      </select>
+      <div class="speed">
+        <span>Speed</span>
+        <input type="range" id="speed" min="1" max="60" value="20" aria-label="Generations per second">
+        <span id="speedVal">20/s</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <canvas id="board"></canvas>
+    <p class="hint">Click or drag on the grid to draw and erase cells — even while it's running.</p>
+  </div>
+
+  <div class="panel">
+    <div class="rules">
+      <div class="rule-group" id="birthGroup">
+        <span class="rule-name">Birth</span>
+      </div>
+      <div class="rule-group" id="surviveGroup">
+        <span class="rule-name">Survive</span>
+      </div>
+      <span class="rule-string" id="ruleStr">B3/S23</span>
+      <button id="conwayBtn">Reset to Conway</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 class="chart-title">Population over time</h2>
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+      <div id="tooltip"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  const COLS = 90, ROWS = 56;
+  const HISTORY_WINDOW = 180;   // states remembered for cycle detection
+
+  let cells = new Uint8Array(COLS * ROWS);
+  let next = new Uint8Array(COLS * ROWS);
+  let birth = new Set([3]);
+  let survive = new Set([2, 3]);
+
+  let generation = 0;
+  let running = false;
+  let stepsPerSec = 20;
+  let accumulator = 0;
+  let lastTime = 0;
+
+  // Stability tracking
+  let stable = null;            // {gen, period} once a repeat is found
+  let history = [];             // [{hash, snapshot}]
+
+  let popHistory = [0];
+
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  // ---------- simulation ----------
+  function population() {
+    let n = 0;
+    for (let i = 0; i < cells.length; i++) n += cells[i];
+    return n;
+  }
+
+  function step() {
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        let n = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = x + dx, ny = y + dy;
+            // bounded grid: outside the edge is permanently dead
+            if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+            n += cells[ny * COLS + nx];
+          }
+        }
+        const i = y * COLS + x;
+        next[i] = cells[i] ? (survive.has(n) ? 1 : 0) : (birth.has(n) ? 1 : 0);
+      }
+    }
+    [cells, next] = [next, cells];
+    generation++;
+    popHistory.push(population());
+    checkStability();
+  }
+
+  function hashState() {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < cells.length; i++) {
+      h ^= cells[i];
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
+
+  function checkStability() {
+    if (stable) return;
+    const h = hashState();
+    for (const past of history) {
+      if (past.hash === h && past.snapshot.every((v, i) => v === cells[i])) {
+        stable = { gen: past.gen, period: generation - past.gen };
+        if (stable.period === 1) setRunning(false); // still life: nothing left to watch
+        return;
+      }
+    }
+    history.push({ hash: h, gen: generation, snapshot: cells.slice() });
+    if (history.length > HISTORY_WINDOW) history.shift();
+  }
+
+  function resetTracking() {
+    stable = null;
+    history = [];
+    generation = 0;
+    popHistory = [population()];
+  }
+
+  // ---------- board rendering ----------
+  const board = document.getElementById('board');
+  const bctx = board.getContext('2d');
+  let cellPx = 10, dpr = 1;
+
+  function sizeBoard() {
+    const w = board.clientWidth || board.parentElement.clientWidth - 28;
+    cellPx = w / COLS;
+    dpr = window.devicePixelRatio || 1;
+    board.width = Math.round(w * dpr);
+    board.height = Math.round(cellPx * ROWS * dpr);
+    board.style.height = (cellPx * ROWS) + 'px';
+    drawBoard();
+  }
+
+  function drawBoard() {
+    bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = board.width / dpr, h = board.height / dpr;
+    bctx.fillStyle = css('--cell-dead');
+    bctx.fillRect(0, 0, w, h);
+    bctx.fillStyle = css('--series-1');
+    const s = cellPx;
+    const gap = s > 4 ? 1 : 0;
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        if (cells[y * COLS + x]) {
+          bctx.fillRect(x * s + gap / 2, y * s + gap / 2, s - gap, s - gap);
+        }
+      }
+    }
+  }
+
+  // ---------- drawing on the grid ----------
+  let painting = false, paintValue = 1;
+
+  function cellAt(ev) {
+    const r = board.getBoundingClientRect();
+    const x = Math.floor((ev.clientX - r.left) / r.width * COLS);
+    const y = Math.floor((ev.clientY - r.top) / r.height * ROWS);
+    if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return -1;
+    return y * COLS + x;
+  }
+
+  board.addEventListener('pointerdown', ev => {
+    const i = cellAt(ev);
+    if (i < 0) return;
+    painting = true;
+    paintValue = cells[i] ? 0 : 1;
+    cells[i] = paintValue;
+    onManualEdit();
+    board.setPointerCapture(ev.pointerId);
+  });
+  board.addEventListener('pointermove', ev => {
+    if (!painting) return;
+    const i = cellAt(ev);
+    if (i >= 0 && cells[i] !== paintValue) {
+      cells[i] = paintValue;
+      onManualEdit();
+    }
+  });
+  board.addEventListener('pointerup', () => { painting = false; });
+
+  function onManualEdit() {
+    // hand-editing changes the trajectory, so stability must be re-proven
+    stable = null;
+    history = [];
+    popHistory[popHistory.length - 1] = population();
+    render();
+  }
+
+  // ---------- population chart ----------
+  const chart = document.getElementById('chart');
+  const cctx = chart.getContext('2d');
+  const tooltip = document.getElementById('tooltip');
+  const PAD = { left: 44, right: 10, top: 8, bottom: 20 };
+
+  function sizeChart() {
+    dprC = window.devicePixelRatio || 1;
+    chart.width = Math.round(chart.clientWidth * dprC);
+    chart.height = Math.round(140 * dprC);
+    drawChart();
+  }
+  let dprC = 1;
+
+  function chartScales() {
+    const w = chart.width / dprC, h = chart.height / dprC;
+    const maxGen = Math.max(popHistory.length - 1, 1);
+    let maxPop = 10;
+    for (let i = 0; i < popHistory.length; i++) {
+      if (popHistory[i] > maxPop) maxPop = popHistory[i];
+    }
+    return {
+      w, h,
+      x: g => PAD.left + g / maxGen * (w - PAD.left - PAD.right),
+      y: p => h - PAD.bottom - p / maxPop * (h - PAD.top - PAD.bottom),
+      maxGen, maxPop
+    };
+  }
+
+  function drawChart() {
+    const { w, h, x, y, maxGen, maxPop } = chartScales();
+    cctx.setTransform(dprC, 0, 0, dprC, 0, 0);
+    cctx.clearRect(0, 0, w, h);
+
+    cctx.strokeStyle = css('--grid-line');
+    cctx.lineWidth = 1;
+    cctx.fillStyle = css('--muted');
+    cctx.font = '11px system-ui, sans-serif';
+    cctx.textAlign = 'right';
+    for (let t = 0; t <= 2; t++) {
+      const v = Math.round(maxPop * t / 2);
+      const yy = y(v);
+      cctx.beginPath();
+      cctx.moveTo(PAD.left, yy);
+      cctx.lineTo(w - PAD.right, yy);
+      cctx.stroke();
+      cctx.fillText(String(v), PAD.left - 6, yy + 4);
+    }
+    cctx.textAlign = 'center';
+    cctx.fillText('0', PAD.left, h - 5);
+    cctx.fillText(String(maxGen) + ' gens', w - PAD.right - 24, h - 5);
+
+    cctx.strokeStyle = css('--baseline');
+    cctx.beginPath();
+    cctx.moveTo(PAD.left, h - PAD.bottom);
+    cctx.lineTo(w - PAD.right, h - PAD.bottom);
+    cctx.stroke();
+
+    // mark the generation where the pattern entered its final cycle
+    if (stable) {
+      const sx = x(stable.gen);
+      cctx.strokeStyle = css('--good');
+      cctx.setLineDash([4, 3]);
+      cctx.beginPath();
+      cctx.moveTo(sx, PAD.top);
+      cctx.lineTo(sx, h - PAD.bottom);
+      cctx.stroke();
+      cctx.setLineDash([]);
+    }
+
+    cctx.strokeStyle = css('--series-1');
+    cctx.lineWidth = 2;
+    cctx.lineJoin = 'round';
+    cctx.beginPath();
+    const stride = Math.max(1, Math.floor(popHistory.length / (w - PAD.left - PAD.right)));
+    for (let g = 0; g < popHistory.length; g += stride) {
+      const px = x(g), py = y(popHistory[g]);
+      g === 0 ? cctx.moveTo(px, py) : cctx.lineTo(px, py);
+    }
+    const lastG = popHistory.length - 1;
+    cctx.lineTo(x(lastG), y(popHistory[lastG]));
+    cctx.stroke();
+  }
+
+  chart.addEventListener('pointermove', ev => {
+    const r = chart.getBoundingClientRect();
+    const { x, y, maxGen } = chartScales();
+    const mx = ev.clientX - r.left;
+    const g = Math.max(0, Math.min(maxGen, Math.round((mx - PAD.left) / (x(maxGen) - PAD.left || 1) * maxGen)));
+    const pop = popHistory[g];
+    if (pop === undefined) return;
+    tooltip.style.display = 'block';
+    tooltip.style.left = x(g) + 'px';
+    tooltip.style.top = y(pop) + 'px';
+    tooltip.innerHTML = 'gen ' + g + ' · <span class="pop">' + pop + '</span> alive';
+  });
+  chart.addEventListener('pointerleave', () => { tooltip.style.display = 'none'; });
+
+  // ---------- rule editor ----------
+  function buildRuleChips(groupId, set) {
+    const group = document.getElementById(groupId);
+    for (let n = 0; n <= 8; n++) {
+      const b = document.createElement('button');
+      b.className = 'rule-chip';
+      b.textContent = n;
+      b.setAttribute('aria-pressed', set.has(n));
+      b.addEventListener('click', () => {
+        set.has(n) ? set.delete(n) : set.add(n);
+        b.setAttribute('aria-pressed', set.has(n));
+        stable = null;
+        history = [];
+        updateRuleString();
+        render();
+      });
+      group.appendChild(b);
+    }
+  }
+
+  function updateRuleString() {
+    const fmt = s => [...s].sort((a, b) => a - b).join('');
+    document.getElementById('ruleStr').textContent = 'B' + fmt(birth) + '/S' + fmt(survive);
+  }
+
+  function syncRuleChips() {
+    document.querySelectorAll('#birthGroup .rule-chip').forEach((b, n) =>
+      b.setAttribute('aria-pressed', birth.has(n)));
+    document.querySelectorAll('#surviveGroup .rule-chip').forEach((b, n) =>
+      b.setAttribute('aria-pressed', survive.has(n)));
+    updateRuleString();
+  }
+
+  function setRule(bDigits, sDigits) {
+    // mutate in place: the rule chips hold references to these Sets
+    birth.clear();
+    for (const d of bDigits) birth.add(Number(d));
+    survive.clear();
+    for (const d of sDigits) survive.add(Number(d));
+  }
+
+  document.getElementById('conwayBtn').addEventListener('click', () => {
+    setRule('3', '23');
+    stable = null;
+    history = [];
+    syncRuleChips();
+    render();
+  });
+
+  // ---------- presets ----------
+  const PATTERNS = {
+    block: ['XX', 'XX'],
+    glider: ['.X.', '..X', 'XXX'],
+    rpentomino: ['.XX', 'XX.', '.X.'],
+    acorn: ['.X.....', '...X...', 'XX..XXX'],
+    pulsar: [
+      '..XXX...XXX..', '.............', 'X....X.X....X', 'X....X.X....X',
+      'X....X.X....X', '..XXX...XXX..', '.............', '..XXX...XXX..',
+      'X....X.X....X', 'X....X.X....X', 'X....X.X....X', '.............',
+      '..XXX...XXX..'
+    ],
+    pentadecathlon: ['..X....X..', 'XX.XXXX.XX', '..X....X..'],
+    gosper: [
+      '........................X...........',
+      '......................X.X...........',
+      '............XX......XX............XX',
+      '...........X...X....XX............XX',
+      'XX........X.....X...XX...............',
+      'XX........X...X.XX....X.X...........',
+      '..........X.....X.......X...........',
+      '...........X...X.....................',
+      '............XX.......................'
+    ]
+  };
+
+  function loadPattern(name) {
+    const rows = PATTERNS[name];
+    if (!rows) return;
+    cells.fill(0);
+    const startY = Math.floor((ROWS - rows.length) / 2);
+    const startX = name === 'gosper'
+      ? 2  // give the gun room to fire gliders rightward
+      : Math.floor((COLS - rows[0].length) / 2);
+    rows.forEach((row, y) => {
+      for (let x = 0; x < row.length; x++) {
+        if (row[x] === 'X') cells[(startY + y) * COLS + (startX + x)] = 1;
+      }
+    });
+    setRunning(false);
+    resetTracking();
+    render();
+  }
+
+  // ---------- controls ----------
+  const playBtn = document.getElementById('playBtn');
+
+  function setRunning(on) {
+    running = on;
+    playBtn.textContent = on ? 'Pause' : 'Play';
+    if (on) {
+      lastTime = performance.now();
+      accumulator = 0;
+      requestAnimationFrame(loop);
+    }
+  }
+
+  playBtn.addEventListener('click', () => setRunning(!running));
+
+  document.getElementById('stepBtn').addEventListener('click', () => {
+    setRunning(false);
+    step();
+    render();
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    setRunning(false);
+    cells.fill(0);
+    resetTracking();
+    render();
+  });
+
+  document.getElementById('randomBtn').addEventListener('click', () => {
+    setRunning(false);
+    for (let i = 0; i < cells.length; i++) cells[i] = Math.random() < 0.28 ? 1 : 0;
+    resetTracking();
+    render();
+    setRunning(true);
+  });
+
+  document.getElementById('preset').addEventListener('change', ev => {
+    loadPattern(ev.target.value);
+    ev.target.value = '';
+  });
+
+  const speedInput = document.getElementById('speed');
+  speedInput.addEventListener('input', () => {
+    stepsPerSec = Number(speedInput.value);
+    document.getElementById('speedVal').textContent = stepsPerSec + '/s';
+  });
+
+  // ---------- main loop ----------
+  function loop(now) {
+    if (!running) return;
+    accumulator += (now - lastTime) / 1000;
+    lastTime = now;
+    let steps = Math.min(Math.floor(accumulator * stepsPerSec), 10);
+    if (steps > 0) {
+      accumulator -= steps / stepsPerSec;
+      while (steps--) step();
+      render();
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function render() {
+    drawBoard();
+    drawChart();
+    document.getElementById('genVal').textContent = generation;
+    document.getElementById('popVal').textContent = popHistory[popHistory.length - 1];
+    const status = document.getElementById('statusVal');
+    if (stable) {
+      status.className = 'value stable';
+      status.textContent = stable.period === 1
+        ? 'Still life since gen ' + stable.gen
+        : 'Stable cycle (period ' + stable.period + ') since gen ' + stable.gen;
+    } else {
+      status.className = 'value';
+      status.textContent = running ? 'Running' : 'Paused';
+    }
+  }
+
+  // ---------- init ----------
+  const ruleParam = new URLSearchParams(location.search).get('rule');
+  const ruleMatch = ruleParam && /^B(\d+)\/S(\d*)$/i.exec(ruleParam.trim());
+  if (ruleMatch) setRule(ruleMatch[1], ruleMatch[2]);
+  buildRuleChips('birthGroup', birth);
+  buildRuleChips('surviveGroup', survive);
+  updateRuleString();
+  window.addEventListener('resize', () => { sizeBoard(); sizeChart(); });
+  const darkWatch = window.matchMedia('(prefers-color-scheme: dark)');
+  darkWatch.addEventListener('change', render);
+  if (ruleMatch) {
+    // arriving from the rule-space map: a random soup shows the rule's character best
+    for (let i = 0; i < cells.length; i++) cells[i] = Math.random() < 0.28 ? 1 : 0;
+    resetTracking();
+    sizeBoard();
+    sizeChart();
+    render();
+    setRunning(true);
+  } else {
+    loadPattern('rpentomino');
+    sizeBoard();
+    sizeChart();
+    render();
+  }
+})();
+</script>
+</body>
+</html>

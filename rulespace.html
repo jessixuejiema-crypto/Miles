@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Life Rule-Space Map</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid-line: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --stable: #2a78d6;     /* settles, bounded */
+    --explodes: #eb6834;   /* grows without limit */
+    --dies: #e1e0d9;       /* fades to nothing */
+    --cell-dead: #f1f0ec;
+    --good: #0ca30c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --grid-line: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --stable: #3987e5;
+      --explodes: #d95926;
+      --dies: #2c2c2a;
+      --cell-dead: #232322;
+      --good: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid-line: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --stable: #3987e5;
+    --explodes: #d95926;
+    --dies: #2c2c2a;
+    --cell-dead: #232322;
+    --good: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 48px;
+  }
+  main { width: 100%; max-width: 920px; }
+
+  h1 { font-size: 1.35rem; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); font-size: 0.9rem; margin: 0 0 16px; line-height: 1.45; }
+  .subtitle a { color: var(--stable); }
+  .subtitle code {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 0.85em;
+  }
+
+  .panel {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+
+  .axis-modes { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+  .axis-mode { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+  .axis-mode .which { font-weight: 600; color: var(--text-secondary); }
+  .axis-mode .shape {
+    min-width: 168px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 5px 8px;
+  }
+  .axis-mode .shape small { color: var(--muted); display: block; font-size: 0.7rem; }
+  button {
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--stable); }
+  button.arrow { font-size: 1rem; padding: 4px 12px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; font-size: 0.8rem; color: var(--text-secondary); }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--border); }
+
+  .map-wrap { position: relative; }
+  #map { display: block; width: 100%; cursor: pointer; touch-action: none; }
+  #mapTip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: none;
+    z-index: 2;
+  }
+  #mapTip .cls { font-weight: 600; }
+  #progress { font-size: 0.8rem; color: var(--muted); margin-top: 8px; min-height: 1.1em; }
+
+  .sim-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .sim-head h2 { font-size: 0.95rem; margin: 0; }
+  .sim-head .rule-label { font-variant-numeric: tabular-nums; color: var(--stable); font-weight: 600; }
+  .sim-head .verdict { font-size: 0.8rem; color: var(--text-secondary); }
+  .sim-head .spacer { flex: 1; }
+  .sim-head a { font-size: 0.8rem; color: var(--stable); }
+  #sim { display: block; width: 100%; border-radius: 8px; }
+  .hint { color: var(--muted); font-size: 0.78rem; margin: 8px 0 0; line-height: 1.4; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Life Rule-Space Map</h1>
+  <p class="subtitle">
+    Every cell of this graph is one Life-like rule <code>B&hellip;/S&hellip;</code> —
+    <strong>y&nbsp;axis&nbsp;=&nbsp;Birth set</strong>, <strong>x&nbsp;axis&nbsp;=&nbsp;Survive set</strong>.
+    Each rule is actually simulated from the same random soup and classified:
+    <em>unstable</em> rules blob out toward infinity, <em>stable</em> rules keep transforming but
+    settle without exploding (Conway's <code>B3/S2-3</code> lives here), and the rest quickly
+    disappear to nothing or a few little oscillators. The main view uses contiguous dash-ranges
+    like <code>3-7</code> or <code>6-7</code>; the arrows switch each axis to the split sets,
+    shifting the gap by one — first tab <code>3,5-7</code>, second tab <code>3,6-7</code>.
+    Click any cell to watch that rule run below. Full simulator: <a href="conway.html">conway.html</a>.
+  </p>
+
+  <div class="panel">
+    <div class="axis-modes">
+      <div class="axis-mode">
+        <span class="which">Y · Birth sets</span>
+        <button class="arrow" id="bPrev" aria-label="Previous birth set shape">&#9664;</button>
+        <span class="shape" id="bShape"></span>
+        <button class="arrow" id="bNext" aria-label="Next birth set shape">&#9654;</button>
+      </div>
+      <div class="axis-mode">
+        <span class="which">X · Survive sets</span>
+        <button class="arrow" id="sPrev" aria-label="Previous survive set shape">&#9664;</button>
+        <span class="shape" id="sShape"></span>
+        <button class="arrow" id="sNext" aria-label="Next survive set shape">&#9654;</button>
+      </div>
+    </div>
+    <div class="legend">
+      <div class="item"><span class="swatch" style="background: var(--explodes)"></span> Unstable — expands to infinity</div>
+      <div class="item"><span class="swatch" style="background: var(--stable)"></span> Stable — transforms, stays bounded</div>
+      <div class="item"><span class="swatch" style="background: var(--dies)"></span> Dies — nothing or little oscillators</div>
+      <div class="item">&#9733; Conway B3/S2-3</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="map-wrap">
+      <canvas id="map"></canvas>
+      <div id="mapTip"></div>
+    </div>
+    <div id="progress"></div>
+    <p class="hint">
+      Method: each rule runs up to 320 generations on a bounded 36&times;36 grid seeded with the
+      same 30% random soup. If almost nothing is left it <em>dies</em>; if it stays dense or keeps
+      churning — or freezes only after filling the box — it is <em>unstable</em> (on an infinite
+      grid the blob would grow forever); if it settles into still lifes and small oscillators at
+      low density it is <em>stable</em>. Axis labels mark where each set's first number starts;
+      hover any cell for the exact rule.
+    </p>
+  </div>
+
+  <div class="panel">
+    <div class="sim-head">
+      <h2>Watching: <span class="rule-label" id="simRule"></span></h2>
+      <span class="verdict" id="simVerdict"></span>
+      <span class="spacer"></span>
+      <button id="simPlay">Pause</button>
+      <button id="simReseed">New soup</button>
+      <a id="simOpen" href="conway.html">Open in full simulator &rarr;</a>
+    </div>
+    <canvas id="sim"></canvas>
+  </div>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  // ---------- axis set shapes ----------
+  // mode 0: contiguous a–b. mode g>0: a, then a gap of g numbers, then (a+g+1)–b.
+  const MODES = [
+    { gap: 0, title: 'a–b', sub: 'contiguous range' },
+    { gap: 1, title: 'a, a+2–b', sub: 'split · gap of 1' },
+    { gap: 2, title: 'a, a+3–b', sub: 'split · gap of 2' }
+  ];
+
+  function fmtRange(a, b) { return a === b ? String(a) : a + '-' + b; }
+
+  function axisEntries(gap) {
+    const list = [];
+    if (gap === 0) {
+      for (let a = 0; a <= 8; a++) {
+        for (let b = a; b <= 8; b++) {
+          let mask = 0;
+          for (let n = a; n <= b; n++) mask |= 1 << n;
+          list.push({ a, mask, label: fmtRange(a, b) });
+        }
+      }
+    } else {
+      for (let a = 0; a <= 8; a++) {
+        for (let b = a + gap + 1; b <= 8; b++) {
+          let mask = 1 << a;
+          for (let n = a + gap + 1; n <= b; n++) mask |= 1 << n;
+          list.push({ a, mask, label: a + ',' + fmtRange(a + gap + 1, b) });
+        }
+      }
+    }
+    return list;
+  }
+
+  function maskDigits(mask) {
+    let s = '';
+    for (let n = 0; n <= 8; n++) if (mask & (1 << n)) s += n;
+    return s;
+  }
+
+  let bMode = 0, sMode = 0;
+  let bEntries = axisEntries(0), sEntries = axisEntries(0);
+
+  // ---------- classifier ----------
+  const CW = 36, CH = 36, CN = CW * CH, GENS = 320, TAIL = 15;
+  const CLS_DIES = 0, CLS_STABLE = 1, CLS_EXPLODES = 2;
+  const CLS_NAME = ['Dies — nothing or little oscillators',
+                    'Stable — settles, stays bounded',
+                    'Unstable — expands to infinity'];
+
+  // one fixed soup shared by every rule, so cells are comparable
+  const soup = new Uint8Array(CN);
+  {
+    let seed = 0x9e3779b9;
+    const rnd = () => {
+      seed ^= seed << 13; seed >>>= 0;
+      seed ^= seed >> 17;
+      seed ^= seed << 5; seed >>>= 0;
+      return seed / 4294967296;
+    };
+    for (let i = 0; i < CN; i++) soup[i] = rnd() < 0.30 ? 1 : 0;
+  }
+
+  // bounded-grid neighbor indices; index CN is a permanently-dead ghost cell
+  const nbr = new Int32Array(CN * 8);
+  for (let y = 0; y < CH; y++) {
+    for (let x = 0; x < CW; x++) {
+      let k = (y * CW + x) * 8;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx, ny = y + dy;
+          nbr[k++] = (nx < 0 || nx >= CW || ny < 0 || ny >= CH) ? CN : ny * CW + nx;
+        }
+      }
+    }
+  }
+
+  const clsA = new Uint8Array(CN + 1), clsB = new Uint8Array(CN + 1);
+
+  function verdict(density, activity) {
+    if (density < 0.02) return CLS_DIES;
+    // a grid frozen solid means the blob hit the walls — on an infinite
+    // grid it would keep expanding, so saturation counts as unstable
+    if (density > 0.35 || activity > 0.12) return CLS_EXPLODES;
+    return CLS_STABLE;
+  }
+
+  function classify(bMask, sMask) {
+    let cur = clsA, nxt = clsB;
+    cur.fill(0);
+    cur.set(soup);
+    const hashes = [0, 0];
+    let settledRuns = 0;
+    let dSum = 0, aSum = 0;
+    for (let g = 0; g < GENS; g++) {
+      let pop = 0, act = 0, h = 0x811c9dc5;
+      for (let i = 0; i < CN; i++) {
+        const k = i * 8;
+        const n = cur[nbr[k]] + cur[nbr[k+1]] + cur[nbr[k+2]] + cur[nbr[k+3]] +
+                  cur[nbr[k+4]] + cur[nbr[k+5]] + cur[nbr[k+6]] + cur[nbr[k+7]];
+        const v = cur[i] ? (sMask >> n) & 1 : (bMask >> n) & 1;
+        nxt[i] = v;
+        pop += v;
+        act += v ^ cur[i];
+        h ^= v;
+        h = Math.imul(h, 0x01000193);
+      }
+      [cur, nxt] = [nxt, cur];
+      if (pop === 0) return CLS_DIES;
+      if (g >= GENS - TAIL) { dSum += pop; aSum += act; }
+      // settled early: the state matches the one from 2 generations ago,
+      // which covers still-life fields and blinker-type period-2 debris
+      if ((h >>> 0) === hashes[g % 2]) settledRuns++; else settledRuns = 0;
+      hashes[g % 2] = h >>> 0;
+      if (settledRuns >= 4) return verdict(pop / CN, 0);
+    }
+    return verdict(dSum / TAIL / CN, aSum / TAIL / CN);
+  }
+
+  // ---------- map computation (chunked, cached) ----------
+  const cache = new Map();          // "bMode|sMode" -> Uint8Array
+  let results = null;               // current class grid, sEntries.length * bEntries.length
+  let computing = false;
+  let computeToken = 0;
+
+  function startCompute() {
+    const key = bMode + '|' + sMode;
+    if (cache.has(key)) {
+      results = cache.get(key);
+      computing = false;
+      document.getElementById('progress').textContent = '';
+      drawMap();
+      return;
+    }
+    const token = ++computeToken;
+    const nb = bEntries.length, ns = sEntries.length;
+    const out = new Uint8Array(nb * ns).fill(255);   // 255 = pending
+    results = out;
+    computing = true;
+    let idx = 0;
+    const total = nb * ns;
+    const progressEl = document.getElementById('progress');
+
+    function chunk() {
+      if (token !== computeToken) return;   // a newer view superseded this run
+      const t0 = performance.now();
+      while (idx < total && performance.now() - t0 < 14) {
+        const bi = Math.floor(idx / ns), si = idx % ns;
+        out[idx] = classify(bEntries[bi].mask, sEntries[si].mask);
+        idx++;
+      }
+      drawMap();
+      if (idx < total) {
+        progressEl.textContent = 'Classifying rules… ' + Math.round(idx / total * 100) + '%';
+        requestAnimationFrame(chunk);
+      } else {
+        cache.set(key, out);
+        computing = false;
+        progressEl.textContent = '';
+        drawMap();
+      }
+    }
+    requestAnimationFrame(chunk);
+  }
+
+  // ---------- map rendering ----------
+  const map = document.getElementById('map');
+  const mctx = map.getContext('2d');
+  const MARGIN = { left: 58, bottom: 40, top: 8, right: 8 };
+  let dpr = 1, cellW = 10, cellH = 10;
+  let hover = -1;
+  let selected = { bMask: 1 << 3, sMask: (1 << 2) | (1 << 3), label: 'B3/S2-3', cls: CLS_STABLE };
+
+  function conwayIndex() {
+    if (bMode !== 0 || sMode !== 0) return -1;
+    const bi = bEntries.findIndex(e => e.mask === 1 << 3);
+    const si = sEntries.findIndex(e => e.mask === ((1 << 2) | (1 << 3)));
+    return bi < 0 || si < 0 ? -1 : bi * sEntries.length + si;
+  }
+
+  function sizeMap() {
+    dpr = window.devicePixelRatio || 1;
+    const w = map.clientWidth || map.parentElement.clientWidth - 28;
+    cellW = (w - MARGIN.left - MARGIN.right) / sEntries.length;
+    cellH = Math.min(Math.max(cellW, 8), 16);
+    const h = MARGIN.top + cellH * bEntries.length + MARGIN.bottom;
+    map.width = Math.round(w * dpr);
+    map.height = Math.round(h * dpr);
+    map.style.height = h + 'px';
+    drawMap();
+  }
+
+  function cellRect(bi, si) {
+    // y axis grows upward: entry 0 sits at the bottom
+    return {
+      x: MARGIN.left + si * cellW,
+      y: MARGIN.top + (bEntries.length - 1 - bi) * cellH
+    };
+  }
+
+  function drawMap() {
+    if (!results) return;
+    const w = map.width / dpr, h = map.height / dpr;
+    mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    mctx.clearRect(0, 0, w, h);
+    const colors = [css('--dies'), css('--stable'), css('--explodes')];
+    const pending = css('--cell-dead');
+    const ns = sEntries.length;
+
+    for (let bi = 0; bi < bEntries.length; bi++) {
+      for (let si = 0; si < ns; si++) {
+        const cls = results[bi * ns + si];
+        const { x, y } = cellRect(bi, si);
+        mctx.fillStyle = cls === 255 ? pending : colors[cls];
+        mctx.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
+      }
+    }
+
+    // group separators + labels where the set's first number changes
+    mctx.font = '11px system-ui, sans-serif';
+    mctx.strokeStyle = css('--baseline');
+    mctx.fillStyle = css('--muted');
+    mctx.lineWidth = 1;
+    mctx.textAlign = 'right';
+    mctx.textBaseline = 'middle';
+    for (let bi = 0; bi < bEntries.length; bi++) {
+      if (bi === 0 || bEntries[bi].a !== bEntries[bi - 1].a) {
+        const groupEnd = cellRect(bi, 0).y + cellH;   // bottom edge of the group's first row
+        mctx.beginPath();
+        mctx.moveTo(MARGIN.left, groupEnd);
+        mctx.lineTo(w - MARGIN.right, groupEnd);
+        mctx.stroke();
+        mctx.fillText('B' + bEntries[bi].a + '…', MARGIN.left - 6, groupEnd - cellH / 2);
+      }
+    }
+    mctx.textAlign = 'center';
+    mctx.textBaseline = 'top';
+    const mapBottom = MARGIN.top + cellH * bEntries.length;
+    for (let si = 0; si < ns; si++) {
+      if (si === 0 || sEntries[si].a !== sEntries[si - 1].a) {
+        const x = MARGIN.left + si * cellW;
+        mctx.beginPath();
+        mctx.moveTo(x, MARGIN.top);
+        mctx.lineTo(x, mapBottom);
+        mctx.stroke();
+        mctx.fillText('S' + sEntries[si].a + '…', x + cellW / 2, mapBottom + 6);
+      }
+    }
+    mctx.fillStyle = css('--muted');
+    mctx.fillText('Survive set →', w / 2, mapBottom + 22);
+    mctx.save();
+    mctx.translate(12, MARGIN.top + cellH * bEntries.length / 2);
+    mctx.rotate(-Math.PI / 2);
+    mctx.fillText('Birth set →', 0, 0);
+    mctx.restore();
+
+    // Conway marker
+    const ci = conwayIndex();
+    if (ci >= 0) {
+      const { x, y } = cellRect(Math.floor(ci / ns), ci % ns);
+      mctx.fillStyle = '#fff';
+      mctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      mctx.lineWidth = 2;
+      mctx.font = 'bold ' + Math.min(cellH - 3, 12) + 'px system-ui, sans-serif';
+      mctx.textAlign = 'center';
+      mctx.textBaseline = 'middle';
+      mctx.strokeText('★', x + cellW / 2, y + cellH / 2 + 1);
+      mctx.fillText('★', x + cellW / 2, y + cellH / 2 + 1);
+    }
+
+    // hover ring
+    if (hover >= 0) {
+      const { x, y } = cellRect(Math.floor(hover / ns), hover % ns);
+      mctx.strokeStyle = css('--text-primary');
+      mctx.lineWidth = 1.5;
+      mctx.strokeRect(x + 0.5, y + 0.5, cellW - 1, cellH - 1);
+    }
+  }
+
+  function mapIndexAt(ev) {
+    const r = map.getBoundingClientRect();
+    const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+    const si = Math.floor((mx - MARGIN.left) / cellW);
+    const row = Math.floor((my - MARGIN.top) / cellH);
+    const bi = bEntries.length - 1 - row;
+    if (si < 0 || si >= sEntries.length || bi < 0 || bi >= bEntries.length) return -1;
+    return bi * sEntries.length + si;
+  }
+
+  const mapTip = document.getElementById('mapTip');
+  map.addEventListener('pointermove', ev => {
+    const i = mapIndexAt(ev);
+    if (i !== hover) { hover = i; drawMap(); }
+    if (i < 0 || !results || results[i] === 255) { mapTip.style.display = 'none'; return; }
+    const ns = sEntries.length;
+    const be = bEntries[Math.floor(i / ns)], se = sEntries[i % ns];
+    const r = map.getBoundingClientRect();
+    mapTip.style.display = 'block';
+    mapTip.style.left = Math.min(ev.clientX - r.left + 14, r.width - 170) + 'px';
+    mapTip.style.top = (ev.clientY - r.top + 14) + 'px';
+    mapTip.innerHTML = 'B' + be.label + '/S' + se.label +
+      '<br><span class="cls">' + CLS_NAME[results[i]] + '</span>';
+  });
+  map.addEventListener('pointerleave', () => {
+    hover = -1;
+    mapTip.style.display = 'none';
+    drawMap();
+  });
+  map.addEventListener('click', ev => {
+    const i = mapIndexAt(ev);
+    if (i < 0 || !results || results[i] === 255) return;
+    const ns = sEntries.length;
+    const be = bEntries[Math.floor(i / ns)], se = sEntries[i % ns];
+    selected = {
+      bMask: be.mask, sMask: se.mask,
+      label: 'B' + be.label + '/S' + se.label,
+      cls: results[i]
+    };
+    startSim();
+  });
+
+  // ---------- axis mode arrows ----------
+  function refreshModes() {
+    const bm = MODES[bMode], sm = MODES[sMode];
+    document.getElementById('bShape').innerHTML = bm.title + '<small>' + bm.sub + '</small>';
+    document.getElementById('sShape').innerHTML = sm.title + '<small>' + sm.sub + '</small>';
+    bEntries = axisEntries(bm.gap);
+    sEntries = axisEntries(sm.gap);
+    hover = -1;
+    sizeMap();
+    startCompute();
+  }
+  const cycle = (v, d) => (v + d + MODES.length) % MODES.length;
+  document.getElementById('bPrev').addEventListener('click', () => { bMode = cycle(bMode, -1); refreshModes(); });
+  document.getElementById('bNext').addEventListener('click', () => { bMode = cycle(bMode, 1); refreshModes(); });
+  document.getElementById('sPrev').addEventListener('click', () => { sMode = cycle(sMode, -1); refreshModes(); });
+  document.getElementById('sNext').addEventListener('click', () => { sMode = cycle(sMode, 1); refreshModes(); });
+
+  // ---------- live viewer for the selected rule ----------
+  const SW = 110, SH = 64, SN = SW * SH;
+  let simCells = new Uint8Array(SN), simNext = new Uint8Array(SN);
+  const sim = document.getElementById('sim');
+  const sctx = sim.getContext('2d');
+  let simRunning = true, simLast = 0, simAcc = 0, simDpr = 1, simCell = 8;
+
+  function seedSim() {
+    for (let i = 0; i < SN; i++) simCells[i] = Math.random() < 0.28 ? 1 : 0;
+  }
+
+  function simStep() {
+    for (let y = 0; y < SH; y++) {
+      for (let x = 0; x < SW; x++) {
+        let n = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            n += simCells[((y + dy + SH) % SH) * SW + ((x + dx + SW) % SW)];
+          }
+        }
+        const i = y * SW + x;
+        simNext[i] = simCells[i] ? (selected.sMask >> n) & 1 : (selected.bMask >> n) & 1;
+      }
+    }
+    [simCells, simNext] = [simNext, simCells];
+  }
+
+  function sizeSim() {
+    simDpr = window.devicePixelRatio || 1;
+    const w = sim.clientWidth || sim.parentElement.clientWidth - 28;
+    simCell = w / SW;
+    sim.width = Math.round(w * simDpr);
+    sim.height = Math.round(simCell * SH * simDpr);
+    sim.style.height = (simCell * SH) + 'px';
+    drawSim();
+  }
+
+  function drawSim() {
+    sctx.setTransform(simDpr, 0, 0, simDpr, 0, 0);
+    sctx.fillStyle = css('--cell-dead');
+    sctx.fillRect(0, 0, sim.width / simDpr, sim.height / simDpr);
+    sctx.fillStyle = [css('--muted'), css('--stable'), css('--explodes')][selected.cls];
+    const gap = simCell > 4 ? 1 : 0;
+    for (let y = 0; y < SH; y++) {
+      for (let x = 0; x < SW; x++) {
+        if (simCells[y * SW + x]) {
+          sctx.fillRect(x * simCell + gap / 2, y * simCell + gap / 2, simCell - gap, simCell - gap);
+        }
+      }
+    }
+  }
+
+  function simLoop(now) {
+    if (simRunning) {
+      simAcc += (now - simLast) / 1000;
+      let steps = Math.min(Math.floor(simAcc * 18), 4);
+      if (steps > 0) {
+        simAcc -= steps / 18;
+        while (steps--) simStep();
+        drawSim();
+      }
+    }
+    simLast = now;
+    requestAnimationFrame(simLoop);
+  }
+
+  function startSim() {
+    document.getElementById('simRule').textContent = selected.label;
+    document.getElementById('simVerdict').textContent = CLS_NAME[selected.cls];
+    document.getElementById('simOpen').href =
+      'conway.html?rule=B' + maskDigits(selected.bMask) + '/S' + maskDigits(selected.sMask);
+    seedSim();
+    simRunning = true;
+    document.getElementById('simPlay').textContent = 'Pause';
+    drawSim();
+  }
+
+  document.getElementById('simPlay').addEventListener('click', () => {
+    simRunning = !simRunning;
+    document.getElementById('simPlay').textContent = simRunning ? 'Pause' : 'Play';
+  });
+  document.getElementById('simReseed').addEventListener('click', () => {
+    seedSim();
+    drawSim();
+  });
+
+  // ---------- init ----------
+  window.addEventListener('resize', () => { sizeMap(); sizeSim(); });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    drawMap(); drawSim();
+  });
+  refreshModes();
+  sizeSim();
+  startSim();
+  requestAnimationFrame(simLoop);
+})();
+</script>
+</body>
+</html>
