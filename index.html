@@ -199,7 +199,6 @@ function resize() {
 /* ---- entities ---- */
 function addColony(x, y) {
   for (const c of colonies) if (Math.hypot(c.x - x, c.y - y) < 70) { flashHint('Too close to another colony'); return; }
-  if (colonies.length >= 10) { flashHint('Max 10 colonies'); return; }
   const col = { x, y, stored: 0, spawned: 0, alive: 0, field: null, tint: COLONY_TINTS[colonySeq++ % COLONY_TINTS.length] };
   colonies.push(col);
   fieldsDirty = true;
