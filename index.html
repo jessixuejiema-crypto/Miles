@@ -96,7 +96,8 @@
     <span class="dot" style="background:#ff5c46"></span>rivals sometimes fight on contact, and stealing a claimed food pile gets you chased — only one walks away<br>
     <span class="dot" style="background:#8a8272"></span>an ant that searches 1 minute without finding food starves; an emptied colony sends out a fresh worker<br>
     <span class="dot" style="background:#c8b88a"></span>ants sharpen with age — eyesight grows 20→50 px, they learn from every wall they hit, and blocked ants head for gaps they can see<br>
-    <span class="dot" style="background:#9ac8e0"></span>everything an ant sees or bumps into joins its colony's shared map, and re-seeing a changed spot updates the memory
+    <span class="dot" style="background:#9ac8e0"></span>everything an ant sees or bumps into joins its colony's shared map, and re-seeing a changed spot updates the memory<br>
+    <span class="dot" style="background:#ff9d7a"></span>food gives off a scent that drifts through gaps (warm haze) — ants smell it from afar and home in
   </div>
   <div id="hint"></div>
 </div>
@@ -125,6 +126,8 @@ const EXPLORER_EVERY = 5;  // every 5th ant = explorer (20%)
 let W = 0, H = 0, gw = 0, gh = 0;
 let foodP = new Float32Array(0), traffic = new Float32Array(0), walls = new Uint8Array(0);
 let blurA = new Float32Array(0), blurB = new Float32Array(0);
+let foodScent = new Float32Array(0), scentB = new Float32Array(0);
+let stepN = 0;
 let colonies = [], foods = [], ants = [], effects = [];
 let colonySeq = 0;
 const COLONY_TINTS = ['#e8e0cf', '#a8d8ff', '#ffb8d8', '#b8f0a0', '#d8c0ff', '#ffe08a', '#90e8d0', '#ff9f8a', '#c0c8ff', '#d0e890'];
@@ -192,6 +195,7 @@ function resize() {
   W = nw; H = nh; gw = ngw; gh = ngh;
   foodP = nFood; traffic = nTraf; walls = nWalls;
   blurA = new Float32Array(gw * gh); blurB = new Float32Array(gw * gh);
+  foodScent = new Float32Array(gw * gh); scentB = new Float32Array(gw * gh);
   cv.width = W; cv.height = H;
   pherCv.width = gw; pherCv.height = gh;
   wallCv.width = gw; wallCv.height = gh;
@@ -424,9 +428,13 @@ function stepAnt(a) {
       }
     }
     let onTrail = false;
-    if (!sawFood && !a.explorer && a.wpT <= 0) {
-      // followers sniff the food trail: strongest scent wins, so popular paths dominate
-      const l = sense(foodP, a, -SENSOR_ANG), c = sense(foodP, a, 0), r = sense(foodP, a, SENSOR_ANG);
+    if (!sawFood && a.wpT <= 0) {
+      // antennae pick up food scent drifting from piles plus (followers only)
+      // the food trail markers: the strongest smell wins
+      const w = a.explorer ? 0 : 1; // explorers ignore markers but smell like anyone
+      const l = sense(foodScent, a, -SENSOR_ANG) * 1.2 + w * sense(foodP, a, -SENSOR_ANG);
+      const c = sense(foodScent, a, 0) * 1.2 + w * sense(foodP, a, 0);
+      const r = sense(foodScent, a, SENSOR_ANG) * 1.2 + w * sense(foodP, a, SENSOR_ANG);
       if (Math.max(l, c, r) > 0.03) {
         onTrail = true;
         if (c >= l && c >= r) { /* stay the course */ }
@@ -558,6 +566,31 @@ function stepAnt(a) {
   }
 }
 
+/* ---- food scent: piles give off a smell that drifts through gaps ---- */
+function diffuseScent() {
+  for (const f of foods) {
+    const i = cellIdx(f.x, f.y);
+    if (i >= 0 && !walls[i]) foodScent[i] = 3;
+  }
+  const D = 0.35, LAM = 0.988;
+  for (let y = 0; y < gh; y++) {
+    const row = y * gw;
+    for (let x = 0; x < gw; x++) {
+      const i = row + x;
+      if (walls[i]) { scentB[i] = 0; continue; }
+      const c = foodScent[i];
+      let sum = 0, n = 0;
+      if (x > 0      && !walls[i - 1])  { sum += foodScent[i - 1];  n++; }
+      if (x < gw - 1 && !walls[i + 1])  { sum += foodScent[i + 1];  n++; }
+      if (y > 0      && !walls[i - gw]) { sum += foodScent[i - gw]; n++; }
+      if (y < gh - 1 && !walls[i + gw]) { sum += foodScent[i + gw]; n++; }
+      const v = (c + ((n ? sum / n : c) - c) * D) * LAM;
+      scentB[i] = v < 0.0005 ? 0 : v;
+    }
+  }
+  const t = foodScent; foodScent = scentB; scentB = t;
+}
+
 /* ---- combat: rival colonies sometimes fight on contact, one wins ---- */
 function fightList(A, B) {
   const same = A === B;
@@ -628,6 +661,7 @@ function resolveFights() {
 /* ---- sim step ---- */
 function step() {
   simTime += STEP;
+  if ((stepN++ & 1) === 0) diffuseScent();
   fieldTimer += STEP;
   if (fieldsDirty || fieldTimer >= 1.5) {
     for (const c of colonies) buildField(c);
@@ -723,11 +757,21 @@ function drawMarkers() {
     // keep the trail core at its true count, let the blur supply a soft halo
     const t0 = traffic[i], tb = blurA[i];
     const v = t0 > tb ? t0 : tb;
+    const sc = foodScent[i];
     const j = i * 4;
-    if (v < 0.05) { d[j + 3] = 0; continue; }
-    const k = ((v > LUT_MAX ? LUT_MAX : v) * LUT_RES) | 0;
-    d[j] = lut[k * 3]; d[j + 1] = lut[k * 3 + 1]; d[j + 2] = lut[k * 3 + 2];
-    d[j + 3] = Math.min(215, 45 + v * 80) | 0;
+    if (v < 0.05 && sc < 0.05) { d[j + 3] = 0; continue; }
+    let cr = 0, cg = 0, cb2 = 0, ca = 0;
+    if (v >= 0.05) {
+      const k = ((v > LUT_MAX ? LUT_MAX : v) * LUT_RES) | 0;
+      cr = lut[k * 3]; cg = lut[k * 3 + 1]; cb2 = lut[k * 3 + 2];
+      ca = Math.min(215, 45 + v * 80);
+    }
+    if (sc >= 0.05) { // warm berry-scented haze
+      cr = Math.min(255, cr + sc * 55); cg = Math.min(255, cg + sc * 22); cb2 = Math.min(255, cb2 + sc * 10);
+      ca = Math.min(215, ca + 14 + sc * 16);
+    }
+    d[j] = cr | 0; d[j + 1] = cg | 0; d[j + 2] = cb2 | 0;
+    d[j + 3] = ca | 0;
   }
   pherCtx.putImageData(pherImg, 0, 0);
   ctx.imageSmoothingEnabled = true;
@@ -938,14 +982,14 @@ playBtn.addEventListener('click', () => {
 document.getElementById('reset').addEventListener('click', () => {
   ants = []; effects = []; delivered = 0; simTime = 0; playing = false;
   playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
-  foodP.fill(0); traffic.fill(0);
+  foodP.fill(0); traffic.fill(0); foodScent.fill(0);
   for (const c of colonies) { c.stored = 0; c.spawned = 0; c.alive = 0; c.known.fill(0); c.foodMemo = []; }
 });
 document.getElementById('clearAll').addEventListener('click', () => {
   ants = []; colonies = []; foods = []; effects = []; delivered = 0; simTime = 0; playing = false;
   colonySeq = 0; selectedColony = null;
   playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
-  foodP.fill(0); traffic.fill(0); walls.fill(0); redrawWalls();
+  foodP.fill(0); traffic.fill(0); foodScent.fill(0); walls.fill(0); redrawWalls();
 });
 document.getElementById('speed').addEventListener('change', e => { speedMul = +e.target.value; });
 document.getElementById('trails').addEventListener('change', e => { showTrails = e.target.checked; });
