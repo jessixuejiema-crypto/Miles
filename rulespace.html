@@ -133,6 +133,40 @@
   #mapTip .cls { font-weight: 600; }
   #progress { font-size: 0.8rem; color: var(--muted); margin-top: 8px; min-height: 1.1em; }
 
+  #preview {
+    position: absolute;
+    z-index: 3;
+    width: 216px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+    padding: 8px;
+    display: none;
+  }
+  #preview .head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+  }
+  #preview .head .rule { font-weight: 600; color: var(--stable); font-variant-numeric: tabular-nums; }
+  #preview .head .close {
+    margin-left: auto;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 0.95rem;
+    padding: 0 3px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  #preview .cls-line { font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 6px; }
+  #prevCanvas { display: block; width: 200px; height: 125px; border-radius: 5px; }
+  #preview .foot { margin-top: 6px; font-size: 0.72rem; }
+  #preview .foot a { color: var(--stable); cursor: pointer; }
+
   .sim-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
   .sim-head h2 { font-size: 0.95rem; margin: 0; }
   .sim-head .rule-label { font-variant-numeric: tabular-nums; color: var(--stable); font-weight: 600; }
@@ -185,6 +219,15 @@
     <div class="map-wrap">
       <canvas id="map"></canvas>
       <div id="mapTip"></div>
+      <div id="preview">
+        <div class="head">
+          <span class="rule" id="prevRule"></span>
+          <button class="close" id="prevClose" aria-label="Close preview">&#10005;</button>
+        </div>
+        <div class="cls-line" id="prevCls"></div>
+        <canvas id="prevCanvas"></canvas>
+        <div class="foot"><a id="prevWatch">Watch large below &darr;</a></div>
+      </div>
     </div>
     <div id="progress"></div>
     <p class="hint">
@@ -534,7 +577,80 @@
       cls: results[i]
     };
     startSim();
+    openPreview(ev);
   });
+
+  // ---------- click preview ----------
+  const preview = document.getElementById('preview');
+  const prevCanvas = document.getElementById('prevCanvas');
+  const pctx = prevCanvas.getContext('2d');
+  const PVW = 64, PVH = 40, PVN = PVW * PVH;
+  let prevCells = new Uint8Array(PVN), prevNext = new Uint8Array(PVN);
+  let prevOpen = false, prevAcc = 0;
+
+  function openPreview(ev) {
+    document.getElementById('prevRule').textContent = selected.label;
+    document.getElementById('prevCls').textContent = CLS_NAME[selected.cls];
+    for (let i = 0; i < PVN; i++) prevCells[i] = Math.random() < 0.28 ? 1 : 0;
+    const wrap = map.parentElement.getBoundingClientRect();
+    const cardW = 216, cardH = 212;
+    let x = ev.clientX - wrap.left + 14;
+    let y = ev.clientY - wrap.top + 14;
+    if (x + cardW > wrap.width) x = ev.clientX - wrap.left - cardW - 14;
+    if (y + cardH > wrap.height) y = ev.clientY - wrap.top - cardH - 14;
+    preview.style.left = Math.max(0, x) + 'px';
+    preview.style.top = Math.max(0, y) + 'px';
+    preview.style.display = 'block';
+    mapTip.style.display = 'none';
+    prevOpen = true;
+    prevAcc = 0;
+    const dp = window.devicePixelRatio || 1;
+    prevCanvas.width = Math.round(200 * dp);
+    prevCanvas.height = Math.round(125 * dp);
+    drawPreview();
+  }
+
+  function drawPreview() {
+    const dp = window.devicePixelRatio || 1;
+    pctx.setTransform(dp, 0, 0, dp, 0, 0);
+    pctx.fillStyle = css('--cell-dead');
+    pctx.fillRect(0, 0, 200, 125);
+    pctx.fillStyle = [css('--muted'), css('--stable'), css('--explodes')][selected.cls];
+    const s = 200 / PVW;
+    for (let y = 0; y < PVH; y++) {
+      for (let x = 0; x < PVW; x++) {
+        if (prevCells[y * PVW + x]) pctx.fillRect(x * s, y * s, s - 0.4, s - 0.4);
+      }
+    }
+  }
+
+  function prevStep() {
+    for (let y = 0; y < PVH; y++) {
+      for (let x = 0; x < PVW; x++) {
+        let n = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            n += prevCells[((y + dy + PVH) % PVH) * PVW + ((x + dx + PVW) % PVW)];
+          }
+        }
+        const i = y * PVW + x;
+        prevNext[i] = prevCells[i] ? (selected.sMask >> n) & 1 : (selected.bMask >> n) & 1;
+      }
+    }
+    [prevCells, prevNext] = [prevNext, prevCells];
+  }
+
+  function closePreview() {
+    prevOpen = false;
+    preview.style.display = 'none';
+  }
+  document.getElementById('prevClose').addEventListener('click', closePreview);
+  document.getElementById('prevWatch').addEventListener('click', () => {
+    closePreview();
+    document.getElementById('sim').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closePreview(); });
 
   // ---------- axis mode arrows ----------
   function refreshModes() {
@@ -544,6 +660,7 @@
     bEntries = axisEntries(bm.gap);
     sEntries = axisEntries(sm.gap);
     hover = -1;
+    closePreview();
     sizeMap();
     startCompute();
   }
@@ -614,6 +731,15 @@
         simAcc -= steps / 18;
         while (steps--) simStep();
         drawSim();
+      }
+    }
+    if (prevOpen) {
+      prevAcc += (now - simLast) / 1000;
+      let steps = Math.min(Math.floor(prevAcc * 15), 3);
+      if (steps > 0) {
+        prevAcc -= steps / 15;
+        while (steps--) prevStep();
+        drawPreview();
       }
     }
     simLast = now;
