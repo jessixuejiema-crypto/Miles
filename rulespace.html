@@ -15,9 +15,11 @@
     --grid-line: #e1e0d9;
     --baseline: #c3c2b7;
     --border: rgba(11, 11, 11, 0.10);
-    --stable: #2a78d6;     /* settles, bounded */
-    --explodes: #eb6834;   /* grows without limit */
-    --dies: #e1e0d9;       /* fades to nothing */
+    --stable: #2a78d6;     /* settles into oscillators, bounded */
+    --explodes: #eb6834;   /* spreads through the map */
+    --disappear: #1baf7a;  /* fades fast, leaves a few oscillators */
+    --still: #4a3aa7;      /* frozen: the starting cells never change */
+    --dies: #e1e0d9;       /* nothing left at all */
     --cell-dead: #f1f0ec;
     --good: #0ca30c;
   }
@@ -33,6 +35,8 @@
       --border: rgba(255, 255, 255, 0.10);
       --stable: #3987e5;
       --explodes: #d95926;
+      --disappear: #199e70;
+      --still: #9085e9;
       --dies: #2c2c2a;
       --cell-dead: #232322;
       --good: #0ca30c;
@@ -49,6 +53,8 @@
     --border: rgba(255, 255, 255, 0.10);
     --stable: #3987e5;
     --explodes: #d95926;
+    --disappear: #199e70;
+    --still: #9085e9;
     --dies: #2c2c2a;
     --cell-dead: #232322;
     --good: #0ca30c;
@@ -183,10 +189,12 @@
   <p class="subtitle">
     Every cell of this graph is one Life-like rule <code>B&hellip;/S&hellip;</code> —
     <strong>y&nbsp;axis&nbsp;=&nbsp;Birth set</strong>, <strong>x&nbsp;axis&nbsp;=&nbsp;Survive set</strong>.
-    Each rule is actually simulated from the same random soup and classified:
-    <em>unstable</em> rules blob out toward infinity, <em>stable</em> rules keep transforming but
-    settle without exploding (Conway's <code>B3/S2-3</code> lives here), and the rest quickly
-    disappear to nothing or a few little oscillators. The main view uses contiguous dash-ranges
+    Each rule is actually simulated from small random soups and sorted into five states:
+    <em>unstable</em> rules spread until they cover half the world, <em>stable</em> rules slowly
+    transform into oscillators and stay bounded (Conway's <code>B3/S2-3</code> lives here),
+    <em>disappear</em> rules fade fast leaving a few little oscillators, <em>still</em> rules
+    freeze with every starting cell alive and unchanged, and <em>nothing</em> rules die out
+    completely within a few generations. The main view uses contiguous dash-ranges
     like <code>3-7</code> or <code>6-7</code>; the arrows switch each axis to the split sets,
     shifting the gap by one — first tab <code>3,5-7</code>, second tab <code>3,6-7</code>.
     Click any cell to watch that rule run below. Full simulator: <a href="conway.html">conway.html</a>.
@@ -208,9 +216,11 @@
       </div>
     </div>
     <div class="legend">
-      <div class="item"><span class="swatch" style="background: var(--explodes)"></span> Unstable — expands to infinity</div>
-      <div class="item"><span class="swatch" style="background: var(--stable)"></span> Stable — transforms, stays bounded</div>
-      <div class="item"><span class="swatch" style="background: var(--dies)"></span> Dies — nothing or little oscillators</div>
+      <div class="item"><span class="swatch" style="background: var(--explodes)"></span> Unstable — spreads over half the world</div>
+      <div class="item"><span class="swatch" style="background: var(--stable)"></span> Stable — slowly becomes oscillators</div>
+      <div class="item"><span class="swatch" style="background: var(--disappear)"></span> Disappear — fades, leaves a few oscillators</div>
+      <div class="item"><span class="swatch" style="background: var(--still)"></span> Still — cells never change</div>
+      <div class="item"><span class="swatch" style="background: var(--dies)"></span> Nothing — dies out completely</div>
       <div class="item">&#9733; Conway B3/S2-3</div>
     </div>
   </div>
@@ -231,12 +241,14 @@
     </div>
     <div id="progress"></div>
     <p class="hint">
-      Method: each rule runs up to 320 generations on a bounded 36&times;36 grid seeded with the
-      same 30% random soup. If almost nothing is left it <em>dies</em>; if it stays dense or keeps
-      churning — or freezes only after filling the box — it is <em>unstable</em> (on an infinite
-      grid the blob would grow forever); if it settles into still lifes and small oscillators at
-      low density it is <em>stable</em>. Axis labels mark where each set's first number starts;
-      hover any cell for the exact rule.
+      Method: each rule runs up to 300 generations from a 10&times;10 random soup in the middle of
+      a bounded 50&times;50 arena — three different soups, majority vote. <em>Nothing</em>: the
+      population hits zero. <em>Still</em>: the pattern freezes almost immediately with the
+      starting cells intact. <em>Unstable</em>: the blob touches over half the world, stays dense,
+      or never stops churning. <em>Disappear</em>: it settles within ~40 generations with only a
+      few cells left. <em>Stable</em>: everything else — it transforms for a while and settles
+      bounded. Hover any cell for the exact rule; axis labels mark where each set's first number
+      starts.
     </p>
   </div>
 
@@ -301,24 +313,34 @@
   let bEntries = axisEntries(0), sEntries = axisEntries(0);
 
   // ---------- classifier ----------
-  const CW = 36, CH = 36, CN = CW * CH, GENS = 320, TAIL = 15;
-  const CLS_DIES = 0, CLS_STABLE = 1, CLS_EXPLODES = 2;
-  const CLS_NAME = ['Dies — nothing or little oscillators',
-                    'Stable — settles, stays bounded',
-                    'Unstable — expands to infinity'];
+  const CW = 50, CH = 50, CN = CW * CH, GENS = 300, TAIL = 15;
+  const CLS_NOTHING = 0, CLS_DISAPPEAR = 1, CLS_STILL = 2, CLS_STABLE = 3, CLS_EXPLODES = 4;
+  const CLS_NAME = ['Nothing — dies out completely, nothing left',
+                    'Disappear — fades fast, leaves a few oscillators',
+                    'Still — frozen: the starting cells never change',
+                    'Stable — slowly transforms into oscillators',
+                    'Unstable — spreads over half the world'];
 
-  // one fixed soup shared by every rule, so cells are comparable
-  const soup = new Uint8Array(CN);
-  {
-    let seed = 0x9e3779b9;
+  // three fixed 10x10 center soups shared by every rule; the verdict is a
+  // majority vote so one lucky or unlucky soup doesn't decide the class
+  function makeSoup(seedVal) {
+    const s = new Uint8Array(CN);
+    let seed = seedVal;
     const rnd = () => {
       seed ^= seed << 13; seed >>>= 0;
       seed ^= seed >> 17;
       seed ^= seed << 5; seed >>>= 0;
       return seed / 4294967296;
     };
-    for (let i = 0; i < CN; i++) soup[i] = rnd() < 0.30 ? 1 : 0;
+    const x0 = (CW - 10) >> 1, y0 = (CH - 10) >> 1;
+    for (let y = 0; y < 10; y++) {
+      for (let x = 0; x < 10; x++) {
+        s[(y0 + y) * CW + (x0 + x)] = rnd() < 0.5 ? 1 : 0;
+      }
+    }
+    return s;
   }
+  const SOUPS = [makeSoup(0x9e3779b9), makeSoup(987654321), makeSoup(555555555)];
 
   // bounded-grid neighbor indices; index CN is a permanently-dead ghost cell
   const nbr = new Int32Array(CN * 8);
@@ -336,21 +358,17 @@
   }
 
   const clsA = new Uint8Array(CN + 1), clsB = new Uint8Array(CN + 1);
+  const everAlive = new Uint8Array(CN);
 
-  function verdict(density, activity) {
-    if (density < 0.02) return CLS_DIES;
-    // a grid frozen solid means the blob hit the walls — on an infinite
-    // grid it would keep expanding, so saturation counts as unstable
-    if (density > 0.35 || activity > 0.12) return CLS_EXPLODES;
-    return CLS_STABLE;
-  }
-
-  function classify(bMask, sMask) {
+  function classifyOne(bMask, sMask, soup, pop0) {
     let cur = clsA, nxt = clsB;
     cur.fill(0);
     cur.set(soup);
+    everAlive.set(soup);
+    let coverage = pop0;
+    const spreadLimit = CN * 0.6;   // "covers mostly half of the world"
     const hashes = [0, 0];
-    let settledRuns = 0;
+    let lastHash = -1, p1Runs = 0, firstP1 = -1, settledRuns = 0;
     let dSum = 0, aSum = 0;
     for (let g = 0; g < GENS; g++) {
       let pop = 0, act = 0, h = 0x811c9dc5;
@@ -362,19 +380,49 @@
         nxt[i] = v;
         pop += v;
         act += v ^ cur[i];
+        if (v && !everAlive[i]) { everAlive[i] = 1; coverage++; }
         h ^= v;
         h = Math.imul(h, 0x01000193);
       }
       [cur, nxt] = [nxt, cur];
-      if (pop === 0) return CLS_DIES;
+      h = h >>> 0;
+      if (pop === 0) return CLS_NOTHING;
+      if (coverage >= spreadLimit) return CLS_EXPLODES;
       if (g >= GENS - TAIL) { dSum += pop; aSum += act; }
-      // settled early: the state matches the one from 2 generations ago,
-      // which covers still-life fields and blinker-type period-2 debris
-      if ((h >>> 0) === hashes[g % 2]) settledRuns++; else settledRuns = 0;
-      hashes[g % 2] = h >>> 0;
-      if (settledRuns >= 4) return verdict(pop / CN, 0);
+      if (h === lastHash) { p1Runs++; if (firstP1 < 0) firstP1 = g; }
+      else { p1Runs = 0; firstP1 = -1; }
+      lastHash = h;
+      // period 1 or 2: state matches the one from 2 generations ago
+      if (h === hashes[g % 2]) settledRuns++; else settledRuns = 0;
+      hashes[g % 2] = h;
+      if (p1Runs >= 3 && firstP1 <= 5 && pop >= 0.85 * pop0) return CLS_STILL;
+      if (settledRuns >= 4) {
+        if (pop / CN >= 0.35) return CLS_EXPLODES;
+        if (g <= 40 && pop <= 24) return CLS_DISAPPEAR;
+        return CLS_STABLE;
+      }
     }
-    return verdict(dSum / TAIL / CN, aSum / TAIL / CN);
+    const density = dSum / TAIL / CN, activity = aSum / TAIL / CN;
+    if (density >= 0.35 || activity >= 0.10) return CLS_EXPLODES;
+    if (dSum / TAIL <= 15) return CLS_DISAPPEAR;
+    return CLS_STABLE;
+  }
+
+  function classify(bMask, sMask) {
+    const votes = [];
+    for (const soup of SOUPS) {
+      let pop0 = 0;
+      for (let i = 0; i < CN; i++) pop0 += soup[i];
+      votes.push(classifyOne(bMask, sMask, soup, pop0));
+    }
+    const count = {};
+    for (const v of votes) count[v] = (count[v] || 0) + 1;
+    for (const v of votes) if (count[v] >= 2) return v;
+    // three different answers: still wins if present, else the middle
+    // verdict on the nothing < disappear < stable < unstable scale
+    if (votes.includes(CLS_STILL)) return CLS_STILL;
+    const order = v => v === CLS_NOTHING ? 0 : v === CLS_DISAPPEAR ? 1 : v === CLS_STABLE ? 2 : 3;
+    return votes.slice().sort((a, b) => order(a) - order(b))[1];
   }
 
   // ---------- map computation (chunked, cached) ----------
@@ -463,7 +511,8 @@
     const w = map.width / dpr, h = map.height / dpr;
     mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     mctx.clearRect(0, 0, w, h);
-    const colors = [css('--dies'), css('--stable'), css('--explodes')];
+    const colors = [css('--dies'), css('--disappear'), css('--still'),
+                    css('--stable'), css('--explodes')];
     const pending = css('--cell-dead');
     const ns = sEntries.length;
 
@@ -626,7 +675,8 @@
     pctx.setTransform(dp, 0, 0, dp, 0, 0);
     pctx.fillStyle = css('--cell-dead');
     pctx.fillRect(0, 0, 200, 200);
-    pctx.fillStyle = [css('--muted'), css('--stable'), css('--explodes')][selected.cls];
+    pctx.fillStyle = [css('--muted'), css('--disappear'), css('--still'),
+       css('--stable'), css('--explodes')][selected.cls];
     const s = 200 / PVW;
     for (let y = 0; y < PVH; y++) {
       for (let x = 0; x < PVW; x++) {
@@ -728,7 +778,8 @@
     sctx.setTransform(simDpr, 0, 0, simDpr, 0, 0);
     sctx.fillStyle = css('--cell-dead');
     sctx.fillRect(0, 0, sim.width / simDpr, sim.height / simDpr);
-    sctx.fillStyle = [css('--muted'), css('--stable'), css('--explodes')][selected.cls];
+    sctx.fillStyle = [css('--muted'), css('--disappear'), css('--still'),
+       css('--stable'), css('--explodes')][selected.cls];
     const gap = simCell > 4 ? 1 : 0;
     for (let y = 0; y < SH; y++) {
       for (let x = 0; x < SW; x++) {
