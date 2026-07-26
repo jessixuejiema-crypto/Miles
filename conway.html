@@ -684,6 +684,8 @@
   window.addEventListener('resize', () => { sizeBoard(); sizeChart(); });
   const darkWatch = window.matchMedia('(prefers-color-scheme: dark)');
   darkWatch.addEventListener('change', render);
+  new MutationObserver(render)
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   if (ruleMatch) {
     // arriving from the rule-space map: a random soup shows the rule's character best
     for (let i = 0; i < cells.length; i++) cells[i] = Math.random() < 0.28 ? 1 : 0;

@@ -645,6 +645,8 @@
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     drawMap(); drawSim();
   });
+  new MutationObserver(() => { drawMap(); drawSim(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   refreshModes();
   sizeSim();
   startSim();
