@@ -163,7 +163,7 @@
     line-height: 1;
   }
   #preview .cls-line { font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 6px; }
-  #prevCanvas { display: block; width: 200px; height: 125px; border-radius: 5px; }
+  #prevCanvas { display: block; width: 200px; height: 200px; border-radius: 5px; }
   #preview .foot { margin-top: 6px; font-size: 0.72rem; }
   #preview .foot a { color: var(--stable); cursor: pointer; }
 
@@ -173,7 +173,7 @@
   .sim-head .verdict { font-size: 0.8rem; color: var(--text-secondary); }
   .sim-head .spacer { flex: 1; }
   .sim-head a { font-size: 0.8rem; color: var(--stable); }
-  #sim { display: block; width: 100%; border-radius: 8px; }
+  #sim { display: block; width: 100%; max-width: 560px; margin: 0 auto; border-radius: 8px; }
   .hint { color: var(--muted); font-size: 0.78rem; margin: 8px 0 0; line-height: 1.4; }
 </style>
 </head>
@@ -584,16 +584,27 @@
   const preview = document.getElementById('preview');
   const prevCanvas = document.getElementById('prevCanvas');
   const pctx = prevCanvas.getContext('2d');
-  const PVW = 64, PVH = 40, PVN = PVW * PVH;
+  const PVW = 100, PVH = 100, PVN = PVW * PVH;
   let prevCells = new Uint8Array(PVN), prevNext = new Uint8Array(PVN);
   let prevOpen = false, prevAcc = 0;
+
+  // a 10×10 random soup dropped in the middle of the 100×100 arena
+  function seedCenterSoup(cells, w, h) {
+    cells.fill(0);
+    const x0 = (w - 10) >> 1, y0 = (h - 10) >> 1;
+    for (let y = 0; y < 10; y++) {
+      for (let x = 0; x < 10; x++) {
+        cells[(y0 + y) * w + (x0 + x)] = Math.random() < 0.5 ? 1 : 0;
+      }
+    }
+  }
 
   function openPreview(ev) {
     document.getElementById('prevRule').textContent = selected.label;
     document.getElementById('prevCls').textContent = CLS_NAME[selected.cls];
-    for (let i = 0; i < PVN; i++) prevCells[i] = Math.random() < 0.28 ? 1 : 0;
+    seedCenterSoup(prevCells, PVW, PVH);
     const wrap = map.parentElement.getBoundingClientRect();
-    const cardW = 216, cardH = 212;
+    const cardW = 216, cardH = 292;
     let x = ev.clientX - wrap.left + 14;
     let y = ev.clientY - wrap.top + 14;
     if (x + cardW > wrap.width) x = ev.clientX - wrap.left - cardW - 14;
@@ -606,7 +617,7 @@
     prevAcc = 0;
     const dp = window.devicePixelRatio || 1;
     prevCanvas.width = Math.round(200 * dp);
-    prevCanvas.height = Math.round(125 * dp);
+    prevCanvas.height = Math.round(200 * dp);
     drawPreview();
   }
 
@@ -614,24 +625,27 @@
     const dp = window.devicePixelRatio || 1;
     pctx.setTransform(dp, 0, 0, dp, 0, 0);
     pctx.fillStyle = css('--cell-dead');
-    pctx.fillRect(0, 0, 200, 125);
+    pctx.fillRect(0, 0, 200, 200);
     pctx.fillStyle = [css('--muted'), css('--stable'), css('--explodes')][selected.cls];
     const s = 200 / PVW;
     for (let y = 0; y < PVH; y++) {
       for (let x = 0; x < PVW; x++) {
-        if (prevCells[y * PVW + x]) pctx.fillRect(x * s, y * s, s - 0.4, s - 0.4);
+        if (prevCells[y * PVW + x]) pctx.fillRect(x * s, y * s, s, s);
       }
     }
   }
 
   function prevStep() {
+    // bounded edges, so an unstable blob visibly expands until it hits the walls
     for (let y = 0; y < PVH; y++) {
       for (let x = 0; x < PVW; x++) {
         let n = 0;
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
             if (dx === 0 && dy === 0) continue;
-            n += prevCells[((y + dy + PVH) % PVH) * PVW + ((x + dx + PVW) % PVW)];
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= PVW || ny < 0 || ny >= PVH) continue;
+            n += prevCells[ny * PVW + nx];
           }
         }
         const i = y * PVW + x;
@@ -671,14 +685,14 @@
   document.getElementById('sNext').addEventListener('click', () => { sMode = cycle(sMode, 1); refreshModes(); });
 
   // ---------- live viewer for the selected rule ----------
-  const SW = 110, SH = 64, SN = SW * SH;
+  const SW = 100, SH = 100, SN = SW * SH;
   let simCells = new Uint8Array(SN), simNext = new Uint8Array(SN);
   const sim = document.getElementById('sim');
   const sctx = sim.getContext('2d');
   let simRunning = true, simLast = 0, simAcc = 0, simDpr = 1, simCell = 8;
 
   function seedSim() {
-    for (let i = 0; i < SN; i++) simCells[i] = Math.random() < 0.28 ? 1 : 0;
+    seedCenterSoup(simCells, SW, SH);
   }
 
   function simStep() {
@@ -688,7 +702,9 @@
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
             if (dx === 0 && dy === 0) continue;
-            n += simCells[((y + dy + SH) % SH) * SW + ((x + dx + SW) % SW)];
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= SW || ny < 0 || ny >= SH) continue;
+            n += simCells[ny * SW + nx];
           }
         }
         const i = y * SW + x;
