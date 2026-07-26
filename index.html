@@ -95,7 +95,8 @@
     <span class="dot" style="background:#e8e0cf"></span>follower ant (80%) — follows popular trails<br>
     <span class="dot" style="background:#ff5c46"></span>rivals sometimes fight on contact, and stealing a claimed food pile gets you chased — only one walks away<br>
     <span class="dot" style="background:#8a8272"></span>an ant that searches 1 minute without finding food starves; an emptied colony sends out a fresh worker<br>
-    <span class="dot" style="background:#c8b88a"></span>ants sharpen with age — eyesight grows 20→50 px, they learn from every wall they hit, and blocked ants head for gaps they can see
+    <span class="dot" style="background:#c8b88a"></span>ants sharpen with age — eyesight grows 20→50 px, they learn from every wall they hit, and blocked ants head for gaps they can see<br>
+    <span class="dot" style="background:#9ac8e0"></span>everything an ant sees or bumps into joins its colony's shared map, and re-seeing a changed spot updates the memory
   </div>
   <div id="hint"></div>
 </div>
@@ -183,6 +184,11 @@ function resize() {
     nTraf[y * ngw + x] = traffic[y * gw + x];
     nWalls[y * ngw + x] = walls[y * gw + x];
   }
+  for (const c of colonies) {
+    const nk = new Uint8Array(ngw * ngh);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) nk[y * ngw + x] = c.known[y * gw + x];
+    c.known = nk;
+  }
   W = nw; H = nh; gw = ngw; gh = ngh;
   foodP = nFood; traffic = nTraf; walls = nWalls;
   blurA = new Float32Array(gw * gh); blurB = new Float32Array(gw * gh);
@@ -200,7 +206,9 @@ function resize() {
 /* ---- entities ---- */
 function addColony(x, y) {
   for (const c of colonies) if (Math.hypot(c.x - x, c.y - y) < 70) { flashHint('Too close to another colony'); return; }
-  const col = { x, y, stored: 0, spawned: 0, alive: 0, field: null, tint: COLONY_TINTS[colonySeq++ % COLONY_TINTS.length] };
+  const col = { x, y, stored: 0, spawned: 0, alive: 0, field: null,
+    known: new Uint8Array(gw * gh), foodMemo: [],
+    tint: COLONY_TINTS[colonySeq++ % COLONY_TINTS.length] };
   colonies.push(col);
   fieldsDirty = true;
   if (playing) spawnAnt(col);
@@ -267,22 +275,60 @@ function pickWaypoint(a, gx, gy) {
 
 /* each colony gets a BFS distance field over the wall grid: a lost ant
    "remembers the terrain" and can always find its way home around walls */
-let fieldsDirty = true;
+let fieldsDirty = true, fieldTimer = 0;
 function buildField(col) {
+  // routed over the colony's OBSERVED map: only walls somebody saw or bumped
+  // into count, unexplored ground is optimistically assumed open
   const n = gw * gh, d = new Int32Array(n).fill(-1);
   col.field = d;
+  const kn = col.known;
   const start = cellIdx(col.x, col.y);
-  if (start < 0 || walls[start]) return;
+  if (start < 0 || kn[start] === 2) return;
   const q = new Int32Array(n);
   let qh = 0, qt = 0;
   d[start] = 0; q[qt++] = start;
   while (qh < qt) {
     const i = q[qh++], x = i % gw, nd = d[i] + 1;
-    if (x > 0        && d[i - 1]  < 0 && !walls[i - 1])  { d[i - 1]  = nd; q[qt++] = i - 1; }
-    if (x < gw - 1   && d[i + 1]  < 0 && !walls[i + 1])  { d[i + 1]  = nd; q[qt++] = i + 1; }
-    if (i >= gw      && d[i - gw] < 0 && !walls[i - gw]) { d[i - gw] = nd; q[qt++] = i - gw; }
-    if (i < n - gw   && d[i + gw] < 0 && !walls[i + gw]) { d[i + gw] = nd; q[qt++] = i + gw; }
+    if (x > 0        && d[i - 1]  < 0 && kn[i - 1]  !== 2) { d[i - 1]  = nd; q[qt++] = i - 1; }
+    if (x < gw - 1   && d[i + 1]  < 0 && kn[i + 1]  !== 2) { d[i + 1]  = nd; q[qt++] = i + 1; }
+    if (i >= gw      && d[i - gw] < 0 && kn[i - gw] !== 2) { d[i - gw] = nd; q[qt++] = i - gw; }
+    if (i < n - gw   && d[i + gw] < 0 && kn[i + gw] !== 2) { d[i + gw] = nd; q[qt++] = i + gw; }
   }
+}
+
+function observe(a) {
+  // whatever an ant sees becomes part of its colony's map; re-seeing a
+  // changed spot (wall removed, wall added) overwrites the stale memory
+  const kn = a.colony.known, v = vision(a);
+  let i = cellIdx(a.x, a.y);
+  if (i >= 0) kn[i] = walls[i] ? 2 : 1;
+  for (let k = 0; k < 5; k++) {
+    const ang = Math.random() * TAU, d = Math.random() * v;
+    const px = a.x + Math.cos(ang) * d, py = a.y + Math.sin(ang) * d;
+    const mi = cellIdx((a.x + px) / 2, (a.y + py) / 2);
+    if (mi >= 0) {
+      kn[mi] = walls[mi] ? 2 : 1;
+      if (walls[mi]) continue; // can't see past that wall
+    }
+    i = cellIdx(px, py);
+    if (i >= 0) kn[i] = walls[i] ? 2 : 1;
+  }
+}
+
+function foodNear(x, y) {
+  for (const f of foods) {
+    const dx = f.x - x, dy = f.y - y;
+    if (dx * dx + dy * dy < (f.r + 24) * (f.r + 24)) return true;
+  }
+  return false;
+}
+function rememberFood(col, x, y) {
+  for (const m of col.foodMemo) {
+    const dx = m.x - x, dy = m.y - y;
+    if (dx * dx + dy * dy < 900) { m.x = x; m.y = y; return; }
+  }
+  if (col.foodMemo.length >= 12) col.foodMemo.shift();
+  col.foodMemo.push({ x, y });
 }
 function fieldDir(col, x, y) {
   // angle toward the neighboring cell that is closer to home, NaN if unknown
@@ -325,16 +371,17 @@ function stepAnt(a) {
   if (a.fightCd > 0) a.fightCd -= STEP;
   const col = a.colony;
   a.guided = false;
+  observe(a);
   let goal = NaN, goalX = 0, goalY = 0; // where the ant is trying to get (home, or food it spotted)
 
   if (a.carrying) {
     // head home, marking the food trail behind it as it goes
     goal = Math.atan2(col.y - a.y, col.x - a.x); goalX = col.x; goalY = col.y;
-    if (a.sinceFood > 110) {
-      // hauling way too long: remember the terrain and walk the sure way home
+    if (a.sinceFood > 110 && a.wpT <= 0) {
+      // hauling way too long: walk home by the colony's remembered map
       const fa = fieldDir(col, a.x, a.y);
       if (!Number.isNaN(fa)) {
-        a.guided = true; a.wpT = 0;
+        a.guided = true;
         a.h = turnToward(a.h, fa, 8 * STEP);
         a.h += (Math.random() - 0.5) * 0.08;
         a.swayAmp = 0.3;
@@ -372,6 +419,7 @@ function stepAnt(a) {
       if (dx * dx + dy * dy < R * R && clearLine(a.x, a.y, f.x, f.y)) {
         foodAng = Math.atan2(dy, dx); goalX = f.x; goalY = f.y;
         sawFood = true;
+        rememberFood(col, f.x, f.y);
         break;
       }
     }
@@ -386,7 +434,20 @@ function stepAnt(a) {
         else a.h += 0.15;
       }
     }
+    let memo = null;
+    if (!sawFood && !onTrail && a.hunger > 30 && col.foodMemo.length) {
+      let bd = Infinity;
+      for (const m of col.foodMemo) {
+        const d2 = (m.x - a.x) * (m.x - a.x) + (m.y - a.y) * (m.y - a.y);
+        if (d2 < bd) { bd = d2; memo = m; }
+      }
+      if (memo && bd < vision(a) * vision(a) && clearLine(a.x, a.y, memo.x, memo.y) && !foodNear(memo.x, memo.y)) {
+        col.foodMemo.splice(col.foodMemo.indexOf(memo), 1); // saw it's gone: memory updated
+        memo = null;
+      }
+    }
     if (sawFood) goal = foodAng;
+    else if (memo) { goal = Math.atan2(memo.y - a.y, memo.x - a.x); goalX = memo.x; goalY = memo.y; }
     else if (a.sinceHome > 200 && !onTrail) {
       goal = Math.atan2(col.y - a.y, col.x - a.x); goalX = col.x; goalY = col.y;
     }
@@ -401,7 +462,7 @@ function stepAnt(a) {
       // lost too long: trek home to regroup
       const fa = a.sinceHome > 320 ? fieldDir(col, a.x, a.y) : NaN;
       if (!Number.isNaN(fa)) {
-        a.guided = true; a.wpT = 0;
+        a.guided = true;
         a.h = turnToward(a.h, fa, 8 * STEP);
         a.h += (Math.random() - 0.5) * 0.08;
         a.swayAmp = 0.3;
@@ -427,6 +488,7 @@ function stepAnt(a) {
       if (dx * dx + dy * dy < (f.r + 3) * (f.r + 3)) {
         if (!f.owner) f.owner = a.colony;          // first colony to harvest claims the pile
         else if (f.owner !== a.colony) startChase(a, f); // stealing claimed food gets you chased
+        rememberFood(col, f.x, f.y);
         f.amount--;
         if (f.amount <= 0) foods.splice(i, 1); else f.r = foodRadius(f.amount);
         a.carrying = true; a.hunger = 0; a.sinceFood = 0; a.h += Math.PI;
@@ -471,7 +533,14 @@ function stepAnt(a) {
     a.h += Math.PI + (Math.random() - 0.5);
     a.lastHitT = simTime;
     a.xp = Math.min(120, a.xp + 2); // mistakes make the next look sharper
-    if (!Number.isNaN(goal) && !a.guided && ++a.hits >= 3) {
+    const bc = (nx / CELL) | 0, br = (ny / CELL) | 0;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      const cxx = bc + ox, cyy = br + oy;
+      if (cxx < 0 || cyy < 0 || cxx >= gw || cyy >= gh) continue;
+      const bi = cyy * gw + cxx;
+      a.colony.known[bi] = walls[bi] ? 2 : 1; // felt the wall: it's on the map now
+    }
+    if (!Number.isNaN(goal) && ++a.hits >= 3) {
       // three strikes on this wall: stop trying this spot entirely and
       // relocate to a random reachable point, farther away every retry,
       // so the ant can never loop between the same two places forever
@@ -559,7 +628,11 @@ function resolveFights() {
 /* ---- sim step ---- */
 function step() {
   simTime += STEP;
-  if (fieldsDirty) { for (const c of colonies) buildField(c); fieldsDirty = false; }
+  fieldTimer += STEP;
+  if (fieldsDirty || fieldTimer >= 1.5) {
+    for (const c of colonies) buildField(c);
+    fieldsDirty = false; fieldTimer = 0;
+  }
   for (let i = 0; i < foodP.length; i++) {
     const f = foodP[i] * DECAY; foodP[i] = f < 0.002 ? 0 : f;
     const t = traffic[i] * DECAY; traffic[i] = t < 0.002 ? 0 : t;
@@ -866,7 +939,7 @@ document.getElementById('reset').addEventListener('click', () => {
   ants = []; effects = []; delivered = 0; simTime = 0; playing = false;
   playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
   foodP.fill(0); traffic.fill(0);
-  for (const c of colonies) { c.stored = 0; c.spawned = 0; c.alive = 0; }
+  for (const c of colonies) { c.stored = 0; c.spawned = 0; c.alive = 0; c.known.fill(0); c.foodMemo = []; }
 });
 document.getElementById('clearAll').addEventListener('click', () => {
   ants = []; colonies = []; foods = []; effects = []; delivered = 0; simTime = 0; playing = false;
