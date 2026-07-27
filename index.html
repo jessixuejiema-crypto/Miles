@@ -467,9 +467,17 @@
   .act.gold { background: var(--gold); border-color: var(--gold); color: #fff; }
   .act.quiet { color: var(--muted); }
 
+  /* Pet bar: hatching eggs wobble, resting pets dim */
+  .chip.egg .c-emoji { animation: wobble 2.2s ease-in-out infinite; }
+  @keyframes wobble {
+    0%, 100% { transform: rotate(-8deg); }
+    50%      { transform: rotate(8deg); }
+  }
+  .chip.pet:not(.on) .c-emoji { opacity: 0.5; filter: grayscale(0.6); }
+
   @media (prefers-reduced-motion: reduce) {
     .cell .plant, .chip, .act { transition: none; }
-    .cell.ripe .plant { animation: none; }
+    .cell.ripe .plant, .chip.egg .c-emoji { animation: none; }
     .pop { animation-duration: 0.01s; }
   }
 </style>
@@ -487,6 +495,7 @@
     <button class="act primary" id="btn-seedshop">🌱 Seed Shop</button>
     <button class="act primary" id="btn-gearshop">🛠️ Gear Shop</button>
     <button class="act primary" id="btn-sellshop">🧺 Sell Shop</button>
+    <button class="act primary" id="btn-petshop">🥚 Pet Shop</button>
     <button class="act" id="btn-expand">📐 Expand Garden (100¢)</button>
   </div>
 
@@ -496,6 +505,7 @@
   </div>
 
   <div class="shop" id="shop"></div>
+  <div class="shop" id="pets" style="min-height:0"></div>
   <p class="msg" id="msg">Visit the Seed Shop to buy your first seeds!</p>
 
   <div class="plot-wrap">
@@ -512,6 +522,7 @@
     The <b>🛠️ Gear Shop</b> sells tools — pick a targeted tool (like the watering can) and click a plant to use it; instant tools fire the moment you click them in the toolbar.
     The <b>weather</b> changes every ~3 minutes (139 kinds, including the Grow&nbsp;a&nbsp;Garden set!) and several can strike at once — 50% chance of 2, 25% of 3, and so on. Every 10 seconds each active weather may <b>✨ mutate</b> a plant, and mutations stack for multiplied value — but harvesting takes them with the crop, so a regrown stem starts fresh.
     You also earn <b>🎟️ tokens</b>: digging up a single-harvest plant pays 1–4, harvesting common–rare multi-harvest crops pays 4–10, and legendary or better pays 50–1000 — spend them in any shop with the purple price button.
+    The <b>🥚 Pet Shop</b> sells eggs that hatch into <b>pets</b> with passive powers — faster growth, double harvests, bonus tokens, shop luck, extra mutations, even pets that find coins and seeds on their own. Up to <b>3 pets</b> can be out at once; click a pet to send it out or let it rest.
     The <b>token shop stocks separately</b> from the sheckle shop, and its restock odds are multiplied by the active weather multipliers — a ×3 and a ×5 weather together mean ×15 token-stock luck!
     Both shops <b>restock every 10 seconds</b>; rare items are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
   </p>
@@ -546,6 +557,22 @@
       <span id="restock2">Restock in 0:10</span>
     </div>
     <div class="m-body" id="gearlist"></div>
+  </div>
+</div>
+
+<!-- Pet shop -->
+<div class="overlay" id="ov-pet" hidden>
+  <div class="modal" role="dialog" aria-label="Pet shop">
+    <div class="m-head">
+      <div class="m-face">🐣</div>
+      <div class="m-bubble" id="pet-bubble">Cheep cheep! Fresh eggs, ready to hatch!</div>
+      <button class="m-close" id="close-pet" aria-label="Close pet shop">✖</button>
+    </div>
+    <div class="m-sub">
+      <span id="pet-luck">Eggs in stock</span>
+      <span id="restock3">Restock in 0:10</span>
+    </div>
+    <div class="m-body" id="petlist"></div>
   </div>
 </div>
 
@@ -620,6 +647,49 @@
   ];
   var GEARMAP = {};
   GEAR.forEach(function (g) { GEARMAP[g.key] = g; });
+
+  // Pets hatch from eggs and grant a passive power while they're out (max 3 out).
+  // Ability types: speed/mutate/luck/sell multiply; harvest = double-crop chance;
+  // tokens = bonus-token chance per harvest; coins/seed = timed finder rolls (per 10s).
+  var PETS = [
+    { key: 'bunny',     name: 'Bunny',        emoji: '🐰', ab: { t: 'speed', v: 1.1 },                 desc: 'Plants grow 10% faster' },
+    { key: 'dog',       name: 'Dog',          emoji: '🐶', ab: { t: 'seed', v: 0.2 },                  desc: 'Digs up a free seed now and then' },
+    { key: 'chicken',   name: 'Chicken',      emoji: '🐔', ab: { t: 'harvest', v: 0.1 },               desc: '10% chance harvests give double crops' },
+    { key: 'cat',       name: 'Cat',          emoji: '🐱', ab: { t: 'speed', v: 1.15 },                desc: 'Plants grow 15% faster' },
+    { key: 'duck',      name: 'Duck',         emoji: '🦆', ab: { t: 'harvest', v: 0.15 },              desc: '15% chance harvests give double crops' },
+    { key: 'piggy',     name: 'Piggy',        emoji: '🐷', ab: { t: 'tokens', v: 0.2, amt: [5, 15] },  desc: 'Sniffs out bonus tokens on harvest' },
+    { key: 'fox',       name: 'Fox',          emoji: '🦊', ab: { t: 'luck', v: 2 },                    desc: 'Token-shop stock luck ×2' },
+    { key: 'owl',       name: 'Owl',          emoji: '🦉', ab: { t: 'mutate', v: 1.5 },                desc: 'Mutations 1.5× more likely' },
+    { key: 'turtle',    name: 'Turtle',       emoji: '🐢', ab: { t: 'sell', v: 1.1 },                  desc: 'Crops sell for 10% more' },
+    { key: 'deer',      name: 'Deer',         emoji: '🦌', ab: { t: 'speed', v: 1.25 },                desc: 'Plants grow 25% faster' },
+    { key: 'bee',       name: 'Bee',          emoji: '🐝', ab: { t: 'mutate', v: 2 },                  desc: 'Pollination: mutations 2× more likely' },
+    { key: 'butterfly', name: 'Butterfly',    emoji: '🦋', ab: { t: 'luck', v: 3 },                    desc: 'Token-shop stock luck ×3' },
+    { key: 'snail',     name: 'Snail',        emoji: '🐌', ab: { t: 'sell', v: 1.2 },                  desc: 'Crops sell for 20% more' },
+    { key: 'ant',       name: 'Ant',          emoji: '🐜', ab: { t: 'harvest', v: 0.25 },              desc: '25% chance harvests give double crops' },
+    { key: 'unicorn',   name: 'Unicorn',      emoji: '🦄', ab: { t: 'mutate', v: 2 },                  desc: 'Mutations 2× more likely' },
+    { key: 'goose',     name: 'Golden Goose', emoji: '🪿', ab: { t: 'coins', v: 0.3, amt: [100, 500] }, desc: 'Lays golden coins now and then' },
+    { key: 'panda',     name: 'Panda',        emoji: '🐼', ab: { t: 'harvest', v: 0.3 },               desc: '30% chance harvests give double crops' },
+    { key: 'peacock',   name: 'Peacock',      emoji: '🦚', ab: { t: 'sell', v: 1.25 },                 desc: 'Crops sell for 25% more' },
+    { key: 'dragon',    name: 'Dragon',       emoji: '🐲', ab: { t: 'speed', v: 1.6 },                 desc: 'Plants grow 60% faster' },
+    { key: 'phoenix',   name: 'Phoenix',      emoji: '🐦‍🔥', ab: { t: 'mutate', v: 3 },               desc: 'Mutations 3× more likely' },
+    { key: 'whale',     name: 'Whale',        emoji: '🐋', ab: { t: 'sell', v: 1.5 },                  desc: 'Crops sell for 50% more' },
+    { key: 'trex',      name: 'T-Rex',        emoji: '🦖', ab: { t: 'tokens', v: 0.4, amt: [100, 400] }, desc: 'Chomps up big token bonuses on harvest' }
+  ];
+  var PMAP = {};
+  PETS.forEach(function (p) { PMAP[p.key] = p; });
+
+  // Eggs restock in the shops like seeds and gear; pool is [petKey, weight]
+  var EGGS = [
+    { key: 'commonegg',    name: 'Common Egg',    emoji: '🥚', price: 1000,   tok: 500,   stock: [1, 1], chance: 40,  hatch: 60,  pool: [['dog', 40], ['bunny', 40], ['chicken', 20]] },
+    { key: 'uncommonegg',  name: 'Uncommon Egg',  emoji: '🪺', price: 5000,   tok: 1200,  stock: [1, 1], chance: 25,  hatch: 120, pool: [['cat', 35], ['duck', 35], ['piggy', 30]] },
+    { key: 'rareegg',      name: 'Rare Egg',      emoji: '💠', price: 25000,  tok: 3000,  stock: [1, 1], chance: 12,  hatch: 240, pool: [['fox', 30], ['owl', 30], ['turtle', 25], ['deer', 15]] },
+    { key: 'bugegg',       name: 'Bug Egg',       emoji: '🐞', price: 100000, tok: 2000,  stock: [1, 1], chance: 6,   hatch: 300, pool: [['bee', 35], ['butterfly', 30], ['snail', 20], ['ant', 15]] },
+    { key: 'legendaryegg', name: 'Legendary Egg', emoji: '🌟', price: 250000, tok: 6000,  stock: [1, 1], chance: 4,   hatch: 480, pool: [['unicorn', 30], ['goose', 30], ['panda', 25], ['peacock', 15]] },
+    { key: 'mythicalegg',  name: 'Mythical Egg',  emoji: '🔮', price: 2.5e6,  tok: 15000, stock: [1, 1], chance: 1.5, hatch: 900, pool: [['dragon', 30], ['phoenix', 25], ['whale', 25], ['trex', 20]] }
+  ];
+  var EGGMAP = {};
+  EGGS.forEach(function (e) { EGGMAP[e.key] = e; });
+  var MAX_PETS_OUT = 3;
 
   // Rarity tiers (drive token rewards) and token prices for every shop item
   var TIERS = {
@@ -814,6 +884,8 @@
   var seedsOwned = {};  // key -> count of seeds in your bag
   var gearOwned = {};   // key -> count of gear in your shed
   var basket = {};      // key -> count of harvested crops
+  var myPets = [];      // {k: petKey, on: bool} — on = out in the garden (max 3)
+  var hatching = [];    // {k: eggKey, end} — bought eggs counting down to hatch
   var stock = {};       // key -> count in the sheckle shop right now (seeds and gear)
   var stockTok = {};    // key -> count in the token shop — rolled independently,
                         // with the chance boosted by the active weather multipliers
@@ -829,17 +901,22 @@
   var msgEl = document.getElementById('msg');
   var plotEl = document.getElementById('plot');
   var rulerEl = document.getElementById('ruler');
+  var petsEl = document.getElementById('pets');
   var seedBubble = document.getElementById('seed-bubble');
   var gearBubble = document.getElementById('gear-bubble');
   var sellBubble = document.getElementById('sell-bubble');
+  var petBubble = document.getElementById('pet-bubble');
   var seedListEl = document.getElementById('seedlist');
   var gearListEl = document.getElementById('gearlist');
+  var petListEl = document.getElementById('petlist');
   var invListEl = document.getElementById('invlist');
   var heldActions = document.getElementById('held-actions');
   var restockEl = document.getElementById('restock');
   var restock2El = document.getElementById('restock2');
+  var restock3El = document.getElementById('restock3');
   var seedLuckEl = document.getElementById('seed-luck');
   var gearLuckEl = document.getElementById('gear-luck');
+  var petLuckEl = document.getElementById('pet-luck');
   var weatherEl = document.getElementById('weather-banner');
   var wInfoEl = document.getElementById('w-info');
   var wTimeEl = document.getElementById('w-time');
@@ -848,7 +925,9 @@
   var ovSeed = document.getElementById('ov-seed');
   var ovGear = document.getElementById('ov-gear');
   var ovSell = document.getElementById('ov-sell');
+  var ovPet = document.getElementById('ov-pet');
   var cellEls = [];
+  var eggEls = [];       // countdown labels in the pet bar, one per hatching egg
 
   function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
 
@@ -875,6 +954,7 @@
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         sheckles: sheckles, tokens: tokens, meters: meters, grid: grid,
         seedsOwned: seedsOwned, gearOwned: gearOwned, basket: basket,
+        pets: myPets, hatching: hatching,
         stock: stock, stockTok: stockTok, nextRestock: nextRestock, weather: weather
       }));
     } catch (e) { /* storage unavailable — play without saving */ }
@@ -896,6 +976,14 @@
       if (d.seedsOwned) seedsOwned = d.seedsOwned;
       if (d.gearOwned) gearOwned = d.gearOwned;
       if (d.basket) basket = d.basket;
+      if (Array.isArray(d.pets)) {
+        myPets = d.pets.filter(function (p) { return p && PMAP[p.k]; });
+        var out = 0;
+        myPets.forEach(function (p) { if (p.on && ++out > MAX_PETS_OUT) p.on = false; });
+      }
+      if (Array.isArray(d.hatching)) {
+        hatching = d.hatching.filter(function (h) { return h && EGGMAP[h.k] && typeof h.end === 'number'; });
+      }
       if (d.stock) stock = d.stock;
       if (d.stockTok) stockTok = d.stockTok;
       if (typeof d.nextRestock === 'number') nextRestock = d.nextRestock;
@@ -913,9 +1001,38 @@
     if (!weather) return 1;
     return activeWeathers().reduce(function (a, w) { return a * w.mult; }, 1);
   }
+  // ---------- pet powers ----------
+  function petsOut() {
+    return myPets.filter(function (p) { return p.on && PMAP[p.k]; });
+  }
+  function petMult(type) {
+    return petsOut().reduce(function (a, p) {
+      var ab = PMAP[p.k].ab;
+      return ab.t === type ? a * ab.v : a;
+    }, 1);
+  }
+  // Chance at least one harvest-pet doubles the crop
+  function petDoubleChance() {
+    return 1 - petsOut().reduce(function (a, p) {
+      var ab = PMAP[p.k].ab;
+      return ab.t === 'harvest' ? a * (1 - ab.v) : a;
+    }, 1);
+  }
+  // Free seeds from finder pets are weighted by shop rarity
+  function pickSeedByRarity() {
+    var total = 0;
+    SEEDS.forEach(function (s) { total += s.chance; });
+    var r = Math.random() * total;
+    for (var i = 0; i < SEEDS.length; i++) {
+      r -= SEEDS[i].chance;
+      if (r <= 0) return SEEDS[i];
+    }
+    return SEEDS[0];
+  }
+
   function doRestock() {
-    var luck = weatherLuck();
-    SEEDS.concat(GEAR).forEach(function (s) {
+    var luck = weatherLuck() * petMult('luck');
+    SEEDS.concat(GEAR).concat(EGGS).forEach(function (s) {
       stock[s.key] = (Math.random() * 100 < s.chance) ? randInt(s.stock[0], s.stock[1]) : 0;
       // token shop rolls separately, with weather-boosted odds
       stockTok[s.key] = (Math.random() * 100 < s.chance * luck) ? randInt(s.stock[0], s.stock[1]) : 0;
@@ -929,12 +1046,16 @@
       gearBubble.textContent = 'Beep boop! Restock complete! This is the gear that is in stock!';
       renderGearShop();
     }
+    if (!ovPet.hidden) {
+      petBubble.textContent = 'Cheep cheep! A fresh clutch of eggs just arrived!';
+      renderPetShop();
+    }
     save();
   }
 
   function renderSeedShop() {
     seedListEl.innerHTML = '';
-    var luck = weatherLuck();
+    var luck = weatherLuck() * petMult('luck');
     seedLuckEl.textContent = luck > 1 ? 'Token-stock luck ×' + trim(luck) : 'Seller’s stock';
     SEEDS.forEach(function (s) {
       var sc = stock[s.key] || 0, tc = stockTok[s.key] || 0;
@@ -986,7 +1107,7 @@
   // ---------- gear shop ----------
   function renderGearShop() {
     gearListEl.innerHTML = '';
-    var luck = weatherLuck();
+    var luck = weatherLuck() * petMult('luck');
     gearLuckEl.textContent = luck > 1 ? 'Token-stock luck ×' + trim(luck) : 'Gear in stock';
     GEAR.forEach(function (g) {
       var sc = stock[g.key] || 0, tc = stockTok[g.key] || 0;
@@ -1031,6 +1152,118 @@
     gearBubble.textContent = 'One ' + g.name.toLowerCase() + ', dispensed! ' + (g.target ? 'Select it, then click a plant.' : 'Click it in your toolbar to use it.');
     renderGearShop();
     refresh();
+  }
+
+  // ---------- pet shop ----------
+  function renderPetShop() {
+    petListEl.innerHTML = '';
+    var luck = weatherLuck() * petMult('luck');
+    petLuckEl.textContent = luck > 1 ? 'Token-stock luck ×' + trim(luck) : 'Eggs in stock';
+    EGGS.forEach(function (e) {
+      var sc = stock[e.key] || 0, tc = stockTok[e.key] || 0;
+      var row = document.createElement('div');
+      row.className = 'srow' + (sc < 1 && tc < 1 ? ' oos' : '');
+      var poolStr = e.pool.map(function (r) { return PMAP[r[0]].emoji; }).join('');
+      row.innerHTML =
+        '<span class="s-emoji">' + e.emoji + '</span>' +
+        '<span class="s-info"><span class="s-name">' + e.name + '</span><br>' +
+        '<span class="s-tags">hatches in ' + e.hatch + 's · can be ' + poolStr + '</span></span>' +
+        '<span class="s-stock">' + (sc < 1 && tc < 1 ? 'NO STOCK' : '') + '</span>';
+      var buy = document.createElement('button');
+      buy.className = 's-buy';
+      buy.textContent = money(e.price) + (sc > 0 ? ' ×' + sc : '');
+      buy.disabled = sc < 1 || sheckles < e.price;
+      buy.title = sc < 1 ? 'Out of stock in the sheckle shop' : 'Buy with sheckles';
+      buy.addEventListener('click', function () { buyEgg(e.key, false); });
+      row.appendChild(buy);
+      var buyT = document.createElement('button');
+      buyT.className = 's-buy tok';
+      buyT.textContent = '🎟️' + tokFmt(e.tok) + (tc > 0 ? ' ×' + tc : '');
+      buyT.disabled = tc < 1 || tokens < e.tok;
+      buyT.title = tc < 1 ? 'Out of stock in the token shop' : 'Buy with tokens';
+      buyT.addEventListener('click', function () { buyEgg(e.key, true); });
+      row.appendChild(buyT);
+      petListEl.appendChild(row);
+    });
+  }
+
+  function buyEgg(key, useTok) {
+    var e = EGGMAP[key];
+    var pool = useTok ? stockTok : stock;
+    if ((pool[key] || 0) < 1) { petBubble.textContent = 'Cheep! No ' + e.name.toLowerCase() + ' in the ' + (useTok ? 'token' : 'sheckle') + ' stock right now!'; return; }
+    if (useTok) {
+      if (tokens < e.tok) { petBubble.textContent = 'Cheep cheep — that egg costs ' + tokFmt(e.tok) + ' tokens. Come back with more!'; return; }
+      tokens -= e.tok;
+    } else {
+      if (sheckles < e.price) { petBubble.textContent = 'Cheep cheep — that egg costs ' + money(e.price) + '. Come back with more sheckles!'; return; }
+      sheckles -= e.price;
+    }
+    pool[key]--;
+    hatching.push({ k: key, end: Date.now() + e.hatch * 1000 });
+    petBubble.textContent = 'One ' + e.name.toLowerCase() + ', all yours! Keep it warm — it hatches in ' + e.hatch + ' seconds.';
+    renderPetShop();
+    refresh();
+  }
+
+  function hatchEgg(h) {
+    var egg = EGGMAP[h.k];
+    var total = 0;
+    egg.pool.forEach(function (r) { total += r[1]; });
+    var r = Math.random() * total, key = egg.pool[0][0];
+    for (var i = 0; i < egg.pool.length; i++) {
+      r -= egg.pool[i][1];
+      if (r <= 0) { key = egg.pool[i][0]; break; }
+    }
+    var pet = PMAP[key];
+    // new pets come out automatically if there's a free slot
+    myPets.push({ k: key, on: petsOut().length < MAX_PETS_OUT });
+    setMsg('🐣 The ' + egg.name.toLowerCase() + ' hatched into a ' + pet.emoji + ' ' + pet.name + '! (' + pet.desc + ')');
+  }
+
+  // ---------- pet bar ----------
+  function renderPets() {
+    petsEl.innerHTML = '';
+    eggEls = [];
+    hatching.forEach(function (h) {
+      var egg = EGGMAP[h.k];
+      var b = document.createElement('button');
+      b.className = 'chip egg';
+      b.innerHTML =
+        '<span class="c-emoji">' + egg.emoji + '</span>' +
+        '<span class="c-name">' + egg.name + '</span>' +
+        '<span class="c-meta">⏳</span>';
+      b.title = egg.name + ' — hatching! Could be ' + egg.pool.map(function (r) { return PMAP[r[0]].emoji; }).join('');
+      b.addEventListener('click', function () {
+        setMsg('The ' + egg.name.toLowerCase() + ' wiggles… ' + Math.max(0, Math.ceil((h.end - Date.now()) / 1000)) + 's until it hatches!');
+      });
+      petsEl.appendChild(b);
+      eggEls.push({ h: h, el: b.lastChild });
+    });
+    myPets.forEach(function (p) {
+      var pet = PMAP[p.k];
+      var b = document.createElement('button');
+      b.className = 'chip pet' + (p.on ? ' on' : '');
+      b.innerHTML =
+        '<span class="c-emoji">' + pet.emoji + '</span>' +
+        '<span class="c-name">' + pet.name + '</span>' +
+        '<span class="c-meta">' + (p.on ? '⭐ out' : '💤 resting') + '</span>';
+      b.title = pet.name + ' — ' + pet.desc + (p.on ? '' : ' (resting: power paused)');
+      b.addEventListener('click', function () {
+        if (p.on) {
+          p.on = false;
+          setMsg(pet.emoji + ' ' + pet.name + ' is taking a nap — its power is paused.');
+        } else if (petsOut().length >= MAX_PETS_OUT) {
+          setMsg('Only ' + MAX_PETS_OUT + ' pets can be out at once — put one to rest first.');
+          return;
+        } else {
+          p.on = true;
+          setMsg(pet.emoji + ' ' + pet.name + ' is out! ' + pet.desc + '.');
+        }
+        renderPets();
+        save();
+      });
+      petsEl.appendChild(b);
+    });
   }
 
   // Instant-use gear (no plant target)
@@ -1337,14 +1570,19 @@
     var p = grid[i], c = CROPS[p.t];
     // mutations travel with the crop into the basket
     var stackKey = p.t + (p.muts && p.muts.length ? '|' + p.muts.join('+') : '');
-    basket[stackKey] = (basket[stackKey] || 0) + 1;
+    // harvest pets can double the crop
+    var n = Math.random() < petDoubleChance() ? 2 : 1;
+    basket[stackKey] = (basket[stackKey] || 0) + n;
     // multi-harvest crops pay tokens: common-rare 4-10, legendary+ 50-1000
     var tk = 0;
-    if (c.multi) {
-      tk = LOW_TIERS[c.tier] ? randInt(4, 10) : randInt(50, 1000);
-      tokens += tk;
-    }
-    popup(i, '+1 ' + c.emoji + (p.muts && p.muts.length ? '✨' : '') + (tk ? ' +' + tk + '🎟️' : ''));
+    if (c.multi) tk += LOW_TIERS[c.tier] ? randInt(4, 10) : randInt(50, 1000);
+    // token pets sniff out bonus tokens on any harvest
+    petsOut().forEach(function (pp) {
+      var ab = PMAP[pp.k].ab;
+      if (ab.t === 'tokens' && Math.random() < ab.v) tk += randInt(ab.amt[0], ab.amt[1]);
+    });
+    if (tk) tokens += tk;
+    popup(i, '+' + n + ' ' + c.emoji + (p.muts && p.muts.length ? '✨' : '') + (tk ? ' +' + tk + '🎟️' : ''));
     if (c.multi) {
       // the stem stays behind and regrows, forever — but the mutations left
       // with the harvested crop, so the regrown one starts fresh
@@ -1380,7 +1618,7 @@
     return {
       crop: c,
       muts: muts,
-      value: Math.max(1, Math.round(c.sell * mult)),
+      value: Math.max(1, Math.round(c.sell * mult * petMult('sell'))),
       label: (names.length ? names.join(' ') + ' ' : '') + c.name
     };
   }
@@ -1475,16 +1713,24 @@
     renderSellShop();
     ovSell.hidden = false;
   }
+  function openPetShop() {
+    petBubble.textContent = 'Cheep cheep! Fresh eggs, ready to hatch!';
+    renderPetShop();
+    ovPet.hidden = false;
+  }
   document.getElementById('btn-seedshop').addEventListener('click', openSeedShop);
   document.getElementById('btn-gearshop').addEventListener('click', openGearShop);
   document.getElementById('btn-sellshop').addEventListener('click', openSellShop);
+  document.getElementById('btn-petshop').addEventListener('click', openPetShop);
   document.getElementById('btn-expand').addEventListener('click', expandGarden);
   document.getElementById('close-seed').addEventListener('click', function () { ovSeed.hidden = true; });
   document.getElementById('close-gear').addEventListener('click', function () { ovGear.hidden = true; });
   document.getElementById('close-sell').addEventListener('click', function () { ovSell.hidden = true; });
+  document.getElementById('close-pet').addEventListener('click', function () { ovPet.hidden = true; });
   ovSeed.addEventListener('click', function (e) { if (e.target === ovSeed) ovSeed.hidden = true; });
   ovGear.addEventListener('click', function (e) { if (e.target === ovGear) ovGear.hidden = true; });
   ovSell.addEventListener('click', function (e) { if (e.target === ovSell) ovSell.hidden = true; });
+  ovPet.addEventListener('click', function (e) { if (e.target === ovPet) ovPet.hidden = true; });
 
   // ---------- render ----------
   function updateCell(i) {
@@ -1566,11 +1812,25 @@
     var now = Date.now();
     if (now >= nextRestock) doRestock();
 
+    // eggs hatch into pets
+    var hatchedAny = false;
+    for (var hI = hatching.length - 1; hI >= 0; hI--) {
+      if (now >= hatching[hI].end) {
+        hatchEgg(hatching.splice(hI, 1)[0]);
+        hatchedAny = true;
+      }
+    }
+    if (hatchedAny) { renderPets(); save(); }
+    eggEls.forEach(function (t) {
+      t.el.textContent = '⏳' + Math.max(0, Math.ceil((t.h.end - now) / 1000)) + 's';
+    });
+
     // weather cycle (possibly several at once)
     if (!weather || now >= weather.until) newWeather(!!weather);
     var ws = activeWeathers();
-    // growth speed boosts multiply (e.g. rain 1.5x + monsoon 1.7x = 2.55x)
-    var speed = ws.reduce(function (a, x) { return a * x.speed; }, 1);
+    // growth speed boosts multiply (e.g. rain 1.5x + monsoon 1.7x = 2.55x),
+    // and speed pets multiply on top
+    var speed = ws.reduce(function (a, x) { return a * x.speed; }, 1) * petMult('speed');
     if (speed > 1) {
       var boost = (speed - 1) * 250;
       for (var b = 0; b < grid.length; b++) {
@@ -1578,10 +1838,27 @@
       }
     }
     // every 10 seconds: each active weather rolls its own mutation chance
+    // (mutation pets multiply the odds), and finder pets roll their finds
     if (now - lastMutRoll >= 10000) {
       lastMutRoll = now;
+      var mutBoost = petMult('mutate');
       ws.forEach(function (x) {
-        if (Math.random() < x.mutChance) tryMutate(x);
+        if (Math.random() < x.mutChance * mutBoost) tryMutate(x);
+      });
+      petsOut().forEach(function (pp) {
+        var pet = PMAP[pp.k], ab = pet.ab;
+        if (ab.t === 'coins' && Math.random() < ab.v) {
+          var found = randInt(ab.amt[0], ab.amt[1]);
+          sheckles += found;
+          setMsg(pet.emoji + ' ' + pet.name + ' found ' + money(found) + '!');
+          save();
+        } else if (ab.t === 'seed' && Math.random() < ab.v) {
+          var fs = pickSeedByRarity();
+          seedsOwned[fs.key] = (seedsOwned[fs.key] || 0) + 1;
+          setMsg(pet.emoji + ' ' + pet.name + ' dug up a free ' + fs.name.toLowerCase() + ' seed!');
+          renderToolbar();
+          save();
+        }
       });
     }
     var wLeft = Math.max(0, weather.until - now);
@@ -1590,13 +1867,14 @@
     for (var i = 0; i < grid.length; i++) updateCell(i);
     coinsEl.textContent = '🪙 ' + money(sheckles);
     tokensEl.textContent = '🎟️ ' + tokFmt(tokens);
-    if (!ovSeed.hidden || !ovGear.hidden) {
+    if (!ovSeed.hidden || !ovGear.hidden || !ovPet.hidden) {
       var left = Math.max(0, nextRestock - Date.now());
       var m = (left / 60000) | 0, s = Math.ceil((left % 60000) / 1000);
       if (s === 60) { m++; s = 0; }
       var txt = 'Restock in ' + m + ':' + (s < 10 ? '0' : '') + s;
       restockEl.textContent = txt;
       restock2El.textContent = txt;
+      restock3El.textContent = txt;
     }
   }
 
@@ -1610,8 +1888,10 @@
       setMsg('A kind neighbor gifted you 🪙20¢ to start over!');
     }
     renderToolbar();
+    renderPets();
     if (!ovSeed.hidden) renderSeedShop();
     if (!ovGear.hidden) renderGearShop();
+    if (!ovPet.hidden) renderPetShop();
     tick();
     save();
   }
@@ -1648,7 +1928,12 @@
     mutate: function (k) { tryMutate(WMAP[k || weather.keys[0]]); },
     meters: function () { return meters; },
     give: function (n) { sheckles += n; refresh(); },
-    restock: doRestock
+    restock: doRestock,
+    pets: function () { return myPets; },
+    hatching: function () { return hatching; },
+    givePet: function (k) { if (PMAP[k]) { myPets.push({ k: k, on: petsOut().length < MAX_PETS_OUT }); refresh(); } },
+    giveEgg: function (k) { if (EGGMAP[k]) { hatching.push({ k: k, end: Date.now() + EGGMAP[k].hatch * 1000 }); refresh(); } },
+    hatchNow: function () { hatching.forEach(function (h) { h.end = Date.now(); }); }
   };
 })();
 </script>
