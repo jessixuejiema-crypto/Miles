@@ -173,6 +173,26 @@
   #preview .foot { margin-top: 6px; font-size: 0.72rem; }
   #preview .foot a { color: var(--stable); cursor: pointer; }
 
+  .rules { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 0.82rem; }
+  .rules .rules-title { font-weight: 600; }
+  .rule-group { display: flex; align-items: center; gap: 4px; }
+  .rule-group .rule-name { color: var(--text-secondary); font-weight: 600; margin-right: 2px; }
+  .rule-chip {
+    width: 26px; height: 26px;
+    padding: 0;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+  .rule-chip[aria-pressed="true"] {
+    background: var(--stable);
+    border-color: var(--stable);
+    color: #fff;
+    font-weight: 600;
+  }
+  .custom-verdict { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  .custom-verdict .swatch { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--border); flex: none; }
+
   .sim-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
   .sim-head h2 { font-size: 0.95rem; margin: 0; }
   .sim-head .rule-label { font-variant-numeric: tabular-nums; color: var(--stable); font-weight: 600; }
@@ -196,8 +216,10 @@
     freeze with every starting cell alive and unchanged, and <em>nothing</em> rules die out
     completely within a few generations. The main view uses contiguous dash-ranges
     like <code>3-7</code> or <code>6-7</code>; the arrows switch each axis to the split sets,
-    shifting the gap by one — first tab <code>3,5-7</code>, second tab <code>3,6-7</code>.
-    Click any cell to watch that rule run below. Full simulator: <a href="conway.html">conway.html</a>.
+    shifting the gap by one — first tab <code>3,5-7</code>, second tab <code>3,6-7</code> — and to
+    every-other sets like <code>1,3,5,7</code>. Rules that fit no axis shape can be tested with the
+    custom chips below the map. Click any cell to watch that rule run.
+    Full simulator: <a href="conway.html">conway.html</a>.
   </p>
 
   <div class="panel">
@@ -253,6 +275,20 @@
   </div>
 
   <div class="panel">
+    <div class="rules">
+      <span class="rules-title">Custom rule</span>
+      <div class="rule-group" id="cbGroup"><span class="rule-name">Birth</span></div>
+      <div class="rule-group" id="csGroup"><span class="rule-name">Survive</span></div>
+      <span class="custom-verdict"><span class="swatch" id="customSwatch"></span><span id="customCls"></span></span>
+    </div>
+    <p class="hint">
+      The map's axes only cover range-shaped sets, but there are 261,632 possible rules in total.
+      Toggle any combination here — like B1,3,5,7/S1,3,5-8 — and it is classified with the same
+      three-soup vote and runs in the watcher below.
+    </p>
+  </div>
+
+  <div class="panel">
     <div class="sim-head">
       <h2>Watching: <span class="rule-label" id="simRule"></span></h2>
       <span class="verdict" id="simVerdict"></span>
@@ -274,16 +310,17 @@
   // ---------- axis set shapes ----------
   // mode 0: contiguous a–b. mode g>0: a, then a gap of g numbers, then (a+g+1)–b.
   const MODES = [
-    { gap: 0, title: 'a–b', sub: 'contiguous range' },
-    { gap: 1, title: 'a, a+2–b', sub: 'split · gap of 1' },
-    { gap: 2, title: 'a, a+3–b', sub: 'split · gap of 2' }
+    { kind: 'range', title: 'a–b', sub: 'contiguous range' },
+    { kind: 'split', gap: 1, title: 'a, a+2–b', sub: 'split · gap of 1' },
+    { kind: 'split', gap: 2, title: 'a, a+3–b', sub: 'split · gap of 2' },
+    { kind: 'alt', title: 'a, a+2, a+4 …', sub: 'every other number' }
   ];
 
   function fmtRange(a, b) { return a === b ? String(a) : a + '-' + b; }
 
-  function axisEntries(gap) {
+  function axisEntries(mode) {
     const list = [];
-    if (gap === 0) {
+    if (mode.kind === 'range') {
       for (let a = 0; a <= 8; a++) {
         for (let b = a; b <= 8; b++) {
           let mask = 0;
@@ -291,12 +328,23 @@
           list.push({ a, mask, label: fmtRange(a, b) });
         }
       }
-    } else {
+    } else if (mode.kind === 'split') {
+      const gap = mode.gap;
       for (let a = 0; a <= 8; a++) {
         for (let b = a + gap + 1; b <= 8; b++) {
           let mask = 1 << a;
           for (let n = a + gap + 1; n <= b; n++) mask |= 1 << n;
           list.push({ a, mask, label: a + ',' + fmtRange(a + gap + 1, b) });
+        }
+      }
+    } else {
+      // alternating: a, a+2, a+4, … up to b (e.g. 1,3,5,7)
+      for (let a = 0; a <= 8; a++) {
+        for (let b = a + 2; b <= 8; b += 2) {
+          let mask = 0;
+          const nums = [];
+          for (let n = a; n <= b; n += 2) { mask |= 1 << n; nums.push(n); }
+          list.push({ a, mask, label: nums.join(',') });
         }
       }
     }
@@ -310,7 +358,7 @@
   }
 
   let bMode = 0, sMode = 0;
-  let bEntries = axisEntries(0), sEntries = axisEntries(0);
+  let bEntries = axisEntries(MODES[0]), sEntries = axisEntries(MODES[0]);
 
   // ---------- classifier ----------
   const CW = 50, CH = 50, CN = CW * CH, GENS = 300, TAIL = 15;
@@ -625,6 +673,10 @@
       label: 'B' + be.label + '/S' + se.label,
       cls: results[i]
     };
+    customB = be.mask;
+    customS = se.mask;
+    syncCustomChips();
+    showVerdictBadge(results[i]);
     startSim();
     openPreview(ev);
   });
@@ -716,13 +768,70 @@
   });
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closePreview(); });
 
+  // ---------- custom rule tester ----------
+  let customB = 1 << 3, customS = (1 << 2) | (1 << 3);
+
+  // pretty-print a neighbor-count set: {1,3,5,6,7,8} -> "1,3,5-8"
+  function fmtSet(mask) {
+    const parts = [];
+    let n = 0;
+    while (n <= 8) {
+      if (!(mask & (1 << n))) { n++; continue; }
+      let e = n;
+      while (e < 8 && (mask & (1 << (e + 1)))) e++;
+      parts.push(e === n ? String(n) : e === n + 1 ? n + ',' + e : n + '-' + e);
+      n = e + 1;
+    }
+    return parts.join(',');
+  }
+
+  function buildCustomChips(groupId, isBirth) {
+    const group = document.getElementById(groupId);
+    for (let n = 0; n <= 8; n++) {
+      const b = document.createElement('button');
+      b.className = 'rule-chip';
+      b.textContent = n;
+      b.addEventListener('click', () => {
+        if (isBirth) customB ^= 1 << n; else customS ^= 1 << n;
+        updateCustom();
+      });
+      group.appendChild(b);
+    }
+  }
+
+  function syncCustomChips() {
+    document.querySelectorAll('#cbGroup .rule-chip').forEach((b, n) =>
+      b.setAttribute('aria-pressed', !!(customB & (1 << n))));
+    document.querySelectorAll('#csGroup .rule-chip').forEach((b, n) =>
+      b.setAttribute('aria-pressed', !!(customS & (1 << n))));
+  }
+
+  function showVerdictBadge(cls) {
+    document.getElementById('customCls').textContent = CLS_NAME[cls];
+    document.getElementById('customSwatch').style.background =
+      [css('--dies'), css('--disappear'), css('--still'),
+       css('--stable'), css('--explodes')][cls];
+  }
+
+  function updateCustom() {
+    syncCustomChips();
+    const cls = classify(customB, customS);
+    selected = {
+      bMask: customB, sMask: customS,
+      label: 'B' + fmtSet(customB) + '/S' + fmtSet(customS),
+      cls
+    };
+    showVerdictBadge(cls);
+    startSim();
+  }
+
   // ---------- axis mode arrows ----------
   function refreshModes() {
     const bm = MODES[bMode], sm = MODES[sMode];
     document.getElementById('bShape').innerHTML = bm.title + '<small>' + bm.sub + '</small>';
     document.getElementById('sShape').innerHTML = sm.title + '<small>' + sm.sub + '</small>';
-    bEntries = axisEntries(bm.gap);
-    sEntries = axisEntries(sm.gap);
+    bEntries = axisEntries(bm);
+    sEntries = axisEntries(sm);
     hover = -1;
     closePreview();
     sizeMap();
@@ -840,9 +949,11 @@
   });
   new MutationObserver(() => { drawMap(); drawSim(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  buildCustomChips('cbGroup', true);
+  buildCustomChips('csGroup', false);
   refreshModes();
   sizeSim();
-  startSim();
+  updateCustom();
   requestAnimationFrame(simLoop);
 })();
 </script>
