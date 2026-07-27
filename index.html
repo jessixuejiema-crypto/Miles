@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ant Academy — thousands of ants learn a maze</title>
+<title>Ant Driving School — thousands of AI ants learn to drive a maze</title>
 <style>
   :root{
     --bg:#0e1116; --panel:#171b22; --panel2:#1e242e; --line:#2a313d;
     --ink:#e5e7eb; --ink2:#9ca3af; --ink3:#6b7280;
-    --ant:#fbbf24; --good:#34d399; --start:#38bdf8; --bad:#f87171;
+    --ant:#fbbf24; --good:#34d399; --start:#38bdf8; --bad:#f87171; --car:#60a5fa;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{height:100%;}
@@ -87,10 +87,11 @@
 </head>
 <body>
 <header>
-  <h1>🐜 Ant <span>Academy</span></h1>
+  <h1>🐜 Ant <span>Driving School</span></h1>
   <div class="stats">
     <div class="stat"><div class="v" id="sAnts">0</div><div class="k">ants</div></div>
     <div class="stat"><div class="v blue" id="sTrips">0</div><div class="k">trips done</div></div>
+    <div class="stat"><div class="v" id="sCrash" style="color:var(--bad)">0</div><div class="k">crashes</div></div>
     <div class="stat"><div class="v amber" id="sAvg">—</div><div class="k">avg steps</div></div>
     <div class="stat"><div class="v green" id="sBest">—</div><div class="k">best trip</div></div>
     <div class="stat"><div class="v" id="sOpt">—</div><div class="k">optimal</div></div>
@@ -153,15 +154,19 @@
     <div class="card">
       <h2>How they learn</h2>
       <div class="legend">
-        <span class="dot" style="background:var(--start)"></span>Nest (start)<br>
+        <span class="dot" style="background:var(--ink)"></span>Nest (start)<br>
         <span class="dot" style="background:var(--good)"></span>Food (goal)<br>
-        <span class="dot" style="background:var(--ant)"></span>Ants &amp; pheromone trail
+        <span class="dot" style="background:var(--car)"></span>Ant drivers<br>
+        <span class="dot" style="background:var(--bad)"></span>Crash!<br>
+        <span class="dot" style="background:var(--ant)"></span>Pheromone trail
       </div>
       <div class="hint" style="margin-top:8px">
-        Every ant shares one colony memory (Q-learning). Each wrong turn and dead
-        end lowers that route's score; each trip that reaches food raises it. Early
-        on ants wander almost randomly — watch the swarm gradually funnel onto the
-        shortest path as exploration decays.
+        Every ant steers its own little car — heading, throttle, wobble — while
+        sharing one colony memory (Q-learning) for which way to go. New drivers
+        swerve wildly and smack into walls (red flashes); every crash and wrong
+        turn lowers that route's score, every trip to the food raises it. As
+        exploration decays their hands steady, they speed up, and the chaos
+        settles into clean racing lines.
       </div>
     </div>
   </aside>
@@ -172,11 +177,11 @@
 "use strict";
 /* ================= config ================= */
 const SIZES = { s:[19,13], m:[31,21], l:[45,31], xl:[61,41] };
-const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 20, 60];       // logic ticks per frame
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 10, 30, 90];      // logic ticks per frame
 const ALPHA = 0.18, GAMMA = 0.97;
 const EPS_START = 0.30, EPS_MIN = 0.02;
-const EPS_TRIP = 0.998, EPS_TICK = 0.99998;           // decay per completed trip / per tick
-const R_STEP = -1, R_GOAL = 120;
+const EPS_TRIP = 0.998, EPS_TICK = 0.999996;          // decay per completed trip / per tick
+const R_STEP = -1, R_GOAL = 120, R_CRASH = -2;
 const ROLL = 150;                                     // rolling-average window
 
 /* ================= state ================= */
@@ -185,7 +190,9 @@ let start, goal, optimal;
 let Q;                                                // Float32Array N*4, shared colony memory
 let heat;                                             // Float32Array N, pheromone display
 let M = 2000;                                         // ant count
-let aCur, aPrev, aSteps, aJx, aJy;                    // ant arrays
+let aCell, aX, aY, aHx, aHy, aV, aSteps, aAge;        // ant kinematics
+let aTarget, aPendC, aPendA, aVar;                    // route intent + per-ant wobble
+let crashes = 0, fx = [];                             // crash flashes
 let eps = 1, trips = 0, timeouts = 0, bestTrip = Infinity;
 let rollBuf = new Float32Array(ROLL), rollN = 0, rollI = 0;
 let chartPts = [], chartStride = 20, sinceChart = 0;
@@ -266,6 +273,7 @@ function resetLearning(){
   Q = new Float32Array(N*4);
   heat = new Float32Array(N);
   eps = EPS_START; trips = 0; timeouts = 0; bestTrip = Infinity;
+  crashes = 0; fx = [];
   rollN = 0; rollI = 0;
   chartPts = []; chartStride = 20; sinceChart = 0;
   bestPath = null;
@@ -273,11 +281,23 @@ function resetLearning(){
 }
 
 function spawnAnts(){
-  aCur = new Int32Array(M).fill(start);
-  aPrev = new Int32Array(M).fill(start);
-  aSteps = new Int32Array(M);
-  aJx = new Float32Array(M); aJy = new Float32Array(M);
-  for (let i=0; i<M; i++){ aJx[i] = Math.random()-0.5; aJy[i] = Math.random()-0.5; }
+  aCell = new Int32Array(M);
+  aX = new Float32Array(M); aY = new Float32Array(M);
+  aHx = new Float32Array(M); aHy = new Float32Array(M);
+  aV = new Float32Array(M);
+  aSteps = new Int32Array(M); aAge = new Int32Array(M);
+  aTarget = new Int32Array(M); aPendC = new Int32Array(M); aPendA = new Int32Array(M);
+  aVar = new Float32Array(M);
+  for (let i=0; i<M; i++){ aVar[i] = 0.5 + Math.random(); respawn(i); }
+}
+
+function respawn(i){
+  aCell[i] = start;
+  aX[i] = (start%cols)+0.5; aY[i] = ((start/cols)|0)+0.5;
+  aV[i] = 0; aSteps[i] = 0; aAge[i] = 0; aTarget[i] = -1;
+  const rx = Math.random()-0.5, ry = Math.random()-0.5;
+  const inv = 1/(Math.hypot(rx,ry)||1);
+  aHx[i] = rx*inv; aHy[i] = ry*inv;
 }
 
 function maxValidQ(c){
@@ -287,58 +307,118 @@ function maxValidQ(c){
   return m === -Infinity ? 0 : m;
 }
 
-function tick(){
-  for (let i=0; i<M; i++){
-    const c = aCur[i];
-    const cx = c%cols, cy = (c/cols)|0;
-    const w = walls[c], b = c*4;
+function chooseAction(i, c){
+  const w = walls[c], b = c*4;
+  let a = -1;
+  if (Math.random() < eps){
+    let cnt = 0;
+    for (let d=0; d<4; d++) if (!(w&(1<<d))) cnt++;
+    let pick = (Math.random()*cnt)|0;
+    for (let d=0; d<4; d++) if (!(w&(1<<d))) { if (!pick--){ a=d; break; } }
+  } else {
+    // greedy with random tie-breaks; untried directions start at 0 (optimistic),
+    // so ants naturally prefer routes they haven't been punished on yet
+    let best = -Infinity, ties = 0;
+    for (let d=0; d<4; d++) if (!(w&(1<<d))) {
+      const v = Q[b+d];
+      if (v > best){ best = v; a = d; ties = 1; }
+      else if (v === best && Math.random() < 1/++ties) a = d;
+    }
+  }
+  aPendC[i] = c; aPendA[i] = a;
+  aTarget[i] = ((c/cols|0)+DY[a])*cols + (c%cols)+DX[a];
+}
 
-    // epsilon-greedy over open directions
-    let a = -1;
-    if (Math.random() < eps){
-      let cnt = 0;
-      for (let d=0; d<4; d++) if (!(w&(1<<d))) cnt++;
-      let pick = (Math.random()*cnt)|0;
-      for (let d=0; d<4; d++) if (!(w&(1<<d))) { if (!pick--){ a=d; break; } }
-    } else {
-      // greedy with random tie-breaks; untried directions start at 0 (optimistic),
-      // so ants naturally prefer routes they haven't been punished on yet
-      let best = -Infinity, ties = 0;
-      for (let d=0; d<4; d++) if (!(w&(1<<d))) {
-        const v = Q[b+d];
-        if (v > best){ best = v; a = d; ties = 1; }
-        else if (v === best && Math.random() < 1/++ties) a = d;
+function tick(){
+  // colony-wide driving skill: rookies have momentum but shaky hands and a
+  // weak grip on the wheel; skill raises steering authority faster than speed
+  const skill = 1 - Math.min(1, eps/EPS_START);
+  const noise = 0.5*(1-skill) + 0.05;
+  const vmax = 0.10 + 0.10*skill;
+  const auth = 0.15 + 0.50*skill;
+  const maxAge = maxTripSteps*15;
+
+  for (let i=0; i<M; i++){
+    let c = aCell[i];
+    if (aTarget[i] < 0) chooseAction(i, c);
+    const tgt = aTarget[i];
+
+    // steer toward the middle of the chosen next cell
+    let dx = (tgt%cols)+0.5 - aX[i], dy = ((tgt/cols)|0)+0.5 - aY[i];
+    const dist = Math.hypot(dx,dy) || 1e-4;
+    dx /= dist; dy /= dist;
+    let hx = aHx[i], hy = aHy[i];
+    const cross = hx*dy - hy*dx, dot = hx*dx + hy*dy;
+    const steer = dot < -0.2 ? (cross >= 0 ? 1 : -1) : Math.max(-1, Math.min(1, cross*2));
+    const turn = steer*auth + (Math.random()-0.5)*noise*aVar[i];
+    const ct = 1 - turn*turn/2, st = turn;               // small-angle rotation
+    const nhx = hx*ct - hy*st, nhy = hx*st + hy*ct;
+    const inv = 1/(Math.hypot(nhx,nhy)||1);
+    hx = nhx*inv; hy = nhy*inv;
+    aHx[i] = hx; aHy[i] = hy;
+
+    // throttle: brake hard when pointed the wrong way
+    const tv = vmax*(0.2 + 0.8*Math.max(0, dot));
+    aV[i] += Math.max(-0.04, Math.min(0.008, tv - aV[i]));
+
+    // move, axis-separated wall collision
+    const nx = aX[i] + hx*aV[i], ny = aY[i] + hy*aV[i];
+    let cx = c%cols, cy = (c/cols)|0;
+    let crashed = false;
+    const ncx = Math.floor(nx);
+    if (ncx !== cx){
+      if (walls[c] & (1<<(ncx > cx ? 1 : 3))) crashed = true;
+      else { cx = ncx; c = cy*cols + cx; }
+    }
+    if (!crashed){
+      const ncy = Math.floor(ny);
+      if (ncy !== cy){
+        if (walls[c] & (1<<(ncy > cy ? 2 : 0))) crashed = true;
+        else { cy = ncy; c = cy*cols + cx; }
       }
     }
 
-    const n = (cy+DY[a])*cols + cx+DX[a];
-    const done = n === goal;
-    const target = done ? R_GOAL : R_STEP + GAMMA*maxValidQ(n);
-    Q[b+a] += ALPHA*(target - Q[b+a]);          // mistakes and successes update the shared memory instantly
-    aPrev[i] = c; aCur[i] = n; aSteps[i]++;
-    heat[n] += 1;
-
-    if (done){
-      const s = aSteps[i];
-      trips++;
-      if (s < bestTrip) bestTrip = s;
-      rollBuf[rollI] = s; rollI = (rollI+1)%ROLL; if (rollN<ROLL) rollN++;
-      eps = Math.max(EPS_MIN, eps*EPS_TRIP);
-      if (++sinceChart >= chartStride){ pushChartPt(); sinceChart = 0; }
-      respawn(i);
-    } else if (aSteps[i] > maxTripSteps){
-      timeouts++;
-      respawn(i);
+    const pb = aPendC[i]*4 + aPendA[i];
+    if (crashed){
+      crashes++;
+      Q[pb] += ALPHA*(R_CRASH + GAMMA*maxValidQ(aCell[i]) - Q[pb]);   // crash-prone routes lose value
+      if (fx.length < 220) fx.push({ x: aX[i], y: aY[i], t: 14 });
+      const oc = aCell[i];
+      aX[i] = (oc%cols)+0.5; aY[i] = ((oc/cols)|0)+0.5;               // back to the middle of the lane
+      aV[i] = 0; aTarget[i] = -1; aAge[i] += 20;
+      const rx = Math.random()-0.5, ry = Math.random()-0.5;
+      const rinv = 1/(Math.hypot(rx,ry)||1);
+      aHx[i] = rx*rinv; aHy[i] = ry*rinv;
+    } else {
+      aX[i] = nx; aY[i] = ny;
+      if (c !== aCell[i]){
+        const done = c === goal;
+        if (c === aTarget[i] || done){
+          // only credit the chosen action when the car actually reached its
+          // intended cell — wobbling backwards must not corrupt the memory
+          const target = done ? R_GOAL : R_STEP + GAMMA*maxValidQ(c);
+          Q[pb] += ALPHA*(target - Q[pb]);
+        }
+        aCell[i] = c;
+        aSteps[i]++; heat[c] += 1;
+        aTarget[i] = -1;
+        if (done){
+          const s = aSteps[i];
+          trips++;
+          if (s < bestTrip) bestTrip = s;
+          rollBuf[rollI] = s; rollI = (rollI+1)%ROLL; if (rollN<ROLL) rollN++;
+          eps = Math.max(EPS_MIN, eps*EPS_TRIP);
+          if (++sinceChart >= chartStride){ pushChartPt(); sinceChart = 0; }
+          respawn(i);
+          continue;
+        }
+      }
     }
+    if (++aAge[i] > maxAge || aSteps[i] > maxTripSteps){ timeouts++; respawn(i); }
   }
   eps = Math.max(EPS_MIN, eps*EPS_TICK);
   // pheromone evaporation
   for (let c=0; c<N; c++) heat[c] *= 0.995;
-}
-
-function respawn(i){
-  aCur[i] = start; aPrev[i] = start; aSteps[i] = 0;
-  aJx[i] = Math.random()-0.5; aJy[i] = Math.random()-0.5;
 }
 
 function rollingAvg(){
@@ -446,22 +526,35 @@ function draw(t){
   // nest & food
   const gx = ox+(goal%cols)*cell+cell/2, gy = oy+((goal/cols)|0)*cell+cell/2;
   const pulse = 1 + 0.18*Math.sin(t/260);
-  cx2.fillStyle = "#38bdf8";
+  cx2.fillStyle = "#e5e7eb";
   cx2.fillRect(ox+cell*0.18, oy+cell*0.18, cell*0.64, cell*0.64);
   cx2.fillStyle = "#34d399";
   cx2.beginPath(); cx2.arc(gx, gy, cell*0.32*pulse, 0, 7); cx2.fill();
 
-  // ants
+  // ant drivers: little oriented blue wedges
   if (ui.tAnts.checked){
-    const r = Math.max(1.4, cell*0.14);
-    const lerpT = Math.min(1, tickAcc);          // sub-tick interpolation at slow speeds
-    cx2.fillStyle = "#fbbf24";
+    const L = Math.max(2.2, cell*0.30), Wd = Math.max(1.2, cell*0.16);
+    cx2.fillStyle = "#60a5fa";
+    cx2.beginPath();
     for (let i=0; i<M; i++){
-      const p = aPrev[i], c = aCur[i];
-      const px = (p%cols) + (c%cols - p%cols)*lerpT;
-      const py = ((p/cols)|0) + (((c/cols)|0) - ((p/cols)|0))*lerpT;
-      cx2.fillRect(ox + (px+0.5+aJx[i]*0.5)*cell - r/2, oy + (py+0.5+aJy[i]*0.5)*cell - r/2, r, r);
+      const px = ox + aX[i]*cell, py = oy + aY[i]*cell;
+      const hx = aHx[i], hy = aHy[i];
+      cx2.moveTo(px + hx*L, py + hy*L);
+      cx2.lineTo(px - hx*L*0.5 - hy*Wd, py - hy*L*0.5 + hx*Wd);
+      cx2.lineTo(px - hx*L*0.5 + hy*Wd, py - hy*L*0.5 - hx*Wd);
+      cx2.closePath();
     }
+    cx2.fill();
+  }
+
+  // crash flashes
+  for (let k=fx.length-1; k>=0; k--){
+    const f = fx[k];
+    if (--f.t <= 0){ fx.splice(k,1); continue; }
+    cx2.fillStyle = `rgba(248,113,113,${(f.t/14*0.75).toFixed(3)})`;
+    cx2.beginPath();
+    cx2.arc(ox + f.x*cell, oy + f.y*cell, cell*(0.12 + (14-f.t)*0.02), 0, 7);
+    cx2.fill();
   }
 }
 
@@ -541,6 +634,7 @@ const S = id => document.getElementById(id);
 function hud(){
   S("sAnts").textContent = M >= 1000 ? (M/1000)+"k" : M;
   S("sTrips").textContent = trips >= 10000 ? (trips/1000).toFixed(1)+"k" : trips;
+  S("sCrash").textContent = crashes >= 10000 ? (crashes/1000).toFixed(1)+"k" : crashes;
   const a = rollingAvg();
   S("sAvg").textContent = a == null ? "—" : Math.round(a);
   S("sBest").textContent = bestTrip === Infinity ? "—" : bestTrip;
@@ -557,7 +651,8 @@ function frame(t){
     let n = Math.floor(tickAcc);
     if (n > 0){
       tickAcc -= n;
-      if (n > 80) n = 80;                        // safety cap per frame
+      const cap = Math.max(2, Math.min(100, (400000/M)|0));   // keep frames responsive at huge colonies
+      if (n > cap) n = cap;
       for (let k=0; k<n; k++) tick();
     }
     if (ui.tPath.checked && ++bestPathAge >= 20){
