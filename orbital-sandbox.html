@@ -6,8 +6,8 @@
 <title>Orbital Sandbox</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #04060f; font-family: 'Segoe UI', system-ui, sans-serif; }
-  #space { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+  html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; background: #04060f; font-family: 'Segoe UI', system-ui, sans-serif; border: none; }
+  #space { position: fixed; inset: 0; touch-action: none; cursor: crosshair; display: block; border: none; outline: none; }
 
   #toolbar {
     position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
@@ -60,7 +60,7 @@
 
 <div id="toolbar"></div>
 
-<div id="hint">Click to place &bull; drag to fling &bull; scroll / pinch to zoom &bull; middle-drag or two fingers to pan</div>
+<div id="hint">Click empty space to place &bull; click an object to follow it &bull; drag to fling &bull; scroll / pinch to zoom &bull; two fingers to pan</div>
 
 <div id="panel">
   <label>Size <input type="range" id="sizeSlider" min="0.5" max="2.2" step="0.05" value="1"></label>
@@ -112,6 +112,7 @@ const effects = [];   // supernova rings, flashes, collision sparks
 let selectedType = 'starYellow';
 let paused = false;
 let idCounter = 0;
+let followed = null;   // body the camera is locked onto
 
 const ui = {
   size: document.getElementById('sizeSlider'),
@@ -133,6 +134,8 @@ function resize() {
   canvas.style.height = window.innerHeight + 'px';
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 resize();
 
 function screenToWorld(sx, sy) {
@@ -349,6 +352,15 @@ function addBody(b) {
   return true;
 }
 
+function bodyAt(x, y) {
+  let best = null, bestD = Infinity;
+  for (const b of bodies) {
+    const d = Math.hypot(b.x - x, b.y - y);
+    if (d < Math.max(b.r * 1.15, 12 / cam.zoom) && d < bestD) { bestD = d; best = b; }
+  }
+  return best;
+}
+
 // strongest gravitational attractor at a point (for auto-orbit placement)
 function dominantAttractor(x, y) {
   let best = null, bestPull = 0;
@@ -453,6 +465,7 @@ function mergeBodies(a, b) {
   big.mass = m;
   big.r = Math.cbrt(big.r ** 3 + small.r ** 3);
   spawnSparks(big.x, big.y, 6, big.color);
+  if (followed === small) followed = big;
   removeBody(small);
 }
 
@@ -463,6 +476,7 @@ function absorb(star, other) {
   star.mass = m;
   star.r = Math.cbrt(star.r ** 3 + other.r ** 3 * 0.25); // matter compresses into the star
   spawnSparks(other.x, other.y, 10, '#ffd080');
+  if (followed === other) followed = star;
   removeBody(other);
 }
 
@@ -496,6 +510,7 @@ function shatter(a, b) {
 
 function explodeSupernova(star) {
   const { x, y, vx, vy, mass, color } = star;
+  const wasFollowed = followed === star;
   removeBody(star);
 
   effects.push({ kind: 'nova', x, y, t: 0, dur: 2.2, r: 30, color });
@@ -529,7 +544,9 @@ function explodeSupernova(star) {
       rand(0.7, 1.2)));
   }
   // the collapsed core survives as a small white dwarf (never a black hole!)
-  addBody(makeBody('starWhite', x, y, vx, vy, 0.45, mass * 0.12));
+  const remnant = makeBody('starWhite', x, y, vx, vy, 0.45, mass * 0.12);
+  addBody(remnant);
+  if (wasFollowed) followed = remnant; // camera stays with the star's remains
 }
 
 function spawnSparks(x, y, n, color) {
@@ -620,6 +637,17 @@ function render(now) {
     ctx.restore();
   }
 
+  // ring around the followed body
+  if (followed) {
+    ctx.strokeStyle = 'rgba(140, 170, 255, 0.85)';
+    ctx.lineWidth = 2 / cam.zoom;
+    ctx.setLineDash([5 / cam.zoom, 4 / cam.zoom]);
+    ctx.beginPath();
+    ctx.arc(followed.x, followed.y, followed.r + 8 / cam.zoom, 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   // effects
   for (let i = effects.length - 1; i >= 0; i--) {
     const e = effects[i];
@@ -684,6 +712,17 @@ function frame(now) {
     updateTrails();
   }
 
+  // camera lock: ride along with the followed body, gliding to close any gap
+  if (followed) {
+    if (!bodies.includes(followed)) followed = null;
+    else {
+      const simDt = (!paused && timeScale > 0) ? rawDt * timeScale : 0;
+      const k = 1 - Math.exp(-rawDt * 6);
+      cam.x += followed.vx * simDt + (followed.x - cam.x) * k;
+      cam.y += followed.vy * simDt + (followed.y - cam.y) * k;
+    }
+  }
+
   render(now);
   ui.count.textContent = bodies.length + (bodies.length === 1 ? ' body' : ' bodies');
   requestAnimationFrame(frame);
@@ -708,6 +747,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
 canvas.addEventListener('pointermove', (e) => {
   if (drag.panning) {
+    followed = null; // panning breaks the camera lock
     cam.x -= (e.clientX - drag.sx) * devicePixelRatio / cam.zoom;
     cam.y -= (e.clientY - drag.sy) * devicePixelRatio / cam.zoom;
     drag.sx = e.clientX; drag.sy = e.clientY;
@@ -727,6 +767,15 @@ canvas.addEventListener('pointerup', (e) => {
   const dx = drag.cwx - drag.wx, dy = drag.cwy - drag.wy;
   const dragLen = Math.hypot(dx, dy);
   let vx = dx * 1.6, vy = dy * 1.6;
+
+  // a tap on an existing body centers the camera on it instead of placing
+  if (dragLen < 8) {
+    const hit = bodyAt(drag.wx, drag.wy);
+    if (hit) {
+      followed = followed === hit ? null : hit;
+      return;
+    }
+  }
 
   if (dragLen < 8 && ui.autoOrbit.checked) {
     const att = dominantAttractor(drag.wx, drag.wy);
