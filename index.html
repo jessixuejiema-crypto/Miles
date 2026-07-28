@@ -90,7 +90,8 @@
   <h1>🐜 Ant <span>Driving School</span></h1>
   <div class="stats">
     <div class="stat"><div class="v" id="sAnts">0</div><div class="k">ants</div></div>
-    <div class="stat"><div class="v blue" id="sTrips">0</div><div class="k">trips done</div></div>
+    <div class="stat"><div class="v blue" id="sTrips">0</div><div class="k">food found</div></div>
+    <div class="stat"><div class="v green" id="sFood">0</div><div class="k">food home</div></div>
     <div class="stat"><div class="v" id="sCrash" style="color:var(--bad)">0</div><div class="k">crashes</div></div>
     <div class="stat"><div class="v amber" id="sAvg">—</div><div class="k">avg steps</div></div>
     <div class="stat"><div class="v green" id="sBest">—</div><div class="k">best trip</div></div>
@@ -155,18 +156,22 @@
       <h2>How they learn</h2>
       <div class="legend">
         <span class="dot" style="background:var(--ink)"></span>Nest (start)<br>
-        <span class="dot" style="background:var(--good)"></span>Food (goal)<br>
-        <span class="dot" style="background:var(--car)"></span>Ant drivers<br>
+        <span class="dot" style="background:var(--good)"></span>Food source (goal)<br>
+        <span class="dot" style="background:var(--car)"></span>Forager looking for food<br>
+        <span class="dot" style="background:var(--good)"></span>Ant carrying food home<br>
+        <span class="dot" style="background:linear-gradient(90deg,#000,var(--good))"></span>Food-scent trail markers<br>
+        <span class="dot" style="background:var(--bad)"></span>"Path blocked" markers<br>
         <span class="dot" style="background:linear-gradient(90deg,#000,var(--ant))"></span>Ant traffic: black = none, yellow = busiest
       </div>
       <div class="hint" style="margin-top:8px">
-        Ants start out driving completely at random. Smack into a wall and it's
-        back to the nest — and at first the colony shrugs it off like nothing
-        happened. But each crash leaves the tiniest dent in the shared memory,
-        and after smacking into the same walls hundreds of times the lesson
-        very slowly sinks in: steering steadies, crash-prone routes fade, and
-        trips that reach the food lock in the good ones. Patience — or crank
-        the speed slider to fast-forward through driving school.
+        Blue foragers hunt for food at random, marking dead ends and crash
+        spots in red — "path blocked that way" — so others steer around them.
+        An ant that reaches the food turns green, picks up a load, and must
+        find its own way back to the nest, dropping a green food-scent trail
+        the whole way home; exploring foragers that cross the trail follow it
+        toward the food. Crashing drops the food and sends the ant back to
+        the nest, and those lessons sink in very slowly — crank the speed
+        slider to fast-forward.
       </div>
     </div>
   </aside>
@@ -189,13 +194,16 @@ const ROLL = 150;                                     // rolling-average window
 /* ================= state ================= */
 let cols, rows, N, walls;                             // walls: bit 0=N,1=E,2=S,3=W
 let start, goal, optimal;
-let Q;                                                // Float32Array N*4, shared colony memory
-let heat;                                             // Float32Array N, pheromone display
+let QF, QH;                                           // shared colony memory: routes to food / routes home
+let heat;                                             // Float32Array N, traffic display
+let foodPher, blockPher;                              // markers ants leave: "food this way" / "path blocked"
 let M = 2000;                                         // ant count
 let aCell, aX, aY, aHx, aHy, aV, aSteps, aAge;        // ant kinematics
+let aMode;                                            // 0 = foraging, 1 = carrying food home
 let aTarget, aPendC, aPendA, aVar;                    // route intent + per-ant wobble
-let crashes = 0;
+let crashes = 0, delivered = 0;
 let eps = 1, trips = 0, timeouts = 0, bestTrip = Infinity;
+const TMP4 = new Float32Array(4);
 let rollBuf = new Float32Array(ROLL), rollN = 0, rollI = 0;
 let chartPts = [], chartStride = 20, sinceChart = 0;
 let maxTripSteps = 0;
@@ -272,10 +280,13 @@ function bfs(s, g){
 
 /* ================= colony ================= */
 function resetLearning(){
-  Q = new Float32Array(N*4);
+  QF = new Float32Array(N*4);
+  QH = new Float32Array(N*4);
   heat = new Float32Array(N);
+  foodPher = new Float32Array(N);
+  blockPher = new Float32Array(N);
   eps = EPS_START; trips = 0; timeouts = 0; bestTrip = Infinity;
-  crashes = 0;
+  crashes = 0; delivered = 0;
   rollN = 0; rollI = 0;
   chartPts = []; chartStride = 20; sinceChart = 0;
   bestPath = null;
@@ -288,6 +299,7 @@ function spawnAnts(){
   aHx = new Float32Array(M); aHy = new Float32Array(M);
   aV = new Float32Array(M);
   aSteps = new Int32Array(M); aAge = new Int32Array(M);
+  aMode = new Uint8Array(M);
   aTarget = new Int32Array(M); aPendC = new Int32Array(M); aPendA = new Int32Array(M);
   aVar = new Float32Array(M);
   for (let i=0; i<M; i++){ aVar[i] = 0.5 + Math.random(); respawn(i); }
@@ -296,33 +308,50 @@ function spawnAnts(){
 function respawn(i){
   aCell[i] = start;
   aX[i] = (start%cols)+0.5; aY[i] = ((start/cols)|0)+0.5;
-  aV[i] = 0; aSteps[i] = 0; aAge[i] = 0; aTarget[i] = -1;
+  aV[i] = 0; aSteps[i] = 0; aAge[i] = 0; aTarget[i] = -1; aMode[i] = 0;
   const rx = Math.random()-0.5, ry = Math.random()-0.5;
   const inv = 1/(Math.hypot(rx,ry)||1);
   aHx[i] = rx*inv; aHy[i] = ry*inv;
 }
 
-function maxValidQ(c){
+function maxValidQ(Qt, c){
   let m = -Infinity;
   const w = walls[c], b = c*4;
-  for (let d=0; d<4; d++) if (!(w&(1<<d))) { const v = Q[b+d]; if (v>m) m = v; }
+  for (let d=0; d<4; d++) if (!(w&(1<<d))) { const v = Qt[b+d]; if (v>m) m = v; }
   return m === -Infinity ? 0 : m;
 }
 
 function chooseAction(i, c){
+  const carrying = aMode[i];
+  const Qt = carrying ? QH : QF;
   const w = walls[c], b = c*4;
   let a = -1;
   if (Math.random() < eps){
-    let cnt = 0;
-    for (let d=0; d<4; d++) if (!(w&(1<<d))) cnt++;
-    let pick = (Math.random()*cnt)|0;
-    for (let d=0; d<4; d++) if (!(w&(1<<d))) { if (!pick--){ a=d; break; } }
+    if (!carrying){
+      // exploring foragers read the markers on the ground: drawn toward
+      // "food this way" trails, steered off "path blocked" warnings
+      let tot = 0;
+      for (let d=0; d<4; d++){
+        if (w&(1<<d)){ TMP4[d] = 0; continue; }
+        const n = ((c/cols|0)+DY[d])*cols + (c%cols)+DX[d];
+        TMP4[d] = (0.15 + Math.min(3, foodPher[n])) / (1 + Math.min(3, blockPher[n]));
+        tot += TMP4[d];
+      }
+      let r = Math.random()*tot;
+      for (let d=0; d<4; d++) if (!(w&(1<<d))){ r -= TMP4[d]; if (r <= 0){ a = d; break; } }
+      if (a < 0) for (let d=3; d>=0; d--) if (!(w&(1<<d))){ a = d; break; }
+    } else {
+      let cnt = 0;
+      for (let d=0; d<4; d++) if (!(w&(1<<d))) cnt++;
+      let pick = (Math.random()*cnt)|0;
+      for (let d=0; d<4; d++) if (!(w&(1<<d))) { if (!pick--){ a=d; break; } }
+    }
   } else {
     // greedy with random tie-breaks; untried directions start at 0 (optimistic),
     // so ants naturally prefer routes they haven't been punished on yet
     let best = -Infinity, ties = 0;
     for (let d=0; d<4; d++) if (!(w&(1<<d))) {
-      const v = Q[b+d];
+      const v = Qt[b+d];
       if (v > best){ best = v; a = d; ties = 1; }
       else if (v === best && Math.random() < 1/++ties) a = d;
     }
@@ -385,40 +414,56 @@ function tick(){
       crashes++;
       // one crash? shrug. the tiny penalty and tiny skill gain only add up
       // after the colony has smacked into the same walls many, many times
-      Q[pb] += ALPHA_CRASH*(R_CRASH + GAMMA*maxValidQ(aCell[i]) - Q[pb]);
+      const Qt = aMode[i] ? QH : QF;
+      Qt[pb] += ALPHA_CRASH*(R_CRASH + GAMMA*maxValidQ(Qt, aCell[i]) - Qt[pb]);
+      blockPher[aCell[i]] += 0.3;                                     // warn the others: rough spot
       eps = Math.max(EPS_MIN, eps*EPS_CRASH);
-      respawn(i);                                                     // crashed — back to the nest
+      respawn(i);                                    // crashed — food dropped, back to the nest
       continue;
     } else {
       aX[i] = nx; aY[i] = ny;
       if (c !== aCell[i]){
-        const done = c === goal;
+        const carrying = aMode[i];
+        const Qt = carrying ? QH : QF;
+        const foundFood = !carrying && c === goal;
+        const cameHome = carrying && c === start;
+        const done = foundFood || cameHome;
         if (c === aTarget[i] || done){
           // only credit the chosen action when the car actually reached its
           // intended cell — wobbling backwards must not corrupt the memory
-          const target = done ? R_GOAL : R_STEP + GAMMA*maxValidQ(c);
-          Q[pb] += ALPHA*(target - Q[pb]);
+          const target = done ? R_GOAL : R_STEP + GAMMA*maxValidQ(Qt, c);
+          Qt[pb] += ALPHA*(target - Qt[pb]);
         }
         aCell[i] = c;
         aSteps[i]++; heat[c] += 1;
+        if (carrying){
+          foodPher[c] += 1;                          // scent trail: "food back that way"
+        } else if (c !== goal && walls[c] !== 0){
+          let wc = 0;
+          for (let d=0; d<4; d++) if (walls[c]&(1<<d)) wc++;
+          if (wc === 3) blockPher[c] += 1;           // dead end — mark "path blocked" for the others
+        }
         aTarget[i] = -1;
-        if (done){
+        if (foundFood){
+          // grabbed a load of food — record the trip, then haul it home
           const s = aSteps[i];
           trips++;
           if (s < bestTrip) bestTrip = s;
           rollBuf[rollI] = s; rollI = (rollI+1)%ROLL; if (rollN<ROLL) rollN++;
           eps = Math.max(EPS_MIN, eps*EPS_TRIP);
           if (++sinceChart >= chartStride){ pushChartPt(); sinceChart = 0; }
-          respawn(i);
-          continue;
+          aMode[i] = 1; aSteps[i] = 0; aAge[i] = 0;
+        } else if (cameHome){
+          delivered++;                               // food safely in the nest — head back out
+          aMode[i] = 0; aSteps[i] = 0; aAge[i] = 0;
         }
       }
     }
     if (++aAge[i] > maxAge || aSteps[i] > maxTripSteps){ timeouts++; respawn(i); }
   }
   eps = Math.max(EPS_MIN, eps*EPS_TICK);
-  // pheromone evaporation
-  for (let c=0; c<N; c++) heat[c] *= 0.995;
+  // traffic and markers all evaporate; abandoned trails fade out
+  for (let c=0; c<N; c++){ heat[c] *= 0.995; foodPher[c] *= 0.9995; blockPher[c] *= 0.9995; }
 }
 
 function rollingAvg(){
@@ -446,7 +491,7 @@ function computeBestPath(){
     if (c === goal) return path;
     const w = walls[c], b = c*4;
     let a = -1, best = -Infinity;
-    for (let d=0; d<4; d++) if (!(w&(1<<d))) { const v = Q[b+d]; if (v>best){ best=v; a=d; } }
+    for (let d=0; d<4; d++) if (!(w&(1<<d))) { const v = QF[b+d]; if (v>best){ best=v; a=d; } }
     const n = ((c/cols|0)+DY[a])*cols + (c%cols)+DX[a];
     if (seen.has(n)) return null;
     seen.add(n); path.push(n); c = n;
@@ -511,6 +556,24 @@ function draw(t){
     cx2.fillRect(ox, oy, cell*cols, cell*rows);
   }
 
+  // markers the ants leave for each other
+  let fmax = 0;
+  for (let c=0; c<N; c++) if (foodPher[c]>fmax) fmax = foodPher[c];
+  if (fmax > 0){
+    for (let c=0; c<N; c++){
+      const v = foodPher[c]/fmax;
+      if (v < 0.01) continue;
+      cx2.fillStyle = `rgba(52,211,153,${(Math.sqrt(v)*0.45).toFixed(3)})`;
+      cx2.fillRect(ox+(c%cols)*cell, oy+((c/cols)|0)*cell, cell, cell);
+    }
+  }
+  for (let c=0; c<N; c++){
+    const bv = blockPher[c];
+    if (bv < 0.25) continue;
+    cx2.fillStyle = `rgba(248,113,113,${Math.min(0.3, bv*0.06).toFixed(3)})`;
+    cx2.fillRect(ox+(c%cols)*cell, oy+((c/cols)|0)*cell, cell, cell);
+  }
+
   cx2.drawImage(wallLayer, 0, 0, W, H);
 
   // best learned path
@@ -535,12 +598,16 @@ function draw(t){
   cx2.fillStyle = "#34d399";
   cx2.beginPath(); cx2.arc(gx, gy, cell*0.32*pulse, 0, 7); cx2.fill();
 
-  // ant drivers: really tiny blue dots
+  // ant drivers: tiny blue dots foraging, green dots hauling food home
   if (ui.tAnts.checked){
     const r = Math.max(1, cell*0.07);
     cx2.fillStyle = "#60a5fa";
     for (let i=0; i<M; i++){
-      cx2.fillRect(ox + aX[i]*cell - r/2, oy + aY[i]*cell - r/2, r, r);
+      if (!aMode[i]) cx2.fillRect(ox + aX[i]*cell - r/2, oy + aY[i]*cell - r/2, r, r);
+    }
+    cx2.fillStyle = "#34d399";
+    for (let i=0; i<M; i++){
+      if (aMode[i]) cx2.fillRect(ox + aX[i]*cell - r/2, oy + aY[i]*cell - r/2, r, r);
     }
   }
 
@@ -623,6 +690,7 @@ function hud(){
   S("sAnts").textContent = M >= 1000 ? (M/1000)+"k" : M;
   S("sTrips").textContent = trips >= 10000 ? (trips/1000).toFixed(1)+"k" : trips;
   S("sCrash").textContent = crashes >= 10000 ? (crashes/1000).toFixed(1)+"k" : crashes;
+  S("sFood").textContent = delivered >= 10000 ? (delivered/1000).toFixed(1)+"k" : delivered;
   const a = rollingAvg();
   S("sAvg").textContent = a == null ? "—" : Math.round(a);
   S("sBest").textContent = bestTrip === Infinity ? "—" : bestTrip;
