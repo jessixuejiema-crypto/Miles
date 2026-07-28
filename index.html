@@ -139,7 +139,7 @@
 
     <div class="card">
       <h2>View</h2>
-      <div class="row"><label>Pheromone heatmap</label><input type="checkbox" class="toggle" id="tHeat" checked></div>
+      <div class="row"><label>Traffic heatmap</label><input type="checkbox" class="toggle" id="tHeat" checked></div>
       <div class="row"><label>Best learned path</label><input type="checkbox" class="toggle" id="tPath" checked></div>
       <div class="row"><label>Show ants</label><input type="checkbox" class="toggle" id="tAnts" checked></div>
     </div>
@@ -157,7 +157,7 @@
         <span class="dot" style="background:var(--ink)"></span>Nest (start)<br>
         <span class="dot" style="background:var(--good)"></span>Food (goal)<br>
         <span class="dot" style="background:var(--car)"></span>Ant drivers<br>
-        <span class="dot" style="background:var(--ant)"></span>Pheromone trail
+        <span class="dot" style="background:linear-gradient(90deg,#000,var(--ant))"></span>Ant traffic: black = none, yellow = busiest
       </div>
       <div class="hint" style="margin-top:8px">
         Ants start out driving completely at random. Smack into a wall and it's
@@ -490,21 +490,25 @@ function draw(t){
   cx2.setTransform(dpr,0,0,dpr,0,0);
   cx2.fillStyle = "#0e1116";
   cx2.fillRect(0,0,W,H);
-  cx2.fillStyle = "#12161d";
-  cx2.fillRect(ox, oy, cell*cols, cell*rows);
-
-  // pheromone heatmap — sequential single hue, opacity by strength
+  // traffic heatmap — the floor itself: black where no ant goes,
+  // ramping to full yellow on the busiest lanes
   if (ui.tHeat.checked){
+    cx2.fillStyle = "#000";
+    cx2.fillRect(ox, oy, cell*cols, cell*rows);
     let hmax = 0;
     for (let c=0; c<N; c++) if (heat[c]>hmax) hmax = heat[c];
     if (hmax > 0){
       for (let c=0; c<N; c++){
         const v = heat[c]/hmax;
-        if (v < 0.01) continue;
-        cx2.fillStyle = `rgba(251,191,36,${(Math.sqrt(v)*0.42).toFixed(3)})`;
+        if (v < 0.004) continue;
+        const t = Math.sqrt(v);
+        cx2.fillStyle = `rgb(${(251*t)|0},${(191*t)|0},${(36*t)|0})`;
         cx2.fillRect(ox+(c%cols)*cell, oy+((c/cols)|0)*cell, cell, cell);
       }
     }
+  } else {
+    cx2.fillStyle = "#12161d";
+    cx2.fillRect(ox, oy, cell*cols, cell*rows);
   }
 
   cx2.drawImage(wallLayer, 0, 0, W, H);
