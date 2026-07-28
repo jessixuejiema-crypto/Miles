@@ -161,11 +161,12 @@
       </div>
       <div class="hint" style="margin-top:8px">
         Ants start out driving completely at random. Smack into a wall and it's
-        back to the nest to start over — but nothing is wasted: each crash
-        teaches the colony that crashing is bad (everyone's steering steadies a
-        little) and lowers that route's score in the shared memory, while every
-        trip that reaches the food raises its route. Watch the swarm push a
-        little deeper each wave until the chaos settles into clean racing lines.
+        back to the nest — and at first the colony shrugs it off like nothing
+        happened. But each crash leaves the tiniest dent in the shared memory,
+        and after smacking into the same walls hundreds of times the lesson
+        very slowly sinks in: steering steadies, crash-prone routes fade, and
+        trips that reach the food lock in the good ones. Patience — or crank
+        the speed slider to fast-forward through driving school.
       </div>
     </div>
   </aside>
@@ -180,8 +181,9 @@ const SPEEDS = [0.25, 0.5, 1, 2, 4, 10, 30, 90];      // logic ticks per frame
 const ALPHA = 0.18, GAMMA = 0.97;
 const EPS_START = 1.0, EPS_MIN = 0.02;                // start fully random
 const EPS_TRIP = 0.998, EPS_TICK = 0.999996;          // decay per completed trip / per tick
-const EPS_CRASH = 0.99998;                            // every crash is a lesson: "crashing is bad"
-const R_STEP = -1, R_GOAL = 120, R_CRASH = -2;
+const EPS_CRASH = 0.999995;                           // one crash feels fine — only piles of them slowly sink in
+const ALPHA_CRASH = 0.03;                             // a single crash barely dents the route's score
+const R_STEP = -1, R_GOAL = 120, R_CRASH = -4;
 const ROLL = 150;                                     // rolling-average window
 
 /* ================= state ================= */
@@ -381,8 +383,10 @@ function tick(){
     const pb = aPendC[i]*4 + aPendA[i];
     if (crashed){
       crashes++;
-      Q[pb] += ALPHA*(R_CRASH + GAMMA*maxValidQ(aCell[i]) - Q[pb]);   // crash-prone routes lose value
-      eps = Math.max(EPS_MIN, eps*EPS_CRASH);                         // the colony learns crashing is bad
+      // one crash? shrug. the tiny penalty and tiny skill gain only add up
+      // after the colony has smacked into the same walls many, many times
+      Q[pb] += ALPHA_CRASH*(R_CRASH + GAMMA*maxValidQ(aCell[i]) - Q[pb]);
+      eps = Math.max(EPS_MIN, eps*EPS_CRASH);
       respawn(i);                                                     // crashed — back to the nest
       continue;
     } else {
