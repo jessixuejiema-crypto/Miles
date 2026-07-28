@@ -553,7 +553,7 @@ function asteroidImpact(world, ast) {
   const m = world.mass + ast.mass;
   world.vx = (world.vx * world.mass + ast.vx * ast.mass) / m;
   world.vy = (world.vy * world.mass + ast.vy * ast.mass) / m;
-  world.mass += ast.mass * 0.6; // the rest blasts back out as ejecta
+  const fullMass = world.mass + ast.mass; // asteroid buries itself in the crust
 
   // scar position in texture-local coordinates so it spins with the world
   const ang = Math.atan2(ast.y - world.y, ast.x - world.x);
@@ -566,15 +566,35 @@ function asteroidImpact(world, ast) {
   if (followed === ast) followed = world;
   removeBody(ast);
 
-  // ejecta sprays back out of the impact site
+  // ejecta excavates the crust — the world loses the mass that flies away
+  let excavated = 0;
   const nEj = Math.min(relSpeed > 150 ? randInt(3, 5) : randInt(1, 2),
     Math.max(0, MAX_BODIES - bodies.length));
   for (let k = 0; k < nEj; k++) {
     const ea = ang + rand(-0.9, 0.9);
     const spd = rand(100, 240);
-    addBody(makeBody('asteroid',
+    const frag = makeBody('asteroid',
       world.x + Math.cos(ea) * (world.r + 6), world.y + Math.sin(ea) * (world.r + 6),
-      world.vx + Math.cos(ea) * spd, world.vy + Math.sin(ea) * spd, rand(0.4, 0.9)));
+      world.vx + Math.cos(ea) * spd, world.vy + Math.sin(ea) * spd, rand(0.4, 0.9));
+    if (addBody(frag)) excavated += frag.mass;
+  }
+  world.mass = Math.max(5, fullMass - excavated * 1.4); // extra 40% vaporizes
+  world.r *= Math.cbrt(world.mass / fullMass);          // shrinks a little each hit
+  if (world.mass <= 10 || world.r < 3.4) crumble(world); // bombarded to rubble
+}
+
+function crumble(world) {
+  // a world eroded down to nothing falls apart into a few last rocks
+  const { x, y, vx, vy, r } = world;
+  spawnSparks(x, y, 14, '#c09070');
+  effects.push({ kind: 'flash', x, y, t: 0, dur: 0.5, r: r * 3.5, color: '#e0b090' });
+  removeBody(world);
+  const n = Math.min(randInt(3, 5), Math.max(0, MAX_BODIES - bodies.length));
+  for (let k = 0; k < n; k++) {
+    const ang = rand(0, TAU), spd = rand(30, 90);
+    addBody(makeBody('asteroid',
+      x + Math.cos(ang) * r, y + Math.sin(ang) * r,
+      vx + Math.cos(ang) * spd, vy + Math.sin(ang) * spd, rand(0.5, 1)));
   }
 }
 
