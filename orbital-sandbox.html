@@ -41,6 +41,7 @@
     background: rgba(90, 120, 255, 0.18); color: #e5ebff; font-size: 12px; cursor: pointer;
   }
   .btn:hover { background: rgba(90, 120, 255, 0.35); }
+  .btn.active { background: rgba(255, 120, 80, 0.4); border-color: #ff9060; color: #fff; }
   #count { color: #8fa3ff; font-weight: 600; }
 
   #hint {
@@ -69,6 +70,8 @@
   <label><input type="checkbox" id="autoOrbit" checked> auto-orbit</label>
   <label><input type="checkbox" id="showTrails" checked> trails</label>
   <button class="btn" id="pauseBtn">&#10074;&#10074; Pause</button>
+  <button class="btn" id="spamBtn">&#128165; Spam</button>
+  <button class="btn" id="messBtn">&#127922; Big Mess</button>
   <button class="btn" id="presetBtn">&#9728; Solar System</button>
   <button class="btn" id="clearBtn">Clear</button>
   <span id="count">0 bodies</span>
@@ -80,7 +83,8 @@
 // ---------------------------------------------------------------- constants
 const G_BASE = 1200;          // gravitational constant (px^3 / mass / s^2)
 const SOFTEN = 40;            // gravity softening to avoid slingshot singularities
-const MAX_BODIES = 650;
+const MAX_BODIES = 1100;
+const IMPACT_COOL = 10;       // seconds for a fresh impact scar to cool into a gray crater
 const SHATTER_SPEED = 240;    // relative impact speed (px/s) that shatters bodies
 const SUPERNOVA_MASS = 62000; // stars heavier than this go supernova
 const TRAIL_LEN = 70;
@@ -113,6 +117,8 @@ let selectedType = 'starYellow';
 let paused = false;
 let idCounter = 0;
 let followed = null;   // body the camera is locked onto
+let spamMode = false;  // hold-and-drag fires an asteroid stream
+const spray = { on: false, sx: 0, sy: 0, dx: 1, dy: 0, acc: 0 };
 
 const ui = {
   size: document.getElementById('sizeSlider'),
@@ -149,11 +155,11 @@ function screenToWorld(sx, sy) {
 // Every body gets its own procedurally painted texture on an offscreen canvas.
 const TEX_SIZE = 128;
 
-function makeTexture(type, seedColor) {
+function makeTexture(type, seedColor, size = TEX_SIZE) {
   const c = document.createElement('canvas');
-  c.width = c.height = TEX_SIZE;
+  c.width = c.height = size;
   const g = c.getContext('2d');
-  const R = TEX_SIZE / 2;
+  const R = size / 2;
 
   g.save();
   g.beginPath();
@@ -176,7 +182,7 @@ function makeTexture(type, seedColor) {
     sh.addColorStop(0.55, 'rgba(0,0,0,0)');
     sh.addColorStop(1, 'rgba(0,0,20,0.75)');
     g.fillStyle = sh;
-    g.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
+    g.fillRect(0, 0, size, size);
   }
   g.restore();
   return c;
@@ -351,8 +357,9 @@ function makeBody(type, x, y, vx, vy, sizeMul = 1, massOverride = null) {
     type, x, y, vx, vy, mass, r,
     star: def.star,
     color: def.color,
-    texture: makeTexture(type, def.color),
+    texture: makeTexture(type, def.color, type === 'asteroid' ? 48 : TEX_SIZE),
     trail: [],
+    impacts: [],         // hot asteroid-strike scars still cooling on the surface
     rot: rand(0, TAU),
     rotSpeed: rand(-0.6, 0.6),
     novaTimer: -1,       // >=0 means counting down to supernova
@@ -397,26 +404,31 @@ function circularOrbitVelocity(x, y, attractor) {
 }
 
 // ---------------------------------------------------------------- physics
+let accX = new Float64Array(0), accY = new Float64Array(0);
+
 function stepPhysics(dt) {
   const G = G_BASE * parseFloat(ui.grav.value);
   const n = bodies.length;
 
-  // pairwise gravity (semi-implicit Euler)
+  // pairwise gravity, symmetric pairs (semi-implicit Euler)
+  if (accX.length < n) { accX = new Float64Array(n); accY = new Float64Array(n); }
+  accX.fill(0, 0, n); accY.fill(0, 0, n);
+  const S2 = SOFTEN * SOFTEN;
   for (let i = 0; i < n; i++) {
     const a = bodies[i];
-    let ax = 0, ay = 0;
-    for (let j = 0; j < n; j++) {
-      if (i === j) continue;
+    for (let j = i + 1; j < n; j++) {
       const b = bodies[j];
       const dx = b.x - a.x, dy = b.y - a.y;
-      const d2 = dx * dx + dy * dy + SOFTEN * SOFTEN;
-      const d = Math.sqrt(d2);
-      const f = G * b.mass / (d2 * d);
-      ax += dx * f;
-      ay += dy * f;
+      const d2 = dx * dx + dy * dy + S2;
+      const f = G / (d2 * Math.sqrt(d2));
+      const fb = f * b.mass, fa = f * a.mass;
+      accX[i] += dx * fb; accY[i] += dy * fb;
+      accX[j] -= dx * fa; accY[j] -= dy * fa;
     }
-    a.vx += ax * dt;
-    a.vy += ay * dt;
+  }
+  for (let i = 0; i < n; i++) {
+    bodies[i].vx += accX[i] * dt;
+    bodies[i].vy += accY[i] * dt;
   }
   const exploding = [];
   for (const b of bodies) {
@@ -427,6 +439,12 @@ function stepPhysics(dt) {
     if (b.novaTimer >= 0) {
       b.novaTimer -= dt;
       if (b.novaTimer <= 0) exploding.push(b);
+    }
+    // impact scars cool down; fully cooled ones bake into the texture as craters
+    for (let i = b.impacts.length - 1; i >= 0; i--) {
+      const imp = b.impacts[i];
+      imp.age += dt;
+      if (imp.age >= IMPACT_COOL) { paintCrater(b, imp); b.impacts.splice(i, 1); }
     }
   }
   for (const b of exploding) explodeSupernova(b);
@@ -462,6 +480,10 @@ function handleCollisions() {
         // asteroid pile-up: 90% clump into a bigger rock, 10% smash into even more shards
         if (Math.random() < 0.1) shatter(a, b);
         else mergeBodies(a, b);
+      } else if (a.type === 'asteroid' || b.type === 'asteroid') {
+        // asteroid strikes a world: glowing scar that cools to a crater, plus ejecta
+        const ast = a.type === 'asteroid' ? a : b;
+        asteroidImpact(ast === a ? b : a, ast);
       } else if (relSpeed > SHATTER_SPEED) {
         shatter(a, b);               // fast impact: smash both into asteroids
       } else {
@@ -524,6 +546,53 @@ function shatter(a, b) {
     frag.mass = Math.max(0.5, cmass / count * 0.4); // most mass is vaporized
     addBody(frag);
   }
+}
+
+function asteroidImpact(world, ast) {
+  const relSpeed = Math.hypot(world.vx - ast.vx, world.vy - ast.vy);
+  const m = world.mass + ast.mass;
+  world.vx = (world.vx * world.mass + ast.vx * ast.mass) / m;
+  world.vy = (world.vy * world.mass + ast.vy * ast.mass) / m;
+  world.mass += ast.mass * 0.6; // the rest blasts back out as ejecta
+
+  // scar position in texture-local coordinates so it spins with the world
+  const ang = Math.atan2(ast.y - world.y, ast.x - world.x);
+  const local = ang - world.rot;
+  const sr = Math.max(7, Math.min(22, (ast.r / world.r) * 64 * 2.2));
+  world.impacts.push({ lx: Math.cos(local) * 40, ly: Math.sin(local) * 40, r: sr, age: 0 });
+  if (world.impacts.length > 10) { paintCrater(world, world.impacts[0]); world.impacts.shift(); }
+
+  spawnSparks(ast.x, ast.y, 8, '#ffb060');
+  if (followed === ast) followed = world;
+  removeBody(ast);
+
+  // ejecta sprays back out of the impact site
+  const nEj = Math.min(relSpeed > 150 ? randInt(3, 5) : randInt(1, 2),
+    Math.max(0, MAX_BODIES - bodies.length));
+  for (let k = 0; k < nEj; k++) {
+    const ea = ang + rand(-0.9, 0.9);
+    const spd = rand(100, 240);
+    addBody(makeBody('asteroid',
+      world.x + Math.cos(ea) * (world.r + 6), world.y + Math.sin(ea) * (world.r + 6),
+      world.vx + Math.cos(ea) * spd, world.vy + Math.sin(ea) * spd, rand(0.4, 0.9)));
+  }
+}
+
+function paintCrater(b, imp) {
+  // bake the cooled scar into the texture as a permanent gray crater
+  const g = b.texture.getContext('2d');
+  const R = b.texture.width / 2;
+  const s = R / 64;
+  const x = R + imp.lx * s, y = R + imp.ly * s, cr = imp.r * s;
+  g.save();
+  g.beginPath(); g.arc(R, R, R - 1, 0, TAU); g.clip();
+  g.fillStyle = 'rgba(88, 88, 95, 0.95)';
+  g.beginPath(); g.arc(x, y, cr, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(140, 140, 148, 0.9)';
+  g.beginPath(); g.arc(x - cr * 0.25, y - cr * 0.25, cr * 0.55, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(40, 40, 48, 0.6)';
+  g.beginPath(); g.arc(x + cr * 0.2, y + cr * 0.2, cr * 0.35, 0, TAU); g.fill();
+  g.restore();
 }
 
 function explodeSupernova(star) {
@@ -617,18 +686,28 @@ function render(now) {
   // trails
   if (ui.trails.checked) {
     ctx.lineCap = 'round';
+    const many = bodies.length > 350; // huge scenes: one flat stroke per trail
     for (const b of bodies) {
       const t = b.trail;
       const pts = t.length / 2;
       if (pts < 2) continue;
       ctx.strokeStyle = b.color;
       ctx.lineWidth = Math.max(1 / cam.zoom, b.r * 0.25);
-      for (let i = 2; i < t.length; i += 4) {
-        ctx.globalAlpha = (i / t.length) * 0.45;
+      if (many) {
+        ctx.globalAlpha = 0.28;
         ctx.beginPath();
-        ctx.moveTo(t[i - 2], t[i - 1]);
-        ctx.lineTo(t[Math.min(i + 2, t.length - 2)], t[Math.min(i + 3, t.length - 1)]);
+        ctx.moveTo(t[0], t[1]);
+        for (let i = 8; i < t.length; i += 8) ctx.lineTo(t[i], t[i + 1]);
+        ctx.lineTo(t[t.length - 2], t[t.length - 1]);
         ctx.stroke();
+      } else {
+        for (let i = 2; i < t.length; i += 4) {
+          ctx.globalAlpha = (i / t.length) * 0.45;
+          ctx.beginPath();
+          ctx.moveTo(t[i - 2], t[i - 1]);
+          ctx.lineTo(t[Math.min(i + 2, t.length - 2)], t[Math.min(i + 3, t.length - 1)]);
+          ctx.stroke();
+        }
       }
     }
     ctx.globalAlpha = 1;
@@ -648,10 +727,37 @@ function render(now) {
   for (const b of bodies) {
     let drawR = b.r;
     if (b.novaTimer >= 0) drawR *= 1 + (1.6 - b.novaTimer) * 0.6;
+    // bodies just a few pixels on screen: cheap draws instead of texture transforms
+    const screenR = drawR * cam.zoom;
+    if (screenR < 3 && !b.impacts.length) {
+      ctx.fillStyle = b.color;
+      ctx.fillRect(b.x - drawR, b.y - drawR, drawR * 2, drawR * 2);
+      continue;
+    }
+    if (screenR < 6 && !b.impacts.length) {
+      ctx.drawImage(b.texture, b.x - drawR, b.y - drawR, drawR * 2, drawR * 2);
+      continue;
+    }
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.rotate(b.rot);
     ctx.drawImage(b.texture, -drawR, -drawR, drawR * 2, drawR * 2);
+    // molten impact scars: gray crater emerging beneath a yellow→orange→red glow
+    if (b.impacts.length) {
+      const s = drawR / 64;
+      for (const imp of b.impacts) {
+        const p = imp.age / IMPACT_COOL;
+        const x = imp.lx * s, y = imp.ly * s, r = imp.r * s;
+        ctx.globalAlpha = Math.min(1, 0.2 + p);
+        ctx.fillStyle = 'rgb(105, 105, 112)';
+        ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+        const hue = 55 - 50 * Math.min(1, p * 1.4);   // yellow → orange → red
+        ctx.globalAlpha = Math.max(0, 1 - p * 1.05);  // glow dies as it cools
+        ctx.fillStyle = `hsl(${hue}, 100%, ${68 - 38 * p}%)`;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
     ctx.restore();
   }
 
@@ -722,9 +828,22 @@ function frame(now) {
   lastTime = now;
   const timeScale = parseFloat(ui.time.value);
 
+  // spam mode: hold to hose out a fast asteroid stream toward your drag direction
+  if (spray.on && spamMode && !paused) {
+    spray.acc += rawDt;
+    while (spray.acc > 0.035) {
+      spray.acc -= 0.035;
+      const w = screenToWorld(spray.sx, spray.sy);
+      const spd = rand(500, 800), perp = rand(-70, 70);
+      if (!addBody(makeBody('asteroid', w.x, w.y,
+        spray.dx * spd - spray.dy * perp, spray.dy * spd + spray.dx * perp,
+        rand(0.5, 1.1)))) { spray.acc = 0; break; }
+    }
+  } else spray.acc = 0;
+
   if (!paused && timeScale > 0) {
     const dt = rawDt * timeScale;
-    const sub = 3; // substeps keep tight orbits stable
+    const sub = bodies.length > 400 ? 1 : 3; // fewer substeps when the world is huge
     for (let s = 0; s < sub; s++) stepPhysics(dt / sub);
     for (const e of effects) e.t += dt;
     updateTrails();
@@ -757,6 +876,13 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (activePointers.size > 0) return; // second finger = pinch, handled below
+  if (spamMode) {
+    spray.on = true;
+    spray.sx = e.clientX; spray.sy = e.clientY;
+    const a0 = rand(0, TAU);
+    spray.dx = Math.cos(a0); spray.dy = Math.sin(a0);
+    return;
+  }
   const w = screenToWorld(e.clientX, e.clientY);
   drag.placing = true;
   drag.wx = w.x; drag.wy = w.y;
@@ -771,6 +897,13 @@ canvas.addEventListener('pointermove', (e) => {
     drag.sx = e.clientX; drag.sy = e.clientY;
     return;
   }
+  if (spray.on) {
+    const mdx = e.clientX - spray.sx, mdy = e.clientY - spray.sy;
+    const L = Math.hypot(mdx, mdy);
+    if (L > 3) { spray.dx = mdx / L; spray.dy = mdy / L; } // aim follows your drag
+    spray.sx = e.clientX; spray.sy = e.clientY;
+    return;
+  }
   if (drag.placing) {
     const w = screenToWorld(e.clientX, e.clientY);
     drag.cwx = w.x; drag.cwy = w.y;
@@ -778,6 +911,7 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 canvas.addEventListener('pointerup', (e) => {
+  if (spray.on) { spray.on = false; return; }
   if (drag.panning) { drag.panning = false; return; }
   if (!drag.placing) return;
   drag.placing = false;
@@ -893,6 +1027,41 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   effects.length = 0;
 });
 document.getElementById('presetBtn').addEventListener('click', spawnSolarSystem);
+const spamBtn = document.getElementById('spamBtn');
+spamBtn.addEventListener('click', () => {
+  spamMode = !spamMode;
+  spray.on = false;
+  spamBtn.classList.toggle('active', spamMode);
+});
+document.getElementById('messBtn').addEventListener('click', spawnBigMess);
+
+function spawnBigMess() {
+  bodies.length = 0;
+  effects.length = 0;
+  followed = null;
+  cam.x = 0; cam.y = 0; cam.zoom = 0.14;
+
+  // a handful of stars scattered through the chaos
+  const starTypes = ['starYellow', 'starRed', 'starBlue', 'starOrange', 'starWhite'];
+  for (const t of starTypes) {
+    addBody(makeBody(t, rand(-2600, 2600), rand(-2600, 2600),
+      rand(-40, 40), rand(-40, 40), rand(0.8, 1.3)));
+  }
+  // ~1000 objects, mostly planets
+  const pick = () => {
+    const r = Math.random();
+    if (r < 0.62) return 'earth';
+    if (r < 0.74) return 'rocky';
+    if (r < 0.80) return 'gasGiant';
+    if (r < 0.88) return 'moon';
+    return 'asteroid';
+  };
+  while (bodies.length < Math.min(1000, MAX_BODIES)) {
+    const ang = rand(0, TAU), d = Math.sqrt(Math.random()) * 3400;
+    addBody(makeBody(pick(), Math.cos(ang) * d, Math.sin(ang) * d,
+      rand(-90, 90), rand(-90, 90), rand(0.6, 1.6)));
+  }
+}
 
 function spawnSolarSystem() {
   bodies.length = 0;
