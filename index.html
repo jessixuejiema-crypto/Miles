@@ -160,12 +160,12 @@
         <span class="dot" style="background:var(--ant)"></span>Pheromone trail
       </div>
       <div class="hint" style="margin-top:8px">
-        Every ant steers its own little car — heading, throttle, wobble — while
-        sharing one colony memory (Q-learning) for which way to go. New drivers
-        swerve wildly and smack into walls (red flashes); every crash and wrong
-        turn lowers that route's score, every trip to the food raises it. As
-        exploration decays their hands steady, they speed up, and the chaos
-        settles into clean racing lines.
+        Ants start out driving completely at random. Smack into a wall and it's
+        back to the nest to start over — but nothing is wasted: each crash
+        teaches the colony that crashing is bad (everyone's steering steadies a
+        little) and lowers that route's score in the shared memory, while every
+        trip that reaches the food raises its route. Watch the swarm push a
+        little deeper each wave until the chaos settles into clean racing lines.
       </div>
     </div>
   </aside>
@@ -178,8 +178,9 @@
 const SIZES = { s:[19,13], m:[31,21], l:[45,31], xl:[61,41] };
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 10, 30, 90];      // logic ticks per frame
 const ALPHA = 0.18, GAMMA = 0.97;
-const EPS_START = 0.30, EPS_MIN = 0.02;
+const EPS_START = 1.0, EPS_MIN = 0.02;                // start fully random
 const EPS_TRIP = 0.998, EPS_TICK = 0.999996;          // decay per completed trip / per tick
+const EPS_CRASH = 0.99998;                            // every crash is a lesson: "crashing is bad"
 const R_STEP = -1, R_GOAL = 120, R_CRASH = -2;
 const ROLL = 150;                                     // rolling-average window
 
@@ -381,12 +382,9 @@ function tick(){
     if (crashed){
       crashes++;
       Q[pb] += ALPHA*(R_CRASH + GAMMA*maxValidQ(aCell[i]) - Q[pb]);   // crash-prone routes lose value
-      const oc = aCell[i];
-      aX[i] = (oc%cols)+0.5; aY[i] = ((oc/cols)|0)+0.5;               // back to the middle of the lane
-      aV[i] = 0; aTarget[i] = -1; aAge[i] += 20;
-      const rx = Math.random()-0.5, ry = Math.random()-0.5;
-      const rinv = 1/(Math.hypot(rx,ry)||1);
-      aHx[i] = rx*rinv; aHy[i] = ry*rinv;
+      eps = Math.max(EPS_MIN, eps*EPS_CRASH);                         // the colony learns crashing is bad
+      respawn(i);                                                     // crashed — back to the nest
+      continue;
     } else {
       aX[i] = nx; aY[i] = ny;
       if (c !== aCell[i]){
