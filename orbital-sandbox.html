@@ -95,7 +95,7 @@ const TYPES = {
   starBlue:   { label: 'Blue Star',   star: true,  mass: 32000, r: 42, color: '#6fa8ff' },
   starBlack:  { label: 'Black Dwarf', star: true,  mass: 10000, r: 22, color: '#3a3348' },
   gasGiant:   { label: 'Gas Giant',   star: false, mass: 900,   r: 24, color: '#e0a960' },
-  earth:      { label: 'Earth',       star: false, mass: 220,   r: 14, color: '#3f8fd8' },
+  earth:      { label: 'Planet',      star: false, mass: 220,   r: 14, color: '#3f8fd8' },
   rocky:      { label: 'Rocky',       star: false, mass: 160,   r: 12, color: '#c07850' },
   moon:       { label: 'Moon',        star: false, mass: 24,    r: 7,  color: '#b8b8c0' },
   asteroid:   { label: 'Asteroid',    star: false, mass: 2,     r: 3,  color: '#8a7f72' },
@@ -183,27 +183,39 @@ function makeTexture(type, seedColor) {
 }
 
 function paintEarth(g, R) {
-  g.fillStyle = '#1e5fae';
+  // random world generator: every planet rolls a style archetype, then random
+  // palettes, continent counts, ice caps, and clouds on top — no two look alike
+  const kinds = [
+    // [sea hue/sat/light]        [land hue/sat/light]          blobs   caps  clouds
+    { sea: [rand(195, 230), rand(50, 80), rand(28, 45)], land: [rand(75, 140), rand(30, 65), rand(24, 45)],  blobs: [4, 9],  caps: 0.8,  clouds: [3, 7] },  // earthlike
+    { sea: [rand(180, 250), rand(55, 85), rand(20, 40)], land: [rand(80, 200), rand(25, 55), rand(30, 50)],  blobs: [1, 3],  caps: 0.4,  clouds: [5, 9] },  // ocean world
+    { sea: [rand(25, 48),  rand(35, 65), rand(45, 62)],  land: [rand(12, 40),  rand(30, 60), rand(26, 45)],  blobs: [6, 12], caps: 0.15, clouds: [0, 2] },  // desert
+    { sea: [rand(185, 215), rand(15, 40), rand(70, 86)], land: [rand(190, 220), rand(25, 50), rand(55, 72)], blobs: [5, 10], caps: 1,    clouds: [1, 4] },  // ice world
+    { sea: [rand(5, 20),   rand(45, 75), rand(10, 18)],  land: [rand(8, 30),   rand(85, 100), rand(44, 58)], blobs: [6, 12], caps: 0,    clouds: [0, 0] },  // lava world
+    { sea: [rand(0, 360),  rand(40, 80), rand(22, 50)],  land: null,                                         blobs: [4, 10], caps: 0.3,  clouds: [0, 5] },  // alien world
+  ];
+  const k = kinds[randInt(0, kinds.length - 1)];
+  g.fillStyle = `hsl(${k.sea[0]}, ${k.sea[1]}%, ${k.sea[2]}%)`;
   g.fillRect(0, 0, R * 2, R * 2);
-  // continents: clustered green/brown blobs
-  const n = randInt(5, 8);
+  // land masses; alien worlds pick a hue clashing with their sea
+  const land = k.land || [(k.sea[0] + rand(90, 270)) % 360, rand(35, 70), rand(25, 55)];
+  const n = randInt(k.blobs[0], k.blobs[1]);
   for (let i = 0; i < n; i++) {
-    const cx = rand(0, R * 2), cy = rand(R * 0.35, R * 1.65);
-    const hue = rand(85, 130), light = rand(28, 42);
-    g.fillStyle = `hsl(${hue}, ${rand(35, 60)}%, ${light}%)`;
-    blob(g, cx, cy, rand(R * 0.22, R * 0.5));
+    g.fillStyle = `hsl(${land[0] + rand(-14, 14)}, ${Math.min(100, land[1] + rand(-8, 8))}%, ${land[2] + rand(-8, 8)}%)`;
+    blob(g, rand(0, R * 2), rand(R * 0.25, R * 1.75), rand(R * 0.18, R * 0.5));
   }
-  // polar ice caps
-  g.fillStyle = 'rgba(240, 248, 255, 0.9)';
-  blob(g, R, -R * 0.15, R * 0.45);
-  blob(g, R, R * 2.15, R * 0.45);
-  // wispy clouds
+  if (Math.random() < k.caps) {
+    g.fillStyle = 'rgba(240, 248, 255, 0.9)';
+    blob(g, R, -R * 0.15, R * rand(0.3, 0.5));
+    blob(g, R, R * 2.15, R * rand(0.3, 0.5));
+  }
+  const nc = randInt(k.clouds[0], k.clouds[1]);
   g.fillStyle = 'rgba(255,255,255,0.28)';
-  for (let i = 0; i < 6; i++) blob(g, rand(0, R * 2), rand(0, R * 2), rand(R * 0.1, R * 0.22));
+  for (let i = 0; i < nc; i++) blob(g, rand(0, R * 2), rand(0, R * 2), rand(R * 0.1, R * 0.22));
 }
 
 function paintRocky(g, R) {
-  const hue = rand(10, 40);
+  const hue = Math.random() < 0.6 ? rand(5, 45) : rand(0, 360); // usually rusty, sometimes anything
   g.fillStyle = `hsl(${hue}, ${rand(30, 55)}%, ${rand(35, 50)}%)`;
   g.fillRect(0, 0, R * 2, R * 2);
   for (let i = 0; i < 9; i++) {
@@ -214,7 +226,9 @@ function paintRocky(g, R) {
 }
 
 function paintGasGiant(g, R) {
-  const hue = Math.random() < 0.5 ? rand(18, 45) : rand(190, 260); // tan or blue giants
+  const hue = Math.random() < 0.6
+    ? (Math.random() < 0.5 ? rand(18, 45) : rand(190, 260))       // classic tan or blue giants
+    : rand(0, 360);                                               // ...or any exotic color
   const bands = randInt(6, 10);
   for (let i = 0; i < bands; i++) {
     g.fillStyle = `hsl(${hue + rand(-15, 15)}, ${rand(35, 65)}%, ${rand(38, 66)}%)`;
@@ -444,7 +458,11 @@ function handleCollisions() {
       } else if (a.star || b.star) {
         const star = a.star ? a : b, other = a.star ? b : a;
         absorb(star, other);         // stars swallow whatever falls in
-      } else if (relSpeed > SHATTER_SPEED && (a.type !== 'asteroid' || b.type !== 'asteroid')) {
+      } else if (a.type === 'asteroid' && b.type === 'asteroid') {
+        // asteroid pile-up: 90% clump into a bigger rock, 10% smash into even more shards
+        if (Math.random() < 0.1) shatter(a, b);
+        else mergeBodies(a, b);
+      } else if (relSpeed > SHATTER_SPEED) {
         shatter(a, b);               // fast impact: smash both into asteroids
       } else {
         mergeBodies(a, b);           // gentle impact: clump together
