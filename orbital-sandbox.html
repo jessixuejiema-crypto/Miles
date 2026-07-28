@@ -80,7 +80,7 @@
 // ---------------------------------------------------------------- constants
 const G_BASE = 1200;          // gravitational constant (px^3 / mass / s^2)
 const SOFTEN = 40;            // gravity softening to avoid slingshot singularities
-const MAX_BODIES = 380;
+const MAX_BODIES = 650;
 const SHATTER_SPEED = 240;    // relative impact speed (px/s) that shatters bodies
 const SUPERNOVA_MASS = 62000; // stars heavier than this go supernova
 const TRAIL_LEN = 70;
@@ -422,6 +422,8 @@ function handleCollisions() {
       const dx = b.x - a.x, dy = b.y - a.y;
       const rr = a.r + b.r;
       if (dx * dx + dy * dy > rr * rr * 0.81) continue; // need real overlap, not a graze
+      // fresh debris gets a grace period so a new asteroid cloud doesn't instantly clump
+      if (a.type === 'asteroid' && b.type === 'asteroid' && (a.age < 2 || b.age < 2)) continue;
 
       const relSpeed = Math.hypot(a.vx - b.vx, a.vy - b.vy);
 
@@ -464,22 +466,29 @@ function absorb(star, other) {
   removeBody(other);
 }
 
+const isPlanet = t => t === 'earth' || t === 'rocky' || t === 'gasGiant';
+
 function shatter(a, b) {
   const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
   const cmass = a.mass + b.mass;
   const cvx = (a.vx * a.mass + b.vx * b.mass) / cmass;
   const cvy = (a.vy * a.mass + b.vy * b.mass) / cmass;
-  const count = Math.min(randInt(6, 12), Math.max(2, MAX_BODIES - bodies.length + 2));
-  spawnSparks(cx, cy, 18, '#ffb060');
-  effects.push({ kind: 'flash', x: cx, y: cy, t: 0, dur: 0.35, r: (a.r + b.r) * 2, color: '#ffd9a0' });
+  // two planets colliding blow apart into a huge debris cloud (~100 asteroids);
+  // smaller stuff (moons, stray rocks) breaks into just a handful
+  const bigCrash = isPlanet(a.type) && isPlanet(b.type);
+  const want = bigCrash ? randInt(92, 108) : randInt(6, 12);
+  const count = Math.min(want, Math.max(2, MAX_BODIES - bodies.length + 2));
+  spawnSparks(cx, cy, bigCrash ? 40 : 18, '#ffb060');
+  effects.push({ kind: 'flash', x: cx, y: cy, t: 0, dur: bigCrash ? 0.6 : 0.35, r: (a.r + b.r) * (bigCrash ? 4 : 2), color: '#ffd9a0' });
   removeBody(a);
   removeBody(b);
   for (let k = 0; k < count; k++) {
-    const ang = rand(0, TAU), spd = rand(30, 130);
-    const frag = makeBody('asteroid', cx + Math.cos(ang) * rand(4, a.r + b.r),
-      cy + Math.sin(ang) * rand(4, a.r + b.r),
+    const ang = rand(0, TAU), spd = bigCrash ? rand(40, 190) : rand(30, 130);
+    const spread = (a.r + b.r) * (bigCrash ? 2.5 : 1);
+    const frag = makeBody('asteroid', cx + Math.cos(ang) * rand(4, spread),
+      cy + Math.sin(ang) * rand(4, spread),
       cvx + Math.cos(ang) * spd, cvy + Math.sin(ang) * spd,
-      rand(0.6, 1.4));
+      bigCrash ? rand(0.4, 1.1) : rand(0.6, 1.4));
     frag.mass = Math.max(0.5, cmass / count * 0.4); // most mass is vaporized
     addBody(frag);
   }
@@ -542,7 +551,9 @@ function removeBody(b) {
 function updateTrails() {
   for (const b of bodies) {
     b.trail.push(b.x, b.y);
-    if (b.trail.length > TRAIL_LEN * 2) b.trail.splice(0, 2);
+    // asteroids keep short trails so a 100-piece debris cloud stays cheap to draw
+    const cap = (b.type === 'asteroid' ? 26 : TRAIL_LEN) * 2;
+    if (b.trail.length > cap) b.trail.splice(0, b.trail.length - cap);
   }
 }
 
