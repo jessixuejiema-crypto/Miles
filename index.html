@@ -157,7 +157,6 @@
         <span class="dot" style="background:var(--ink)"></span>Nest (start)<br>
         <span class="dot" style="background:var(--good)"></span>Food (goal)<br>
         <span class="dot" style="background:var(--car)"></span>Ant drivers<br>
-        <span class="dot" style="background:var(--bad)"></span>Crash!<br>
         <span class="dot" style="background:var(--ant)"></span>Pheromone trail
       </div>
       <div class="hint" style="margin-top:8px">
@@ -192,7 +191,7 @@ let heat;                                             // Float32Array N, pheromo
 let M = 2000;                                         // ant count
 let aCell, aX, aY, aHx, aHy, aV, aSteps, aAge;        // ant kinematics
 let aTarget, aPendC, aPendA, aVar;                    // route intent + per-ant wobble
-let crashes = 0, fx = [];                             // crash flashes
+let crashes = 0;
 let eps = 1, trips = 0, timeouts = 0, bestTrip = Infinity;
 let rollBuf = new Float32Array(ROLL), rollN = 0, rollI = 0;
 let chartPts = [], chartStride = 20, sinceChart = 0;
@@ -273,7 +272,7 @@ function resetLearning(){
   Q = new Float32Array(N*4);
   heat = new Float32Array(N);
   eps = EPS_START; trips = 0; timeouts = 0; bestTrip = Infinity;
-  crashes = 0; fx = [];
+  crashes = 0;
   rollN = 0; rollI = 0;
   chartPts = []; chartStride = 20; sinceChart = 0;
   bestPath = null;
@@ -382,7 +381,6 @@ function tick(){
     if (crashed){
       crashes++;
       Q[pb] += ALPHA*(R_CRASH + GAMMA*maxValidQ(aCell[i]) - Q[pb]);   // crash-prone routes lose value
-      if (fx.length < 220) fx.push({ x: aX[i], y: aY[i], t: 14 });
       const oc = aCell[i];
       aX[i] = (oc%cols)+0.5; aY[i] = ((oc/cols)|0)+0.5;               // back to the middle of the lane
       aV[i] = 0; aTarget[i] = -1; aAge[i] += 20;
@@ -540,15 +538,6 @@ function draw(t){
     }
   }
 
-  // crash flashes
-  for (let k=fx.length-1; k>=0; k--){
-    const f = fx[k];
-    if (--f.t <= 0){ fx.splice(k,1); continue; }
-    cx2.fillStyle = `rgba(248,113,113,${(f.t/14*0.75).toFixed(3)})`;
-    cx2.beginPath();
-    cx2.arc(ox + f.x*cell, oy + f.y*cell, cell*(0.12 + (14-f.t)*0.02), 0, 7);
-    cx2.fill();
-  }
 }
 
 /* ================= chart ================= */
