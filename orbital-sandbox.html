@@ -405,6 +405,7 @@ function makeBody(type, x, y, vx, vy, sizeMul = 1, massOverride = null) {
     rot: rand(0, TAU),
     rotSpeed: rand(-0.6, 0.6),
     novaTimer: -1,       // >=0 means counting down to supernova
+    captureCd: 1.5,      // asteroids: cooldown between orbit-capture rolls
     age: 0,
   };
 }
@@ -492,11 +493,42 @@ function stepPhysics(dt) {
   for (const b of exploding) explodeSupernova(b);
 
   handleCollisions();
+  tryCaptures(dt);
 
   // stars that grew too fat begin their death throes
   for (const b of bodies) {
     if (b.star && b.type !== 'starBlack' && b.novaTimer < 0 && b.mass > SUPERNOVA_MASS) {
       b.novaTimer = 1.6;
+    }
+  }
+}
+
+// an asteroid wandering near a world has a 50% chance to get pulled into orbit
+function tryCaptures(dt) {
+  const G = G_BASE * parseFloat(ui.grav.value);
+  for (const ast of bodies) {
+    if (ast.type !== 'asteroid') continue;
+    if (ast.captureCd > 0) { ast.captureCd -= dt; continue; }
+    for (const w of bodies) {
+      if (w === ast || w.star || w.type === 'asteroid') continue; // moons, planets, rocky, gas giants
+      if (w.mass < ast.mass * 3) continue;                        // too puny to capture anything
+      const dx = ast.x - w.x, dy = ast.y - w.y;
+      const capR = w.r * 5;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > capR * capR || d2 < (w.r + ast.r) ** 2 * 2) continue; // near, but not touching
+      ast.captureCd = 6; // one roll per encounter, then leave it alone a while
+      if (Math.random() < 0.5) {
+        const d = Math.sqrt(d2);
+        // circular speed under the softened gravity actually simulated
+        const v = Math.sqrt(G * w.mass * d2 / Math.pow(d2 + SOFTEN * SOFTEN, 1.5));
+        // orbit in whichever direction it was already swinging past
+        const cross = dx * (ast.vy - w.vy) - dy * (ast.vx - w.vx);
+        const s = cross >= 0 ? 1 : -1;
+        ast.vx = w.vx + (-dy / d) * v * s;
+        ast.vy = w.vy + (dx / d) * v * s;
+        spawnSparks(ast.x, ast.y, 4, ast.color);
+      }
+      break;
     }
   }
 }
