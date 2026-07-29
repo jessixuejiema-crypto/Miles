@@ -551,8 +551,8 @@ function handleCollisions() {
         const star = a.star ? a : b, other = a.star ? b : a;
         absorb(star, other);         // stars swallow whatever falls in
       } else if (a.type === 'asteroid' && b.type === 'asteroid') {
-        // asteroid pile-up: 90% clump into a bigger rock, 10% smash into even more shards
-        if (Math.random() < 0.1) shatter(a, b);
+        // asteroid pile-up: 99% clump into a bigger rock, 1% smash into even more shards
+        if (Math.random() < 0.01) shatter(a, b);
         else mergeBodies(a, b);
       } else if (a.type === 'asteroid' || b.type === 'asteroid') {
         // asteroid strikes a world: glowing scar that cools to a crater, plus ejecta
