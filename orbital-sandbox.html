@@ -102,7 +102,7 @@ const TYPES = {
   earth:      { label: 'Planet',      star: false, mass: 220,   r: 14, color: '#3f8fd8' },
   rocky:      { label: 'Rocky',       star: false, mass: 160,   r: 12, color: '#c07850' },
   moon:       { label: 'Moon',        star: false, mass: 24,    r: 7,  color: '#b8b8c0' },
-  asteroid:   { label: 'Asteroid',    star: false, mass: 2,     r: 3,  color: '#8a7f72' },
+  asteroid:   { label: 'Asteroid',    star: false, mass: 7.3,   r: 3,  color: '#8a7f72' }, // 1/30 of a planet
 };
 
 // ---------------------------------------------------------------- state
@@ -555,8 +555,21 @@ function mergeBodies(a, b) {
   spawnSparks(big.x, big.y, 6, big.color);
   if (followed === small) followed = big;
   removeBody(small);
-  // a rubble pile grown to rocky-planet size compacts into a real planet
+  // a rubble pile grown to rocky-planet size compacts into a real planet,
+  // and anything that keeps growing to gas-giant size becomes a gas giant —
+  // both transformations keep the body's mass exactly as it was
   if (big.type === 'asteroid' && big.r >= TYPES.rocky.r) asteroidToRocky(big);
+  if (!big.star && big.type !== 'gasGiant' && big.r >= TYPES.gasGiant.r) toGasGiant(big);
+}
+
+function toGasGiant(b) {
+  b.type = 'gasGiant';
+  b.color = TYPES.gasGiant.color;
+  b.texture = makeTexture('gasGiant', TYPES.gasGiant.color, TEX_SIZE);
+  b.impacts = [];
+  b.rgbTint = null;
+  spawnSparks(b.x, b.y, 14, b.color);
+  effects.push({ kind: 'flash', x: b.x, y: b.y, t: 0, dur: 0.5, r: b.r * 3, color: '#e0c090' });
 }
 
 function asteroidToRocky(b) {
