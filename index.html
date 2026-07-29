@@ -6,154 +6,195 @@
 <title>Way Block — Best Move Calculator</title>
 <style>
   :root {
-    --bg: #141821;
-    --bg-glow: #1b2230;
-    --panel: #1d2431;
-    --panel-2: #232c3c;
-    --border: #313d52;
-    --text: #e7ecf5;
-    --muted: #8d99ad;
-    --accent: #4da3ff;
-    --accent-soft: rgba(77, 163, 255, 0.16);
-    --good: #53c97e;
-    --bad: #e5675e;
-    --board: #0f131b;
-    --cell: #1a2130;
-    --cell-line: #232d40;
-    --hero: #e5534b;
-    --hero-hi: #f4766e;
-    --hint: #ffd166;
-    --shadow: rgba(0, 0, 0, 0.45);
+    --bg: #efe7d8;
+    --bg-glow: #f7f1e6;
+    --panel: #faf5ec;
+    --panel-2: #f1e9da;
+    --border: #d8ccb6;
+    --text: #33291e;
+    --muted: #7d7060;
+    --board-rim: #6b4c33;
+    --board: #d9bf94;
+    --cell: #e7d3ab;
+    --cell-edge: #c9ae7f;
+    --groove: #b3946a;
+    --walnut: #5b4230;
+    --walnut-hi: #7a5a42;
+    --blue: #3a5a8c;
+    --blue-hi: #5478ad;
+    --red: #b1502e;
+    --red-hi: #cf6f4b;
+    --gold: #b97f1e;
+    --gold-bright: #d9a03c;
+    --good: #4c7a4c;
+    --bad: #a4402f;
+    --shadow: rgba(60, 42, 20, 0.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161310;
+      --bg-glow: #221c15;
+      --panel: #201a14;
+      --panel-2: #2a2219;
+      --border: #3d3225;
+      --text: #ece3d3;
+      --muted: #a09076;
+      --board-rim: #4a3421;
+      --board: #b89e75;
+      --cell: #c6ad83;
+      --cell-edge: #a68b60;
+      --groove: #8f7350;
+      --walnut: #3f2d1e;
+      --walnut-hi: #5d4430;
+      --gold: #d9a03c;
+      --good: #7fae70;
+      --bad: #d3705a;
+      --shadow: rgba(0, 0, 0, 0.5);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #efe7d8; --bg-glow: #f7f1e6; --panel: #faf5ec; --panel-2: #f1e9da;
+    --border: #d8ccb6; --text: #33291e; --muted: #7d7060; --board-rim: #6b4c33;
+    --board: #d9bf94; --cell: #e7d3ab; --cell-edge: #c9ae7f; --groove: #b3946a;
+    --walnut: #5b4230; --walnut-hi: #7a5a42; --gold: #b97f1e;
+    --good: #4c7a4c; --bad: #a4402f; --shadow: rgba(60, 42, 20, 0.25);
+  }
+  :root[data-theme="dark"] {
+    --bg: #161310; --bg-glow: #221c15; --panel: #201a14; --panel-2: #2a2219;
+    --border: #3d3225; --text: #ece3d3; --muted: #a09076; --board-rim: #4a3421;
+    --board: #b89e75; --cell: #c6ad83; --cell-edge: #a68b60; --groove: #8f7350;
+    --walnut: #3f2d1e; --walnut-hi: #5d4430; --gold: #d9a03c;
+    --good: #7fae70; --bad: #d3705a; --shadow: rgba(0, 0, 0, 0.5);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
-    font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
-    background: radial-gradient(1100px 600px at 50% -10%, var(--bg-glow), var(--bg));
+    font-family: system-ui, "Segoe UI", sans-serif;
+    background: radial-gradient(1100px 620px at 50% -10%, var(--bg-glow), var(--bg));
     color: var(--text);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 18px 14px 40px;
+    padding: 20px 14px 44px;
   }
-  header { text-align: center; margin-bottom: 14px; }
-  h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: 0.02em; }
-  h1 .red { color: var(--hero); }
-  .tagline { color: var(--muted); font-size: 0.85rem; margin: 0; }
+  header { text-align: center; margin-bottom: 16px; max-width: 640px; }
+  h1 {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 1.7rem;
+    margin: 0 0 5px;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+  }
+  .tagline { color: var(--muted); font-size: 0.88rem; margin: 0; line-height: 1.5; }
 
   .app {
     display: flex;
     flex-wrap: wrap;
-    gap: 22px;
+    gap: 24px;
     justify-content: center;
     align-items: flex-start;
     width: 100%;
-    max-width: 900px;
+    max-width: 960px;
   }
 
   /* ---------- board ---------- */
-  .board-wrap { position: relative; flex: 0 0 auto; }
+  .board-wrap { flex: 0 0 auto; }
   #board {
-    --size: min(88vw, 420px);
     position: relative;
-    width: var(--size);
-    height: var(--size);
-    background: var(--board);
-    border: 6px solid var(--border);
-    border-radius: 14px;
-    box-shadow: 0 14px 34px var(--shadow);
-    touch-action: none;
+    box-sizing: content-box;
+    background:
+      repeating-linear-gradient(93deg, rgba(120, 85, 45, 0.08) 0 3px, transparent 3px 14px),
+      var(--board);
+    border: 10px solid var(--board-rim);
+    border-radius: 10px;
+    box-shadow: 0 16px 36px var(--shadow), inset 0 0 22px rgba(90, 60, 25, 0.25);
+    touch-action: manipulation;
     user-select: none;
     -webkit-user-select: none;
   }
   .cell {
     position: absolute;
-    background: var(--cell);
-    border-radius: 6px;
-    box-shadow: inset 0 0 0 1px var(--cell-line);
+    background: linear-gradient(160deg, var(--cell), var(--cell) 70%, var(--cell-edge));
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 3px rgba(90, 60, 25, 0.18);
   }
-  #exit {
+  .cell.goal-you { box-shadow: inset 0 0 0 2px rgba(58, 90, 140, 0.35), inset 0 -2px 3px rgba(90,60,25,0.18); }
+  .cell.goal-opp { box-shadow: inset 0 0 0 2px rgba(177, 80, 46, 0.35), inset 0 -2px 3px rgba(90,60,25,0.18); }
+  .cell.move-target { cursor: pointer; }
+  .cell.move-target::after {
+    content: "";
     position: absolute;
-    right: -6px;
-    width: 6px;
-    background: var(--board);
-    z-index: 3;
-    transition: top 0.2s;
+    inset: 32%;
+    border-radius: 50%;
+    background: rgba(58, 90, 140, 0.45);
+    box-shadow: 0 0 0 3px rgba(58, 90, 140, 0.2);
   }
-  #exitArrow {
+  .cell.move-target.opp-turn::after { background: rgba(177, 80, 46, 0.45); box-shadow: 0 0 0 3px rgba(177, 80, 46, 0.2); }
+  .cell.hint-cell::after {
+    background: var(--gold-bright) !important;
+    box-shadow: 0 0 12px var(--gold-bright) !important;
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @media (prefers-reduced-motion: reduce) {
+    .cell.hint-cell::after, .wall.hint-wall { animation: none !important; }
+  }
+
+  .pawn {
     position: absolute;
-    left: 100%;
-    margin-left: 8px;
-    color: var(--hero);
-    font-size: 1.3rem;
-    display: flex;
-    align-items: center;
-    transition: top 0.2s;
-    z-index: 3;
-    text-shadow: 0 0 10px rgba(229, 83, 75, 0.6);
-  }
-  .block {
-    position: absolute;
-    border-radius: 9px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    font-size: 1.05rem;
-    color: rgba(0, 0, 0, 0.55);
-    box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.22), 0 3px 8px rgba(0, 0, 0, 0.35);
-    transition: left 0.28s cubic-bezier(.3,.9,.4,1), top 0.28s cubic-bezier(.3,.9,.4,1);
-    z-index: 2;
-    cursor: grab;
-  }
-  .block.dragging { transition: none; cursor: grabbing; z-index: 5; }
-  .block.hero { color: rgba(255, 255, 255, 0.92); }
-  .block.hinted {
-    outline: 3px solid var(--hint);
-    outline-offset: 2px;
-    animation: pulse 1.1s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { outline-color: var(--hint); }
-    50% { outline-color: rgba(255, 209, 102, 0.25); }
-  }
-  .hint-arrow {
-    position: absolute;
-    z-index: 6;
-    font-size: 1.5rem;
-    color: var(--hint);
-    text-shadow: 0 0 12px rgba(255, 209, 102, 0.8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    border-radius: 50%;
+    z-index: 4;
+    transition: left 0.3s cubic-bezier(.3,.9,.4,1), top 0.3s cubic-bezier(.3,.9,.4,1);
+    box-shadow: 0 4px 8px rgba(40, 25, 10, 0.4), inset 0 3px 4px rgba(255, 255, 255, 0.35), inset 0 -5px 7px rgba(0, 0, 0, 0.3);
     pointer-events: none;
-    animation: nudge 0.9s ease-in-out infinite;
   }
-  @keyframes nudge {
-    0%, 100% { transform: translate(0, 0); }
-    50% { transform: translate(var(--nx, 0), var(--ny, 0)); }
+  .pawn.p1 { background: radial-gradient(circle at 34% 30%, var(--blue-hi), var(--blue) 65%); }
+  .pawn.p2 { background: radial-gradient(circle at 34% 30%, var(--red-hi), var(--red) 65%); }
+  .pawn.turn-glow { box-shadow: 0 4px 8px rgba(40,25,10,0.4), inset 0 3px 4px rgba(255,255,255,0.35), inset 0 -5px 7px rgba(0,0,0,0.3), 0 0 0 3px var(--gold-bright); }
+
+  .wall {
+    position: absolute;
+    background: linear-gradient(180deg, var(--walnut-hi), var(--walnut));
+    border-radius: 3px;
+    z-index: 3;
+    box-shadow: 0 2px 5px rgba(30, 18, 8, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   }
+  .wall.hint-wall {
+    background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+    animation: pulse 1s ease-in-out infinite;
+  }
+  .slot { position: absolute; z-index: 2; cursor: pointer; }
+  .slot .bar {
+    position: absolute;
+    border-radius: 3px;
+    opacity: 0;
+    background: var(--walnut-hi);
+  }
+  .slot:hover .bar { opacity: 0.55; }
+  .slot.illegal:hover .bar { background: var(--bad); opacity: 0.5; cursor: not-allowed; }
+
   .win-banner {
     position: absolute;
     inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(15, 19, 27, 0.72);
-    border-radius: 9px;
-    z-index: 8;
-    font-size: 1.4rem;
+    background: rgba(30, 20, 10, 0.62);
+    z-index: 9;
+    font-family: "Iowan Old Style", Palatino, Georgia, serif;
+    font-size: 1.5rem;
     font-weight: 700;
-    color: var(--good);
-    letter-spacing: 0.03em;
+    color: #f5e8cd;
+    letter-spacing: 0.02em;
+    text-align: center;
   }
 
   /* ---------- panel ---------- */
   .panel {
     flex: 1 1 300px;
     max-width: 400px;
-    min-width: 280px;
+    min-width: 285px;
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -162,42 +203,33 @@
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 14px;
+    padding: 14px 15px;
+    box-shadow: 0 3px 10px rgba(60, 42, 20, 0.08);
   }
   .card h2 {
     margin: 0 0 10px;
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     text-transform: uppercase;
-    letter-spacing: 0.09em;
+    letter-spacing: 0.11em;
     color: var(--muted);
   }
-  .tabs { display: flex; gap: 8px; }
-  .tab {
+  .players { display: flex; gap: 10px; }
+  .player {
     flex: 1;
-    padding: 9px 0;
-    text-align: center;
-    border-radius: 9px;
-    border: 1px solid var(--border);
-    background: var(--panel);
-    color: var(--muted);
-    font-weight: 600;
-    cursor: pointer;
-    font-size: 0.95rem;
-  }
-  .tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-  .toolgrid { display: flex; flex-wrap: wrap; gap: 8px; }
-  .toolbtn {
-    padding: 8px 12px;
-    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 11px;
+    border-radius: 10px;
     border: 1px solid var(--border);
     background: var(--panel-2);
-    color: var(--text);
-    cursor: pointer;
-    font-size: 0.88rem;
-    font-family: inherit;
   }
-  .toolbtn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-  .toolbtn.hero-tool.active { border-color: var(--hero); background: rgba(229, 83, 75, 0.15); color: var(--hero-hi); }
+  .player.active { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(217, 160, 60, 0.25); }
+  .dot { width: 16px; height: 16px; border-radius: 50%; flex: 0 0 auto; }
+  .dot.p1 { background: radial-gradient(circle at 35% 30%, var(--blue-hi), var(--blue)); }
+  .dot.p2 { background: radial-gradient(circle at 35% 30%, var(--red-hi), var(--red)); }
+  .player .name { font-weight: 700; font-size: 0.86rem; }
+  .player .wallcount { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .btn {
     padding: 10px 14px;
@@ -207,633 +239,532 @@
     color: var(--text);
     font-weight: 600;
     cursor: pointer;
-    font-size: 0.92rem;
+    font-size: 0.9rem;
     font-family: inherit;
   }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #0d1420; }
-  .btn.warn { color: var(--bad); border-color: rgba(229, 103, 94, 0.5); }
+  .btn.primary { background: var(--walnut); border-color: var(--walnut); color: #f3e9d8; }
   .btn:disabled { opacity: 0.45; cursor: default; }
-  select {
-    padding: 9px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
+  .btn:focus-visible, .slot:focus-visible, .seg button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+  .seg button {
+    padding: 8px 13px;
+    border: none;
     background: var(--panel-2);
-    color: var(--text);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
     font-family: inherit;
-    font-size: 0.88rem;
   }
-  #solveMsg {
-    margin-top: 10px;
-    font-size: 0.95rem;
-    line-height: 1.5;
-    min-height: 1.4em;
-  }
-  #solveMsg .good { color: var(--good); font-weight: 700; }
-  #solveMsg .bad { color: var(--bad); font-weight: 700; }
-  #solveMsg .hint-word { color: var(--hint); font-weight: 700; }
-  .statline { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
-  .legend { color: var(--muted); font-size: 0.82rem; line-height: 1.55; margin: 0; }
+  .seg button.on { background: var(--walnut); color: #f3e9d8; }
+  #engineMsg { margin-top: 10px; font-size: 0.94rem; line-height: 1.55; min-height: 1.4em; }
+  #engineMsg .gold { color: var(--gold); font-weight: 700; }
+  #engineMsg .good { color: var(--good); font-weight: 700; }
+  #engineMsg .bad { color: var(--bad); font-weight: 700; }
+  .statline { color: var(--muted); font-size: 0.84rem; margin-top: 7px; font-variant-numeric: tabular-nums; }
+  .legend { color: var(--muted); font-size: 0.83rem; line-height: 1.6; margin: 0; }
   .legend b { color: var(--text); }
 </style>
 </head>
 <body>
 <header>
-  <h1>Way Block <span class="red">◼</span> Best Move Calculator</h1>
-  <p class="tagline">Recreate your puzzle, and the solver finds the guaranteed-shortest way out for the red block.</p>
+  <h1>Way Block · Best Move Calculator</h1>
+  <p class="tagline">The wall-race game: reach the far side first, and drop walls to block your opponent's way. The engine reads the position and shows the strongest move.</p>
 </header>
 
 <div class="app">
-  <div class="board-wrap">
-    <div id="board"></div>
-  </div>
+  <div class="board-wrap"><div id="board"></div></div>
 
   <div class="panel">
-    <div class="tabs">
-      <button class="tab active" id="tabEdit">✏️ Set up board</button>
-      <button class="tab" id="tabPlay">🕹️ Play</button>
-    </div>
-
-    <div class="card" id="editCard">
-      <h2>Place blocks</h2>
-      <div class="toolgrid">
-        <button class="toolbtn hero-tool active" data-tool="hero">🟥 Red block</button>
-        <button class="toolbtn" data-tool="h2">▬ Wide ×2</button>
-        <button class="toolbtn" data-tool="h3">▬▬ Wide ×3</button>
-        <button class="toolbtn" data-tool="v2">▮ Tall ×2</button>
-        <button class="toolbtn" data-tool="v3">▮▮ Tall ×3</button>
+    <div class="card">
+      <h2>Players</h2>
+      <div class="players">
+        <div class="player" id="pl1">
+          <span class="dot p1"></span>
+          <span><span class="name">Blue — you</span><br><span class="wallcount" id="walls1">Walls: 10</span></span>
+        </div>
+        <div class="player" id="pl2">
+          <span class="dot p2"></span>
+          <span><span class="name" id="name2">Red</span><br><span class="wallcount" id="walls2">Walls: 10</span></span>
+        </div>
       </div>
-      <div class="row" style="margin-top: 12px;">
-        <select id="presetSel">
-          <option value="">Load a preset…</option>
-          <option value="warmup">Warm-up (3 moves)</option>
-          <option value="medium">Intermediate (8 moves)</option>
-          <option value="expert">Expert (14 moves)</option>
-        </select>
-        <button class="btn warn" id="btnClear">Clear board</button>
+      <div class="row" style="margin-top: 11px;">
+        <span class="legend">Red is played by:</span>
+        <div class="seg" id="oppSeg">
+          <button data-opp="human" class="on">A friend</button>
+          <button data-opp="ai">Computer</button>
+        </div>
       </div>
-      <p class="legend" style="margin-top: 12px;">
-        Pick a piece, then <b>tap an empty cell</b> to place it (the cell becomes its top-left end).
-        <b>Tap a placed block</b> to remove it. The exit follows the red block's row.
-      </p>
-    </div>
-
-    <div class="card" id="playCard" style="display: none;">
-      <h2>Play</h2>
-      <p class="legend"><b>Drag blocks</b> along their axis to slide them. Get the red block to the exit on the right.</p>
-      <div class="row" style="margin-top: 10px;">
-        <button class="btn" id="btnRestart">↺ Restart puzzle</button>
-        <span class="statline" id="moveCounter">Moves: 0</span>
+      <div class="row" style="margin-top: 11px;">
+        <button class="btn" id="btnNew">↺ New game</button>
+        <button class="btn" id="btnUndo">Undo</button>
       </div>
     </div>
 
     <div class="card">
-      <h2>Solver</h2>
+      <h2>Best move engine</h2>
       <div class="row">
-        <button class="btn primary" id="btnBest">⭐ Best move</button>
+        <button class="btn primary" id="btnBest">★ Best move</button>
         <button class="btn" id="btnApply" disabled>Apply it</button>
-        <button class="btn" id="btnAuto">▶ Auto-solve</button>
       </div>
-      <div id="solveMsg">Set up a board, then ask for the best move.</div>
-      <div class="statline" id="optLine"></div>
+      <div id="engineMsg">Blue to move. Ask the engine whenever you like.</div>
+      <div class="statline" id="distLine"></div>
+    </div>
+
+    <div class="card">
+      <h2>How to play</h2>
+      <p class="legend">
+        On your turn, either <b>step your pawn</b> one square (tap a dot — you can jump over the enemy pawn),
+        or <b>place a wall</b> by tapping a groove between squares. Walls are two squares long, can't cross
+        other walls, and may never seal off a player's last way through.
+        <b>Blue wins</b> by reaching the top row; <b>Red wins</b> at the bottom row.
+      </p>
     </div>
   </div>
 </div>
 
 <script>
 'use strict';
-const N = 6;
-const CELL_GAP = 4;          // px gap between cells (visual only)
-const board = document.getElementById('board');
+const N = 9;                    // 9x9 cells
+const W = 8;                    // 8x8 wall slots per orientation
+const FILES = 'abcdefghi';
 
-// ---------- state ----------
-let blocks = [];             // {id, r, c, len, dir:'h'|'v', hero}
-let nextId = 1;
-let mode = 'edit';           // 'edit' | 'play'
-let tool = 'hero';
-let setupSnapshot = null;    // blocks as saved when entering play mode
-let movesMade = 0;
-let hint = null;             // {id, d} current suggested move, or null
-let autoTimer = null;
-let solved = false;
+// ---------- game state ----------
+// P1 (blue) starts bottom (row 8), goal row 0. P2 (red) starts top (row 0), goal row 8.
+let S = null;                   // {p:[{r,c},{r,c}], walls:[10,10], h:Set, v:Set, turn:0|1, winner:null|0|1}
+let history = [];
+let hint = null;                // {type:'pawn',r,c} | {type:'wall',o,r,c} | null
+let oppMode = 'human';          // 'human' | 'ai'
+let aiThinking = false;
 
-const COLORS = ['#5aa9e6', '#7fc96b', '#c88fe0', '#e6b45a', '#5ecfc0', '#e08fa8',
-                '#9aa7e8', '#b8c96b', '#e69a5a', '#6bc9a8', '#d0788f', '#8fb8e0'];
+function newState() {
+  return { p: [{ r: 8, c: 4 }, { r: 0, c: 4 }], walls: [10, 10], h: new Set(), v: new Set(), turn: 0, winner: null };
+}
+function cloneState(s) {
+  return { p: [{ ...s.p[0] }, { ...s.p[1] }], walls: [...s.walls], h: new Set(s.h), v: new Set(s.v), turn: s.turn, winner: s.winner };
+}
+const wk = (r, c) => r * W + c;
 
-// ---------- geometry helpers ----------
-function boardSize() { return board.clientWidth; }
-function cellPx() { return boardSize() / N; }
-function heroBlock() { return blocks.find(b => b.hero) || null; }
-function exitRow() { const h = heroBlock(); return h ? h.r : 2; }
-
-function occupancy(list, pos) {
-  const g = Array.from({ length: N }, () => Array(N).fill(-1));
-  list.forEach((b, i) => {
-    const v = pos ? pos[i] : (b.dir === 'h' ? b.c : b.r);
-    for (let k = 0; k < b.len; k++) {
-      const r = b.dir === 'h' ? b.r : v + k;
-      const c = b.dir === 'h' ? v + k : b.c;
-      if (r >= 0 && r < N && c >= 0 && c < N) g[r][c] = i;
-    }
-  });
-  return g;
+// ---------- rules ----------
+// h wall (r,c): lies between rows r and r+1, spanning columns c and c+1.
+// v wall (r,c): lies between cols c and c+1, spanning rows r and r+1.
+function edgeBlockedH(s, r, c) {      // between (r,c) and (r,c+1)
+  return s.v.has(wk(r, c)) || (r > 0 && s.v.has(wk(r - 1, c)));
+}
+function edgeBlockedV(s, r, c) {      // between (r,c) and (r+1,c)
+  return s.h.has(wk(r, c)) || (c > 0 && s.h.has(wk(r, c - 1)));
+}
+function neighbors(s, r, c) {
+  const out = [];
+  if (r > 0 && !edgeBlockedV(s, r - 1, c)) out.push([r - 1, c]);
+  if (r < N - 1 && !edgeBlockedV(s, r, c)) out.push([r + 1, c]);
+  if (c > 0 && !edgeBlockedH(s, r, c - 1)) out.push([r, c - 1]);
+  if (c < N - 1 && !edgeBlockedH(s, r, c)) out.push([r, c + 1]);
+  return out;
 }
 
-function canPlace(b, ignoreId) {
-  if (b.dir === 'h' && (b.c < 0 || b.c + b.len > N || b.r < 0 || b.r >= N)) return false;
-  if (b.dir === 'v' && (b.r < 0 || b.r + b.len > N || b.c < 0 || b.c >= N)) return false;
-  const g = occupancy(blocks.filter(x => x.id !== ignoreId));
-  for (let k = 0; k < b.len; k++) {
-    const r = b.dir === 'h' ? b.r : b.r + k;
-    const c = b.dir === 'h' ? b.c + k : b.c;
-    if (g[r][c] !== -1) return false;
+function pawnMoves(s, player) {
+  const me = s.p[player], op = s.p[1 - player];
+  const out = [];
+  for (const [nr, nc] of neighbors(s, me.r, me.c)) {
+    if (nr !== op.r || nc !== op.c) { out.push([nr, nc]); continue; }
+    // opponent adjacent: try straight jump
+    const jr = op.r + (op.r - me.r), jc = op.c + (op.c - me.c);
+    const straightOk = jr >= 0 && jr < N && jc >= 0 && jc < N &&
+      neighbors(s, op.r, op.c).some(([a, b]) => a === jr && b === jc);
+    if (straightOk) { out.push([jr, jc]); continue; }
+    // blocked: diagonal steps around the opponent
+    for (const [dr, dc] of neighbors(s, op.r, op.c)) {
+      if (dr === me.r && dc === me.c) continue;
+      // only true diagonals (perpendicular to approach)
+      if (me.r === op.r ? dc === op.c : dr === op.r) out.push([dr, dc]);
+    }
+  }
+  return out;
+}
+
+function bfsDist(s, player) {           // shortest path length to goal row (walls only, pawns ignored)
+  const goal = player === 0 ? 0 : N - 1;
+  const start = s.p[player];
+  if (start.r === goal) return 0;
+  const dist = new Int16Array(N * N).fill(-1);
+  dist[start.r * N + start.c] = 0;
+  const q = [start.r * N + start.c];
+  let head = 0;
+  while (head < q.length) {
+    const cur = q[head++];
+    const r = (cur / N) | 0, c = cur % N, d = dist[cur];
+    for (const [nr, nc] of neighbors(s, r, c)) {
+      const ni = nr * N + nc;
+      if (dist[ni] !== -1) continue;
+      if (nr === goal) return d + 1;
+      dist[ni] = d + 1;
+      q.push(ni);
+    }
+  }
+  return -1;                            // no path
+}
+
+function shortestPathCells(s, player) { // one shortest path, as [r,c] list (for wall pruning)
+  const goal = player === 0 ? 0 : N - 1;
+  const start = s.p[player];
+  const prev = new Int16Array(N * N).fill(-2);
+  prev[start.r * N + start.c] = -1;
+  const q = [start.r * N + start.c];
+  let head = 0, end = -1;
+  while (head < q.length && end === -1) {
+    const cur = q[head++];
+    const r = (cur / N) | 0, c = cur % N;
+    for (const [nr, nc] of neighbors(s, r, c)) {
+      const ni = nr * N + nc;
+      if (prev[ni] !== -2) continue;
+      prev[ni] = cur;
+      if (nr === goal) { end = ni; break; }
+      q.push(ni);
+    }
+  }
+  const cells = [];
+  for (let cur = end; cur >= 0; cur = prev[cur]) cells.push([(cur / N) | 0, cur % N]);
+  return cells;
+}
+
+function wallPlaceable(s, o, r, c) {    // geometry + overlap only
+  if (r < 0 || r >= W || c < 0 || c >= W) return false;
+  if (o === 'h') {
+    if (s.h.has(wk(r, c)) || s.v.has(wk(r, c))) return false;
+    if (c > 0 && s.h.has(wk(r, c - 1))) return false;
+    if (c < W - 1 && s.h.has(wk(r, c + 1))) return false;
+  } else {
+    if (s.v.has(wk(r, c)) || s.h.has(wk(r, c))) return false;
+    if (r > 0 && s.v.has(wk(r - 1, c))) return false;
+    if (r < W - 1 && s.v.has(wk(r + 1, c))) return false;
   }
   return true;
 }
+function wallLegal(s, o, r, c) {        // placeable + both players keep a path
+  if (!wallPlaceable(s, o, r, c)) return false;
+  const set = o === 'h' ? s.h : s.v;
+  set.add(wk(r, c));
+  const ok = bfsDist(s, 0) !== -1 && bfsDist(s, 1) !== -1;
+  set.delete(wk(r, c));
+  return ok;
+}
 
-function slideRange(list, pos, i) {
-  const g = occupancy(list, pos);
-  const b = list[i];
-  const v = pos[i];
-  let min = 0, max = 0;
-  if (b.dir === 'h') {
-    for (let c = v - 1; c >= 0 && g[b.r][c] === -1; c--) min--;
-    for (let c = v + b.len; c < N && g[b.r][c] === -1; c++) max++;
+function applyMove(s, m) {              // m: {type:'pawn',r,c} | {type:'wall',o,r,c}
+  if (m.type === 'pawn') {
+    s.p[s.turn].r = m.r; s.p[s.turn].c = m.c;
+    const goal = s.turn === 0 ? 0 : N - 1;
+    if (m.r === goal) s.winner = s.turn;
   } else {
-    for (let r = v - 1; r >= 0 && g[r][b.c] === -1; r--) min--;
-    for (let r = v + b.len; r < N && g[r][b.c] === -1; r++) max++;
+    (m.o === 'h' ? s.h : s.v).add(wk(m.r, m.c));
+    s.walls[s.turn]--;
   }
-  return [min, max];
+  s.turn = 1 - s.turn;
 }
 
-// ---------- solver (BFS, optimal; each slide of any distance = 1 move) ----------
-function solve(list) {
-  const heroIdx = list.findIndex(b => b.hero);
-  if (heroIdx < 0) return null;
-  const goal = N - list[heroIdx].len;
-  const start = list.map(b => (b.dir === 'h' ? b.c : b.r));
-  const key = p => p.join(',');
-  const visited = new Map([[key(start), null]]);
-  const queue = [start];
-  let head = 0;
-  while (head < queue.length) {
-    const pos = queue[head++];
-    if (pos[heroIdx] === goal) {
-      const moves = [];
-      let k = key(pos);
-      while (visited.get(k)) {
-        const { prev, move } = visited.get(k);
-        moves.unshift(move);
-        k = prev;
-      }
-      return moves; // [{i, d}]  possibly []
-    }
-    for (let i = 0; i < list.length; i++) {
-      const [min, max] = slideRange(list, pos, i);
-      for (let d = min; d <= max; d++) {
-        if (d === 0) continue;
-        const np = pos.slice();
-        np[i] += d;
-        const nk = key(np);
-        if (!visited.has(nk)) {
-          visited.set(nk, { prev: key(pos), move: { i, d } });
-          queue.push(np);
-        }
-      }
-    }
-  }
-  return false; // unsolvable
-}
-
-// ---------- rendering ----------
-function buildCells() {
-  for (let r = 0; r < N; r++) {
-    for (let c = 0; c < N; c++) {
-      const cell = document.createElement('div');
-      cell.className = 'cell';
-      cell.dataset.r = r;
-      cell.dataset.c = c;
-      board.appendChild(cell);
-    }
-  }
-  const exit = document.createElement('div');
-  exit.id = 'exit';
-  board.appendChild(exit);
-  const arrow = document.createElement('div');
-  arrow.id = 'exitArrow';
-  arrow.textContent = '➜';
-  board.appendChild(arrow);
-  layoutCells();
-}
-
-function layoutCells() {
-  const cp = cellPx();
-  board.querySelectorAll('.cell').forEach(cell => {
-    const r = +cell.dataset.r, c = +cell.dataset.c;
-    cell.style.left = (c * cp + CELL_GAP / 2) + 'px';
-    cell.style.top = (r * cp + CELL_GAP / 2) + 'px';
-    cell.style.width = (cp - CELL_GAP) + 'px';
-    cell.style.height = (cp - CELL_GAP) + 'px';
-  });
-  positionExit();
-}
-
-function positionExit() {
-  const cp = cellPx();
-  const er = exitRow();
-  const exit = document.getElementById('exit');
-  const arrow = document.getElementById('exitArrow');
-  exit.style.top = (er * cp + 4) + 'px';
-  exit.style.height = (cp - 8) + 'px';
-  arrow.style.top = (er * cp) + 'px';
-  arrow.style.height = cp + 'px';
-}
-
-function blockLabel(b) {
-  if (b.hero) return '★';
-  const others = blocks.filter(x => !x.hero);
-  return String.fromCharCode(65 + others.indexOf(b));
-}
-
-function blockColor(b) {
-  if (b.hero) return 'linear-gradient(180deg, var(--hero-hi), var(--hero))';
-  const others = blocks.filter(x => !x.hero);
-  return COLORS[others.indexOf(b) % COLORS.length];
-}
-
-function renderBlocks() {
-  board.querySelectorAll('.block, .hint-arrow, .win-banner').forEach(el => el.remove());
-  blocks.forEach(b => {
-    const el = document.createElement('div');
-    el.className = 'block' + (b.hero ? ' hero' : '');
-    el.dataset.id = b.id;
-    el.style.background = blockColor(b);
-    el.textContent = blockLabel(b);
-    board.appendChild(el);
-    attachDrag(el, b);
-  });
-  updatePositions(false);
-  renderHint();
-  if (solved) showWinBanner();
-}
-
-function updatePositions(animate = true) {
-  const cp = cellPx();
-  blocks.forEach(b => {
-    const el = board.querySelector(`.block[data-id="${b.id}"]`);
-    if (!el) return;
-    if (!animate) el.style.transition = 'none';
-    el.style.left = (b.c * cp + CELL_GAP / 2 + 2) + 'px';
-    el.style.top = (b.r * cp + CELL_GAP / 2 + 2) + 'px';
-    el.style.width = ((b.dir === 'h' ? b.len : 1) * cp - CELL_GAP - 4) + 'px';
-    el.style.height = ((b.dir === 'v' ? b.len : 1) * cp - CELL_GAP - 4) + 'px';
-    if (!animate) { void el.offsetWidth; el.style.transition = ''; }
-  });
-  positionExit();
-}
-
-function renderHint() {
-  board.querySelectorAll('.hint-arrow').forEach(el => el.remove());
-  board.querySelectorAll('.block.hinted').forEach(el => el.classList.remove('hinted'));
-  if (!hint) return;
-  const b = blocks.find(x => x.id === hint.id);
-  if (!b) { hint = null; return; }
-  const el = board.querySelector(`.block[data-id="${b.id}"]`);
-  if (el) el.classList.add('hinted');
-  const cp = cellPx();
-  const arrow = document.createElement('div');
-  arrow.className = 'hint-arrow';
-  const horiz = b.dir === 'h';
-  const positive = hint.d > 0;
-  arrow.textContent = horiz ? (positive ? '➜' : '⬅') : (positive ? '⬇' : '⬆');
-  arrow.style.setProperty('--nx', horiz ? (positive ? '7px' : '-7px') : '0');
-  arrow.style.setProperty('--ny', horiz ? '0' : (positive ? '7px' : '-7px'));
-  // place arrow on the leading edge of the block, in the move direction
-  let r = b.r, c = b.c;
-  if (horiz) { c = positive ? b.c + b.len - 1 : b.c; }
-  else { r = positive ? b.r + b.len - 1 : b.r; }
-  arrow.style.left = (c * cp) + 'px';
-  arrow.style.top = (r * cp) + 'px';
-  arrow.style.width = cp + 'px';
-  arrow.style.height = cp + 'px';
-  board.appendChild(arrow);
-}
-
-function showWinBanner() {
-  if (board.querySelector('.win-banner')) return;
-  const el = document.createElement('div');
-  el.className = 'win-banner';
-  el.textContent = '🎉 Way cleared!';
-  board.appendChild(el);
-}
-
-// ---------- solver UI ----------
-const solveMsg = document.getElementById('solveMsg');
-const optLine = document.getElementById('optLine');
-const btnApply = document.getElementById('btnApply');
-
-function describeMove(move) {
-  const b = blocks[move.i];
-  const dirWord = b.dir === 'h'
-    ? (move.d > 0 ? 'right' : 'left')
-    : (move.d > 0 ? 'down' : 'up');
-  const n = Math.abs(move.d);
-  const name = b.hero ? 'the red block' : `block ${blockLabel(b)}`;
-  return `Slide ${name} ${dirWord} ${n} ${n === 1 ? 'cell' : 'cells'}`;
-}
-
-function clearHint() {
-  hint = null;
-  btnApply.disabled = true;
-  renderHint();
-}
-
-function computeBest(showMessage = true) {
-  stopAuto();
-  clearHint();
-  if (!heroBlock()) {
-    if (showMessage) solveMsg.innerHTML = '<span class="bad">Place the red block first</span> — it is the one that must escape.';
-    optLine.textContent = '';
-    return null;
-  }
-  const sol = solve(blocks);
-  if (sol === false) {
-    if (showMessage) solveMsg.innerHTML = '<span class="bad">No way out.</span> This position is unsolvable — remove or rearrange a block.';
-    optLine.textContent = '';
-    return null;
-  }
-  if (sol.length === 0) {
-    solved = true;
-    if (showMessage) solveMsg.innerHTML = '<span class="good">The way is clear!</span> The red block can slide straight out. 🎉';
-    optLine.textContent = '';
-    renderBlocks();
-    return sol;
-  }
-  const move = sol[0];
-  hint = { id: blocks[move.i].id, d: move.d };
-  btnApply.disabled = false;
-  if (showMessage) {
-    solveMsg.innerHTML = `<span class="hint-word">Best move:</span> ${describeMove(move)}.`;
-    optLine.textContent = `Optimal from here: ${sol.length} move${sol.length === 1 ? '' : 's'}.`;
-  }
-  renderHint();
-  return sol;
-}
-
-function applyMove(move) {
-  const b = blocks[move.i];
-  if (b.dir === 'h') b.c += move.d; else b.r += move.d;
-  updatePositions(true);
-  checkSolved();
-}
-
-function applyHint() {
-  if (!hint) return;
-  const i = blocks.findIndex(b => b.id === hint.id);
-  if (i < 0) return;
-  applyMove({ i, d: hint.d });
-  if (mode === 'play') bumpMoves();
-  clearHint();
-  if (!solved) computeBest(true);
-}
-
-function checkSolved() {
-  const h = heroBlock();
-  if (h && h.c + h.len === N && !solved) {
-    solved = true;
-    stopAuto();
-    solveMsg.innerHTML = '<span class="good">The way is clear!</span> The red block escapes. 🎉';
-    optLine.textContent = '';
-    clearHint();
-    showWinBanner();
-  }
-}
-
-function stopAuto() {
-  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
-  document.getElementById('btnAuto').textContent = '▶ Auto-solve';
-}
-
-function toggleAuto() {
-  if (autoTimer) { stopAuto(); return; }
-  const sol = computeBest(false);
-  if (!sol || sol.length === 0) { computeBest(true); return; }
-  let step = 0;
-  const moves = sol;
-  document.getElementById('btnAuto').textContent = '⏸ Stop';
-  solveMsg.innerHTML = `Auto-solving in <b>${moves.length}</b> optimal moves…`;
-  optLine.textContent = '';
-  clearHint();
-  autoTimer = setInterval(() => {
-    if (step >= moves.length) { stopAuto(); checkSolved(); return; }
-    applyMove(moves[step]);
-    if (mode === 'play') bumpMoves();
-    solveMsg.innerHTML = `Auto-solve: move <b>${step + 1}</b> of <b>${moves.length}</b> — ${describeMove(moves[step])}.`;
-    step++;
-  }, 650);
-}
-
-// ---------- edit mode ----------
-function placeAt(r, c) {
-  const specs = {
-    hero: { len: 2, dir: 'h' },
-    h2: { len: 2, dir: 'h' },
-    h3: { len: 3, dir: 'h' },
-    v2: { len: 2, dir: 'v' },
-    v3: { len: 3, dir: 'v' },
+// ---------- engine ----------
+function candidateWalls(s) {
+  if (s.walls[s.turn] <= 0) return [];
+  const seen = new Set(), out = [];
+  const consider = (o, r, c) => {
+    const id = o + wk(r, c);
+    if (r < 0 || r >= W || c < 0 || c >= W || seen.has(id)) return;
+    seen.add(id);
+    if (wallLegal(s, o, r, c)) out.push({ type: 'wall', o, r, c });
   };
-  const spec = specs[tool];
-  const b = { id: nextId++, r, c, len: spec.len, dir: spec.dir, hero: tool === 'hero' };
-  if (tool === 'hero') {
-    const existing = heroBlock();
-    if (existing) {
-      if (!canPlace(b, existing.id)) return flashMsg('That spot is blocked or out of bounds.');
-      blocks = blocks.filter(x => !x.hero);
-    } else if (!canPlace(b)) {
-      return flashMsg('That spot is blocked or out of bounds.');
+  // walls near either pawn
+  for (const pl of [0, 1]) {
+    const { r, c } = s.p[pl];
+    for (let dr = -2; dr <= 1; dr++) for (let dc = -2; dc <= 1; dc++) {
+      consider('h', r + dr, c + dc);
+      consider('v', r + dr, c + dc);
     }
-  } else if (!canPlace(b)) {
-    return flashMsg('That spot is blocked or out of bounds.');
   }
-  blocks.push(b);
-  solved = false;
-  clearHint();
-  renderBlocks();
-  refreshIdleStatus();
+  // walls touching the opponent's shortest path
+  for (const [r, c] of shortestPathCells(s, 1 - s.turn)) {
+    for (let dr = -1; dr <= 0; dr++) for (let dc = -1; dc <= 0; dc++) {
+      consider('h', r + dr, c + dc);
+      consider('v', r + dr, c + dc);
+    }
+  }
+  return out;
 }
 
-function removeBlock(id) {
-  blocks = blocks.filter(b => b.id !== id);
-  solved = false;
-  clearHint();
-  renderBlocks();
-  refreshIdleStatus();
+function genMoves(s) {
+  const moves = pawnMoves(s, s.turn).map(([r, c]) => ({ type: 'pawn', r, c }));
+  return moves.concat(candidateWalls(s));
 }
 
-function flashMsg(text) {
-  solveMsg.innerHTML = `<span class="bad">${text}</span>`;
+function evalState(s) {                 // from the perspective of the side to move
+  const me = s.turn, op = 1 - me;
+  const dMe = bfsDist(s, me), dOp = bfsDist(s, op);
+  return (dOp - dMe) * 10 + (s.walls[me] - s.walls[op]);
 }
 
-function refreshIdleStatus() {
-  const h = heroBlock();
-  if (!h) {
-    solveMsg.textContent = 'Place the red block, add obstacles, then ask for the best move.';
-    optLine.textContent = '';
+function search(s, depth, alpha, beta) {
+  if (s.winner !== null) return -(10000 + depth);   // the previous mover just won
+  if (depth === 0) return evalState(s);
+  const moves = genMoves(s);
+  // move ordering: quick static eval of each child
+  const scored = moves.map(m => {
+    const c = cloneState(s);
+    applyMove(c, m);
+    const q = c.winner !== null ? 10000 + depth : -evalState(c);
+    return { m, c, q };
+  });
+  scored.sort((a, b) => b.q - a.q);
+  let best = -Infinity;
+  for (const { c } of scored) {
+    const v = -search(c, depth - 1, -beta, -alpha);
+    if (v > best) best = v;
+    if (v > alpha) alpha = v;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+function bestMove(s, depth = 2) {
+  const moves = genMoves(s);
+  if (!moves.length) return null;
+  let best = null, bestV = -Infinity;
+  const scored = moves.map(m => {
+    const c = cloneState(s);
+    applyMove(c, m);
+    const q = c.winner !== null ? 20000 : -evalState(c);
+    return { m, c, q };
+  });
+  scored.sort((a, b) => b.q - a.q);
+  for (const { m, c } of scored) {
+    const v = c.winner !== null ? 20000 : -search(c, depth - 1, -Infinity, -bestV);
+    if (v > bestV) { bestV = v; best = m; }
+    if (bestV >= 20000) break;
+  }
+  return { move: best, score: bestV };
+}
+
+// ---------- board rendering ----------
+const board = document.getElementById('board');
+let CELL = 40, GAP = 12;
+
+function layoutSizes() {
+  const size = Math.min(window.innerWidth * 0.92 - 20, 500);
+  GAP = Math.max(9, Math.round(size / 42));
+  CELL = (size - (N - 1) * GAP) / N;
+  board.style.width = size + 'px';
+  board.style.height = size + 'px';
+}
+const px = v => Math.round(v * 100) / 100 + 'px';
+const unit = () => CELL + GAP;
+
+function buildBoard() {
+  layoutSizes();
+  board.innerHTML = '';
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell' + (r === 0 ? ' goal-you' : r === N - 1 ? ' goal-opp' : '');
+    cell.dataset.r = r; cell.dataset.c = c;
+    cell.style.left = px(c * unit());
+    cell.style.top = px(r * unit());
+    cell.style.width = px(CELL);
+    cell.style.height = px(CELL);
+    cell.addEventListener('click', () => onCellClick(r, c));
+    board.appendChild(cell);
+  }
+  for (const o of ['h', 'v']) for (let r = 0; r < W; r++) for (let c = 0; c < W; c++) {
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    slot.dataset.o = o; slot.dataset.r = r; slot.dataset.c = c;
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    if (o === 'h') {
+      slot.style.left = px(c * unit()); slot.style.top = px(r * unit() + CELL - 3);
+      slot.style.width = px(2 * CELL + GAP); slot.style.height = px(GAP + 6);
+      bar.style.left = '0'; bar.style.top = '3px'; bar.style.width = '100%'; bar.style.height = px(GAP);
+    } else {
+      slot.style.left = px(c * unit() + CELL - 3); slot.style.top = px(r * unit());
+      slot.style.width = px(GAP + 6); slot.style.height = px(2 * CELL + GAP);
+      bar.style.left = '3px'; bar.style.top = '0'; bar.style.width = px(GAP); bar.style.height = '100%';
+    }
+    slot.appendChild(bar);
+    slot.addEventListener('click', () => onSlotClick(o, r, c));
+    slot.addEventListener('mouseenter', () => {
+      slot.classList.toggle('illegal', !wallLegal(S, o, r, c) || S.walls[S.turn] <= 0 || S.winner !== null);
+    });
+    board.appendChild(slot);
+  }
+  for (const pl of [0, 1]) {
+    const pawn = document.createElement('div');
+    pawn.className = 'pawn p' + (pl + 1);
+    pawn.id = 'pawn' + pl;
+    board.appendChild(pawn);
+  }
+  refresh();
+}
+
+function refresh() {
+  // pawns
+  for (const pl of [0, 1]) {
+    const el = document.getElementById('pawn' + pl);
+    const { r, c } = S.p[pl];
+    const d = CELL * 0.68;
+    el.style.width = px(d); el.style.height = px(d);
+    el.style.left = px(c * unit() + (CELL - d) / 2);
+    el.style.top = px(r * unit() + (CELL - d) / 2);
+    el.classList.toggle('turn-glow', S.turn === pl && S.winner === null);
+  }
+  // placed walls
+  board.querySelectorAll('.wall').forEach(el => el.remove());
+  const drawWall = (o, r, c, isHint) => {
+    const el = document.createElement('div');
+    el.className = 'wall' + (isHint ? ' hint-wall' : '');
+    if (o === 'h') {
+      el.style.left = px(c * unit() + 2); el.style.top = px(r * unit() + CELL + 1);
+      el.style.width = px(2 * CELL + GAP - 4); el.style.height = px(GAP - 2);
+    } else {
+      el.style.left = px(c * unit() + CELL + 1); el.style.top = px(r * unit() + 2);
+      el.style.width = px(GAP - 2); el.style.height = px(2 * CELL + GAP - 4);
+    }
+    board.appendChild(el);
+  };
+  for (const k of S.h) drawWall('h', (k / W) | 0, k % W, false);
+  for (const k of S.v) drawWall('v', (k / W) | 0, k % W, false);
+  // move targets
+  board.querySelectorAll('.cell').forEach(el => el.classList.remove('move-target', 'opp-turn', 'hint-cell'));
+  if (S.winner === null && !(oppMode === 'ai' && S.turn === 1)) {
+    for (const [r, c] of pawnMoves(S, S.turn)) {
+      const el = board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+      el.classList.add('move-target');
+      if (S.turn === 1) el.classList.add('opp-turn');
+    }
+  }
+  // hint
+  if (hint) {
+    if (hint.type === 'pawn') {
+      const el = board.querySelector(`.cell[data-r="${hint.r}"][data-c="${hint.c}"]`);
+      el.classList.add('move-target', 'hint-cell');
+    } else {
+      drawWall(hint.o, hint.r, hint.c, true);
+    }
+  }
+  // banner
+  board.querySelectorAll('.win-banner').forEach(el => el.remove());
+  if (S.winner !== null) {
+    const el = document.createElement('div');
+    el.className = 'win-banner';
+    el.textContent = S.winner === 0 ? '🏁 Blue reaches the far side — Blue wins!' : '🏁 Red reaches the far side — Red wins!';
+    board.appendChild(el);
+  }
+  // panel
+  document.getElementById('walls1').textContent = 'Walls: ' + S.walls[0];
+  document.getElementById('walls2').textContent = 'Walls: ' + S.walls[1];
+  document.getElementById('pl1').classList.toggle('active', S.turn === 0 && S.winner === null);
+  document.getElementById('pl2').classList.toggle('active', S.turn === 1 && S.winner === null);
+  document.getElementById('btnUndo').disabled = history.length === 0;
+  document.getElementById('btnApply').disabled = !hint;
+  const d0 = bfsDist(S, 0), d1 = bfsDist(S, 1);
+  document.getElementById('distLine').textContent =
+    S.winner === null ? `Shortest way — Blue: ${d0} steps · Red: ${d1} steps` : '';
+}
+
+// ---------- interaction ----------
+const engineMsg = document.getElementById('engineMsg');
+const turnName = () => S.turn === 0 ? 'Blue' : 'Red';
+
+function cellName(r, c) { return FILES[c] + (N - r); }
+function describe(m) {
+  if (m.type === 'pawn') return `move the ${turnName()} pawn to ${cellName(m.r, m.c)}`;
+  return m.o === 'h'
+    ? `place a horizontal wall under ${cellName(m.r, m.c)}–${cellName(m.r, m.c + 1)}`
+    : `place a vertical wall beside ${cellName(m.r, m.c)}–${cellName(m.r + 1, m.c)}`;
+}
+
+function commit(m) {
+  history.push(cloneState(S));
+  hint = null;
+  applyMove(S, m);
+  refresh();
+  if (S.winner !== null) {
+    engineMsg.innerHTML = `<span class="good">${S.winner === 0 ? 'Blue' : 'Red'} wins the race!</span>`;
     return;
   }
-  solveMsg.textContent = `${blocks.length} block${blocks.length === 1 ? '' : 's'} on the board. Ask for the best move whenever you're ready.`;
-  optLine.textContent = '';
+  engineMsg.textContent = `${turnName()} to move.`;
+  maybeAI();
 }
 
-// ---------- play mode ----------
-const moveCounter = document.getElementById('moveCounter');
-function bumpMoves() { movesMade++; moveCounter.textContent = `Moves: ${movesMade}`; }
-
-function attachDrag(el, b) {
-  el.addEventListener('pointerdown', ev => {
-    if (mode === 'edit') return; // edit handles clicks separately
-    if (solved || autoTimer) return;
-    ev.preventDefault();
-    el.setPointerCapture(ev.pointerId);
-    el.classList.add('dragging');
-    const cp = cellPx();
-    const pos = blocks.map(x => (x.dir === 'h' ? x.c : x.r));
-    const i = blocks.indexOf(b);
-    const [minD, maxD] = slideRange(blocks, pos, i);
-    const startX = ev.clientX, startY = ev.clientY;
-    const baseLeft = parseFloat(el.style.left), baseTop = parseFloat(el.style.top);
-    let lastCells = 0;
-
-    const onMove = e => {
-      const raw = (b.dir === 'h' ? e.clientX - startX : e.clientY - startY);
-      const clamped = Math.max(minD * cp, Math.min(maxD * cp, raw));
-      lastCells = Math.round(clamped / cp);
-      if (b.dir === 'h') el.style.left = (baseLeft + clamped) + 'px';
-      else el.style.top = (baseTop + clamped) + 'px';
-    };
-    const onUp = () => {
-      el.classList.remove('dragging');
-      el.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerup', onUp);
-      el.removeEventListener('pointercancel', onUp);
-      if (lastCells !== 0) {
-        if (b.dir === 'h') b.c += lastCells; else b.r += lastCells;
-        bumpMoves();
-        clearHint();
-        checkSolved();
-        if (!solved) {
-          const sol = solve(blocks);
-          if (sol === false) { solveMsg.innerHTML = '<span class="bad">This position is now unsolvable.</span> Restart or undo with more sliding.'; optLine.textContent = ''; }
-          else { solveMsg.textContent = 'Nice. Ask for the best move if you get stuck.'; optLine.textContent = `Optimal from here: ${sol.length} move${sol.length === 1 ? '' : 's'}.`; }
-        }
-      }
-      updatePositions(true);
-    };
-    el.addEventListener('pointermove', onMove);
-    el.addEventListener('pointerup', onUp);
-    el.addEventListener('pointercancel', onUp);
-  });
+function onCellClick(r, c) {
+  if (S.winner !== null || aiThinking) return;
+  if (oppMode === 'ai' && S.turn === 1) return;
+  if (pawnMoves(S, S.turn).some(([a, b]) => a === r && b === c)) commit({ type: 'pawn', r, c });
 }
 
-// ---------- board click (edit) ----------
-board.addEventListener('click', ev => {
-  if (mode !== 'edit') return;
-  const blockEl = ev.target.closest('.block');
-  if (blockEl) { removeBlock(+blockEl.dataset.id); return; }
-  const rect = board.getBoundingClientRect();
-  const cp = cellPx();
-  const c = Math.floor((ev.clientX - rect.left - 6) / cp);
-  const r = Math.floor((ev.clientY - rect.top - 6) / cp);
-  if (r < 0 || r >= N || c < 0 || c >= N) return;
-  placeAt(r, c);
+function onSlotClick(o, r, c) {
+  if (S.winner !== null || aiThinking) return;
+  if (oppMode === 'ai' && S.turn === 1) return;
+  if (S.walls[S.turn] <= 0) { engineMsg.innerHTML = `<span class="bad">${turnName()} has no walls left.</span>`; return; }
+  if (!wallPlaceable(S, o, r, c)) { engineMsg.innerHTML = '<span class="bad">A wall is already there.</span>'; return; }
+  if (!wallLegal(S, o, r, c)) { engineMsg.innerHTML = '<span class="bad">Not allowed — that wall would seal off a player\'s last way through.</span>'; return; }
+  commit({ type: 'wall', o, r, c });
+}
+
+function maybeAI() {
+  if (oppMode !== 'ai' || S.turn !== 1 || S.winner !== null) return;
+  aiThinking = true;
+  engineMsg.textContent = 'Red is thinking…';
+  setTimeout(() => {
+    const res = bestMove(S, 2);
+    aiThinking = false;
+    if (res && res.move) commit(res.move);
+  }, 350);
+}
+
+document.getElementById('btnBest').addEventListener('click', () => {
+  if (S.winner !== null) return;
+  if (aiThinking || (oppMode === 'ai' && S.turn === 1)) return;
+  engineMsg.textContent = 'Thinking…';
+  setTimeout(() => {
+    const res = bestMove(S, 2);
+    if (!res || !res.move) { engineMsg.innerHTML = '<span class="bad">No legal moves.</span>'; return; }
+    hint = res.move;
+    const lead = res.score >= 20000 ? ' It wins on the spot!' : '';
+    engineMsg.innerHTML = `<span class="gold">Best for ${turnName()}:</span> ${describe(res.move)}.${lead}`;
+    refresh();
+  }, 30);
 });
 
-// ---------- tabs & tools ----------
-const tabEdit = document.getElementById('tabEdit');
-const tabPlay = document.getElementById('tabPlay');
-const editCard = document.getElementById('editCard');
-const playCard = document.getElementById('playCard');
+document.getElementById('btnApply').addEventListener('click', () => {
+  if (hint) commit(hint);
+});
 
-function setMode(m) {
-  stopAuto();
-  clearHint();
-  mode = m;
-  tabEdit.classList.toggle('active', m === 'edit');
-  tabPlay.classList.toggle('active', m === 'play');
-  editCard.style.display = m === 'edit' ? '' : 'none';
-  playCard.style.display = m === 'play' ? '' : 'none';
-  if (m === 'play') {
-    setupSnapshot = JSON.parse(JSON.stringify(blocks));
-    movesMade = 0;
-    moveCounter.textContent = 'Moves: 0';
-    if (!heroBlock()) flashMsg('Place the red block first — switch back to Set up.');
-    else { solveMsg.textContent = 'Drag blocks to slide them. Ask for the best move any time.'; optLine.textContent = ''; }
-  } else {
-    solved = false;
-    renderBlocks();
-    refreshIdleStatus();
-  }
-}
-tabEdit.addEventListener('click', () => setMode('edit'));
-tabPlay.addEventListener('click', () => setMode('play'));
+document.getElementById('btnNew').addEventListener('click', () => {
+  S = newState(); history = []; hint = null;
+  engineMsg.textContent = 'Blue to move. Ask the engine whenever you like.';
+  refresh();
+});
 
-document.querySelectorAll('.toolbtn[data-tool]').forEach(btn => {
+document.getElementById('btnUndo').addEventListener('click', () => {
+  if (!history.length) return;
+  S = history.pop();
+  if (oppMode === 'ai' && S.turn === 1 && history.length) S = history.pop(); // undo the AI reply too
+  hint = null;
+  engineMsg.textContent = `${turnName()} to move.`;
+  refresh();
+});
+
+document.querySelectorAll('#oppSeg button').forEach(btn => {
   btn.addEventListener('click', () => {
-    tool = btn.dataset.tool;
-    document.querySelectorAll('.toolbtn[data-tool]').forEach(x => x.classList.toggle('active', x === btn));
+    oppMode = btn.dataset.opp;
+    document.querySelectorAll('#oppSeg button').forEach(b => b.classList.toggle('on', b === btn));
+    document.getElementById('name2').textContent = oppMode === 'ai' ? 'Red — computer' : 'Red';
+    hint = null;
+    refresh();
+    maybeAI();
   });
-});
-
-document.getElementById('btnClear').addEventListener('click', () => {
-  blocks = [];
-  solved = false;
-  stopAuto();
-  clearHint();
-  renderBlocks();
-  refreshIdleStatus();
-});
-
-document.getElementById('btnRestart').addEventListener('click', () => {
-  if (!setupSnapshot) return;
-  blocks = JSON.parse(JSON.stringify(setupSnapshot));
-  movesMade = 0;
-  moveCounter.textContent = 'Moves: 0';
-  solved = false;
-  stopAuto();
-  clearHint();
-  renderBlocks();
-  solveMsg.textContent = 'Puzzle restarted.';
-  optLine.textContent = '';
-});
-
-document.getElementById('btnBest').addEventListener('click', () => computeBest(true));
-btnApply.addEventListener('click', applyHint);
-document.getElementById('btnAuto').addEventListener('click', toggleAuto);
-
-// ---------- presets (verified solvable; optimal counts in the labels) ----------
-const PRESETS = {
-  warmup: [{"r":2,"c":2,"len":2,"dir":"h","hero":true},{"r":1,"c":3,"len":2,"dir":"h","hero":false},{"r":3,"c":0,"len":2,"dir":"h","hero":false},{"r":1,"c":0,"len":3,"dir":"h","hero":false},{"r":0,"c":2,"len":2,"dir":"h","hero":false},{"r":1,"c":5,"len":3,"dir":"v","hero":false},{"r":2,"c":4,"len":3,"dir":"v","hero":false},{"r":5,"c":1,"len":3,"dir":"h","hero":false},{"r":3,"c":2,"len":2,"dir":"h","hero":false},{"r":4,"c":1,"len":2,"dir":"h","hero":false}],
-  medium: [{"r":2,"c":2,"len":2,"dir":"h","hero":true},{"r":0,"c":5,"len":3,"dir":"v","hero":false},{"r":0,"c":1,"len":2,"dir":"h","hero":false},{"r":1,"c":0,"len":3,"dir":"v","hero":false},{"r":3,"c":4,"len":2,"dir":"h","hero":false},{"r":3,"c":1,"len":2,"dir":"v","hero":false},{"r":1,"c":4,"len":2,"dir":"v","hero":false},{"r":1,"c":1,"len":2,"dir":"h","hero":false},{"r":5,"c":4,"len":2,"dir":"h","hero":false},{"r":3,"c":2,"len":2,"dir":"h","hero":false},{"r":5,"c":1,"len":2,"dir":"h","hero":false}],
-  expert: [{"r":2,"c":0,"len":2,"dir":"h","hero":true},{"r":3,"c":2,"len":2,"dir":"h","hero":false},{"r":0,"c":3,"len":3,"dir":"v","hero":false},{"r":3,"c":0,"len":2,"dir":"v","hero":false},{"r":2,"c":4,"len":3,"dir":"v","hero":false},{"r":5,"c":0,"len":2,"dir":"h","hero":false},{"r":3,"c":1,"len":2,"dir":"v","hero":false},{"r":0,"c":0,"len":2,"dir":"v","hero":false},{"r":2,"c":5,"len":3,"dir":"v","hero":false},{"r":1,"c":2,"len":2,"dir":"v","hero":false}],
-};
-
-document.getElementById('presetSel').addEventListener('change', ev => {
-  const p = PRESETS[ev.target.value];
-  ev.target.value = '';
-  if (!p) return;
-  blocks = p.map(b => ({ ...b, id: nextId++ }));
-  solved = false;
-  stopAuto();
-  clearHint();
-  renderBlocks();
-  refreshIdleStatus();
 });
 
 // ---------- init ----------
-buildCells();
-blocks = PRESETS.medium.map(b => ({ ...b, id: nextId++ }));
-renderBlocks();
-refreshIdleStatus();
-window.addEventListener('resize', () => { layoutCells(); updatePositions(false); renderHint(); });
+S = newState();
+buildBoard();
+window.addEventListener('resize', () => buildBoard());
 </script>
 </body>
 </html>
