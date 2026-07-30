@@ -164,6 +164,39 @@
     background: linear-gradient(180deg, var(--gold-bright), var(--gold));
     animation: pulse 1s ease-in-out infinite;
   }
+  .wall.ghost.legal { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); opacity: 0.9; }
+  .wall.ghost.illegal { background: var(--bad); opacity: 0.55; }
+  .drag-float {
+    position: fixed;
+    z-index: 50;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(180deg, var(--walnut-hi), var(--walnut));
+    border-radius: 3px;
+    opacity: 0.8;
+    box-shadow: 0 6px 14px rgba(30, 18, 8, 0.5);
+  }
+  .wall-tray {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .wall-tray .who { font-weight: 700; }
+  .wall-tray .who.blue { color: var(--blue); }
+  .wall-tray .who.red { color: var(--red); }
+  .tray-piece {
+    background: linear-gradient(180deg, var(--walnut-hi), var(--walnut));
+    border-radius: 4px;
+    cursor: grab;
+    touch-action: none;
+    box-shadow: 0 2px 5px rgba(30, 18, 8, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  .tray-piece:hover { filter: brightness(1.18); }
+  .tray-piece.disabled { opacity: 0.3; cursor: default; }
   .slot { position: absolute; z-index: 2; cursor: pointer; }
   .slot .bar {
     position: absolute;
@@ -273,7 +306,14 @@
 </header>
 
 <div class="app">
-  <div class="board-wrap"><div id="board"></div></div>
+  <div class="board-wrap">
+    <div id="board"></div>
+    <div class="wall-tray">
+      <span id="trayLabel">Drag a wall for <span class="who blue">Blue</span>:</span>
+      <div class="tray-piece" id="trayH" title="Drag a horizontal wall onto the board"></div>
+      <div class="tray-piece" id="trayV" title="Drag a vertical wall onto the board"></div>
+    </div>
+  </div>
 
   <div class="panel">
     <div class="card">
@@ -314,7 +354,8 @@
       <h2>How to play</h2>
       <p class="legend">
         On your turn, either <b>step your pawn</b> one square (tap a dot — you can jump over the enemy pawn),
-        or <b>place a wall</b> by tapping a groove between squares. Walls are two squares long, can't cross
+        or <b>place a wall</b>: drag a wall piece from under the board and release it on a groove
+        (gold preview = allowed; tapping a groove works too). Walls are two squares long, can't cross
         other walls, and may never seal off a player's last way through.
         <b>Blue wins</b> by reaching the top row; <b>Red wins</b> at the bottom row.
       </p>
@@ -653,6 +694,17 @@ function refresh() {
     el.textContent = S.winner === 0 ? '🏁 Blue reaches the far side — Blue wins!' : '🏁 Red reaches the far side — Red wins!';
     board.appendChild(el);
   }
+  // wall tray
+  const thick = Math.max(GAP + 2, 14), long = 2 * CELL + GAP - 4;
+  const trayH = document.getElementById('trayH'), trayV = document.getElementById('trayV');
+  trayH.style.width = px(long); trayH.style.height = px(thick);
+  trayV.style.width = px(thick); trayV.style.height = px(long * 0.6);
+  const trayOff = S.winner !== null || S.walls[S.turn] <= 0 || (oppMode === 'ai' && S.turn === 1);
+  trayH.classList.toggle('disabled', trayOff);
+  trayV.classList.toggle('disabled', trayOff);
+  document.getElementById('trayLabel').innerHTML = S.turn === 0
+    ? 'Drag a wall for <span class="who blue">Blue</span>:'
+    : 'Drag a wall for <span class="who red">Red</span>:';
   // panel
   document.getElementById('walls1').textContent = 'Walls: ' + S.walls[0];
   document.getElementById('walls2').textContent = 'Walls: ' + S.walls[1];
@@ -744,6 +796,84 @@ document.getElementById('btnUndo').addEventListener('click', () => {
   engineMsg.textContent = `${turnName()} to move.`;
   refresh();
 });
+
+// ---------- drag-and-drop wall placement ----------
+let drag = null;   // {o, float, slot}
+
+function beginWallDrag(o, ev, src) {
+  if (S.winner !== null || aiThinking || (oppMode === 'ai' && S.turn === 1)) return;
+  if (S.walls[S.turn] <= 0) { engineMsg.innerHTML = `<span class="bad">${turnName()} has no walls left.</span>`; return; }
+  ev.preventDefault();
+  src.setPointerCapture(ev.pointerId);
+  const float = document.createElement('div');
+  float.className = 'drag-float';
+  const thick = Math.max(GAP - 2, 10), long = 2 * CELL + GAP - 4;
+  float.style.width = o === 'h' ? px(long) : px(thick);
+  float.style.height = o === 'h' ? px(thick) : px(long);
+  document.body.appendChild(float);
+  drag = { o, float, slot: null };
+  onWallDrag(ev);
+  const move = e => onWallDrag(e);
+  const up = e => {
+    src.removeEventListener('pointermove', move);
+    src.removeEventListener('pointerup', up);
+    src.removeEventListener('pointercancel', up);
+    endWallDrag();
+  };
+  src.addEventListener('pointermove', move);
+  src.addEventListener('pointerup', up);
+  src.addEventListener('pointercancel', up);
+}
+
+function onWallDrag(e) {
+  if (!drag) return;
+  drag.float.style.left = e.clientX + 'px';
+  drag.float.style.top = e.clientY + 'px';
+  const rect = board.getBoundingClientRect();
+  const bx = e.clientX - rect.left - 10, by = e.clientY - rect.top - 10;   // inside the 10px frame
+  let slot = null;
+  const inner = rect.width - 20;
+  if (bx > -18 && by > -18 && bx < inner + 18 && by < inner + 18) {
+    const u = unit();
+    const clamp = v => Math.max(0, Math.min(W - 1, v));
+    const r = clamp(Math.round((by - CELL - GAP / 2) / u));
+    const c = clamp(Math.round((bx - CELL - GAP / 2) / u));
+    slot = { o: drag.o, r, c, legal: wallLegal(S, drag.o, r, c) };
+  }
+  drag.slot = slot;
+  board.querySelectorAll('.wall.ghost').forEach(el => el.remove());
+  if (slot) {
+    const el = document.createElement('div');
+    el.className = 'wall ghost ' + (slot.legal ? 'legal' : 'illegal');
+    if (slot.o === 'h') {
+      el.style.left = px(slot.c * unit() + 2); el.style.top = px(slot.r * unit() + CELL + 1);
+      el.style.width = px(2 * CELL + GAP - 4); el.style.height = px(GAP - 2);
+    } else {
+      el.style.left = px(slot.c * unit() + CELL + 1); el.style.top = px(slot.r * unit() + 2);
+      el.style.width = px(GAP - 2); el.style.height = px(2 * CELL + GAP - 4);
+    }
+    board.appendChild(el);
+  }
+}
+
+function endWallDrag() {
+  if (!drag) return;
+  const slot = drag.slot;
+  drag.float.remove();
+  board.querySelectorAll('.wall.ghost').forEach(el => el.remove());
+  drag = null;
+  if (!slot) return;
+  if (!slot.legal) {
+    engineMsg.innerHTML = wallPlaceable(S, slot.o, slot.r, slot.c)
+      ? '<span class="bad">Not allowed — that wall would seal off a player\'s last way through.</span>'
+      : '<span class="bad">A wall is already there.</span>';
+    return;
+  }
+  commit({ type: 'wall', o: slot.o, r: slot.r, c: slot.c });
+}
+
+document.getElementById('trayH').addEventListener('pointerdown', ev => beginWallDrag('h', ev, ev.currentTarget));
+document.getElementById('trayV').addEventListener('pointerdown', ev => beginWallDrag('v', ev, ev.currentTarget));
 
 document.querySelectorAll('#oppSeg button').forEach(btn => {
   btn.addEventListener('click', () => {
