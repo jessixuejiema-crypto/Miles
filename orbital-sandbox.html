@@ -593,30 +593,33 @@ function handleCollisions() {
       // fresh debris gets a grace period so a new asteroid cloud doesn't instantly clump
       if (a.type === 'asteroid' && b.type === 'asteroid' && (a.age < 2 || b.age < 2)) continue;
 
-      // invincible bodies shrug everything off — the other object just bounces
-      if (a.invincible || b.invincible) {
-        if (a.invincible && !b.invincible) bounceOff(a, b);
-        else if (b.invincible && !a.invincible) bounceOff(b, a);
-        continue;
-      }
+      // two invincible bodies can't affect each other — just push apart
+      if (a.invincible && b.invincible) { bounceOff(a, b); continue; }
 
       const relSpeed = Math.hypot(a.vx - b.vx, a.vy - b.vy);
 
       if (a.star && b.star) {
-        mergeBodies(a, b);           // star + star: fuse (may trigger supernova)
+        mergeBodies(a, b);           // star + star: fuse (invincible one survives unchanged)
       } else if (a.star || b.star) {
         const star = a.star ? a : b, other = a.star ? b : a;
-        absorb(star, other);         // stars swallow whatever falls in
+        if (other.invincible) bounceOff(star, other); // can't be swallowed
+        else absorb(star, other);    // stars swallow whatever falls in
       } else if (a.type === 'asteroid' && b.type === 'asteroid') {
         // asteroid pile-up: 99% clump into a bigger rock, 1% smash into even more shards
-        if (Math.random() < 0.01) shatter(a, b);
+        if (!a.invincible && !b.invincible && Math.random() < 0.01) shatter(a, b);
         else mergeBodies(a, b);
       } else if (a.type === 'asteroid' || b.type === 'asteroid') {
         // asteroid strikes a world: glowing scar that cools to a crater, plus ejecta
         const ast = a.type === 'asteroid' ? a : b;
-        asteroidImpact(ast === a ? b : a, ast);
+        const world = ast === a ? b : a;
+        if (ast.invincible) bounceOff(world, ast);    // unbreakable pebble ricochets
+        else asteroidImpact(world, ast);
       } else if (relSpeed > SHATTER_SPEED) {
-        shatter(a, b);               // fast impact: smash both into asteroids
+        if (a.invincible || b.invincible) {
+          const vic = a.invincible ? b : a;           // only the vulnerable one blows apart
+          recordHit(a.invincible ? a : b, vic.type);
+          shatterOne(vic);
+        } else shatter(a, b);        // fast impact: smash both into asteroids
       } else {
         mergeBodies(a, b);           // gentle impact: clump together
       }
@@ -653,32 +656,56 @@ function recordHit(b, type) {
 }
 
 function mergeBodies(a, b) {
-  const big = a.mass >= b.mass ? a : b;
-  const small = big === a ? b : a;
+  let big = a.mass >= b.mass ? a : b;
+  let small = big === a ? b : a;
+  // an invincible body always survives the merge — and comes out unchanged
+  if (small.invincible && !big.invincible) { const t = big; big = small; small = t; }
   const m = big.mass + small.mass;
   recordHit(big, small.type);
-  // merged rubble blends its color, weighted by mass
-  if (big.rgbTint && small.rgbTint) {
-    for (let i = 0; i < 3; i++) {
-      big.rgbTint[i] = (big.rgbTint[i] * big.mass + small.rgbTint[i] * small.mass) / m;
+  if (!big.invincible) {
+    // merged rubble blends its color, weighted by mass
+    if (big.rgbTint && small.rgbTint) {
+      for (let i = 0; i < 3; i++) {
+        big.rgbTint[i] = (big.rgbTint[i] * big.mass + small.rgbTint[i] * small.mass) / m;
+      }
     }
+    if (!big.pinned) {
+      big.vx = (big.vx * big.mass + small.vx * small.mass) / m;
+      big.vy = (big.vy * big.mass + small.vy * small.mass) / m;
+      big.x = (big.x * big.mass + small.x * small.mass) / m;
+      big.y = (big.y * big.mass + small.y * small.mass) / m;
+    }
+    big.mass = m;
+    big.r = Math.cbrt(big.r ** 3 + small.r ** 3);
   }
-  if (!big.pinned) {
-    big.vx = (big.vx * big.mass + small.vx * small.mass) / m;
-    big.vy = (big.vy * big.mass + small.vy * small.mass) / m;
-    big.x = (big.x * big.mass + small.x * small.mass) / m;
-    big.y = (big.y * big.mass + small.y * small.mass) / m;
-  }
-  big.mass = m;
-  big.r = Math.cbrt(big.r ** 3 + small.r ** 3);
   spawnSparks(big.x, big.y, 6, big.color);
   if (followed === small) followed = big;
   removeBody(small);
   // a rubble pile grown to rocky-planet size compacts into a real planet,
   // and anything that keeps growing to gas-giant size becomes a gas giant —
   // both transformations keep the body's mass exactly as it was
-  if (big.type === 'asteroid' && big.r >= TYPES.rocky.r) asteroidToRocky(big);
-  if (!big.star && big.type !== 'gasGiant' && big.r >= TYPES.gasGiant.r) toGasGiant(big);
+  if (!big.invincible) {
+    if (big.type === 'asteroid' && big.r >= TYPES.rocky.r) asteroidToRocky(big);
+    if (!big.star && big.type !== 'gasGiant' && big.r >= TYPES.gasGiant.r) toGasGiant(big);
+  }
+}
+
+function shatterOne(b) {
+  // one body blows apart on its own (it hit something unbreakable)
+  const { x, y, vx, vy, mass, r } = b;
+  spawnSparks(x, y, 18, '#ffb060');
+  effects.push({ kind: 'flash', x, y, t: 0, dur: 0.4, r: r * 3, color: '#ffd9a0' });
+  if (followed === b) followed = null;
+  removeBody(b);
+  const count = Math.min(randInt(6, 12), Math.max(2, MAX_BODIES - bodies.length + 1));
+  for (let k = 0; k < count; k++) {
+    const ang = rand(0, TAU), spd = rand(40, 160);
+    const frag = makeBody('asteroid',
+      x + Math.cos(ang) * rand(4, r * 1.5), y + Math.sin(ang) * rand(4, r * 1.5),
+      vx + Math.cos(ang) * spd, vy + Math.sin(ang) * spd, rand(0.5, 1.2));
+    frag.mass = Math.max(0.5, mass / count * 0.4);
+    addBody(frag);
+  }
 }
 
 function toGasGiant(b) {
@@ -703,11 +730,13 @@ function asteroidToRocky(b) {
 
 function absorb(star, other) {
   recordHit(star, other.type);
-  const m = star.mass + other.mass;
-  star.vx = (star.vx * star.mass + other.vx * other.mass) / m;
-  star.vy = (star.vy * star.mass + other.vy * other.mass) / m;
-  star.mass = m;
-  star.r = Math.cbrt(star.r ** 3 + other.r ** 3 * 0.25); // matter compresses into the star
+  if (!star.invincible) { // an invincible star still eats, but never grows
+    const m = star.mass + other.mass;
+    star.vx = (star.vx * star.mass + other.vx * other.mass) / m;
+    star.vy = (star.vy * star.mass + other.vy * other.mass) / m;
+    star.mass = m;
+    star.r = Math.cbrt(star.r ** 3 + other.r ** 3 * 0.25); // matter compresses into the star
+  }
   spawnSparks(other.x, other.y, 10, '#ffd080');
   if (followed === other) followed = star;
   removeBody(other);
@@ -743,9 +772,11 @@ function shatter(a, b) {
 
 function asteroidImpact(world, ast) {
   const relSpeed = Math.hypot(world.vx - ast.vx, world.vy - ast.vy);
-  const m = world.mass + ast.mass;
-  world.vx = (world.vx * world.mass + ast.vx * ast.mass) / m;
-  world.vy = (world.vy * world.mass + ast.vy * ast.mass) / m;
+  if (!world.invincible) {
+    const m = world.mass + ast.mass;
+    world.vx = (world.vx * world.mass + ast.vx * ast.mass) / m;
+    world.vy = (world.vy * world.mass + ast.vy * ast.mass) / m;
+  }
   const fullMass = world.mass + ast.mass; // asteroid buries itself in the crust
 
   // scar position in texture-local coordinates so it spins with the world
@@ -772,9 +803,11 @@ function asteroidImpact(world, ast) {
       world.vx + Math.cos(ea) * spd, world.vy + Math.sin(ea) * spd, rand(0.4, 0.9));
     if (addBody(frag)) excavated += frag.mass;
   }
-  world.mass = Math.max(5, fullMass - excavated * 1.4); // extra 40% vaporizes
-  world.r *= Math.cbrt(world.mass / fullMass);          // shrinks a little each hit
-  if (world.mass <= 10 || world.r < 3.4) crumble(world); // bombarded to rubble
+  if (!world.invincible) { // an invincible world sprays ejecta but never erodes
+    world.mass = Math.max(5, fullMass - excavated * 1.4); // extra 40% vaporizes
+    world.r *= Math.cbrt(world.mass / fullMass);          // shrinks a little each hit
+    if (world.mass <= 10 || world.r < 3.4) crumble(world); // bombarded to rubble
+  }
 }
 
 function crumble(world) {
