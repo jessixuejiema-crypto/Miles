@@ -304,8 +304,7 @@
     <div class="card">
       <h2>Best move engine</h2>
       <div class="row">
-        <button class="btn primary" id="btnBest">★ Best move</button>
-        <button class="btn" id="btnApply" disabled>Apply it</button>
+        <button class="btn primary" id="btnBest">★ Play the best move</button>
       </div>
       <div id="engineMsg">Blue to move. Ask the engine whenever you like.</div>
       <div class="statline" id="distLine"></div>
@@ -660,7 +659,6 @@ function refresh() {
   document.getElementById('pl1').classList.toggle('active', S.turn === 0 && S.winner === null);
   document.getElementById('pl2').classList.toggle('active', S.turn === 1 && S.winner === null);
   document.getElementById('btnUndo').disabled = history.length === 0;
-  document.getElementById('btnApply').disabled = !hint;
   const d0 = bfsDist(S, 0), d1 = bfsDist(S, 1);
   document.getElementById('distLine').textContent =
     S.winner === null ? `Shortest way — Blue: ${d0} steps · Red: ${d1} steps` : '';
@@ -724,15 +722,12 @@ document.getElementById('btnBest').addEventListener('click', () => {
   setTimeout(() => {
     const res = bestMove(S, 2);
     if (!res || !res.move) { engineMsg.innerHTML = '<span class="bad">No legal moves.</span>'; return; }
-    hint = res.move;
-    const lead = res.score >= 20000 ? ' It wins on the spot!' : '';
-    engineMsg.innerHTML = `<span class="gold">Best for ${turnName()}:</span> ${describe(res.move)}.${lead}`;
-    refresh();
+    const mover = turnName();
+    const played = `<span class="gold">Played for ${mover}:</span> ${describe(res.move)}.`;
+    commit(res.move);
+    if (S.winner === null && !aiThinking) engineMsg.innerHTML = `${played} ${turnName()} to move.`;
+    else if (S.winner === null) engineMsg.innerHTML = played + ' Red is thinking…';
   }, 30);
-});
-
-document.getElementById('btnApply').addEventListener('click', () => {
-  if (hint) commit(hint);
 });
 
 document.getElementById('btnNew').addEventListener('click', () => {
