@@ -115,6 +115,7 @@
   <label><input type="checkbox" id="showTrails" checked> trails</label>
   <button class="btn" id="pauseBtn">&#10074;&#10074; Pause</button>
   <button class="btn" id="spamBtn">&#128165; Spam</button>
+  <button class="btn" id="lineBtn">&#9999; Line</button>
   <button class="btn" id="messBtn">&#127922; Big Mess</button>
   <button class="btn" id="presetBtn">&#9728; Solar System</button>
   <button class="btn" id="clearBtn">Clear</button>
@@ -163,6 +164,9 @@ let idCounter = 0;
 let followed = null;   // body the camera is locked onto
 let spamMode = false;  // hold-and-drag fires an asteroid stream
 const spray = { on: false, sx: 0, sy: 0, dx: 1, dy: 0, acc: 0 };
+let lineMode = false;  // hold-and-drag draws a deletion line
+const lines = [];      // laser walls: anything touching one is vaporized (unless invincible)
+let drawingLine = null;
 
 const ui = {
   size: document.getElementById('sizeSlider'),
@@ -628,6 +632,49 @@ function handleCollisions() {
   }
 }
 
+function segDist2(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const L2 = dx * dx + dy * dy || 1;
+  let t = ((px - x1) * dx + (py - y1) * dy) / L2;
+  t = Math.max(0, Math.min(1, t));
+  const qx = x1 + t * dx - px, qy = y1 + t * dy - py;
+  return qx * qx + qy * qy;
+}
+
+// anything touching a drawn line is vaporized — invincible bodies pass right through
+function applyLines() {
+  if (!lines.length) return;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i];
+    if (b.invincible) continue;
+    const rr2 = (b.r + 3) ** 2;
+    let zapped = false;
+    for (const ln of lines) {
+      const p = ln.pts;
+      for (let k = 0; k + 3 < p.length; k += 2) {
+        if (segDist2(b.x, b.y, p[k], p[k + 1], p[k + 2], p[k + 3]) < rr2) { zapped = true; break; }
+      }
+      if (zapped) break;
+    }
+    if (zapped) {
+      spawnSparks(b.x, b.y, 8, b.color);
+      effects.push({ kind: 'flash', x: b.x, y: b.y, t: 0, dur: 0.3, r: b.r * 2.5, color: '#ff6070' });
+      if (followed === b) followed = null;
+      bodies.splice(i, 1);
+    }
+  }
+}
+
+function deleteLineAt(x, y) {
+  const th2 = (12 / cam.zoom) ** 2;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const p = lines[i].pts;
+    for (let k = 0; k + 3 < p.length; k += 2) {
+      if (segDist2(x, y, p[k], p[k + 1], p[k + 2], p[k + 3]) < th2) { lines.splice(i, 1); return; }
+    }
+  }
+}
+
 function bounceOff(inv, other) {
   // reflect the other body off the invincible one; the invincible one is untouched
   const dx = other.x - inv.x, dy = other.y - inv.y;
@@ -960,6 +1007,24 @@ function render(now) {
     ctx.globalAlpha = 1;
   }
 
+  // laser lines: soft glow pass, then bright core
+  if (lines.length) {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const ln of lines) {
+      const p = ln.pts;
+      if (p.length < 4) continue;
+      for (const [width, style] of [[9, 'rgba(255, 80, 110, 0.22)'], [2.5, 'rgba(255, 110, 135, 0.95)']]) {
+        ctx.strokeStyle = style;
+        ctx.lineWidth = Math.max(width / cam.zoom, width * 0.6);
+        ctx.beginPath();
+        ctx.moveTo(p[0], p[1]);
+        for (let k = 2; k < p.length; k += 2) ctx.lineTo(p[k], p[k + 1]);
+        ctx.stroke();
+      }
+    }
+  }
+
   // star glows (behind bodies)
   for (const b of bodies) {
     if (!b.star || b.type === 'starBlack') continue;
@@ -1092,6 +1157,7 @@ function frame(now) {
     const dt = rawDt * timeScale;
     const sub = bodies.length > 400 ? 1 : 3; // fewer substeps when the world is huge
     for (let s = 0; s < sub; s++) stepPhysics(dt / sub);
+    applyLines();
     for (const e of effects) e.t += dt;
     updateTrails();
   }
@@ -1124,6 +1190,13 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (activePointers.size > 0) return; // second finger = pinch, handled below
+  if (lineMode) {
+    const w = screenToWorld(e.clientX, e.clientY);
+    drawingLine = { pts: [w.x, w.y] };
+    lines.push(drawingLine);
+    if (lines.length > 30) lines.shift();
+    return;
+  }
   if (spamMode) {
     spray.on = true;
     spray.sx = e.clientX; spray.sy = e.clientY;
@@ -1145,6 +1218,13 @@ canvas.addEventListener('pointermove', (e) => {
     drag.sx = e.clientX; drag.sy = e.clientY;
     return;
   }
+  if (drawingLine) {
+    const w = screenToWorld(e.clientX, e.clientY);
+    const p = drawingLine.pts;
+    const lx = p[p.length - 2], ly = p[p.length - 1];
+    if (Math.hypot(w.x - lx, w.y - ly) > 4 / cam.zoom && p.length < 1200) p.push(w.x, w.y);
+    return;
+  }
   if (spray.on) {
     const mdx = e.clientX - spray.sx, mdy = e.clientY - spray.sy;
     const L = Math.hypot(mdx, mdy);
@@ -1159,6 +1239,15 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 canvas.addEventListener('pointerup', (e) => {
+  if (drawingLine) {
+    if (drawingLine.pts.length < 4) {           // a tap, not a drag:
+      lines.pop();                              // discard the stub...
+      const w = screenToWorld(e.clientX, e.clientY);
+      deleteLineAt(w.x, w.y);                   // ...and erase a tapped line instead
+    }
+    drawingLine = null;
+    return;
+  }
   if (spray.on) { spray.on = false; return; }
   if (drag.panning) { drag.panning = false; return; }
   if (!drag.placing) return;
@@ -1385,13 +1474,23 @@ document.getElementById('pauseBtn').addEventListener('click', function () {
 document.getElementById('clearBtn').addEventListener('click', () => {
   bodies.length = 0;
   effects.length = 0;
+  lines.length = 0;
+  drawingLine = null;
 });
 document.getElementById('presetBtn').addEventListener('click', spawnSolarSystem);
 const spamBtn = document.getElementById('spamBtn');
+const lineBtn = document.getElementById('lineBtn');
 spamBtn.addEventListener('click', () => {
   spamMode = !spamMode;
   spray.on = false;
+  if (spamMode && lineMode) { lineMode = false; drawingLine = null; lineBtn.classList.remove('active'); }
   spamBtn.classList.toggle('active', spamMode);
+});
+lineBtn.addEventListener('click', () => {
+  lineMode = !lineMode;
+  drawingLine = null;
+  if (lineMode && spamMode) { spamMode = false; spray.on = false; spamBtn.classList.remove('active'); }
+  lineBtn.classList.toggle('active', lineMode);
 });
 document.getElementById('messBtn').addEventListener('click', spawnBigMess);
 
