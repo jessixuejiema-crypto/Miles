@@ -1559,7 +1559,6 @@ canvas.addEventListener('pointerup', (e) => {
       const mi = machineAt(drag.wx, drag.wy);
       if (mi !== -1) { machines.splice(mi, 1); return; }
     }
-    if (machines.length >= 20) { flashCount(); return; }
     machines.push({
       kind: selectedType, x: drag.wx, y: drag.wy,
       aimed: dragLen >= 8, aim: Math.atan2(dy, dx),
