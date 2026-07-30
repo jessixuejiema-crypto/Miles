@@ -197,16 +197,6 @@
   }
   .tray-piece:hover { filter: brightness(1.18); }
   .tray-piece.disabled { opacity: 0.3; cursor: default; }
-  .slot { position: absolute; z-index: 2; cursor: pointer; }
-  .slot .bar {
-    position: absolute;
-    border-radius: 3px;
-    opacity: 0;
-    background: var(--walnut-hi);
-  }
-  .slot:hover .bar { opacity: 0.55; }
-  .slot.illegal:hover .bar { background: var(--bad); opacity: 0.5; cursor: not-allowed; }
-
   .win-banner {
     position: absolute;
     inset: 0;
@@ -355,7 +345,7 @@
       <p class="legend">
         On your turn, either <b>step your pawn</b> one square (tap a dot — you can jump over the enemy pawn),
         or <b>place a wall</b>: drag a wall piece from under the board and release it on a groove
-        (gold preview = allowed; tapping a groove works too). Walls are two squares long, can't cross
+        (gold preview = allowed). Walls are two squares long, can't cross
         other walls, and may never seal off a player's last way through.
         <b>Blue wins</b> by reaching the top row; <b>Red wins</b> at the bottom row.
       </p>
@@ -610,28 +600,6 @@ function buildBoard() {
     cell.addEventListener('click', () => onCellClick(r, c));
     board.appendChild(cell);
   }
-  for (const o of ['h', 'v']) for (let r = 0; r < W; r++) for (let c = 0; c < W; c++) {
-    const slot = document.createElement('div');
-    slot.className = 'slot';
-    slot.dataset.o = o; slot.dataset.r = r; slot.dataset.c = c;
-    const bar = document.createElement('div');
-    bar.className = 'bar';
-    if (o === 'h') {
-      slot.style.left = px(c * unit()); slot.style.top = px(r * unit() + CELL - 3);
-      slot.style.width = px(2 * CELL + GAP); slot.style.height = px(GAP + 6);
-      bar.style.left = '0'; bar.style.top = '3px'; bar.style.width = '100%'; bar.style.height = px(GAP);
-    } else {
-      slot.style.left = px(c * unit() + CELL - 3); slot.style.top = px(r * unit());
-      slot.style.width = px(GAP + 6); slot.style.height = px(2 * CELL + GAP);
-      bar.style.left = '3px'; bar.style.top = '0'; bar.style.width = px(GAP); bar.style.height = '100%';
-    }
-    slot.appendChild(bar);
-    slot.addEventListener('click', () => onSlotClick(o, r, c));
-    slot.addEventListener('mouseenter', () => {
-      slot.classList.toggle('illegal', !wallLegal(S, o, r, c) || S.walls[S.turn] <= 0 || S.winner !== null);
-    });
-    board.appendChild(slot);
-  }
   for (const pl of [0, 1]) {
     const pawn = document.createElement('div');
     pawn.className = 'pawn p' + (pl + 1);
@@ -745,15 +713,6 @@ function onCellClick(r, c) {
   if (S.winner !== null || aiThinking) return;
   if (oppMode === 'ai' && S.turn === 1) return;
   if (pawnMoves(S, S.turn).some(([a, b]) => a === r && b === c)) commit({ type: 'pawn', r, c });
-}
-
-function onSlotClick(o, r, c) {
-  if (S.winner !== null || aiThinking) return;
-  if (oppMode === 'ai' && S.turn === 1) return;
-  if (S.walls[S.turn] <= 0) { engineMsg.innerHTML = `<span class="bad">${turnName()} has no walls left.</span>`; return; }
-  if (!wallPlaceable(S, o, r, c)) { engineMsg.innerHTML = '<span class="bad">A wall is already there.</span>'; return; }
-  if (!wallLegal(S, o, r, c)) { engineMsg.innerHTML = '<span class="bad">Not allowed — that wall would seal off a player\'s last way through.</span>'; return; }
-  commit({ type: 'wall', o, r, c });
 }
 
 function maybeAI() {
