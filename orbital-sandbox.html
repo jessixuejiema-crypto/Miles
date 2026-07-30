@@ -1220,7 +1220,11 @@ function render(now) {
           ctx.lineWidth = Math.max(width / cam.zoom, width * 0.6);
           ctx.beginPath();
           ctx.moveTo(p[0], p[1]);
-          for (let k = 2; k < p.length; k += 2) ctx.lineTo(p[k], p[k + 1]);
+          // midpoint smoothing rounds off the freehand jitter
+          for (let k = 2; k + 3 < p.length; k += 2) {
+            ctx.quadraticCurveTo(p[k], p[k + 1], (p[k] + p[k + 2]) / 2, (p[k + 1] + p[k + 3]) / 2);
+          }
+          ctx.lineTo(p[p.length - 2], p[p.length - 1]);
           ctx.stroke();
         }
       }
@@ -1714,22 +1718,35 @@ function drawFamily() {
   const xOf = t => padX + (t - t0) / (t1 - t0) * (Wc - padX * 2);
   const yOf = id => rowOf.has(id) ? padY + rowOf.get(id) * rowH + rowH / 2 : null;
 
+  // smooth S-curve between two horizontal levels
+  const sCurve = (x0, y0, x1, y1) => {
+    const mx = (x0 + x1) / 2;
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.bezierCurveTo(mx, y0, mx, y1, x1, y1);
+    g.stroke();
+  };
+  const CW = 14 * dpr; // horizontal run given to each curve
+
   // connectors behind the life lines
-  g.lineWidth = 1 * dpr;
+  g.lineWidth = 1.4 * dpr;
+  g.lineCap = 'round';
   for (const nd of nodes) {
     const y = yOf(nd.id);
-    for (const pid of nd.parents) {           // birth branches from each parent
+    const xb = xOf(nd.born);
+    for (const pid of nd.parents) {           // birth branches curve off each parent
       const py = yOf(pid);
       if (py !== null) {
-        g.strokeStyle = 'rgba(140, 160, 220, 0.3)';
-        g.beginPath(); g.moveTo(xOf(nd.born), py); g.lineTo(xOf(nd.born), y); g.stroke();
+        g.strokeStyle = 'rgba(140, 160, 220, 0.35)';
+        sCurve(xb - CW / 2, py, xb + CW / 2, y);
       }
     }
-    if (nd.died >= 0 && nd.target !== null) { // merge/absorb joins into the target's line
+    if (nd.died >= 0 && nd.target !== null) { // merges curve into the target's line
       const ty = yOf(nd.target);
       if (ty !== null) {
-        g.strokeStyle = 'rgba(255, 200, 120, 0.45)';
-        g.beginPath(); g.moveTo(xOf(nd.died), y); g.lineTo(xOf(nd.died), ty); g.stroke();
+        const xd = xOf(nd.died);
+        g.strokeStyle = 'rgba(255, 200, 120, 0.5)';
+        sCurve(xd - CW / 2, y, xd + CW / 2, ty);
       }
     }
   }
