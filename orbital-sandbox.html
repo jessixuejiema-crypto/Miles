@@ -50,9 +50,30 @@
     pointer-events: none; text-align: center; padding: 0 12px;
     transition: opacity 1.5s; white-space: nowrap; max-width: 96vw;
   }
+  #infoPanel {
+    position: absolute; top: 10px; right: 10px; width: 238px;
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 10px 12px; border-radius: 14px;
+    background: rgba(10, 14, 30, 0.88); border: 1px solid rgba(120, 140, 255, 0.25);
+    backdrop-filter: blur(6px); z-index: 11; color: #cdd6ff; font-size: 12px;
+  }
+  #infoPanel[hidden] { display: none; }
+  #infoHeader { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  #infoTitle { font-weight: 600; color: #fff; font-size: 13px; }
+  #infoPanel .btn { padding: 3px 8px; font-size: 11px; white-space: nowrap; }
+  #infoBody { display: flex; flex-direction: column; gap: 6px; }
+  #infoPanel canvas { width: 100%; height: 60px; background: rgba(255,255,255,0.04); border-radius: 6px; }
+  .glabel { color: rgba(200, 210, 255, 0.6); font-size: 10px; margin-top: -3px; }
+  #xRow { display: flex; align-items: center; gap: 6px; }
+  #xRow input[type=range] { flex: 1; accent-color: #7c9bff; }
+  #rateBox {
+    background: rgba(90, 120, 255, 0.15); border: 1px solid rgba(120, 140, 255, 0.3);
+    border-radius: 8px; padding: 6px 8px; font-weight: 600; color: #fff;
+  }
   @media (max-width: 700px) {
     .tool { min-width: 44px; font-size: 9px; }
     #panel input[type=range] { width: 60px; }
+    #infoPanel { top: auto; bottom: 120px; right: 6px; width: 200px; }
   }
 </style>
 </head>
@@ -62,6 +83,23 @@
 <div id="toolbar"></div>
 
 <div id="hint">Click empty space to place &bull; click an object to follow it &bull; drag to fling &bull; scroll / pinch to zoom &bull; two fingers to pan</div>
+
+<div id="infoPanel" hidden>
+  <div id="infoHeader">
+    <span id="infoTitle"></span>
+    <button class="btn" id="stopFollowBtn">&#9209; Stop Recenter</button>
+  </div>
+  <div id="infoBody">
+    <div id="infoAge"></div>
+    <div id="infoHits"></div>
+    <canvas id="graphCum" width="214" height="60"></canvas>
+    <div class="glabel">Total collisions over its life</div>
+    <canvas id="graphRate" width="214" height="60"></canvas>
+    <div class="glabel">Collisions per <span id="xVal">5</span>s chunk</div>
+    <div id="xRow">X <input type="range" id="xSlider" min="1" max="30" step="1" value="5"> <span id="xVal2">5s</span></div>
+    <div id="rateBox"></div>
+  </div>
+</div>
 
 <div id="panel">
   <label>Size <input type="range" id="sizeSlider" min="0.5" max="2.2" step="0.05" value="1"></label>
@@ -407,6 +445,9 @@ function makeBody(type, x, y, vx, vy, sizeMul = 1, massOverride = null) {
     novaTimer: -1,       // >=0 means counting down to supernova
     captureCd: 1.5,      // asteroids: cooldown between orbit-capture rolls
     age: 0,
+    totalHits: 0,        // things that have collided into this body
+    hitCounts: { asteroid: 0, moon: 0, planet: 0, other: 0 },
+    hitTimes: [],        // body-age timestamps of each hit, for the info graphs
   };
 }
 
@@ -568,10 +609,22 @@ function handleCollisions() {
   }
 }
 
+function recordHit(b, type) {
+  b.totalHits++;
+  const k = type === 'asteroid' ? 'asteroid'
+    : type === 'moon' ? 'moon'
+    : (type === 'earth' || type === 'rocky' || type === 'gasGiant') ? 'planet'
+    : 'other';
+  b.hitCounts[k]++;
+  b.hitTimes.push(b.age);
+  if (b.hitTimes.length > 600) b.hitTimes.shift();
+}
+
 function mergeBodies(a, b) {
   const big = a.mass >= b.mass ? a : b;
   const small = big === a ? b : a;
   const m = big.mass + small.mass;
+  recordHit(big, small.type);
   // merged rubble blends its color, weighted by mass
   if (big.rgbTint && small.rgbTint) {
     for (let i = 0; i < 3; i++) {
@@ -615,6 +668,7 @@ function asteroidToRocky(b) {
 }
 
 function absorb(star, other) {
+  recordHit(star, other.type);
   const m = star.mass + other.mass;
   star.vx = (star.vx * star.mass + other.vx * other.mass) / m;
   star.vy = (star.vy * star.mass + other.vy * other.mass) / m;
@@ -661,6 +715,7 @@ function asteroidImpact(world, ast) {
   const fullMass = world.mass + ast.mass; // asteroid buries itself in the crust
 
   // scar position in texture-local coordinates so it spins with the world
+  recordHit(world, 'asteroid');
   const ang = Math.atan2(ast.y - world.y, ast.x - world.x);
   const local = ang - world.rot;
   const sr = Math.max(7, Math.min(22, (ast.r / world.r) * 64 * 2.2));
@@ -986,6 +1041,7 @@ function frame(now) {
   }
 
   render(now);
+  updateInfoPanel(now);
   ui.count.textContent = bodies.length + (bodies.length === 1 ? ' body' : ' bodies');
   requestAnimationFrame(frame);
 }
@@ -1115,6 +1171,98 @@ canvas.addEventListener('pointercancel', clearPointer);
 function flashCount() {
   ui.count.style.color = '#ff6060';
   setTimeout(() => (ui.count.style.color = ''), 600);
+}
+
+// ---------------------------------------------------------------- info panel
+const info = {
+  panel: document.getElementById('infoPanel'),
+  title: document.getElementById('infoTitle'),
+  body: document.getElementById('infoBody'),
+  age: document.getElementById('infoAge'),
+  hits: document.getElementById('infoHits'),
+  gCum: document.getElementById('graphCum'),
+  gRate: document.getElementById('graphRate'),
+  xSlider: document.getElementById('xSlider'),
+  xVal: document.getElementById('xVal'),
+  xVal2: document.getElementById('xVal2'),
+  rateBox: document.getElementById('rateBox'),
+};
+let lastGraphAt = 0;
+
+document.getElementById('stopFollowBtn').addEventListener('click', () => { followed = null; });
+info.xSlider.addEventListener('input', () => {
+  info.xVal.textContent = info.xSlider.value;
+  info.xVal2.textContent = info.xSlider.value + 's';
+  lastGraphAt = 0; // redraw immediately with the new bucket width
+});
+
+function updateInfoPanel(now) {
+  if (!followed) { info.panel.hidden = true; return; }
+  const b = followed;
+  info.panel.hidden = false;
+  info.title.textContent = 'Following: ' + TYPES[b.type].label;
+  info.body.style.display = b.star ? 'none' : ''; // stars just get the stop button
+  if (b.star) return;
+
+  info.age.textContent = 'Age: ' + b.age.toFixed(0) + 's';
+  const h = b.hitCounts;
+  info.hits.textContent = 'Hit by ' + b.totalHits + (b.totalHits === 1 ? ' object' : ' objects')
+    + ' — ' + h.asteroid + ' asteroids, ' + h.moon + ' moons, ' + h.planet + ' planets';
+
+  const X = parseInt(info.xSlider.value, 10);
+  const recent = b.hitTimes.filter(t => b.age - t <= X).length;
+  const avg = b.age > 0 ? (b.totalHits / Math.max(1, b.age / X)).toFixed(1) : '0';
+  info.rateBox.textContent = recent + ' collisions in last ' + X + 's (avg ' + avg + ' per ' + X + 's)';
+
+  if (now - lastGraphAt > 250) {
+    lastGraphAt = now;
+    drawCumGraph(b);
+    drawRateGraph(b, X);
+  }
+}
+
+function drawCumGraph(b) {
+  const c = info.gCum, g = c.getContext('2d');
+  const cw = c.width, ch = c.height, pad = 4;
+  g.clearRect(0, 0, cw, ch);
+  const total = b.totalHits, dur = Math.max(b.age, 1);
+  const yFor = n => ch - pad - (total ? (n / total) * (ch - 2 * pad) : 0);
+  const xFor = t => pad + (t / dur) * (cw - 2 * pad);
+  g.strokeStyle = '#7c9bff';
+  g.lineWidth = 1.5;
+  g.beginPath();
+  let count = total - b.hitTimes.length; // baseline if old hits were trimmed
+  let y = yFor(count);
+  g.moveTo(pad, y);
+  for (const t of b.hitTimes) {           // step chart: flat, then up at each hit
+    const x = xFor(t);
+    g.lineTo(x, y);
+    y = yFor(++count);
+    g.lineTo(x, y);
+  }
+  g.lineTo(cw - pad, y);
+  g.stroke();
+}
+
+function drawRateGraph(b, X) {
+  const c = info.gRate, g = c.getContext('2d');
+  const cw = c.width, ch = c.height;
+  g.clearRect(0, 0, cw, ch);
+  const nBuckets = Math.max(1, Math.ceil(Math.max(b.age, 0.001) / X));
+  const show = Math.min(nBuckets, 36);   // most recent 36 chunks
+  const start = nBuckets - show;
+  const counts = new Array(show).fill(0);
+  for (const t of b.hitTimes) {
+    const bi = Math.min(nBuckets - 1, Math.floor(t / X)) - start;
+    if (bi >= 0) counts[bi]++;
+  }
+  const max = Math.max(1, ...counts);
+  const bw = (cw - 8) / show;
+  for (let i = 0; i < show; i++) {
+    const bh = (counts[i] / max) * (ch - 8);
+    g.fillStyle = i === show - 1 ? '#ffb060' : '#7c9bff'; // current chunk pops
+    g.fillRect(4 + i * bw, ch - 4 - bh, Math.max(1, bw - 1), bh);
+  }
 }
 
 // ---------------------------------------------------------------- toolbar
