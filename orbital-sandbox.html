@@ -50,6 +50,20 @@
     pointer-events: none; text-align: center; padding: 0 12px;
     transition: opacity 1.5s; white-space: nowrap; max-width: 96vw;
   }
+  #famPanel {
+    position: absolute; inset: 7% 6%; z-index: 20;
+    display: flex; flex-direction: column;
+    background: rgba(8, 11, 24, 0.96); border: 1px solid rgba(120, 140, 255, 0.3);
+    border-radius: 14px; color: #cdd6ff;
+  }
+  #famPanel[hidden] { display: none; }
+  #famHeader {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; font-weight: 600; color: #fff; font-size: 14px;
+  }
+  #famScroll { flex: 1; overflow-y: auto; margin: 0 10px; border-radius: 8px; background: rgba(255,255,255,0.03); }
+  #famLegend { padding: 8px 14px 12px; font-size: 11px; color: rgba(200, 210, 255, 0.6); line-height: 1.5; }
+
   #infoPanel {
     position: absolute; top: 10px; right: 10px; width: 238px;
     display: flex; flex-direction: column; gap: 6px;
@@ -107,6 +121,17 @@
   </div>
 </div>
 
+<div id="famPanel" hidden>
+  <div id="famHeader">
+    <span>&#127795; Family tree &mdash; every line is one object's life</span>
+    <button class="btn" id="famClose">&#10005; Close</button>
+  </div>
+  <div id="famScroll"><canvas id="famCanvas"></canvas></div>
+  <div id="famLegend">time &rarr; &bull; line joins another = merged / absorbed / crashed in &bull;
+    line splits into branches = shattered into debris &bull; &#10005; = vaporized &bull;
+    color change = became a new kind of world &bull; a line that just ends left no children</div>
+</div>
+
 <div id="panel">
   <label>Size <input type="range" id="sizeSlider" min="0.5" max="2.2" step="0.05" value="1"></label>
   <label>Speed <input type="range" id="timeSlider" min="0" max="3" step="0.05" value="1"></label>
@@ -118,6 +143,7 @@
   <button class="btn" id="lineBtn">&#9999; Line</button>
   <button class="btn" id="wallBtn">&#129521; Wall</button>
   <button class="btn" id="eraseBtn">&#129529; Erase</button>
+  <button class="btn" id="famBtn">&#127795; Family</button>
   <button class="btn" id="messBtn">&#127922; Big Mess</button>
   <button class="btn" id="presetBtn">&#9728; Solar System</button>
   <button class="btn" id="clearBtn">Clear</button>
@@ -173,6 +199,8 @@ const walls = [];      // gray walls: block and bounce every kind of object
 let drawingLine = null;
 let eraseMode = false; // hold-and-drag rubs out drawn lines and walls
 const eraser = { on: false, x: 0, y: 0 };
+let simTime = 0;       // total simulated seconds, the family tree's time axis
+const family = new Map(); // body id -> lineage record for the family tree
 
 const ui = {
   size: document.getElementById('sizeSlider'),
@@ -450,6 +478,7 @@ function makeBody(type, x, y, vx, vy, sizeMul = 1, massOverride = null) {
   return {
     id: idCounter++,
     type, x, y, vx, vy, mass, r,
+    px: x, py: y,        // previous position for swept line/wall checks
     star: def.star,
     color,
     rgbTint: astHSL ? hslToRgb(astHSL[0], astHSL[1], astHSL[2]) : null,
@@ -469,9 +498,35 @@ function makeBody(type, x, y, vx, vy, sizeMul = 1, massOverride = null) {
   };
 }
 
-function addBody(b) {
+// ---------------------------------------------------------------- family tree
+function famBirth(b, parents) {
+  family.set(b.id, {
+    id: b.id, type: b.type, color: b.color,
+    born: simTime, died: -1, parents: parents || [],
+    death: null, target: null, segs: null,
+  });
+  if (family.size > 2500) { // prune the oldest dead lineages
+    let n = 0;
+    for (const [id, node] of family) {
+      if (node.died >= 0) { family.delete(id); if (++n >= 300) break; }
+    }
+  }
+}
+
+function famDeath(b, kind, targetId) {
+  const n = family.get(b.id);
+  if (n) { n.died = simTime; n.death = kind; n.target = targetId !== undefined ? targetId : null; }
+}
+
+function famTransform(b) { // type change: the line keeps going in a new color
+  const n = family.get(b.id);
+  if (n) (n.segs || (n.segs = [])).push({ t: simTime, color: TYPES[b.type].color });
+}
+
+function addBody(b, parents) {
   if (bodies.length >= MAX_BODIES) return false;
   bodies.push(b);
+  famBirth(b, parents);
   return true;
 }
 
@@ -511,6 +566,12 @@ let accX = new Float64Array(0), accY = new Float64Array(0);
 function stepPhysics(dt) {
   const G = G_BASE * parseFloat(ui.grav.value);
   const n = bodies.length;
+  simTime += dt;
+
+  // remember pre-step positions so line/wall sweeps see every substep's motion
+  if (lines.length || walls.length) {
+    for (const b of bodies) { b.px = b.x; b.py = b.y; }
+  }
 
   // pairwise gravity, symmetric pairs (semi-implicit Euler)
   if (accX.length < n) { accX = new Float64Array(n); accY = new Float64Array(n); }
@@ -550,6 +611,12 @@ function stepPhysics(dt) {
       if (imp.age >= IMPACT_COOL) { paintCrater(b, imp); b.impacts.splice(i, 1); }
     }
   }
+
+  // enforce lines/walls BEFORE anything explodes or collides, so a fast body
+  // can't cross a wall and shatter in the same step, leaking debris outside
+  applyLines();
+  applyWalls();
+
   for (const b of exploding) explodeSupernova(b);
 
   handleCollisions();
@@ -561,6 +628,9 @@ function stepPhysics(dt) {
       b.novaTimer = 1.6;
     }
   }
+
+  applyLines();
+  applyWalls();
 }
 
 // an asteroid wandering near a world has a 50% chance to get pulled into orbit
@@ -681,7 +751,9 @@ function applyLines() {
     for (const ln of lines) {
       const p = ln.pts;
       for (let k = 0; k + 3 < p.length; k += 2) {
-        if (segSegDist2(px, py, b.x, b.y, p[k], p[k + 1], p[k + 2], p[k + 3]) < rr2) { zapped = true; break; }
+        // segment sweep, plus a vertex test so nothing slips through stroke joints
+        if (segSegDist2(px, py, b.x, b.y, p[k], p[k + 1], p[k + 2], p[k + 3]) < rr2
+          || segDist2(p[k], p[k + 1], px, py, b.x, b.y) < rr2) { zapped = true; break; }
       }
       if (zapped) break;
     }
@@ -689,6 +761,7 @@ function applyLines() {
       spawnSparks(b.x, b.y, 8, b.color);
       effects.push({ kind: 'flash', x: b.x, y: b.y, t: 0, dur: 0.3, r: b.r * 2.5, color: '#ff6070' });
       if (followed === b) followed = null;
+      famDeath(b, 'zapped');
       bodies.splice(i, 1);
     }
   }
@@ -738,6 +811,22 @@ function wallReflect(b, nx, ny) {
   if (dot < 0) { b.vx -= 1.75 * dot * nx; b.vy -= 1.75 * dot * ny; } // ~75% bouncy
 }
 
+// push b out of the wall segment, strictly perpendicular to the wall and
+// strictly toward the side of its pre-step position — never flips through
+function resolveWall(b, px, py, x1, y1, x2, y2, rad) {
+  const c = closestOnSeg(b.x, b.y, x1, y1, x2, y2);
+  let nx = -(y2 - y1), ny = x2 - x1;
+  const L = Math.hypot(nx, ny) || 1;
+  nx /= L; ny /= L;
+  let side = (px - c.x) * nx + (py - c.y) * ny;
+  if (side === 0) side = (b.x - c.x) * nx + (b.y - c.y) * ny;
+  if (side < 0) { nx = -nx; ny = -ny; }
+  b.x = c.x + nx * rad;
+  b.y = c.y + ny * rad;
+  b.px = b.x; b.py = b.y; // resolved: later segments see the settled position
+  wallReflect(b, nx, ny);
+}
+
 // gray walls block every kind of object — even invincible ones bounce off
 function applyWalls() {
   if (!walls.length) return;
@@ -750,26 +839,12 @@ function applyWalls() {
       const p = wl.pts;
       for (let k = 0; k + 3 < p.length; k += 2) {
         const x1 = p[k], y1 = p[k + 1], x2 = p[k + 2], y2 = p[k + 3];
-        // swept: crossed the wall this frame → put it back on its own side
-        if (segsCross(px, py, b.x, b.y, x1, y1, x2, y2)) {
-          const c = closestOnSeg(px, py, x1, y1, x2, y2);
-          let nx = px - c.x, ny = py - c.y;
-          const d = Math.hypot(nx, ny) || 1;
-          nx /= d; ny /= d;
-          b.x = c.x + nx * rad;
-          b.y = c.y + ny * rad;
-          wallReflect(b, nx, ny);
-          continue;
-        }
-        const c = closestOnSeg(b.x, b.y, x1, y1, x2, y2);
-        const dx = b.x - c.x, dy = b.y - c.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < rad * rad) {
-          const d = Math.sqrt(d2) || 1;
-          const nx = dx / d, ny = dy / d;
-          b.x = c.x + nx * rad;
-          b.y = c.y + ny * rad;
-          wallReflect(b, nx, ny);
+        // crossed the wall, brushed a joint vertex, or overlaps the segment
+        if (segsCross(px, py, b.x, b.y, x1, y1, x2, y2)
+          || segDist2(x1, y1, px, py, b.x, b.y) < rad * rad
+          || segDist2(x2, y2, px, py, b.x, b.y) < rad * rad
+          || segDist2(b.x, b.y, x1, y1, x2, y2) < rad * rad) {
+          resolveWall(b, px, py, x1, y1, x2, y2, rad);
         }
       }
     }
@@ -828,6 +903,7 @@ function mergeBodies(a, b) {
   }
   spawnSparks(big.x, big.y, 6, big.color);
   if (followed === small) followed = big;
+  famDeath(small, 'merged', big.id);
   removeBody(small);
   // a rubble pile grown to rocky-planet size compacts into a real planet,
   // and anything that keeps growing to gas-giant size becomes a gas giant —
@@ -844,6 +920,7 @@ function shatterOne(b) {
   spawnSparks(x, y, 18, '#ffb060');
   effects.push({ kind: 'flash', x, y, t: 0, dur: 0.4, r: r * 3, color: '#ffd9a0' });
   if (followed === b) followed = null;
+  famDeath(b, 'shattered');
   removeBody(b);
   const count = Math.min(randInt(6, 12), Math.max(2, MAX_BODIES - bodies.length + 1));
   for (let k = 0; k < count; k++) {
@@ -852,12 +929,14 @@ function shatterOne(b) {
       x + Math.cos(ang) * rand(4, r * 1.5), y + Math.sin(ang) * rand(4, r * 1.5),
       vx + Math.cos(ang) * spd, vy + Math.sin(ang) * spd, rand(0.5, 1.2));
     frag.mass = Math.max(0.5, mass / count * 0.4);
-    addBody(frag);
+    frag.px = x; frag.py = y;
+    addBody(frag, [b.id]);
   }
 }
 
 function toGasGiant(b) {
   b.type = 'gasGiant';
+  famTransform(b);
   b.color = TYPES.gasGiant.color;
   b.texture = makeTexture('gasGiant', TYPES.gasGiant.color, TEX_SIZE);
   b.impacts = [];
@@ -868,6 +947,7 @@ function toGasGiant(b) {
 
 function asteroidToRocky(b) {
   b.type = 'rocky';
+  famTransform(b);
   const hsl = rgbToHsl(b.rgbTint[0], b.rgbTint[1], b.rgbTint[2]);
   b.color = `hsl(${Math.round(hsl[0])}, ${Math.round(hsl[1])}%, ${Math.round(hsl[2])}%)`;
   b.texture = makeTexture('rocky', hsl, TEX_SIZE); // averaged tint of everything merged in
@@ -887,6 +967,7 @@ function absorb(star, other) {
   }
   spawnSparks(other.x, other.y, 10, '#ffd080');
   if (followed === other) followed = star;
+  famDeath(other, 'absorbed', star.id);
   removeBody(other);
 }
 
@@ -904,6 +985,9 @@ function shatter(a, b) {
   const count = Math.min(want, Math.max(2, MAX_BODIES - bodies.length + 2));
   spawnSparks(cx, cy, bigCrash ? 40 : 18, '#ffb060');
   effects.push({ kind: 'flash', x: cx, y: cy, t: 0, dur: bigCrash ? 0.6 : 0.35, r: (a.r + b.r) * (bigCrash ? 4 : 2), color: '#ffd9a0' });
+  famDeath(a, 'shattered');
+  famDeath(b, 'shattered');
+  const parentIds = [a.id, b.id];
   removeBody(a);
   removeBody(b);
   for (let k = 0; k < count; k++) {
@@ -914,7 +998,8 @@ function shatter(a, b) {
       cvx + Math.cos(ang) * spd, cvy + Math.sin(ang) * spd,
       bigCrash ? rand(0.4, 1.1) : rand(0.6, 1.4));
     frag.mass = Math.max(0.5, cmass / count * 0.4); // most mass is vaporized
-    addBody(frag);
+    frag.px = cx; frag.py = cy; // sweep from the blast center so walls catch strays
+    addBody(frag, parentIds);
   }
 }
 
@@ -937,6 +1022,7 @@ function asteroidImpact(world, ast) {
 
   spawnSparks(ast.x, ast.y, 8, '#ffb060');
   if (followed === ast) followed = world;
+  famDeath(ast, 'impact', world.id);
   removeBody(ast);
 
   // ejecta excavates the crust — the world loses the mass that flies away
@@ -949,7 +1035,8 @@ function asteroidImpact(world, ast) {
     const frag = makeBody('asteroid',
       world.x + Math.cos(ea) * (world.r + 6), world.y + Math.sin(ea) * (world.r + 6),
       world.vx + Math.cos(ea) * spd, world.vy + Math.sin(ea) * spd, rand(0.4, 0.9));
-    if (addBody(frag)) excavated += frag.mass;
+    frag.px = world.x; frag.py = world.y;
+    if (addBody(frag, [world.id, ast.id])) excavated += frag.mass;
   }
   if (!world.invincible) { // an invincible world sprays ejecta but never erodes
     world.mass = Math.max(5, fullMass - excavated * 1.4); // extra 40% vaporizes
@@ -963,13 +1050,16 @@ function crumble(world) {
   const { x, y, vx, vy, r } = world;
   spawnSparks(x, y, 14, '#c09070');
   effects.push({ kind: 'flash', x, y, t: 0, dur: 0.5, r: r * 3.5, color: '#e0b090' });
+  famDeath(world, 'crumbled');
   removeBody(world);
   const n = Math.min(randInt(3, 5), Math.max(0, MAX_BODIES - bodies.length));
   for (let k = 0; k < n; k++) {
     const ang = rand(0, TAU), spd = rand(30, 90);
-    addBody(makeBody('asteroid',
+    const d = makeBody('asteroid',
       x + Math.cos(ang) * r, y + Math.sin(ang) * r,
-      vx + Math.cos(ang) * spd, vy + Math.sin(ang) * spd, rand(0.5, 1)));
+      vx + Math.cos(ang) * spd, vy + Math.sin(ang) * spd, rand(0.5, 1));
+    d.px = x; d.py = y;
+    addBody(d, [world.id]);
   }
 }
 
@@ -993,6 +1083,7 @@ function paintCrater(b, imp) {
 function explodeSupernova(star) {
   const { x, y, vx, vy, mass, color } = star;
   const wasFollowed = followed === star;
+  famDeath(star, 'supernova');
   removeBody(star);
 
   effects.push({ kind: 'nova', x, y, t: 0, dur: 2.2, r: 30, color });
@@ -1012,22 +1103,26 @@ function explodeSupernova(star) {
   const nAst = Math.min(randInt(16, 26), Math.max(0, MAX_BODIES - bodies.length - 3));
   for (let k = 0; k < nAst; k++) {
     const ang = rand(0, TAU), spd = rand(80, 300);
-    addBody(makeBody('asteroid',
+    const d = makeBody('asteroid',
       x + Math.cos(ang) * rand(10, 50), y + Math.sin(ang) * rand(10, 50),
       vx + Math.cos(ang) * spd, vy + Math.sin(ang) * spd,
-      rand(0.5, 1.5)));
+      rand(0.5, 1.5));
+    d.px = x; d.py = y;
+    addBody(d, [star.id]);
   }
   const nMoons = randInt(1, 2);
   for (let k = 0; k < nMoons; k++) {
     const ang = rand(0, TAU), spd = rand(60, 160);
-    addBody(makeBody('moon',
+    const d = makeBody('moon',
       x + Math.cos(ang) * 60, y + Math.sin(ang) * 60,
       vx + Math.cos(ang) * spd, vy + Math.sin(ang) * spd,
-      rand(0.7, 1.2)));
+      rand(0.7, 1.2));
+    d.px = x; d.py = y;
+    addBody(d, [star.id]);
   }
   // the collapsed core survives as a small white dwarf (never a black hole!)
   const remnant = makeBody('starWhite', x, y, vx, vy, 0.45, mass * 0.12);
-  addBody(remnant);
+  addBody(remnant, [star.id]);
   if (wasFollowed) followed = remnant; // camera stays with the star's remains
 }
 
@@ -1274,10 +1369,7 @@ function frame(now) {
   if (!paused && timeScale > 0) {
     const dt = rawDt * timeScale;
     const sub = bodies.length > 400 ? 1 : 3; // fewer substeps when the world is huge
-    if (lines.length || walls.length) for (const b of bodies) { b.px = b.x; b.py = b.y; }
     for (let s = 0; s < sub; s++) stepPhysics(dt / sub);
-    applyLines();
-    applyWalls();
     for (const e of effects) e.t += dt;
     updateTrails();
   }
@@ -1576,6 +1668,111 @@ function drawRateGraph(b, X) {
   g.fill();
 }
 
+// ---------------------------------------------------------------- family tree viewer
+const famPanel = document.getElementById('famPanel');
+const famScroll = document.getElementById('famScroll');
+const famCanvas = document.getElementById('famCanvas');
+const famBtn = document.getElementById('famBtn');
+let famOpen = false;
+
+famBtn.addEventListener('click', () => {
+  famOpen = !famOpen;
+  famPanel.hidden = !famOpen;
+  famBtn.classList.toggle('active', famOpen);
+  if (famOpen) drawFamily();
+});
+document.getElementById('famClose').addEventListener('click', () => {
+  famOpen = false;
+  famPanel.hidden = true;
+  famBtn.classList.remove('active');
+});
+setInterval(() => { if (famOpen) drawFamily(); }, 1000); // live refresh while open
+
+function drawFamily() {
+  const dpr = devicePixelRatio;
+  const nodes = [...family.values()].slice(-280); // most recent lineages
+  const rowOf = new Map();
+  nodes.forEach((nd, i) => rowOf.set(nd.id, i));
+  const rowH = 8 * dpr, padX = 16 * dpr, padY = 10 * dpr;
+  const Wc = Math.max(famScroll.clientWidth - 8, 200) * dpr;
+  const Hc = Math.max(nodes.length * rowH + padY * 2, 120 * dpr);
+  famCanvas.width = Wc;
+  famCanvas.height = Hc;
+  famCanvas.style.width = Wc / dpr + 'px';
+  famCanvas.style.height = Hc / dpr + 'px';
+  const g = famCanvas.getContext('2d');
+  g.clearRect(0, 0, Wc, Hc);
+  if (!nodes.length) {
+    g.fillStyle = 'rgba(200,210,255,0.5)';
+    g.font = 14 * dpr + 'px sans-serif';
+    g.fillText('Nothing has happened yet — let some objects collide!', 20 * dpr, 40 * dpr);
+    return;
+  }
+  let t0 = Infinity;
+  for (const nd of nodes) t0 = Math.min(t0, nd.born);
+  const t1 = Math.max(simTime, t0 + 0.5);
+  const xOf = t => padX + (t - t0) / (t1 - t0) * (Wc - padX * 2);
+  const yOf = id => rowOf.has(id) ? padY + rowOf.get(id) * rowH + rowH / 2 : null;
+
+  // connectors behind the life lines
+  g.lineWidth = 1 * dpr;
+  for (const nd of nodes) {
+    const y = yOf(nd.id);
+    for (const pid of nd.parents) {           // birth branches from each parent
+      const py = yOf(pid);
+      if (py !== null) {
+        g.strokeStyle = 'rgba(140, 160, 220, 0.3)';
+        g.beginPath(); g.moveTo(xOf(nd.born), py); g.lineTo(xOf(nd.born), y); g.stroke();
+      }
+    }
+    if (nd.died >= 0 && nd.target !== null) { // merge/absorb joins into the target's line
+      const ty = yOf(nd.target);
+      if (ty !== null) {
+        g.strokeStyle = 'rgba(255, 200, 120, 0.45)';
+        g.beginPath(); g.moveTo(xOf(nd.died), y); g.lineTo(xOf(nd.died), ty); g.stroke();
+      }
+    }
+  }
+
+  // life lines
+  for (const nd of nodes) {
+    const y = yOf(nd.id);
+    const xEnd = xOf(nd.died >= 0 ? nd.died : simTime);
+    g.lineWidth = 2.4 * dpr;
+    g.lineCap = 'round';
+    let xs = xOf(nd.born), color = nd.color;
+    if (nd.segs) {
+      for (const s of nd.segs) {
+        g.strokeStyle = color;
+        g.beginPath(); g.moveTo(xs, y); g.lineTo(Math.min(xOf(s.t), xEnd), y); g.stroke();
+        xs = xOf(s.t); color = s.color;
+      }
+    }
+    g.strokeStyle = color;
+    g.beginPath(); g.moveTo(xs, y); g.lineTo(xEnd, y); g.stroke();
+
+    if (nd.died < 0) {                        // still alive: bright tip
+      g.fillStyle = '#ffffff';
+      g.beginPath(); g.arc(xEnd, y, 2.2 * dpr, 0, TAU); g.fill();
+    } else if (nd.death === 'zapped') {       // vaporized by a laser line
+      g.strokeStyle = '#ff5060';
+      g.lineWidth = 1.6 * dpr;
+      const s = 3 * dpr;
+      g.beginPath();
+      g.moveTo(xEnd - s, y - s); g.lineTo(xEnd + s, y + s);
+      g.moveTo(xEnd - s, y + s); g.lineTo(xEnd + s, y - s);
+      g.stroke();
+    } else if (nd.death === 'supernova') {    // went out with a bang
+      g.strokeStyle = '#ffffff';
+      g.lineWidth = 1.2 * dpr;
+      g.beginPath(); g.arc(xEnd, y, 3.5 * dpr, 0, TAU); g.stroke();
+    } else if (nd.target === null) {          // ended with no children, no heir
+      g.fillStyle = 'rgba(150, 160, 190, 0.8)';
+      g.fillRect(xEnd - dpr, y - 3 * dpr, 2 * dpr, 6 * dpr);
+    }
+  }
+}
+
 // ---------------------------------------------------------------- toolbar
 const toolbar = document.getElementById('toolbar');
 for (const [key, def] of Object.entries(TYPES)) {
@@ -1611,6 +1808,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   effects.length = 0;
   lines.length = 0;
   walls.length = 0;
+  family.clear();
   drawingLine = null;
 });
 document.getElementById('presetBtn').addEventListener('click', spawnSolarSystem);
@@ -1640,6 +1838,7 @@ document.getElementById('messBtn').addEventListener('click', spawnBigMess);
 function spawnBigMess() {
   bodies.length = 0;
   effects.length = 0;
+  family.clear();
   followed = null;
   cam.x = 0; cam.y = 0; cam.zoom = 0.14;
 
@@ -1668,6 +1867,7 @@ function spawnBigMess() {
 function spawnSolarSystem() {
   bodies.length = 0;
   effects.length = 0;
+  family.clear();
   cam.x = 0; cam.y = 0; cam.zoom = Math.min(1, window.innerWidth / 1500);
 
   const sun = makeBody('starYellow', 0, 0, 0, 0, 1.1);
