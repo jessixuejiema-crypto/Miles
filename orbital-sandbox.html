@@ -202,6 +202,15 @@ const eraser = { on: false, x: 0, y: 0 };
 let simTime = 0;       // total simulated seconds, the family tree's time axis
 const family = new Map(); // body id -> lineage record for the family tree
 
+// placeable factories that pump out new objects at 3 per second
+const MACHINE_TYPES = {
+  machAsteroid: { label: 'Ast. Machine',    spawn: 'asteroid', color: '#8a7f72', speed: 260 },
+  machPlanet:   { label: 'Planet Machine',  spawn: 'earth',    color: '#3f8fd8', speed: 140 },
+  machGas:      { label: 'Giant Machine',   spawn: 'gasGiant', color: '#e0a960', speed: 100 },
+};
+const machines = [];
+const MACHINE_RATE = 3; // objects per second each
+
 const ui = {
   size: document.getElementById('sizeSlider'),
   time: document.getElementById('timeSlider'),
@@ -612,6 +621,8 @@ function stepPhysics(dt) {
     }
   }
 
+  updateMachines(dt);
+
   // enforce lines/walls BEFORE anything explodes or collides, so a fast body
   // can't cross a wall and shatter in the same step, leaking debris outside
   applyLines();
@@ -661,6 +672,34 @@ function tryCaptures(dt) {
       break;
     }
   }
+}
+
+function updateMachines(dt) {
+  for (const m of machines) {
+    if (!m.aimed) m.angle += 0.9 * dt; // free machines sweep their nozzle around
+    m.timer += dt;
+    while (m.timer >= 1 / MACHINE_RATE) {
+      m.timer -= 1 / MACHINE_RATE;
+      if (bodies.length >= MAX_BODIES) { m.timer = 0; break; }
+      const def = MACHINE_TYPES[m.kind];
+      const dir = m.aimed ? m.aim : m.angle;
+      const spd = def.speed * rand(0.8, 1.2);
+      const b = makeBody(def.spawn,
+        m.x + Math.cos(dir) * 30, m.y + Math.sin(dir) * 30,
+        Math.cos(dir) * spd, Math.sin(dir) * spd, rand(0.7, 1.3));
+      b.px = m.x; b.py = m.y; // sweep from the machine so walls still contain it
+      addBody(b);
+      spawnSparks(b.x, b.y, 2, def.color);
+    }
+  }
+}
+
+function machineAt(x, y) {
+  const th = Math.max(20, 16 / cam.zoom);
+  for (let i = machines.length - 1; i >= 0; i--) {
+    if (Math.hypot(machines[i].x - x, machines[i].y - y) < th) return i;
+  }
+  return -1;
 }
 
 function handleCollisions() {
@@ -780,6 +819,8 @@ function deleteLineAt(x, y, arr) {
 // rub out any drawn stroke points near (x, y); erasing the middle splits a stroke in two
 function eraseAt(x, y) {
   const R2 = (16 / cam.zoom) ** 2;
+  const mi = machineAt(x, y);       // the eraser removes machines too
+  if (mi !== -1) machines.splice(mi, 1);
   for (const arr of [lines, walls]) {
     for (let i = arr.length - 1; i >= 0; i--) {
       const p = arr[i].pts;
@@ -1231,6 +1272,30 @@ function render(now) {
     }
   }
 
+  // machines: little gray factories with a nozzle and a product-colored core
+  for (const m of machines) {
+    const def = MACHINE_TYPES[m.kind];
+    const dir = m.aimed ? m.aim : m.angle;
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.rotate(dir);
+    ctx.fillStyle = '#5a6274';
+    ctx.fillRect(10, -5, 17, 10); // nozzle
+    ctx.rotate(-dir);
+    ctx.fillStyle = '#343b4e';
+    ctx.strokeStyle = '#8a93a8';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(-13, -13, 26, 26, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = def.color;
+    ctx.beginPath();
+    ctx.arc(0, 0, 6, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // star glows (behind bodies)
   for (const b of bodies) {
     if (!b.star || b.type === 'starBlack') continue;
@@ -1340,11 +1405,11 @@ function render(now) {
     ctx.lineTo(drag.cwx, drag.cwy);
     ctx.stroke();
     ctx.setLineDash([]);
-    const def = TYPES[selectedType];
+    const def = TYPES[selectedType] || { color: MACHINE_TYPES[selectedType].color, r: 12 };
     ctx.globalAlpha = 0.5;
     ctx.fillStyle = def.color;
     ctx.beginPath();
-    ctx.arc(drag.wx, drag.wy, def.r * parseFloat(ui.size.value), 0, TAU);
+    ctx.arc(drag.wx, drag.wy, (def.r || 12) * parseFloat(ui.size.value), 0, TAU);
     ctx.fill();
     ctx.globalAlpha = 1;
   }
@@ -1487,6 +1552,21 @@ canvas.addEventListener('pointerup', (e) => {
   const dx = drag.cwx - drag.wx, dy = drag.cwy - drag.wy;
   const dragLen = Math.hypot(dx, dy);
   let vx = dx * 1.6, vy = dy * 1.6;
+
+  // machine tools: tap places (or removes) a factory, drag aims its nozzle
+  if (MACHINE_TYPES[selectedType]) {
+    if (dragLen < 8) {
+      const mi = machineAt(drag.wx, drag.wy);
+      if (mi !== -1) { machines.splice(mi, 1); return; }
+    }
+    if (machines.length >= 20) { flashCount(); return; }
+    machines.push({
+      kind: selectedType, x: drag.wx, y: drag.wy,
+      aimed: dragLen >= 8, aim: Math.atan2(dy, dx),
+      angle: rand(0, TAU), timer: 0,
+    });
+    return;
+  }
 
   // a tap on an existing body centers the camera on it instead of placing
   if (dragLen < 8) {
@@ -1814,6 +1894,25 @@ for (const [key, def] of Object.entries(TYPES)) {
   });
   toolbar.appendChild(el);
 }
+for (const [key, def] of Object.entries(MACHINE_TYPES)) {
+  const el = document.createElement('div');
+  el.className = 'tool';
+  el.dataset.type = key;
+  const dot = document.createElement('div');
+  dot.className = 'dot';
+  dot.style.borderRadius = '4px'; // square dot = machine, not a body
+  dot.style.background = `linear-gradient(145deg, #4a5266, #2c3242)`;
+  dot.style.boxShadow = `inset 0 0 0 2px rgba(255,255,255,0.15), inset 0 0 5px ${def.color}`;
+  el.appendChild(dot);
+  const lbl = document.createElement('span');
+  lbl.textContent = def.label;
+  el.appendChild(lbl);
+  el.addEventListener('click', () => {
+    selectedType = key;
+    document.querySelectorAll('.tool').forEach(t => t.classList.toggle('active', t === el));
+  });
+  toolbar.appendChild(el);
+}
 
 // ---------------------------------------------------------------- buttons
 document.getElementById('pauseBtn').addEventListener('click', function () {
@@ -1825,6 +1924,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   effects.length = 0;
   lines.length = 0;
   walls.length = 0;
+  machines.length = 0;
   family.clear();
   drawingLine = null;
 });
@@ -1855,6 +1955,7 @@ document.getElementById('messBtn').addEventListener('click', spawnBigMess);
 function spawnBigMess() {
   bodies.length = 0;
   effects.length = 0;
+  machines.length = 0;
   family.clear();
   followed = null;
   cam.x = 0; cam.y = 0; cam.zoom = 0.14;
@@ -1884,6 +1985,7 @@ function spawnBigMess() {
 function spawnSolarSystem() {
   bodies.length = 0;
   effects.length = 0;
+  machines.length = 0;
   family.clear();
   cam.x = 0; cam.y = 0; cam.zoom = Math.min(1, window.innerWidth / 1500);
 
