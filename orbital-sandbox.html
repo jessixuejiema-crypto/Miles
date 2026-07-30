@@ -93,9 +93,9 @@
     <div id="infoAge"></div>
     <div id="infoHits"></div>
     <canvas id="graphCum" width="214" height="60"></canvas>
-    <div class="glabel">Total collisions over its life</div>
+    <div class="glabel" id="glabelCum">Total collisions over its life</div>
     <canvas id="graphRate" width="214" height="60"></canvas>
-    <div class="glabel">Collisions per <span id="xVal">5</span>s chunk</div>
+    <div class="glabel" id="glabelRate">Collisions per <span id="xVal">5</span>s chunk</div>
     <div id="xRow">X <input type="range" id="xSlider" min="1" max="30" step="1" value="5"> <span id="xVal2">5s</span></div>
     <div id="rateBox"></div>
   </div>
@@ -1201,18 +1201,23 @@ function updateInfoPanel(now) {
   const b = followed;
   info.panel.hidden = false;
   info.title.textContent = 'Following: ' + TYPES[b.type].label;
-  info.body.style.display = b.star ? 'none' : ''; // stars just get the stop button
-  if (b.star) return;
 
+  // stars absorb, worlds get hit — same stats, different words
+  const word = b.star ? 'absorbed' : 'collisions';
   info.age.textContent = 'Age: ' + b.age.toFixed(0) + 's';
   const h = b.hitCounts;
-  info.hits.textContent = 'Hit by ' + b.totalHits + (b.totalHits === 1 ? ' object' : ' objects')
-    + ' — ' + h.asteroid + ' asteroids, ' + h.moon + ' moons, ' + h.planet + ' planets';
+  const parts = [h.asteroid + ' asteroids', h.moon + ' moons', h.planet + ' planets'];
+  if (b.star || h.other > 0) parts.push(h.other + ' stars');
+  info.hits.textContent = (b.star ? 'Absorbed ' : 'Hit by ') + b.totalHits
+    + (b.totalHits === 1 ? ' object' : ' objects') + ' — ' + parts.join(', ');
+  document.getElementById('glabelCum').textContent = 'Total ' + word + ' over its life';
+  document.getElementById('glabelRate').textContent =
+    (b.star ? 'Absorbed' : 'Collisions') + ' per ' + info.xSlider.value + 's chunk';
 
   const X = parseInt(info.xSlider.value, 10);
   const recent = b.hitTimes.filter(t => b.age - t <= X).length;
   const avg = b.age > 0 ? (b.totalHits / Math.max(1, b.age / X)).toFixed(1) : '0';
-  info.rateBox.textContent = recent + ' collisions in last ' + X + 's (avg ' + avg + ' per ' + X + 's)';
+  info.rateBox.textContent = recent + ' ' + word + ' in last ' + X + 's (avg ' + avg + ' per ' + X + 's)';
 
   if (now - lastGraphAt > 250) {
     lastGraphAt = now;
