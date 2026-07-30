@@ -1257,12 +1257,21 @@ function drawRateGraph(b, X) {
     if (bi >= 0) counts[bi]++;
   }
   const max = Math.max(1, ...counts);
-  const bw = (cw - 8) / show;
+  const xFor = i => show === 1 ? cw / 2 : 4 + (i / (show - 1)) * (cw - 8);
+  const yFor = n => ch - 4 - (n / max) * (ch - 8);
+  g.strokeStyle = '#7c9bff';
+  g.lineWidth = 1.5;
+  g.beginPath();
   for (let i = 0; i < show; i++) {
-    const bh = (counts[i] / max) * (ch - 8);
-    g.fillStyle = i === show - 1 ? '#ffb060' : '#7c9bff'; // current chunk pops
-    g.fillRect(4 + i * bw, ch - 4 - bh, Math.max(1, bw - 1), bh);
+    if (i === 0) g.moveTo(xFor(i), yFor(counts[i]));
+    else g.lineTo(xFor(i), yFor(counts[i]));
   }
+  g.stroke();
+  // dot on the current chunk
+  g.fillStyle = '#ffb060';
+  g.beginPath();
+  g.arc(xFor(show - 1), yFor(counts[show - 1]), 3, 0, TAU);
+  g.fill();
 }
 
 // ---------------------------------------------------------------- toolbar
