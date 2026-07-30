@@ -641,18 +641,41 @@ function segDist2(px, py, x1, y1, x2, y2) {
   return qx * qx + qy * qy;
 }
 
-// anything touching a drawn line is vaporized — invincible bodies pass right through
+function orient(ax, ay, bx, by, cx, cy) {
+  return Math.sign((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+}
+
+function segsCross(ax, ay, bx, by, cx, cy, dx, dy) {
+  return orient(ax, ay, bx, by, cx, cy) !== orient(ax, ay, bx, by, dx, dy)
+    && orient(cx, cy, dx, dy, ax, ay) !== orient(cx, cy, dx, dy, bx, by);
+}
+
+// min distance² between segment AB and segment CD (0 if they cross)
+function segSegDist2(ax, ay, bx, by, cx, cy, dx, dy) {
+  if (segsCross(ax, ay, bx, by, cx, cy, dx, dy)) return 0;
+  return Math.min(
+    segDist2(ax, ay, cx, cy, dx, dy),
+    segDist2(bx, by, cx, cy, dx, dy),
+    segDist2(cx, cy, ax, ay, bx, by),
+    segDist2(dx, dy, ax, ay, bx, by),
+  );
+}
+
+// anything touching a drawn line is vaporized — invincible bodies pass right through.
+// swept check: the body's whole path this frame is tested, so nothing tunnels across
 function applyLines() {
   if (!lines.length) return;
   for (let i = bodies.length - 1; i >= 0; i--) {
     const b = bodies[i];
     if (b.invincible) continue;
+    const px = b.px !== undefined ? b.px : b.x;
+    const py = b.py !== undefined ? b.py : b.y;
     const rr2 = (b.r + 3) ** 2;
     let zapped = false;
     for (const ln of lines) {
       const p = ln.pts;
       for (let k = 0; k + 3 < p.length; k += 2) {
-        if (segDist2(b.x, b.y, p[k], p[k + 1], p[k + 2], p[k + 3]) < rr2) { zapped = true; break; }
+        if (segSegDist2(px, py, b.x, b.y, p[k], p[k + 1], p[k + 2], p[k + 3]) < rr2) { zapped = true; break; }
       }
       if (zapped) break;
     }
@@ -1156,6 +1179,7 @@ function frame(now) {
   if (!paused && timeScale > 0) {
     const dt = rawDt * timeScale;
     const sub = bodies.length > 400 ? 1 : 3; // fewer substeps when the world is huge
+    if (lines.length) for (const b of bodies) { b.px = b.x; b.py = b.y; }
     for (let s = 0; s < sub; s++) stepPhysics(dt / sub);
     applyLines();
     for (const e of effects) e.t += dt;
