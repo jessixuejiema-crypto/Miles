@@ -117,6 +117,7 @@
   <button class="btn" id="spamBtn">&#128165; Spam</button>
   <button class="btn" id="lineBtn">&#9999; Line</button>
   <button class="btn" id="wallBtn">&#129521; Wall</button>
+  <button class="btn" id="eraseBtn">&#129529; Erase</button>
   <button class="btn" id="messBtn">&#127922; Big Mess</button>
   <button class="btn" id="presetBtn">&#9728; Solar System</button>
   <button class="btn" id="clearBtn">Clear</button>
@@ -170,6 +171,8 @@ const lines = [];      // laser lines: anything touching one is vaporized (unles
 let wallMode = false;  // hold-and-drag draws a solid wall
 const walls = [];      // gray walls: block and bounce every kind of object
 let drawingLine = null;
+let eraseMode = false; // hold-and-drag rubs out drawn lines and walls
+const eraser = { on: false, x: 0, y: 0 };
 
 const ui = {
   size: document.getElementById('sizeSlider'),
@@ -701,6 +704,27 @@ function deleteLineAt(x, y, arr) {
   }
 }
 
+// rub out any drawn stroke points near (x, y); erasing the middle splits a stroke in two
+function eraseAt(x, y) {
+  const R2 = (16 / cam.zoom) ** 2;
+  for (const arr of [lines, walls]) {
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const p = arr[i].pts;
+      const runs = [];
+      let cur = [];
+      let removed = false;
+      for (let k = 0; k + 1 < p.length; k += 2) {
+        const dx = p[k] - x, dy = p[k + 1] - y;
+        if (dx * dx + dy * dy > R2) cur.push(p[k], p[k + 1]);
+        else { removed = true; if (cur.length >= 4) runs.push(cur); cur = []; }
+      }
+      if (cur.length >= 4) runs.push(cur);
+      if (!removed) continue;
+      arr.splice(i, 1, ...runs.map(pts => ({ pts })));
+    }
+  }
+}
+
 function closestOnSeg(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1;
   const L2 = dx * dx + dy * dy || 1;
@@ -1196,6 +1220,17 @@ function render(now) {
   }
   ctx.globalAlpha = 1;
 
+  // eraser cursor ring
+  if (eraser.on) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 1.5 / cam.zoom;
+    ctx.setLineDash([4 / cam.zoom, 4 / cam.zoom]);
+    ctx.beginPath();
+    ctx.arc(eraser.x, eraser.y, 16 / cam.zoom, 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   // drag-to-fling aim line
   if (drag.placing) {
     ctx.strokeStyle = 'rgba(140, 170, 255, 0.8)';
@@ -1275,6 +1310,12 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (activePointers.size > 0) return; // second finger = pinch, handled below
+  if (eraseMode) {
+    const w = screenToWorld(e.clientX, e.clientY);
+    eraser.on = true; eraser.x = w.x; eraser.y = w.y;
+    eraseAt(w.x, w.y);
+    return;
+  }
   if (lineMode || wallMode) {
     const w = screenToWorld(e.clientX, e.clientY);
     const arr = lineMode ? lines : walls;
@@ -1304,6 +1345,12 @@ canvas.addEventListener('pointermove', (e) => {
     drag.sx = e.clientX; drag.sy = e.clientY;
     return;
   }
+  if (eraser.on) {
+    const w = screenToWorld(e.clientX, e.clientY);
+    eraser.x = w.x; eraser.y = w.y;
+    eraseAt(w.x, w.y);
+    return;
+  }
   if (drawingLine) {
     const w = screenToWorld(e.clientX, e.clientY);
     const p = drawingLine.pts;
@@ -1325,6 +1372,7 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 canvas.addEventListener('pointerup', (e) => {
+  if (eraser.on) { eraser.on = false; return; }
   if (drawingLine) {
     const arr = lineMode ? lines : walls;
     if (drawingLine.pts.length < 4) {           // a tap, not a drag:
@@ -1569,19 +1617,24 @@ document.getElementById('presetBtn').addEventListener('click', spawnSolarSystem)
 const spamBtn = document.getElementById('spamBtn');
 const lineBtn = document.getElementById('lineBtn');
 const wallBtn = document.getElementById('wallBtn');
-function setDrawMode(mode) { // 'spam' | 'line' | 'wall' | null — one at a time
+const eraseBtn = document.getElementById('eraseBtn');
+function setDrawMode(mode) { // 'spam' | 'line' | 'wall' | 'erase' | null — one at a time
   spamMode = mode === 'spam';
   lineMode = mode === 'line';
   wallMode = mode === 'wall';
+  eraseMode = mode === 'erase';
   spray.on = false;
   drawingLine = null;
+  eraser.on = false;
   spamBtn.classList.toggle('active', spamMode);
   lineBtn.classList.toggle('active', lineMode);
   wallBtn.classList.toggle('active', wallMode);
+  eraseBtn.classList.toggle('active', eraseMode);
 }
 spamBtn.addEventListener('click', () => setDrawMode(spamMode ? null : 'spam'));
 lineBtn.addEventListener('click', () => setDrawMode(lineMode ? null : 'line'));
 wallBtn.addEventListener('click', () => setDrawMode(wallMode ? null : 'wall'));
+eraseBtn.addEventListener('click', () => setDrawMode(eraseMode ? null : 'erase'));
 document.getElementById('messBtn').addEventListener('click', spawnBigMess);
 
 function spawnBigMess() {
