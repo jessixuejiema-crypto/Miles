@@ -116,6 +116,7 @@
   <button class="btn" id="pauseBtn">&#10074;&#10074; Pause</button>
   <button class="btn" id="spamBtn">&#128165; Spam</button>
   <button class="btn" id="lineBtn">&#9999; Line</button>
+  <button class="btn" id="wallBtn">&#129521; Wall</button>
   <button class="btn" id="messBtn">&#127922; Big Mess</button>
   <button class="btn" id="presetBtn">&#9728; Solar System</button>
   <button class="btn" id="clearBtn">Clear</button>
@@ -165,7 +166,9 @@ let followed = null;   // body the camera is locked onto
 let spamMode = false;  // hold-and-drag fires an asteroid stream
 const spray = { on: false, sx: 0, sy: 0, dx: 1, dy: 0, acc: 0 };
 let lineMode = false;  // hold-and-drag draws a deletion line
-const lines = [];      // laser walls: anything touching one is vaporized (unless invincible)
+const lines = [];      // laser lines: anything touching one is vaporized (unless invincible)
+let wallMode = false;  // hold-and-drag draws a solid wall
+const walls = [];      // gray walls: block and bounce every kind of object
 let drawingLine = null;
 
 const ui = {
@@ -688,12 +691,63 @@ function applyLines() {
   }
 }
 
-function deleteLineAt(x, y) {
+function deleteLineAt(x, y, arr) {
   const th2 = (12 / cam.zoom) ** 2;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const p = lines[i].pts;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const p = arr[i].pts;
     for (let k = 0; k + 3 < p.length; k += 2) {
-      if (segDist2(x, y, p[k], p[k + 1], p[k + 2], p[k + 3]) < th2) { lines.splice(i, 1); return; }
+      if (segDist2(x, y, p[k], p[k + 1], p[k + 2], p[k + 3]) < th2) { arr.splice(i, 1); return; }
+    }
+  }
+}
+
+function closestOnSeg(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const L2 = dx * dx + dy * dy || 1;
+  let t = ((px - x1) * dx + (py - y1) * dy) / L2;
+  t = Math.max(0, Math.min(1, t));
+  return { x: x1 + t * dx, y: y1 + t * dy };
+}
+
+function wallReflect(b, nx, ny) {
+  const dot = b.vx * nx + b.vy * ny;
+  if (dot < 0) { b.vx -= 1.75 * dot * nx; b.vy -= 1.75 * dot * ny; } // ~75% bouncy
+}
+
+// gray walls block every kind of object — even invincible ones bounce off
+function applyWalls() {
+  if (!walls.length) return;
+  for (const b of bodies) {
+    if (b.pinned) continue; // pinned bodies can't be shoved anyway
+    const px = b.px !== undefined ? b.px : b.x;
+    const py = b.py !== undefined ? b.py : b.y;
+    const rad = b.r + 3;
+    for (const wl of walls) {
+      const p = wl.pts;
+      for (let k = 0; k + 3 < p.length; k += 2) {
+        const x1 = p[k], y1 = p[k + 1], x2 = p[k + 2], y2 = p[k + 3];
+        // swept: crossed the wall this frame → put it back on its own side
+        if (segsCross(px, py, b.x, b.y, x1, y1, x2, y2)) {
+          const c = closestOnSeg(px, py, x1, y1, x2, y2);
+          let nx = px - c.x, ny = py - c.y;
+          const d = Math.hypot(nx, ny) || 1;
+          nx /= d; ny /= d;
+          b.x = c.x + nx * rad;
+          b.y = c.y + ny * rad;
+          wallReflect(b, nx, ny);
+          continue;
+        }
+        const c = closestOnSeg(b.x, b.y, x1, y1, x2, y2);
+        const dx = b.x - c.x, dy = b.y - c.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < rad * rad) {
+          const d = Math.sqrt(d2) || 1;
+          const nx = dx / d, ny = dy / d;
+          b.x = c.x + nx * rad;
+          b.y = c.y + ny * rad;
+          wallReflect(b, nx, ny);
+        }
+      }
     }
   }
 }
@@ -1030,20 +1084,26 @@ function render(now) {
     ctx.globalAlpha = 1;
   }
 
-  // laser lines: soft glow pass, then bright core
-  if (lines.length) {
+  // drawn lines: soft glow pass, then bright core (red = vaporizer, gray = wall)
+  if (lines.length || walls.length) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (const ln of lines) {
-      const p = ln.pts;
-      if (p.length < 4) continue;
-      for (const [width, style] of [[9, 'rgba(255, 80, 110, 0.22)'], [2.5, 'rgba(255, 110, 135, 0.95)']]) {
-        ctx.strokeStyle = style;
-        ctx.lineWidth = Math.max(width / cam.zoom, width * 0.6);
-        ctx.beginPath();
-        ctx.moveTo(p[0], p[1]);
-        for (let k = 2; k < p.length; k += 2) ctx.lineTo(p[k], p[k + 1]);
-        ctx.stroke();
+    const sets = [
+      [lines, [[9, 'rgba(255, 80, 110, 0.22)'], [2.5, 'rgba(255, 110, 135, 0.95)']]],
+      [walls, [[9, 'rgba(170, 178, 195, 0.2)'], [3.5, 'rgba(185, 192, 208, 0.95)']]],
+    ];
+    for (const [arr, passes] of sets) {
+      for (const ln of arr) {
+        const p = ln.pts;
+        if (p.length < 4) continue;
+        for (const [width, style] of passes) {
+          ctx.strokeStyle = style;
+          ctx.lineWidth = Math.max(width / cam.zoom, width * 0.6);
+          ctx.beginPath();
+          ctx.moveTo(p[0], p[1]);
+          for (let k = 2; k < p.length; k += 2) ctx.lineTo(p[k], p[k + 1]);
+          ctx.stroke();
+        }
       }
     }
   }
@@ -1179,9 +1239,10 @@ function frame(now) {
   if (!paused && timeScale > 0) {
     const dt = rawDt * timeScale;
     const sub = bodies.length > 400 ? 1 : 3; // fewer substeps when the world is huge
-    if (lines.length) for (const b of bodies) { b.px = b.x; b.py = b.y; }
+    if (lines.length || walls.length) for (const b of bodies) { b.px = b.x; b.py = b.y; }
     for (let s = 0; s < sub; s++) stepPhysics(dt / sub);
     applyLines();
+    applyWalls();
     for (const e of effects) e.t += dt;
     updateTrails();
   }
@@ -1214,11 +1275,12 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (activePointers.size > 0) return; // second finger = pinch, handled below
-  if (lineMode) {
+  if (lineMode || wallMode) {
     const w = screenToWorld(e.clientX, e.clientY);
+    const arr = lineMode ? lines : walls;
     drawingLine = { pts: [w.x, w.y] };
-    lines.push(drawingLine);
-    if (lines.length > 30) lines.shift();
+    arr.push(drawingLine);
+    if (arr.length > 30) arr.shift();
     return;
   }
   if (spamMode) {
@@ -1264,10 +1326,11 @@ canvas.addEventListener('pointermove', (e) => {
 
 canvas.addEventListener('pointerup', (e) => {
   if (drawingLine) {
+    const arr = lineMode ? lines : walls;
     if (drawingLine.pts.length < 4) {           // a tap, not a drag:
-      lines.pop();                              // discard the stub...
+      arr.pop();                                // discard the stub...
       const w = screenToWorld(e.clientX, e.clientY);
-      deleteLineAt(w.x, w.y);                   // ...and erase a tapped line instead
+      deleteLineAt(w.x, w.y, arr);              // ...and erase a tapped one instead
     }
     drawingLine = null;
     return;
@@ -1499,23 +1562,26 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   bodies.length = 0;
   effects.length = 0;
   lines.length = 0;
+  walls.length = 0;
   drawingLine = null;
 });
 document.getElementById('presetBtn').addEventListener('click', spawnSolarSystem);
 const spamBtn = document.getElementById('spamBtn');
 const lineBtn = document.getElementById('lineBtn');
-spamBtn.addEventListener('click', () => {
-  spamMode = !spamMode;
+const wallBtn = document.getElementById('wallBtn');
+function setDrawMode(mode) { // 'spam' | 'line' | 'wall' | null — one at a time
+  spamMode = mode === 'spam';
+  lineMode = mode === 'line';
+  wallMode = mode === 'wall';
   spray.on = false;
-  if (spamMode && lineMode) { lineMode = false; drawingLine = null; lineBtn.classList.remove('active'); }
-  spamBtn.classList.toggle('active', spamMode);
-});
-lineBtn.addEventListener('click', () => {
-  lineMode = !lineMode;
   drawingLine = null;
-  if (lineMode && spamMode) { spamMode = false; spray.on = false; spamBtn.classList.remove('active'); }
+  spamBtn.classList.toggle('active', spamMode);
   lineBtn.classList.toggle('active', lineMode);
-});
+  wallBtn.classList.toggle('active', wallMode);
+}
+spamBtn.addEventListener('click', () => setDrawMode(spamMode ? null : 'spam'));
+lineBtn.addEventListener('click', () => setDrawMode(lineMode ? null : 'line'));
+wallBtn.addEventListener('click', () => setDrawMode(wallMode ? null : 'wall'));
 document.getElementById('messBtn').addEventListener('click', spawnBigMess);
 
 function spawnBigMess() {
