@@ -59,6 +59,8 @@
   }
   #infoPanel[hidden] { display: none; }
   #infoHeader { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  #pinRow { display: flex; gap: 6px; }
+  #pinRow .btn { flex: 1; }
   #infoTitle { font-weight: 600; color: #fff; font-size: 13px; }
   #infoPanel .btn { padding: 3px 8px; font-size: 11px; white-space: nowrap; }
   #infoBody { display: flex; flex-direction: column; gap: 6px; }
@@ -88,6 +90,10 @@
   <div id="infoHeader">
     <span id="infoTitle"></span>
     <button class="btn" id="stopFollowBtn">&#9209; Stop Recenter</button>
+  </div>
+  <div id="pinRow">
+    <button class="btn" id="pinBtn">&#128204; Pin</button>
+    <button class="btn" id="invBtn">&#128737; Invincible</button>
   </div>
   <div id="infoBody">
     <div id="infoAge"></div>
@@ -444,6 +450,8 @@ function makeBody(type, x, y, vx, vy, sizeMul = 1, massOverride = null) {
     rotSpeed: rand(-0.6, 0.6),
     novaTimer: -1,       // >=0 means counting down to supernova
     captureCd: 1.5,      // asteroids: cooldown between orbit-capture rolls
+    pinned: false,       // frozen in place, gravity can't move it
+    invincible: false,   // nothing can merge, crater, shatter, or change it
     age: 0,
     totalHits: 0,        // things that have collided into this body
     hitCounts: { asteroid: 0, moon: 0, planet: 0, other: 0 },
@@ -516,6 +524,7 @@ function stepPhysics(dt) {
   }
   const exploding = [];
   for (const b of bodies) {
+    if (b.pinned) { b.vx = 0; b.vy = 0; }
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.rot += b.rotSpeed * dt;
@@ -538,7 +547,7 @@ function stepPhysics(dt) {
 
   // stars that grew too fat begin their death throes
   for (const b of bodies) {
-    if (b.star && b.type !== 'starBlack' && b.novaTimer < 0 && b.mass > SUPERNOVA_MASS) {
+    if (b.star && b.type !== 'starBlack' && !b.invincible && b.novaTimer < 0 && b.mass > SUPERNOVA_MASS) {
       b.novaTimer = 1.6;
     }
   }
@@ -584,6 +593,13 @@ function handleCollisions() {
       // fresh debris gets a grace period so a new asteroid cloud doesn't instantly clump
       if (a.type === 'asteroid' && b.type === 'asteroid' && (a.age < 2 || b.age < 2)) continue;
 
+      // invincible bodies shrug everything off — the other object just bounces
+      if (a.invincible || b.invincible) {
+        if (a.invincible && !b.invincible) bounceOff(a, b);
+        else if (b.invincible && !a.invincible) bounceOff(b, a);
+        continue;
+      }
+
       const relSpeed = Math.hypot(a.vx - b.vx, a.vy - b.vy);
 
       if (a.star && b.star) {
@@ -609,6 +625,22 @@ function handleCollisions() {
   }
 }
 
+function bounceOff(inv, other) {
+  // reflect the other body off the invincible one; the invincible one is untouched
+  const dx = other.x - inv.x, dy = other.y - inv.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const nx = dx / d, ny = dy / d;
+  const target = (inv.r + other.r) * 0.95;
+  other.x = inv.x + nx * target;
+  other.y = inv.y + ny * target;
+  const dot = (other.vx - inv.vx) * nx + (other.vy - inv.vy) * ny;
+  if (dot < 0) {
+    other.vx -= 1.7 * dot * nx; // ~85% bouncy
+    other.vy -= 1.7 * dot * ny;
+  }
+  spawnSparks(other.x, other.y, 4, other.color);
+}
+
 function recordHit(b, type) {
   b.totalHits++;
   const k = type === 'asteroid' ? 'asteroid'
@@ -631,10 +663,12 @@ function mergeBodies(a, b) {
       big.rgbTint[i] = (big.rgbTint[i] * big.mass + small.rgbTint[i] * small.mass) / m;
     }
   }
-  big.vx = (big.vx * big.mass + small.vx * small.mass) / m;
-  big.vy = (big.vy * big.mass + small.vy * small.mass) / m;
-  big.x = (big.x * big.mass + small.x * small.mass) / m;
-  big.y = (big.y * big.mass + small.y * small.mass) / m;
+  if (!big.pinned) {
+    big.vx = (big.vx * big.mass + small.vx * small.mass) / m;
+    big.vy = (big.vy * big.mass + small.vy * small.mass) / m;
+    big.x = (big.x * big.mass + small.x * small.mass) / m;
+    big.y = (big.y * big.mass + small.y * small.mass) / m;
+  }
   big.mass = m;
   big.r = Math.cbrt(big.r ** 3 + small.r ** 3);
   spawnSparks(big.x, big.y, 6, big.color);
@@ -1190,6 +1224,10 @@ const info = {
 let lastGraphAt = 0;
 
 document.getElementById('stopFollowBtn').addEventListener('click', () => { followed = null; });
+const pinBtn = document.getElementById('pinBtn');
+const invBtn = document.getElementById('invBtn');
+pinBtn.addEventListener('click', () => { if (followed) followed.pinned = !followed.pinned; });
+invBtn.addEventListener('click', () => { if (followed) followed.invincible = !followed.invincible; });
 info.xSlider.addEventListener('input', () => {
   info.xVal.textContent = info.xSlider.value;
   info.xVal2.textContent = info.xSlider.value + 's';
@@ -1201,6 +1239,8 @@ function updateInfoPanel(now) {
   const b = followed;
   info.panel.hidden = false;
   info.title.textContent = 'Following: ' + TYPES[b.type].label;
+  pinBtn.classList.toggle('active', b.pinned);
+  invBtn.classList.toggle('active', b.invincible);
 
   // stars absorb, worlds get hit — same stats, different words
   const word = b.star ? 'absorbed' : 'collisions';
