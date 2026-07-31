@@ -112,6 +112,7 @@
   <div id="infoBody">
     <div id="infoAge"></div>
     <div id="infoHits"></div>
+    <div id="infoOrbits"></div>
     <canvas id="graphCum" width="214" height="60"></canvas>
     <div class="glabel" id="glabelCum">Total collisions over its life</div>
     <canvas id="graphRate" width="214" height="60"></canvas>
@@ -564,7 +565,9 @@ function circularOrbitVelocity(x, y, attractor) {
   const G = G_BASE * parseFloat(ui.grav.value);
   const dx = x - attractor.x, dy = y - attractor.y;
   const d = Math.hypot(dx, dy) || 1;
-  const v = Math.sqrt(G * attractor.mass / d);
+  // circular speed under the softened gravity actually simulated
+  const d2 = d * d;
+  const v = Math.sqrt(G * attractor.mass * d2 / Math.pow(d2 + SOFTEN * SOFTEN, 1.5));
   // perpendicular (counterclockwise), riding along with the attractor
   return { vx: attractor.vx + (-dy / d) * v, vy: attractor.vy + (dx / d) * v };
 }
@@ -1080,8 +1083,11 @@ function asteroidImpact(world, ast) {
     if (addBody(frag, [world.id, ast.id])) excavated += frag.mass;
   }
   if (!world.invincible) { // an invincible world sprays ejecta but never erodes
-    world.mass = Math.max(5, fullMass - excavated * 1.4); // extra 40% vaporizes
-    world.r *= Math.cbrt(world.mass / fullMass);          // shrinks a little each hit
+    // one strike can blast away at most ~30% of a world, so small moons erode
+    // over several hits instead of popping on the first one
+    const lost = Math.min(excavated * 1.4, fullMass * 0.3);
+    world.mass = Math.max(5, fullMass - lost);
+    world.r *= Math.cbrt(world.mass / fullMass);           // shrinks a little each hit
     if (world.mass <= 10 || world.r < 3.4) crumble(world); // bombarded to rubble
   }
 }
@@ -1646,6 +1652,7 @@ const info = {
   body: document.getElementById('infoBody'),
   age: document.getElementById('infoAge'),
   hits: document.getElementById('infoHits'),
+  orbits: document.getElementById('infoOrbits'),
   gCum: document.getElementById('graphCum'),
   gRate: document.getElementById('graphRate'),
   xSlider: document.getElementById('xSlider'),
@@ -1654,6 +1661,43 @@ const info = {
   rateBox: document.getElementById('rateBox'),
 };
 let lastGraphAt = 0;
+let lastOrbitsAt = 0;
+
+// what's circling the followed body: bound to it and inside its Hill sphere
+// (the region where its gravity beats its own primary's — so a moon counts as
+// orbiting its planet even though the star technically pulls harder)
+function orbiterSummary(F) {
+  const G = G_BASE * parseFloat(ui.grav.value);
+  const counts = { stars: 0, 'gas giants': 0, planets: 0, moons: 0, asteroids: 0 };
+  // F's own primary: the heavier body pulling hardest on F
+  let prim = null, primPull = 0;
+  for (const o of bodies) {
+    if (o === F || o.mass <= F.mass) continue;
+    const dx = o.x - F.x, dy = o.y - F.y;
+    const pull = o.mass / (dx * dx + dy * dy + 1);
+    if (pull > primPull) { primPull = pull; prim = o; }
+  }
+  let hillR = Infinity;
+  if (prim) {
+    const dP = Math.hypot(F.x - prim.x, F.y - prim.y);
+    hillR = dP * Math.cbrt(F.mass / (3 * prim.mass)) * 1.5; // a little generous
+  }
+  for (const b of bodies) {
+    if (b === F || b.mass >= F.mass) continue;
+    const d = Math.hypot(b.x - F.x, b.y - F.y) || 1;
+    if (d > hillR) continue;
+    const rvx = b.vx - F.vx, rvy = b.vy - F.vy;
+    if (0.5 * (rvx * rvx + rvy * rvy) - G * F.mass / d >= 0) continue; // not bound
+    if (b.star) counts.stars++;
+    else if (b.type === 'gasGiant') counts['gas giants']++;
+    else if (b.type === 'earth' || b.type === 'rocky') counts.planets++;
+    else if (b.type === 'moon') counts.moons++;
+    else counts.asteroids++;
+  }
+  const parts = Object.entries(counts).filter(([, n]) => n > 0)
+    .map(([name, n]) => n + ' ' + (n === 1 ? name.replace(/s$/, '') : name));
+  return parts.length ? 'Orbiting it: ' + parts.join(', ') : 'Nothing is orbiting it';
+}
 
 document.getElementById('stopFollowBtn').addEventListener('click', () => { followed = null; });
 const pinBtn = document.getElementById('pinBtn');
@@ -1685,6 +1729,11 @@ function updateInfoPanel(now) {
   document.getElementById('glabelCum').textContent = 'Total ' + word + ' over its life';
   document.getElementById('glabelRate').textContent =
     (b.star ? 'Absorbed' : 'Collisions') + ' per ' + info.xSlider.value + 's chunk';
+
+  if (now - lastOrbitsAt > 600) {
+    lastOrbitsAt = now;
+    info.orbits.textContent = orbiterSummary(b);
+  }
 
   const X = parseInt(info.xSlider.value, 10);
   const recent = b.hitTimes.filter(t => b.age - t <= X).length;
@@ -1999,21 +2048,21 @@ function spawnSolarSystem() {
     ['gasGiant', 520, 1.1],
     ['gasGiant', 680, 0.85],
   ];
-  let earthRef = null;
+  let giantRef = null;
   for (const [type, dist, size] of plan) {
     const ang = rand(0, TAU);
     const x = Math.cos(ang) * dist, y = Math.sin(ang) * dist;
     const v = Math.sqrt(G * sun.mass / dist);
     const p = makeBody(type, x, y, -Math.sin(ang) * v, Math.cos(ang) * v, size);
     addBody(p);
-    if (type === 'earth') earthRef = p;
+    if (type === 'gasGiant') giantRef = p; // keep the outermost one, far from the belt
   }
-  // a moon around the earth-like planet
-  if (earthRef) {
-    const md = 40;
-    const mv = Math.sqrt(G * earthRef.mass / md);
-    addBody(makeBody('moon', earthRef.x + md, earthRef.y,
-      earthRef.vx, earthRef.vy + mv, 0.8));
+  // a moon around the gas giant — heavy enough to actually hold onto it
+  if (giantRef) {
+    const md = 60;
+    const mv = Math.sqrt(G * giantRef.mass * md * md / Math.pow(md * md + SOFTEN * SOFTEN, 1.5));
+    addBody(makeBody('moon', giantRef.x + md, giantRef.y,
+      giantRef.vx, giantRef.vy + mv, 0.8));
   }
   // asteroid belt between the rocky worlds and the gas giants
   for (let i = 0; i < 45; i++) {
