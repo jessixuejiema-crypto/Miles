@@ -244,6 +244,7 @@
   <button class="tool" data-tool="boost" title="Drag to draw a speed pad — marbles zoom along it">⚡ Boost</button>
   <button class="tool" data-tool="spin" title="Spinning bar. Tap a placed spinner to spin it the other way">🌀 Spinner</button>
   <button class="tool" data-tool="mover" title="Platform that slides left and right">↔️ Mover</button>
+  <button class="tool" data-tool="motion" title="Drag from any piece to draw a path it will patrol — up-down, left-right, or any squiggle. Tap a moving piece to freeze it">🛤️ Motion</button>
   <button class="tool" data-tool="erase" title="Click a piece to remove it">🧽 Erase</button>
   <div class="sep"></div>
   <button id="add1">+1 marble</button>
@@ -344,6 +345,35 @@ const SPIN_L = 55, MOVER_HALF = 48, MOVER_RANGE = 65, MOVER_W = 1.7;
 function moverPhase(pc) { return T * MOVER_W + pc.x * 0.013; }
 function moverX(pc) { return pc.x + Math.sin(moverPhase(pc)) * MOVER_RANGE; }
 function moverVX(pc) { return Math.cos(moverPhase(pc)) * MOVER_RANGE * MOVER_W; }
+
+// custom patrol paths: any piece with pc.path ping-pongs along it forever
+const ZERO4 = [0, 0, 0, 0];
+const PATH_SPD = 90; // px/s
+function pathOffset(pc) {
+  const pts = pc.path;
+  let L = pc._plen;
+  if (L === undefined) {
+    L = 0;
+    for (let i = 1; i < pts.length; i++)
+      L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    pc._plen = L;
+  }
+  if (L < 4) return ZERO4;
+  let u = (T * PATH_SPD) % (2 * L);
+  let fwd = 1;
+  if (u > L) { u = 2 * L - u; fwd = -1; }
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i][0] - pts[i - 1][0], dy = pts[i][1] - pts[i - 1][1];
+    const sl = Math.hypot(dx, dy);
+    if (u <= sl || i === pts.length - 1) {
+      const t = sl > 0 ? u / sl : 0;
+      const inv = sl > 0 ? PATH_SPD / sl : 0;
+      return [pts[i - 1][0] + dx * t, pts[i - 1][1] + dy * t, dx * inv * fwd, dy * inv * fwd];
+    }
+    u -= sl;
+  }
+  return ZERO4;
+}
 
 function collideSegment(m, x1, y1, x2, y2, e, boost) {
   const dx = x2 - x1, dy = y2 - y1;
@@ -479,25 +509,32 @@ function step(dt) {
     }
   }
   const h = dt / SUBSTEPS;
-  const bounds = [];
+  const bounds = [], offs = [];
   for (let s = 0; s < SUBSTEPS; s++) {
     T += h;
-    // cheap bounding boxes per piece so 10k marbles can skip far-away pieces fast
+    // cheap bounding boxes per piece so 10k marbles can skip far-away pieces fast,
+    // plus each piece's current patrol-path offset and velocity
     bounds.length = 0;
+    offs.length = 0;
     for (const pc of pieces) {
+      const o = pc.path ? pathOffset(pc) : ZERO4;
+      offs.push(o);
+      let bb;
       if (pc.type === "ramp" || pc.type === "boost") {
-        bounds.push([Math.min(pc.x1, pc.x2) - 8, Math.max(pc.x1, pc.x2) + 8,
-                     Math.min(pc.y1, pc.y2) - 8, Math.max(pc.y1, pc.y2) + 8]);
+        bb = [Math.min(pc.x1, pc.x2) - 8, Math.max(pc.x1, pc.x2) + 8,
+              Math.min(pc.y1, pc.y2) - 8, Math.max(pc.y1, pc.y2) + 8];
       } else if (pc.type === "spin") {
         const e = SPIN_L + 9;
-        bounds.push([pc.x - e, pc.x + e, pc.y - e, pc.y + e]);
+        bb = [pc.x - e, pc.x + e, pc.y - e, pc.y + e];
       } else if (pc.type === "mover") {
         const mx = moverX(pc);
-        bounds.push([mx - MOVER_HALF - 8, mx + MOVER_HALF + 8, pc.y - 8, pc.y + 8]);
+        bb = [mx - MOVER_HALF - 8, mx + MOVER_HALF + 8, pc.y - 8, pc.y + 8];
       } else {
         const e = (pc.type === "peg" ? 7 : pc.type === "switch" ? SWITCH_R : 15) + MARBLE_R + 1;
-        bounds.push([pc.x - e, pc.x + e, pc.y - e, pc.y + e]);
+        bb = [pc.x - e, pc.x + e, pc.y - e, pc.y + e];
       }
+      bb[0] += o[0]; bb[1] += o[0]; bb[2] += o[1]; bb[3] += o[1];
+      bounds.push(bb);
     }
     for (let i = 0; i < marbles.length; i++) {
       const m = marbles[i];
@@ -516,6 +553,9 @@ function step(dt) {
         const bb = bounds[p];
         if (m.x < bb[0] || m.x > bb[1] || m.y < bb[2] || m.y > bb[3]) continue;
         const pc = pieces[p];
+        // collide in the patrolling piece's frame so it pushes marbles as it moves
+        const o = offs[p];
+        if (o !== ZERO4) { m.x -= o[0]; m.y -= o[1]; m.vx -= o[2]; m.vy -= o[3]; }
         if (pc.type === "ramp") collideSegment(m, pc.x1, pc.y1, pc.x2, pc.y2, 0.25, false);
         else if (pc.type === "peg") collideCircle(m, pc.x, pc.y, 7, 0.55, false);
         else if (pc.type === "switch") collideSwitch(m, pc);
@@ -545,6 +585,7 @@ function step(dt) {
           if (hit) m.x += pvx * h;
         }
         else collideCircle(m, pc.x, pc.y, 15, 0.9, true);
+        if (o !== ZERO4) { m.x += o[0]; m.y += o[1]; m.vx += o[2]; m.vy += o[3]; }
       }
 
       // bottom
@@ -583,6 +624,22 @@ function draw() {
   // pieces
   for (const pc of pieces) {
     const sel = pc === selected;
+    const po = pc.path ? pathOffset(pc) : null;
+    if (pc.path && (tool === "motion" || sel)) {
+      // show the patrol path
+      const ax = pc.x1 !== undefined ? (pc.x1 + pc.x2) / 2 : pc.x;
+      const ay = pc.y1 !== undefined ? (pc.y1 + pc.y2) / 2 : pc.y;
+      ctx.strokeStyle = "rgba(76,201,240,0.55)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.moveTo(ax + pc.path[0][0], ay + pc.path[0][1]);
+      for (let i = 1; i < pc.path.length; i++)
+        ctx.lineTo(ax + pc.path[i][0], ay + pc.path[i][1]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (po) { ctx.save(); ctx.translate(po[0], po[1]); }
     if (pc.type === "ramp") {
       ctx.strokeStyle = sel ? "#ffe08a" : "#8d99ae";
       ctx.lineWidth = 5;
@@ -668,6 +725,19 @@ function draw() {
       ctx.fillStyle = "rgba(255,255,255,0.85)";
       ctx.beginPath(); ctx.arc(pc.x, pc.y, 6, 0, 7); ctx.fill();
     }
+    if (po) ctx.restore();
+  }
+
+  // path being drawn with the Motion tool
+  if (motionRec && motionRec.pts.length > 0) {
+    ctx.strokeStyle = "#4cc9f0";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.moveTo(motionRec.sx, motionRec.sy);
+    for (const q of motionRec.pts) ctx.lineTo(motionRec.sx + q[0], motionRec.sy + q[1]);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   // ramp preview while drawing
@@ -716,6 +786,7 @@ let tool = "ramp";
 let selected = null;   // piece object, or spawner
 let drawing = null;    // in-progress ramp
 let dragInfo = null;   // {piece, mode, ox, oy}
+let motionRec = null;  // in-progress path recording {piece, sx, sy, pts}
 
 function canvasPos(ev) {
   const r = cv.getBoundingClientRect();
@@ -725,10 +796,12 @@ function canvasPos(ev) {
   };
 }
 
-function pickPiece(x, y) {
-  if (Math.abs(x - spawner.x) < 28 && Math.abs(y - spawner.y) < 15) return spawner;
+function pickPiece(px, py) {
+  if (Math.abs(px - spawner.x) < 28 && Math.abs(py - spawner.y) < 15) return spawner;
   for (let i = pieces.length - 1; i >= 0; i--) {
     const pc = pieces[i];
+    let x = px, y = py;
+    if (pc.path) { const o = pathOffset(pc); x -= o[0]; y -= o[1]; }
     if (pc.type === "ramp" || pc.type === "boost") {
       const dx = pc.x2 - pc.x1, dy = pc.y2 - pc.y1;
       const len2 = dx * dx + dy * dy || 1;
@@ -773,6 +846,11 @@ cv.addEventListener("pointerdown", (ev) => {
     pieces.push({ type: "mover", x, y });
   } else if (tool === "stamp") {
     stampAt(x, y);
+  } else if (tool === "motion") {
+    const hit = pickPiece(x, y);
+    if (hit === spawner) toast("The dropper can't take a path — pick a piece!");
+    else if (hit) { motionRec = { piece: hit, sx: x, sy: y, pts: [[0, 0]] }; selected = hit; }
+    else toast("Drag starting on a piece to draw its path ✏️");
   } else if (tool === "erase") {
     const hit = pickPiece(x, y);
     if (hit && hit !== spawner) pieces.splice(pieces.indexOf(hit), 1);
@@ -788,7 +866,8 @@ cv.addEventListener("pointerdown", (ev) => {
       else if (Math.hypot(x - hit.x2, y - hit.y2) < 12) mode = "p2";
       dragInfo = { piece: hit, mode, ox: x, oy: y };
     } else if (hit) {
-      dragInfo = { piece: hit, mode: "circle", ox: x - hit.x, oy: y - hit.y, sx: hit.x, sy: hit.y };
+      const po = hit.path ? pathOffset(hit) : ZERO4;
+      dragInfo = { piece: hit, mode: "circle", ox: x - hit.x - po[0], oy: y - hit.y - po[1], sx: hit.x, sy: hit.y };
     }
   }
 });
@@ -796,6 +875,13 @@ cv.addEventListener("pointerdown", (ev) => {
 cv.addEventListener("pointermove", (ev) => {
   const { x, y } = canvasPos(ev);
   if (drawing) { drawing.x2 = x; drawing.y2 = y; return; }
+  if (motionRec) {
+    const last = motionRec.pts[motionRec.pts.length - 1];
+    const dx = x - motionRec.sx, dy = y - motionRec.sy;
+    if (Math.hypot(dx - last[0], dy - last[1]) > 8)
+      motionRec.pts.push([Math.round(dx), Math.round(dy)]);
+    return;
+  }
   if (!dragInfo) return;
   const p = dragInfo.piece;
   if (dragInfo.mode === "spawner") {
@@ -813,6 +899,26 @@ cv.addEventListener("pointermove", (ev) => {
 });
 
 cv.addEventListener("pointerup", () => {
+  if (motionRec) {
+    const pc = motionRec.piece;
+    let L = 0;
+    for (let i = 1; i < motionRec.pts.length; i++)
+      L += Math.hypot(motionRec.pts[i][0] - motionRec.pts[i - 1][0],
+                      motionRec.pts[i][1] - motionRec.pts[i - 1][1]);
+    if (L >= 15) {
+      pc.path = motionRec.pts;
+      delete pc._plen;
+      toast("Path set — it patrols back and forth! 🛤️");
+    } else if (pc.path) {
+      delete pc.path;
+      delete pc._plen;
+      toast("Motion removed — it's frozen again 🧊");
+    } else {
+      toast("Drag to draw a path, or tap a moving piece to freeze it");
+    }
+    motionRec = null;
+    return;
+  }
   if (drawing) {
     if (Math.hypot(drawing.x2 - drawing.x1, drawing.y2 - drawing.y1) > 12) {
       pieces.push({ type: drawing.kind, x1: drawing.x1, y1: drawing.y1, x2: drawing.x2, y2: drawing.y2 });
@@ -1140,13 +1246,19 @@ const LS_KEY = "marbleRunTemplates.v1";
 const TYPE_TO_TAG = { peg: "p", bumper: "b", switch: "s", spin: "w", mover: "m" };
 const TAG_TO_TYPE = { p: "peg", b: "bumper", s: "switch", w: "spin", m: "mover" };
 function compactPieces(list) {
-  return list.map(pc =>
-    (pc.type === "ramp" || pc.type === "boost")
-      ? { t: pc.type === "ramp" ? "r" : "o",
-          a: Math.round(pc.x1), b: Math.round(pc.y1), c: Math.round(pc.x2), d: Math.round(pc.y2) }
-    : (pc.type === "switch" || pc.type === "spin")
-      ? { t: TYPE_TO_TAG[pc.type], a: Math.round(pc.x), b: Math.round(pc.y), d: pc.dir }
-      : { t: TYPE_TO_TAG[pc.type], a: Math.round(pc.x), b: Math.round(pc.y) });
+  return list.map(pc => {
+    let o;
+    if (pc.type === "ramp" || pc.type === "boost")
+      o = { t: pc.type === "ramp" ? "r" : "o",
+            a: Math.round(pc.x1), b: Math.round(pc.y1), c: Math.round(pc.x2), d: Math.round(pc.y2) };
+    else if (pc.type === "switch" || pc.type === "spin")
+      o = { t: TYPE_TO_TAG[pc.type], a: Math.round(pc.x), b: Math.round(pc.y), d: pc.dir };
+    else
+      o = { t: TYPE_TO_TAG[pc.type], a: Math.round(pc.x), b: Math.round(pc.y) };
+    if (pc.path && pc.path.length > 1)
+      o.pth = pc.path.map(q => [Math.round(q[0]), Math.round(q[1])]);
+    return o;
+  });
 }
 function layoutData() {
   return {
@@ -1158,12 +1270,21 @@ function layoutData() {
 const numOr = (v, fb) => (typeof v === "number" && isFinite(v)) ? v : fb;
 function decompactPieces(arr) {
   return arr
-    .map(p =>
-      (p.t === "r" || p.t === "o")
-        ? { type: p.t === "r" ? "ramp" : "boost", x1: numOr(p.a), y1: numOr(p.b), x2: numOr(p.c), y2: numOr(p.d) }
-      : (p.t === "s" || p.t === "w")
-        ? { type: TAG_TO_TYPE[p.t], x: numOr(p.a), y: numOr(p.b), dir: p.d === -1 ? -1 : 1 }
-        : { type: TAG_TO_TYPE[p.t] || "peg", x: numOr(p.a), y: numOr(p.b) })
+    .map(p => {
+      const o =
+        (p.t === "r" || p.t === "o")
+          ? { type: p.t === "r" ? "ramp" : "boost", x1: numOr(p.a), y1: numOr(p.b), x2: numOr(p.c), y2: numOr(p.d) }
+        : (p.t === "s" || p.t === "w")
+          ? { type: TAG_TO_TYPE[p.t], x: numOr(p.a), y: numOr(p.b), dir: p.d === -1 ? -1 : 1 }
+          : { type: TAG_TO_TYPE[p.t] || "peg", x: numOr(p.a), y: numOr(p.b) };
+      if (Array.isArray(p.pth)) {
+        const pts = p.pth
+          .filter(q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1]))
+          .map(q => [+q[0], +q[1]]);
+        if (pts.length > 1) o.path = pts;
+      }
+      return o;
+    })
     .filter(p => (p.type === "ramp" || p.type === "boost")
       ? [p.x1, p.y1, p.x2, p.y2].every(isFinite)
       : [p.x, p.y].every(isFinite));
@@ -1236,6 +1357,25 @@ const PRESETS = {
       { type: "bumper", x: 550, y: 575 },
       { type: "bumper", x: 770, y: 560 },
       { type: "mover", x: 200, y: 590 }
+    ]
+  }),
+  "Patrol Party": () => ({
+    spawner: { x: W / 2, y: 26 },
+    pieces: [
+      // elevator ramp riding up and down
+      { type: "ramp", x1: 300, y1: 150, x2: 700, y2: 185, path: [[0, 0], [0, 140]] },
+      // peg squad sweeping side to side
+      { type: "peg", x: 150, y: 320, path: [[0, 0], [220, 0]] },
+      { type: "peg", x: 205, y: 320, path: [[0, 0], [220, 0]] },
+      { type: "peg", x: 260, y: 320, path: [[0, 0], [220, 0]] },
+      // bumper doing laps around a diamond
+      { type: "bumper", x: 640, y: 360, path: [[0, 0], [90, -70], [180, 0], [90, 70], [0, 0]] },
+      // switch dot on patrol
+      { type: "switch", x: 620, y: 490, dir: 1, path: [[0, 0], [-240, 0]] },
+      // spinner drifting in a circle-ish loop
+      { type: "spin", x: 280, y: 470, dir: 1, path: [[0, 0], [60, -50], [120, 0], [60, 50], [0, 0]] },
+      { type: "ramp", x1: 60, y1: 560, x2: 420, y2: 600 },
+      { type: "ramp", x1: 940, y1: 560, x2: 580, y2: 600 }
     ]
   }),
   "Zigzag Falls": () => {
