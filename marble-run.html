@@ -119,6 +119,27 @@
     overflow: hidden;
   }
   #stampGrid.open { max-height: 250px; overflow-y: auto; }
+  .obsSaveRow { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #obsName {
+    font-family: inherit;
+    font-size: 13px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 9px;
+    padding: 6px 10px;
+    width: 160px;
+  }
+  #customRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    align-items: center;
+  }
+  #customRow .lbl { font-size: 13px; color: var(--accent); font-weight: bold; }
+  #stampBar .stamp.custom { border-color: var(--accent); }
+  #stampBar .stamp .del { margin-left: 6px; color: var(--danger); font-weight: bold; }
   #stampBar .stamp.on {
     background: var(--accent-2);
     color: #06263a;
@@ -228,6 +249,7 @@
   <button id="add1">+1 marble</button>
   <button id="add100">+100</button>
   <button id="add1000" class="big">+1000 marbles!</button>
+  <button id="add5000">+5000</button>
   <button id="clearMarbles" class="warn">Clear marbles</button>
   <div class="sep"></div>
   <button id="collideBtn" class="colliding">💥 Touch mode</button>
@@ -239,9 +261,14 @@
 <div class="bar" id="stampBar">
   <div class="stampHead">
     <span class="lbl">✨ <b>100 one-tap obstacles</b> — pick one, then tap the canvas to stamp it:</span>
-    <button id="stampToggle">Show all 100 ▾</button>
+    <span class="obsSaveRow">
+      <input type="text" id="obsName" placeholder="Name your obstacle…" maxlength="24">
+      <button id="obsSave" title="Saves everything on the canvas as your own one-tap obstacle">💾 Save my obstacle</button>
+      <button id="stampToggle">Show all 100 ▾</button>
+    </span>
   </div>
   <div id="stampGrid"></div>
+  <div id="customRow"></div>
 </div>
 
 <div id="stage">
@@ -276,7 +303,7 @@ const ctx = cv.getContext("2d");
 const hud = document.getElementById("hud");
 
 const MARBLE_R = 4.5;
-const MAX_MARBLES = 3000;
+const MAX_MARBLES = 10000;
 const GRAV = 620;            // px/s^2
 const AIR = 0.999;
 const WALL_E = 0.45;
@@ -442,13 +469,36 @@ function marbleVsMarble() {
 function step(dt) {
   // stream queued marbles in gently so +1000 doesn't explode in one spot
   if (spawnQueue > 0) {
-    const n = Math.min(spawnQueue, 25);
-    for (let i = 0; i < n; i++) spawnMarble();
-    spawnQueue -= n;
+    if (marbles.length >= MAX_MARBLES) {
+      spawnQueue = 0;
+      toast("That's the limit — 10,000 marbles! 🤯");
+    } else {
+      const n = Math.min(spawnQueue, 40, MAX_MARBLES - marbles.length);
+      for (let i = 0; i < n; i++) spawnMarble();
+      spawnQueue -= n;
+    }
   }
   const h = dt / SUBSTEPS;
+  const bounds = [];
   for (let s = 0; s < SUBSTEPS; s++) {
     T += h;
+    // cheap bounding boxes per piece so 10k marbles can skip far-away pieces fast
+    bounds.length = 0;
+    for (const pc of pieces) {
+      if (pc.type === "ramp" || pc.type === "boost") {
+        bounds.push([Math.min(pc.x1, pc.x2) - 8, Math.max(pc.x1, pc.x2) + 8,
+                     Math.min(pc.y1, pc.y2) - 8, Math.max(pc.y1, pc.y2) + 8]);
+      } else if (pc.type === "spin") {
+        const e = SPIN_L + 9;
+        bounds.push([pc.x - e, pc.x + e, pc.y - e, pc.y + e]);
+      } else if (pc.type === "mover") {
+        const mx = moverX(pc);
+        bounds.push([mx - MOVER_HALF - 8, mx + MOVER_HALF + 8, pc.y - 8, pc.y + 8]);
+      } else {
+        const e = (pc.type === "peg" ? 7 : pc.type === "switch" ? SWITCH_R : 15) + MARBLE_R + 1;
+        bounds.push([pc.x - e, pc.x + e, pc.y - e, pc.y + e]);
+      }
+    }
     for (let i = 0; i < marbles.length; i++) {
       const m = marbles[i];
       m.vy += GRAV * h;
@@ -463,6 +513,8 @@ function step(dt) {
 
       // pieces
       for (let p = 0; p < pieces.length; p++) {
+        const bb = bounds[p];
+        if (m.x < bb[0] || m.x > bb[1] || m.y < bb[2] || m.y > bb[3]) continue;
         const pc = pieces[p];
         if (pc.type === "ramp") collideSegment(m, pc.x1, pc.y1, pc.x2, pc.y2, 0.25, false);
         else if (pc.type === "peg") collideCircle(m, pc.x, pc.y, 7, 0.55, false);
@@ -720,7 +772,7 @@ cv.addEventListener("pointerdown", (ev) => {
   } else if (tool === "mover") {
     pieces.push({ type: "mover", x, y });
   } else if (tool === "stamp") {
-    stampAt(stampKind, x, y);
+    stampAt(x, y);
   } else if (tool === "erase") {
     const hit = pickPiece(x, y);
     if (hit && hit !== spawner) pieces.splice(pieces.indexOf(hit), 1);
@@ -927,9 +979,10 @@ const STAMP_LIB = [
   ["✨ Kitchen Sink", [sp(-140,-60,1), sw(0,-90,1), bp(140,-50), bo(-160,40,-20,85), rp(40,65,180,95)]]
 ];
 
-let stampKind = 0; // index into STAMP_LIB
-function stampAt(i, x, y) {
-  for (const pc of STAMP_LIB[i][1]) {
+let stampSel = null; // piece list (relative coords) of the selected obstacle
+function stampAt(x, y) {
+  if (!stampSel) return;
+  for (const pc of stampSel) {
     const c = { ...pc };
     if (c.x1 !== undefined) { c.x1 += x; c.y1 += y; c.x2 += x; c.y2 += y; }
     else { c.x += x; c.y += y; }
@@ -939,14 +992,14 @@ function stampAt(i, x, y) {
 
 // build the 100 stamp buttons
 const stampGrid = document.getElementById("stampGrid");
-STAMP_LIB.forEach(([label], i) => {
+STAMP_LIB.forEach(([label, defs]) => {
   const b = document.createElement("button");
   b.className = "stamp";
   b.textContent = label;
   b.title = "Tap the canvas to stamp this obstacle";
   b.addEventListener("click", () => {
     tool = "stamp";
-    stampKind = i;
+    stampSel = defs;
     selected = null;
     highlight(b);
   });
@@ -957,12 +1010,84 @@ document.getElementById("stampToggle").onclick = function () {
   this.textContent = stampGrid.classList.contains("open") ? "Show less ▴" : "Show all 100 ▾";
 };
 
+// ---------- your own saved obstacles ----------
+const OBS_KEY = "marbleRunObstacles.v1";
+function loadObs() {
+  try { return JSON.parse(localStorage.getItem(OBS_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveObs(store) {
+  try { localStorage.setItem(OBS_KEY, JSON.stringify(store)); }
+  catch { toast("Couldn't save — storage is full 😢"); }
+}
+function renderCustomStamps() {
+  const rowEl = document.getElementById("customRow");
+  rowEl.innerHTML = "";
+  const store = loadObs();
+  const names = Object.keys(store).sort();
+  if (!names.length) return;
+  const lbl = document.createElement("span");
+  lbl.className = "lbl";
+  lbl.textContent = "⭐ Yours:";
+  rowEl.appendChild(lbl);
+  for (const name of names) {
+    const b = document.createElement("button");
+    b.className = "stamp custom";
+    b.textContent = "⭐ " + name;
+    b.title = "Tap the canvas to stamp your obstacle";
+    const del = document.createElement("span");
+    del.className = "del";
+    del.textContent = "✕";
+    del.title = "Delete this obstacle";
+    del.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const s = loadObs();
+      delete s[name];
+      saveObs(s);
+      renderCustomStamps();
+    });
+    b.appendChild(del);
+    b.addEventListener("click", () => {
+      tool = "stamp";
+      stampSel = decompactPieces(store[name]);
+      selected = null;
+      highlight(b);
+    });
+    rowEl.appendChild(b);
+  }
+}
+document.getElementById("obsSave").onclick = () => {
+  if (!pieces.length) { toast("Build something on the canvas first! 🛠"); return; }
+  const nameInput = document.getElementById("obsName");
+  const store = loadObs();
+  const name = nameInput.value.trim() || "My obstacle " + (Object.keys(store).length + 1);
+  const comp = compactPieces(pieces);
+  // center the obstacle on its bounding box so it stamps around the tap point
+  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  for (const p of comp) {
+    const seg = p.t === "r" || p.t === "o";
+    minX = Math.min(minX, p.a, seg ? p.c : p.a);
+    maxX = Math.max(maxX, p.a, seg ? p.c : p.a);
+    minY = Math.min(minY, p.b, seg ? p.d : p.b);
+    maxY = Math.max(maxY, p.b, seg ? p.d : p.b);
+  }
+  const cx = Math.round((minX + maxX) / 2), cy = Math.round((minY + maxY) / 2);
+  for (const p of comp) {
+    p.a -= cx; p.b -= cy;
+    if (p.t === "r" || p.t === "o") { p.c -= cx; p.d -= cy; }
+  }
+  store[name] = comp;
+  saveObs(store);
+  nameInput.value = "";
+  renderCustomStamps();
+  toast(`Saved your obstacle “${name}” ⭐`);
+};
+
 // ---------- toolbar ----------
 const toolBtns = document.querySelectorAll("#toolbar .tool");
-const stampBtns = document.querySelectorAll("#stampBar .stamp");
 function highlight(active) {
   toolBtns.forEach(b => b.classList.toggle("on", b === active));
-  stampBtns.forEach(b => b.classList.toggle("on", b === active));
+  document.querySelectorAll("#stampBar .stamp").forEach(b => b.classList.toggle("on", b === active));
 }
 toolBtns.forEach(btn => {
   btn.addEventListener("click", () => {
@@ -976,6 +1101,10 @@ document.getElementById("add100").onclick = () => { spawnQueue += 100; };
 document.getElementById("add1000").onclick = () => {
   spawnQueue += 1000;
   toast("1000 marbles on the way! 🎉");
+};
+document.getElementById("add5000").onclick = () => {
+  spawnQueue += 5000;
+  toast("5000 marbles incoming! 🌊");
 };
 document.getElementById("clearMarbles").onclick = () => { marbles = []; spawnQueue = 0; };
 document.getElementById("clearTrack").onclick = () => { pieces = []; selected = null; };
@@ -1026,21 +1155,24 @@ function layoutData() {
     pieces: compactPieces(pieces)
   };
 }
-function applyLayout(data) {
-  if (!data || !Array.isArray(data.pieces)) return false;
-  const num = (v, fb) => (typeof v === "number" && isFinite(v)) ? v : fb;
-  spawner.x = num(data.spawner?.x, W / 2);
-  spawner.y = num(data.spawner?.y, 26);
-  pieces = data.pieces
+const numOr = (v, fb) => (typeof v === "number" && isFinite(v)) ? v : fb;
+function decompactPieces(arr) {
+  return arr
     .map(p =>
       (p.t === "r" || p.t === "o")
-        ? { type: p.t === "r" ? "ramp" : "boost", x1: num(p.a), y1: num(p.b), x2: num(p.c), y2: num(p.d) }
+        ? { type: p.t === "r" ? "ramp" : "boost", x1: numOr(p.a), y1: numOr(p.b), x2: numOr(p.c), y2: numOr(p.d) }
       : (p.t === "s" || p.t === "w")
-        ? { type: TAG_TO_TYPE[p.t], x: num(p.a), y: num(p.b), dir: p.d === -1 ? -1 : 1 }
-        : { type: TAG_TO_TYPE[p.t] || "peg", x: num(p.a), y: num(p.b) })
+        ? { type: TAG_TO_TYPE[p.t], x: numOr(p.a), y: numOr(p.b), dir: p.d === -1 ? -1 : 1 }
+        : { type: TAG_TO_TYPE[p.t] || "peg", x: numOr(p.a), y: numOr(p.b) })
     .filter(p => (p.type === "ramp" || p.type === "boost")
       ? [p.x1, p.y1, p.x2, p.y2].every(isFinite)
       : [p.x, p.y].every(isFinite));
+}
+function applyLayout(data) {
+  if (!data || !Array.isArray(data.pieces)) return false;
+  spawner.x = numOr(data.spawner?.x, W / 2);
+  spawner.y = numOr(data.spawner?.y, 26);
+  pieces = decompactPieces(data.pieces);
   selected = null;
   return true;
 }
@@ -1280,6 +1412,7 @@ window.addEventListener("hashchange", tryLoadFromHash);
 
 // ---------- boot ----------
 renderTplList();
+renderCustomStamps();
 if (!tryLoadFromHash()) {
   const d = PRESETS["Switcheroo"]();
   applyLayout({ v: 1, spawner: d.spawner, pieces: compactPieces(d.pieces) });
