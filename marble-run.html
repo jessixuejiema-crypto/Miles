@@ -219,9 +219,9 @@
   <button class="tool on" data-tool="ramp" title="Drag to draw a ramp">📏 Ramp</button>
   <button class="tool" data-tool="peg" title="Click to drop pegs">📍 Peg</button>
   <button class="tool" data-tool="bumper" title="Bouncy! Marbles get a boost">🍄 Bumper</button>
-  <button class="tool" data-tool="switch" title="Flicks marbles left or right, taking turns. Tap one in Move mode to flip its arrow">🔀 Dot</button>
+  <button class="tool" data-tool="switch" title="Flicks marbles left or right, taking turns. Tap a placed dot to flip its arrow">🔀 Dot</button>
   <button class="tool" data-tool="boost" title="Drag to draw a speed pad — marbles zoom along it">⚡ Boost</button>
-  <button class="tool" data-tool="spin" title="Spinning bar. Tap one in Move mode to reverse it">🌀 Spinner</button>
+  <button class="tool" data-tool="spin" title="Spinning bar. Tap a placed spinner to spin it the other way">🌀 Spinner</button>
   <button class="tool" data-tool="mover" title="Platform that slides left and right">↔️ Mover</button>
   <button class="tool" data-tool="erase" title="Click a piece to remove it">🧽 Erase</button>
   <div class="sep"></div>
@@ -574,6 +574,19 @@ function draw() {
       ctx.moveTo(pc.x - c * SPIN_L, pc.y - sn * SPIN_L);
       ctx.lineTo(pc.x + c * SPIN_L, pc.y + sn * SPIN_L);
       ctx.stroke();
+      // arrowheads at each tip showing which way it turns
+      ctx.fillStyle = sel ? "#ffe08a" : "#f3b5ff";
+      const D = pc.dir >= 0 ? 1 : -1;
+      for (const e of [1, -1]) {
+        const tx = pc.x + c * SPIN_L * e, ty = pc.y + sn * SPIN_L * e;
+        const ux = -sn * e * D, uy = c * e * D;   // tip motion direction
+        const bx = c * e, by = sn * e;            // along the bar
+        ctx.beginPath();
+        ctx.moveTo(tx + ux * 13, ty + uy * 13);
+        ctx.lineTo(tx + bx * 5, ty + by * 5);
+        ctx.lineTo(tx - bx * 5, ty - by * 5);
+        ctx.closePath(); ctx.fill();
+      }
       ctx.fillStyle = "#fff";
       ctx.beginPath(); ctx.arc(pc.x, pc.y, 4, 0, 7); ctx.fill();
     } else if (pc.type === "mover") {
@@ -693,9 +706,17 @@ cv.addEventListener("pointerdown", (ev) => {
   } else if (tool === "bumper") {
     pieces.push({ type: "bumper", x, y });
   } else if (tool === "switch") {
-    pieces.push({ type: "switch", x, y, dir: 1 });
+    const hit = pickPiece(x, y);
+    if (hit && hit !== spawner && hit.type === "switch") {
+      hit.dir = -hit.dir;
+      toast(hit.dir > 0 ? "Dot flips right next ➡️" : "Dot flips left next ⬅️");
+    } else pieces.push({ type: "switch", x, y, dir: 1 });
   } else if (tool === "spin") {
-    pieces.push({ type: "spin", x, y, dir: 1 });
+    const hit = pickPiece(x, y);
+    if (hit && hit !== spawner && hit.type === "spin") {
+      hit.dir = -hit.dir;
+      toast("Spinner reversed! 🌀");
+    } else pieces.push({ type: "spin", x, y, dir: 1 });
   } else if (tool === "mover") {
     pieces.push({ type: "mover", x, y });
   } else if (tool === "stamp") {
