@@ -699,6 +699,15 @@ function saveStore(store) {
 }
 
 // built-in starter templates
+function pegLine(ps, x1, y1, x2, y2, gap = 16, skip = null) {
+  const d = Math.hypot(x2 - x1, y2 - y1);
+  const n = Math.max(1, Math.round(d / gap));
+  for (let i = 0; i <= n; i++) {
+    const x = x1 + (x2 - x1) * i / n, y = y1 + (y2 - y1) * i / n;
+    if (skip && skip(x, y)) continue;
+    ps.push({ type: "peg", x, y });
+  }
+}
 const PRESETS = {
   "Zigzag Falls": () => {
     const ps = [];
@@ -719,6 +728,58 @@ const PRESETS = {
     }
     for (let x = 100; x <= 900; x += 80)
       ps.push({ type: "ramp", x1: x, y1: 530, x2: x, y2: H - 4 });
+    return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+  },
+  "Dot Slide": () => {
+    const ps = [];
+    let y = 120;
+    for (let i = 0; i < 5; i++) {
+      if (i % 2 === 0) pegLine(ps, 60, y, 820, y + 55, 17);
+      else pegLine(ps, 940, y, 180, y + 55, 17);
+      y += 98;
+    }
+    return { spawner: { x: 110, y: 26 }, pieces: ps };
+  },
+  "Wavy Dots": () => {
+    const ps = [];
+    const rows = [
+      { baseY: 170, phase: 0, gapX: 260 },
+      { baseY: 330, phase: 2.1, gapX: 700 },
+      { baseY: 490, phase: 4.2, gapX: 480 }
+    ];
+    for (const r of rows) {
+      for (let x = 50; x <= 950; x += 15) {
+        if (Math.abs(x - r.gapX) < 22) continue;
+        ps.push({ type: "peg", x, y: r.baseY + Math.sin(x / 85 + r.phase) * 38 });
+      }
+    }
+    return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+  },
+  "Dot Hourglass": () => {
+    const ps = [];
+    for (let x = 130; x <= 870; x += 15) {
+      if (Math.abs(x - 500) < 13) continue; // drain hole
+      ps.push({ type: "peg", x, y: 470 - (x - 500) * (x - 500) / 550 });
+    }
+    ps.push({ type: "bumper", x: 380, y: 555 });
+    ps.push({ type: "bumper", x: 620, y: 555 });
+    return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+  },
+  "Dot Stairs": () => {
+    const ps = [];
+    for (let i = 0; i < 7; i++)
+      pegLine(ps, 70 + i * 125, 130 + i * 62, 190 + i * 125, 140 + i * 62, 15);
+    ps.push({ type: "bumper", x: 500, y: 590 });
+    ps.push({ type: "bumper", x: 720, y: 590 });
+    return { spawner: { x: 110, y: 26 }, pieces: ps };
+  },
+  "Bouncy Bonanza": () => {
+    const ps = [];
+    for (let row = 0; row < 5; row++) {
+      const off = row % 2 ? 55 : 0;
+      for (let x = 130 + off; x <= 880; x += 110)
+        ps.push({ type: "bumper", x, y: 150 + row * 95 });
+    }
     return { spawner: { x: W / 2, y: 26 }, pieces: ps };
   },
   "Funnel Frenzy": () => {
