@@ -100,7 +100,25 @@
     border-color: #8a7ae0;
     font-weight: bold;
   }
+  #stampBar { flex-direction: column; align-items: stretch; }
   #stampBar .lbl { font-size: 13px; color: var(--muted); }
+  #stampBar .lbl b { color: var(--accent); }
+  .stampHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  #stampGrid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    max-height: 72px;
+    overflow: hidden;
+  }
+  #stampGrid.open { max-height: 250px; overflow-y: auto; }
   #stampBar .stamp.on {
     background: var(--accent-2);
     color: #06263a;
@@ -219,15 +237,11 @@
 </div>
 
 <div class="bar" id="stampBar">
-  <span class="lbl">✨ One-tap obstacles:</span>
-  <button class="stamp" data-stamp="funnel" title="Two ramps that squeeze marbles together">🔻 Funnel</button>
-  <button class="stamp" data-stamp="zigzag" title="A back-and-forth ramp pair">🪜 Zigzag</button>
-  <button class="stamp" data-stamp="dots" title="Three switch dots in a tree">🔀 Dot Trio</button>
-  <button class="stamp" data-stamp="pins" title="A little triangle of pins">📍 Pin Triangle</button>
-  <button class="stamp" data-stamp="spingate" title="A spinner guarded by two pins">🌀 Spin Gate</button>
-  <button class="stamp" data-stamp="speed" title="A speed pad slide">⚡ Speed Slide</button>
-  <button class="stamp" data-stamp="bumpers" title="Three bouncy bumpers">🍄 Bounce Trio</button>
-  <button class="stamp" data-stamp="shifty" title="A sliding platform with pin guards">↔️ Shifty Floor</button>
+  <div class="stampHead">
+    <span class="lbl">✨ <b>100 one-tap obstacles</b> — pick one, then tap the canvas to stamp it:</span>
+    <button id="stampToggle">Show all 100 ▾</button>
+  </div>
+  <div id="stampGrid"></div>
 </div>
 
 <div id="stage">
@@ -750,30 +764,177 @@ window.addEventListener("keydown", (ev) => {
   }
 });
 
-// ---------- one-tap obstacle stamps ----------
-// [type, ...coords] relative to the click point
-const STAMPS = {
-  funnel:   [["ramp", -125, -70, -12, 0], ["ramp", 125, -70, 12, 0]],
-  zigzag:   [["ramp", -150, -55, 110, -20], ["ramp", 150, 20, -110, 55]],
-  dots:     [["switch", 0, -50, 1], ["switch", -80, 50, -1], ["switch", 80, 50, 1]],
-  pins:     [["peg", 0, -40], ["peg", -22, 0], ["peg", 22, 0],
-             ["peg", -44, 40], ["peg", 0, 40], ["peg", 44, 40]],
-  spingate: [["spin", 0, 0, 1], ["peg", -90, -5], ["peg", 90, -5]],
-  speed:    [["boost", -130, -35, 130, 35]],
-  bumpers:  [["bumper", -85, 25], ["bumper", 0, -25], ["bumper", 85, 25]],
-  shifty:   [["mover", 0, 0], ["peg", -95, -45], ["peg", 95, -45]]
-};
-let stampKind = "funnel";
-function stampAt(kind, x, y) {
-  for (const [t, ...v] of STAMPS[kind]) {
-    if (t === "ramp" || t === "boost")
-      pieces.push({ type: t, x1: x + v[0], y1: y + v[1], x2: x + v[2], y2: y + v[3] });
-    else if (t === "switch" || t === "spin")
-      pieces.push({ type: t, x: x + v[0], y: y + v[1], dir: v[2] });
-    else
-      pieces.push({ type: t, x: x + v[0], y: y + v[1] });
+// ---------- one-tap obstacle library ----------
+// piece factories (coords relative to the click point)
+const pg = (x, y) => ({ type: "peg", x, y });
+const bp = (x, y) => ({ type: "bumper", x, y });
+const sw = (x, y, dir = 1) => ({ type: "switch", x, y, dir });
+const sp = (x, y, dir = 1) => ({ type: "spin", x, y, dir });
+const mv = (x, y) => ({ type: "mover", x, y });
+const rp = (x1, y1, x2, y2) => ({ type: "ramp", x1, y1, x2, y2 });
+const bo = (x1, y1, x2, y2) => ({ type: "boost", x1, y1, x2, y2 });
+function row(n, gap, fn) {
+  const a = [];
+  for (let i = 0; i < n; i++) a.push(fn((i - (n - 1) / 2) * gap));
+  return a;
+}
+function ring(n, r, fn) {
+  const a = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / n * 2 * Math.PI;
+    a.push(fn(Math.round(Math.cos(t) * r), Math.round(Math.sin(t) * r)));
+  }
+  return a;
+}
+function pyr(rows, gx, gy, fn) {
+  const a = [];
+  for (let r = 0; r < rows; r++)
+    for (let i = 0; i <= r; i++)
+      a.push(fn((i - r / 2) * gx, (r - (rows - 1) / 2) * gy, i));
+  return a;
+}
+
+const STAMP_LIB = [
+  // — funnels (8) —
+  ["🔻 Funnel", [rp(-125,-70,-12,0), rp(125,-70,12,0)]],
+  ["🔻 Slim Funnel", [rp(-70,-80,-10,0), rp(70,-80,10,0)]],
+  ["🔻 Wide Funnel", [rp(-220,-80,-14,0), rp(220,-80,14,0)]],
+  ["🔻 Giant Funnel", [rp(-320,-110,-16,0), rp(320,-110,16,0)]],
+  ["🔻 Double Funnel", [rp(-140,-120,-12,-55), rp(140,-120,12,-55), rp(-100,-10,-11,45), rp(100,-10,11,45)]],
+  ["🔻 Lean Left", [rp(-180,-80,-40,0), rp(120,-95,-16,-5)]],
+  ["🔻 Lean Right", [rp(180,-80,40,0), rp(-120,-95,16,-5)]],
+  ["🔻 Choke Point", [rp(-130,-60,-9,0), rp(130,-60,9,0), pg(0,28)]],
+  // — ramps & slides (12) —
+  ["🪜 Zigzag", [rp(-150,-55,110,-20), rp(150,20,-110,55)]],
+  ["🪜 Zigzag XL", [rp(-240,-95,190,-50), rp(240,-15,-190,30), rp(-240,75,190,120)]],
+  ["🪜 Stairs Right", [rp(-160,-80,-90,-72), rp(-70,-25,0,-17), rp(20,30,90,38), rp(110,85,180,93)]],
+  ["🪜 Stairs Left", [rp(160,-80,90,-72), rp(70,-25,0,-17), rp(-20,30,-90,38), rp(-110,85,-180,93)]],
+  ["🪜 Long Slide →", [rp(-260,-60,260,45)]],
+  ["🪜 Long Slide ←", [rp(260,-60,-260,45)]],
+  ["🪜 W Ramp", [rp(-200,-50,-100,40), rp(-100,40,0,-20), rp(0,-20,100,40), rp(100,40,200,-50)]],
+  ["🪜 V Catcher", [rp(-160,-70,0,40), rp(160,-70,0,40)]],
+  ["🪜 Roof Peak", [rp(0,-45,-160,45), rp(0,-45,160,45)]],
+  ["🪜 Shelf Pair", [rp(-170,-45,-30,-30), rp(30,30,170,45)]],
+  ["🪜 Cradle", [rp(-150,-40,-55,30), rp(-55,30,55,30), rp(55,30,150,-40)]],
+  ["🪜 Drop Gap", [rp(-220,0,-35,18), rp(220,0,35,18)]],
+  // — switch dots (12) —
+  ["🔀 Dot Trio", [sw(0,-50,1), sw(-80,50,-1), sw(80,50,1)]],
+  ["🔀 Dot Pyramid", pyr(3,160,100,(x,y,i) => sw(x,y,i%2?-1:1))],
+  ["🔀 Dot Tree XL", pyr(4,160,100,(x,y,i) => sw(x,y,i%2?-1:1))],
+  ["🔀 Dot Row 3", row(3,90,x => sw(x,0,1))],
+  ["🔀 Dot Row 5", row(5,80,x => sw(x,0,1))],
+  ["🔀 Right Chain", [sw(-80,-100,1), sw(0,0,1), sw(80,100,1)]],
+  ["🔀 Left Chain", [sw(80,-100,-1), sw(0,0,-1), sw(-80,100,-1)]],
+  ["🔀 Dot X", [sw(0,0,1), sw(-80,-100,-1), sw(80,-100,1), sw(-80,100,-1), sw(80,100,1)]],
+  ["🔀 Dot Diamond", [sw(0,-100,1), sw(-80,0,-1), sw(80,0,1), sw(0,100,-1)]],
+  ["🔀 Dot Tower", [sw(0,-150,1), sw(0,-50,-1), sw(0,50,1), sw(0,150,-1)]],
+  ["🔀 Ping Pong", [sw(-60,-100,1), sw(60,0,-1), sw(-60,100,1)]],
+  ["🔀 Dot Spreader", [sw(-105,0,-1), sw(-35,0,-1), sw(35,0,1), sw(105,0,1)]],
+  // — pins (14) —
+  ["📍 Pin Triangle", pyr(3,44,40,(x,y) => pg(x,y))],
+  ["📍 Pin Tri XL", pyr(4,44,40,(x,y) => pg(x,y))],
+  ["📍 Pin Diamond", [pg(0,-80), pg(-40,-40), pg(40,-40), pg(-80,0), pg(0,0), pg(80,0), pg(-40,40), pg(40,40), pg(0,80)]],
+  ["📍 Pin Ring", ring(8,70,pg)],
+  ["📍 Pin Ring XL", ring(12,110,pg)],
+  ["📍 Pin Grid", [...row(3,55,x => pg(x,-55)), ...row(3,55,x => pg(x,0)), ...row(3,55,x => pg(x,55))]],
+  ["📍 Pin Field", [...row(5,60,x => pg(x,-68)), ...row(4,60,x => pg(x,-23)), ...row(5,60,x => pg(x,22)), ...row(4,60,x => pg(x,67))]],
+  ["📍 Pin Smile", [-120,-80,-40,0,40,80,120].map(x => pg(x, Math.round(x*x/300)-25))],
+  ["📍 Pin Frown", [-120,-80,-40,0,40,80,120].map(x => pg(x, 25-Math.round(x*x/300)))],
+  ["📍 Pin V", [-90,-60,-30,0,30,60,90].map(x => pg(x, 30-Math.abs(x)))],
+  ["📍 Pin X", [...[-60,-30,0,30,60].map(x => pg(x,x)), ...[-60,-30,30,60].map(x => pg(x,-x))]],
+  ["📍 Pin Wall", row(7,40,x => pg(x,0))],
+  ["📍 Pin Gate", [pg(-100,0), pg(-60,0), pg(60,0), pg(100,0)]],
+  ["📍 Pin Column", [-100,-50,0,50,100].map(y => pg(0,y))],
+  // — bumpers (10) —
+  ["🍄 Bounce Trio", [bp(-85,25), bp(0,-25), bp(85,25)]],
+  ["🍄 Lone Bumper", [bp(0,0)]],
+  ["🍄 Bumper Pair", [bp(-60,0), bp(60,0)]],
+  ["🍄 Bumper Diamond", [bp(0,-70), bp(-70,0), bp(70,0), bp(0,70)]],
+  ["🍄 Bumper Ring", ring(6,85,bp)],
+  ["🍄 Bumper Wall", row(4,70,x => bp(x,0))],
+  ["🍄 Bumper V", [bp(-90,-50), bp(0,25), bp(90,-50)]],
+  ["🍄 Bumper Zig", [bp(-120,-40), bp(-40,25), bp(40,-40), bp(120,25)]],
+  ["🍄 Corner Pockets", [bp(-110,-70), bp(110,-70), bp(-110,70), bp(110,70)]],
+  ["🍄 Pinball Cluster", [bp(0,-55), bp(-80,30), bp(80,30), pg(0,45)]],
+  // — spinners (10) —
+  ["🌀 Spinner", [sp(0,0,1)]],
+  ["🌀 Reverse Spinner", [sp(0,0,-1)]],
+  ["🌀 Twin Spin", [sp(-80,0,1), sp(80,0,1)]],
+  ["🌀 Counter Twins", [sp(-80,0,1), sp(80,0,-1)]],
+  ["🌀 Spin Row", [sp(-140,0,1), sp(0,0,-1), sp(140,0,1)]],
+  ["🌀 Spin Gate", [sp(0,0,1), pg(-90,-5), pg(90,-5)]],
+  ["🌀 Spin Stack", [sp(0,-80,1), sp(0,80,-1)]],
+  ["🌀 Spin Funnel", [rp(-150,-100,-25,-30), rp(150,-100,25,-30), sp(0,35,1)]],
+  ["🌀 Windmill Hill", [sp(-150,-70,1), sp(0,0,-1), sp(150,70,1)]],
+  ["🌀 Blender", [sp(-58,0,1), sp(58,0,-1)]],
+  // — boost pads (10) —
+  ["⚡ Speed Slide", [bo(-130,-35,130,35)]],
+  ["⚡ Speed Slide ←", [bo(130,-35,-130,35)]],
+  ["⚡ Steep Speed", [bo(-90,-80,90,80)]],
+  ["⚡ Steep Speed ←", [bo(90,-80,-90,80)]],
+  ["⚡ Launcher ↗", [bo(-90,80,90,-80)]],
+  ["⚡ Launcher ↖", [bo(90,80,-90,-80)]],
+  ["⚡ Speedway", [bo(-250,-20,250,20)]],
+  ["⚡ Boost X", [bo(-100,-70,100,70), bo(100,-70,-100,70)]],
+  ["⚡ S-Lanes", [bo(-140,-45,140,-20), bo(140,20,-140,45)]],
+  ["⚡ Jump Ramp", [rp(-160,-35,-25,10), bo(-25,10,120,-50)]],
+  // — movers (8) —
+  ["↔️ Mover", [mv(0,0)]],
+  ["↔️ Shifty Floor", [mv(0,0), pg(-95,-45), pg(95,-45)]],
+  ["↔️ Double Decker", [mv(0,-60), mv(0,60)]],
+  ["↔️ Mover Bridge", [mv(-130,0), mv(130,0)]],
+  ["↔️ Elevator Shaft", [mv(0,-100), mv(0,0), mv(0,100)]],
+  ["↔️ Catch & Carry", [rp(-170,-75,-65,-45), mv(35,15)]],
+  ["↔️ Mover Pockets", [mv(0,-10), bp(-120,60), bp(120,60)]],
+  ["↔️ Conveyor Steps", [mv(-100,-70), mv(100,0), mv(-100,70)]],
+  // — combos (16) —
+  ["✨ Plinko Pocket", [...pyr(3,44,40,(x,y) => pg(x,y-40)), rp(-66,45,-66,105), rp(0,45,0,105), rp(66,45,66,105)]],
+  ["✨ Funnel Dot", [rp(-120,-100,-12,-35), rp(120,-100,12,-35), sw(0,15,1)]],
+  ["✨ Funnel Spin", [rp(-130,-115,-18,-50), rp(130,-115,18,-50), sp(0,25,1)]],
+  ["✨ Dot Bumpers", [sw(0,-60,1), bp(-90,35), bp(90,35)]],
+  ["✨ Boost Bash", [bo(-170,-60,-10,-20), bp(90,40)]],
+  ["✨ Spin Alley", [pg(-110,-70), pg(110,-70), sp(0,0,1), pg(-110,70), pg(110,70)]],
+  ["✨ Volcano", [rp(-140,65,-15,-5), rp(140,65,15,-5), bp(0,65)]],
+  ["✨ Pachinko Cup", [rp(-80,-15,-80,65), rp(80,-15,80,65), ...row(3,50,x => pg(x,-45))]],
+  ["✨ Zig Pins", [rp(-160,-75,110,-45), ...row(4,50,x => pg(x,15))]],
+  ["✨ Stair Boost", [rp(-190,-60,-70,-40), bo(-45,0,120,45)]],
+  ["✨ Mover Dot", [mv(0,-70), sw(0,45,1)]],
+  ["✨ Spin Drop", [sw(0,-85,1), sp(0,35,1)]],
+  ["✨ Bumper Stairs", [bp(-120,-80), bp(-40,-25), bp(40,30), bp(120,85)]],
+  ["✨ Peg Bowl", [-100,-75,-50,-25,25,50,75,100].map(x => pg(x, Math.round(x*x/250)-20))],
+  ["✨ Traffic Jam", [mv(0,-45), ...row(5,45,x => pg(x,40))]],
+  ["✨ Kitchen Sink", [sp(-140,-60,1), sw(0,-90,1), bp(140,-50), bo(-160,40,-20,85), rp(40,65,180,95)]]
+];
+
+let stampKind = 0; // index into STAMP_LIB
+function stampAt(i, x, y) {
+  for (const pc of STAMP_LIB[i][1]) {
+    const c = { ...pc };
+    if (c.x1 !== undefined) { c.x1 += x; c.y1 += y; c.x2 += x; c.y2 += y; }
+    else { c.x += x; c.y += y; }
+    pieces.push(c);
   }
 }
+
+// build the 100 stamp buttons
+const stampGrid = document.getElementById("stampGrid");
+STAMP_LIB.forEach(([label], i) => {
+  const b = document.createElement("button");
+  b.className = "stamp";
+  b.textContent = label;
+  b.title = "Tap the canvas to stamp this obstacle";
+  b.addEventListener("click", () => {
+    tool = "stamp";
+    stampKind = i;
+    selected = null;
+    highlight(b);
+  });
+  stampGrid.appendChild(b);
+});
+document.getElementById("stampToggle").onclick = function () {
+  stampGrid.classList.toggle("open");
+  this.textContent = stampGrid.classList.contains("open") ? "Show less ▴" : "Show all 100 ▾";
+};
 
 // ---------- toolbar ----------
 const toolBtns = document.querySelectorAll("#toolbar .tool");
@@ -785,14 +946,6 @@ function highlight(active) {
 toolBtns.forEach(btn => {
   btn.addEventListener("click", () => {
     tool = btn.dataset.tool;
-    selected = null;
-    highlight(btn);
-  });
-});
-stampBtns.forEach(btn => {
-  btn.addEventListener("click", () => {
-    tool = "stamp";
-    stampKind = btn.dataset.stamp;
     selected = null;
     highlight(btn);
   });
