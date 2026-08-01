@@ -100,6 +100,13 @@
     border-color: #8a7ae0;
     font-weight: bold;
   }
+  #stampBar .lbl { font-size: 13px; color: var(--muted); }
+  #stampBar .stamp.on {
+    background: var(--accent-2);
+    color: #06263a;
+    border-color: var(--accent-2);
+    font-weight: bold;
+  }
   label.chk {
     font-size: 13px;
     color: var(--muted);
@@ -195,6 +202,9 @@
   <button class="tool" data-tool="peg" title="Click to drop pegs">📍 Peg</button>
   <button class="tool" data-tool="bumper" title="Bouncy! Marbles get a boost">🍄 Bumper</button>
   <button class="tool" data-tool="switch" title="Flicks marbles left or right, taking turns. Tap one in Move mode to flip its arrow">🔀 Dot</button>
+  <button class="tool" data-tool="boost" title="Drag to draw a speed pad — marbles zoom along it">⚡ Boost</button>
+  <button class="tool" data-tool="spin" title="Spinning bar. Tap one in Move mode to reverse it">🌀 Spinner</button>
+  <button class="tool" data-tool="mover" title="Platform that slides left and right">↔️ Mover</button>
   <button class="tool" data-tool="erase" title="Click a piece to remove it">🧽 Erase</button>
   <div class="sep"></div>
   <button id="add1">+1 marble</button>
@@ -206,6 +216,18 @@
   <label class="chk"><input type="checkbox" id="recycle" checked> ♻️ recycle at bottom</label>
   <button id="pauseBtn">⏸ Pause</button>
   <button id="clearTrack" class="warn">Clear track</button>
+</div>
+
+<div class="bar" id="stampBar">
+  <span class="lbl">✨ One-tap obstacles:</span>
+  <button class="stamp" data-stamp="funnel" title="Two ramps that squeeze marbles together">🔻 Funnel</button>
+  <button class="stamp" data-stamp="zigzag" title="A back-and-forth ramp pair">🪜 Zigzag</button>
+  <button class="stamp" data-stamp="dots" title="Three switch dots in a tree">🔀 Dot Trio</button>
+  <button class="stamp" data-stamp="pins" title="A little triangle of pins">📍 Pin Triangle</button>
+  <button class="stamp" data-stamp="spingate" title="A spinner guarded by two pins">🌀 Spin Gate</button>
+  <button class="stamp" data-stamp="speed" title="A speed pad slide">⚡ Speed Slide</button>
+  <button class="stamp" data-stamp="bumpers" title="Three bouncy bumpers">🍄 Bounce Trio</button>
+  <button class="stamp" data-stamp="shifty" title="A sliding platform with pin guards">↔️ Shifty Floor</button>
 </div>
 
 <div id="stage">
@@ -275,17 +297,24 @@ function recycleMarble(m) {
 }
 
 // ---------- physics ----------
+let T = 0; // sim clock, drives spinners and movers (kept out of templates so saves stay stateless)
+function spinAngle(pc) { return pc.dir * T * 2.4 + (pc.x * 7 + pc.y * 13) * 0.002; }
+const SPIN_L = 55, MOVER_HALF = 48, MOVER_RANGE = 65, MOVER_W = 1.7;
+function moverPhase(pc) { return T * MOVER_W + pc.x * 0.013; }
+function moverX(pc) { return pc.x + Math.sin(moverPhase(pc)) * MOVER_RANGE; }
+function moverVX(pc) { return Math.cos(moverPhase(pc)) * MOVER_RANGE * MOVER_W; }
+
 function collideSegment(m, x1, y1, x2, y2, e, boost) {
   const dx = x2 - x1, dy = y2 - y1;
   const len2 = dx * dx + dy * dy;
-  if (len2 < 1e-9) return;
+  if (len2 < 1e-9) return false;
   let t = ((m.x - x1) * dx + (m.y - y1) * dy) / len2;
   t = t < 0 ? 0 : (t > 1 ? 1 : t);
   const cx = x1 + dx * t, cy = y1 + dy * t;
   let nx = m.x - cx, ny = m.y - cy;
   const d2 = nx * nx + ny * ny;
   const rr = MARBLE_R + 2.5; // half track thickness
-  if (d2 >= rr * rr) return;
+  if (d2 >= rr * rr) return false;
   let d = Math.sqrt(d2);
   if (d < 1e-6) { nx = -dy; ny = dx; d = Math.sqrt(len2); }
   nx /= d; ny /= d;
@@ -308,6 +337,7 @@ function collideSegment(m, x1, y1, x2, y2, e, boost) {
     m.vx += nx * (target - sp) * 0.9;
     m.vy += ny * (target - sp) * 0.9;
   }
+  return true;
 }
 
 function collideCircle(m, cx, cy, r, e, boost) {
@@ -404,6 +434,7 @@ function step(dt) {
   }
   const h = dt / SUBSTEPS;
   for (let s = 0; s < SUBSTEPS; s++) {
+    T += h;
     for (let i = 0; i < marbles.length; i++) {
       const m = marbles[i];
       m.vy += GRAV * h;
@@ -422,6 +453,31 @@ function step(dt) {
         if (pc.type === "ramp") collideSegment(m, pc.x1, pc.y1, pc.x2, pc.y2, 0.25, false);
         else if (pc.type === "peg") collideCircle(m, pc.x, pc.y, 7, 0.55, false);
         else if (pc.type === "switch") collideSwitch(m, pc);
+        else if (pc.type === "boost") {
+          if (collideSegment(m, pc.x1, pc.y1, pc.x2, pc.y2, 0.1, false)) {
+            let bx = pc.x2 - pc.x1, by = pc.y2 - pc.y1;
+            const bl = Math.hypot(bx, by) || 1;
+            bx /= bl; by /= bl;
+            const proj = m.vx * bx + m.vy * by;
+            if (proj < 420) { m.vx += bx * (420 - proj) * 0.3; m.vy += by * (420 - proj) * 0.3; }
+          }
+        } else if (pc.type === "spin") {
+          const a = spinAngle(pc), c = Math.cos(a), sn = Math.sin(a);
+          if (collideSegment(m, pc.x - c * SPIN_L, pc.y - sn * SPIN_L,
+                             pc.x + c * SPIN_L, pc.y + sn * SPIN_L, 0.5, false)) {
+            // add the bar's surface velocity so it whacks marbles around
+            const w = pc.dir * 2.4;
+            m.vx += -(m.y - pc.y) * w * 0.6;
+            m.vy += (m.x - pc.x) * w * 0.6;
+          }
+        } else if (pc.type === "mover") {
+          // collide in the platform's moving frame so it pushes and carries marbles
+          const mx = moverX(pc), pvx = moverVX(pc);
+          m.vx -= pvx;
+          const hit = collideSegment(m, mx - MOVER_HALF, pc.y, mx + MOVER_HALF, pc.y, 0.2, false);
+          m.vx += pvx;
+          if (hit) m.x += pvx * h;
+        }
         else collideCircle(m, pc.x, pc.y, 15, 0.9, true);
       }
 
@@ -477,6 +533,47 @@ function draw() {
     } else if (pc.type === "peg") {
       ctx.fillStyle = sel ? "#ffe08a" : "#b8c0ff";
       ctx.beginPath(); ctx.arc(pc.x, pc.y, 7, 0, 7); ctx.fill();
+    } else if (pc.type === "boost") {
+      ctx.strokeStyle = sel ? "#ffe08a" : "#ffd166";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(pc.x1, pc.y1); ctx.lineTo(pc.x2, pc.y2);
+      ctx.stroke();
+      const bl = Math.hypot(pc.x2 - pc.x1, pc.y2 - pc.y1) || 1;
+      const ux = (pc.x2 - pc.x1) / bl, uy = (pc.y2 - pc.y1) / bl;
+      ctx.fillStyle = "#7a5c00";
+      for (let d = 14; d < bl - 6; d += 22) {
+        const ax = pc.x1 + ux * d, ay = pc.y1 + uy * d;
+        ctx.beginPath();
+        ctx.moveTo(ax - ux * 4 - uy * 4, ay - uy * 4 + ux * 4);
+        ctx.lineTo(ax + ux * 5, ay + uy * 5);
+        ctx.lineTo(ax - ux * 4 + uy * 4, ay - uy * 4 - ux * 4);
+        ctx.closePath(); ctx.fill();
+      }
+    } else if (pc.type === "spin") {
+      const a = spinAngle(pc), c = Math.cos(a), sn = Math.sin(a);
+      ctx.strokeStyle = sel ? "#ffe08a" : "#e07bff";
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(pc.x - c * SPIN_L, pc.y - sn * SPIN_L);
+      ctx.lineTo(pc.x + c * SPIN_L, pc.y + sn * SPIN_L);
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.arc(pc.x, pc.y, 4, 0, 7); ctx.fill();
+    } else if (pc.type === "mover") {
+      const mx = moverX(pc);
+      ctx.strokeStyle = sel ? "#ffe08a" : "#2ec4b6";
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(mx - MOVER_HALF, pc.y); ctx.lineTo(mx + MOVER_HALF, pc.y);
+      ctx.stroke();
+      ctx.fillStyle = sel ? "#ffe08a" : "#2ec4b6";
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("◄ ►", mx, pc.y + 14);
     } else if (pc.type === "switch") {
       ctx.fillStyle = sel ? "#ffe08a" : "#4cc9f0";
       ctx.beginPath(); ctx.arc(pc.x, pc.y, SWITCH_R, 0, 7); ctx.fill();
@@ -496,7 +593,7 @@ function draw() {
 
   // ramp preview while drawing
   if (drawing) {
-    ctx.strokeStyle = "rgba(255,183,3,0.7)";
+    ctx.strokeStyle = drawing.kind === "boost" ? "rgba(255,209,102,0.8)" : "rgba(255,183,3,0.7)";
     ctx.lineWidth = 5;
     ctx.lineCap = "round";
     ctx.setLineDash([8, 6]);
@@ -553,12 +650,16 @@ function pickPiece(x, y) {
   if (Math.abs(x - spawner.x) < 28 && Math.abs(y - spawner.y) < 15) return spawner;
   for (let i = pieces.length - 1; i >= 0; i--) {
     const pc = pieces[i];
-    if (pc.type === "ramp") {
+    if (pc.type === "ramp" || pc.type === "boost") {
       const dx = pc.x2 - pc.x1, dy = pc.y2 - pc.y1;
       const len2 = dx * dx + dy * dy || 1;
       let t = ((x - pc.x1) * dx + (y - pc.y1) * dy) / len2;
       t = Math.max(0, Math.min(1, t));
       if (Math.hypot(x - (pc.x1 + dx * t), y - (pc.y1 + dy * t)) < 9) return pc;
+    } else if (pc.type === "spin") {
+      if (Math.hypot(x - pc.x, y - pc.y) < 18) return pc;
+    } else if (pc.type === "mover") {
+      if (Math.abs(x - moverX(pc)) < MOVER_HALF + 6 && Math.abs(y - pc.y) < 12) return pc;
     } else {
       const r = pc.type === "peg" ? 7 : pc.type === "switch" ? SWITCH_R : 15;
       if (Math.hypot(x - pc.x, y - pc.y) < r + 5) return pc;
@@ -571,14 +672,20 @@ cv.addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
   cv.setPointerCapture(ev.pointerId);
   const { x, y } = canvasPos(ev);
-  if (tool === "ramp") {
-    drawing = { x1: x, y1: y, x2: x, y2: y };
+  if (tool === "ramp" || tool === "boost") {
+    drawing = { x1: x, y1: y, x2: x, y2: y, kind: tool };
   } else if (tool === "peg") {
     pieces.push({ type: "peg", x, y });
   } else if (tool === "bumper") {
     pieces.push({ type: "bumper", x, y });
   } else if (tool === "switch") {
     pieces.push({ type: "switch", x, y, dir: 1 });
+  } else if (tool === "spin") {
+    pieces.push({ type: "spin", x, y, dir: 1 });
+  } else if (tool === "mover") {
+    pieces.push({ type: "mover", x, y });
+  } else if (tool === "stamp") {
+    stampAt(stampKind, x, y);
   } else if (tool === "erase") {
     const hit = pickPiece(x, y);
     if (hit && hit !== spawner) pieces.splice(pieces.indexOf(hit), 1);
@@ -588,7 +695,7 @@ cv.addEventListener("pointerdown", (ev) => {
     selected = hit;
     if (hit === spawner) {
       dragInfo = { piece: hit, mode: "spawner", ox: x - spawner.x, oy: y - spawner.y };
-    } else if (hit && hit.type === "ramp") {
+    } else if (hit && (hit.type === "ramp" || hit.type === "boost")) {
       let mode = "whole";
       if (Math.hypot(x - hit.x1, y - hit.y1) < 12) mode = "p1";
       else if (Math.hypot(x - hit.x2, y - hit.y2) < 12) mode = "p2";
@@ -621,12 +728,13 @@ cv.addEventListener("pointermove", (ev) => {
 cv.addEventListener("pointerup", () => {
   if (drawing) {
     if (Math.hypot(drawing.x2 - drawing.x1, drawing.y2 - drawing.y1) > 12) {
-      pieces.push({ type: "ramp", x1: drawing.x1, y1: drawing.y1, x2: drawing.x2, y2: drawing.y2 });
+      pieces.push({ type: drawing.kind, x1: drawing.x1, y1: drawing.y1, x2: drawing.x2, y2: drawing.y2 });
     }
     drawing = null;
   }
-  // a tap (no drag) on a switch dot in Move mode flips its direction
-  if (dragInfo && dragInfo.mode === "circle" && dragInfo.piece.type === "switch" &&
+  // a tap (no drag) on a switch dot or spinner in Move mode flips its direction
+  if (dragInfo && dragInfo.mode === "circle" &&
+      (dragInfo.piece.type === "switch" || dragInfo.piece.type === "spin") &&
       Math.hypot(dragInfo.piece.x - dragInfo.sx, dragInfo.piece.y - dragInfo.sy) < 3) {
     dragInfo.piece.dir = -dragInfo.piece.dir;
   }
@@ -642,12 +750,51 @@ window.addEventListener("keydown", (ev) => {
   }
 });
 
+// ---------- one-tap obstacle stamps ----------
+// [type, ...coords] relative to the click point
+const STAMPS = {
+  funnel:   [["ramp", -125, -70, -12, 0], ["ramp", 125, -70, 12, 0]],
+  zigzag:   [["ramp", -150, -55, 110, -20], ["ramp", 150, 20, -110, 55]],
+  dots:     [["switch", 0, -50, 1], ["switch", -80, 50, -1], ["switch", 80, 50, 1]],
+  pins:     [["peg", 0, -40], ["peg", -22, 0], ["peg", 22, 0],
+             ["peg", -44, 40], ["peg", 0, 40], ["peg", 44, 40]],
+  spingate: [["spin", 0, 0, 1], ["peg", -90, -5], ["peg", 90, -5]],
+  speed:    [["boost", -130, -35, 130, 35]],
+  bumpers:  [["bumper", -85, 25], ["bumper", 0, -25], ["bumper", 85, 25]],
+  shifty:   [["mover", 0, 0], ["peg", -95, -45], ["peg", 95, -45]]
+};
+let stampKind = "funnel";
+function stampAt(kind, x, y) {
+  for (const [t, ...v] of STAMPS[kind]) {
+    if (t === "ramp" || t === "boost")
+      pieces.push({ type: t, x1: x + v[0], y1: y + v[1], x2: x + v[2], y2: y + v[3] });
+    else if (t === "switch" || t === "spin")
+      pieces.push({ type: t, x: x + v[0], y: y + v[1], dir: v[2] });
+    else
+      pieces.push({ type: t, x: x + v[0], y: y + v[1] });
+  }
+}
+
 // ---------- toolbar ----------
-document.querySelectorAll("#toolbar .tool").forEach(btn => {
+const toolBtns = document.querySelectorAll("#toolbar .tool");
+const stampBtns = document.querySelectorAll("#stampBar .stamp");
+function highlight(active) {
+  toolBtns.forEach(b => b.classList.toggle("on", b === active));
+  stampBtns.forEach(b => b.classList.toggle("on", b === active));
+}
+toolBtns.forEach(btn => {
   btn.addEventListener("click", () => {
     tool = btn.dataset.tool;
     selected = null;
-    document.querySelectorAll("#toolbar .tool").forEach(b => b.classList.toggle("on", b === btn));
+    highlight(btn);
+  });
+});
+stampBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    tool = "stamp";
+    stampKind = btn.dataset.stamp;
+    selected = null;
+    highlight(btn);
   });
 });
 document.getElementById("add1").onclick = () => { spawnQueue += 1; };
@@ -687,13 +834,16 @@ function toast(msg) {
 // ---------- templates ----------
 const LS_KEY = "marbleRunTemplates.v1";
 
+const TYPE_TO_TAG = { peg: "p", bumper: "b", switch: "s", spin: "w", mover: "m" };
+const TAG_TO_TYPE = { p: "peg", b: "bumper", s: "switch", w: "spin", m: "mover" };
 function compactPieces(list) {
   return list.map(pc =>
-    pc.type === "ramp"
-      ? { t: "r", a: Math.round(pc.x1), b: Math.round(pc.y1), c: Math.round(pc.x2), d: Math.round(pc.y2) }
-    : pc.type === "switch"
-      ? { t: "s", a: Math.round(pc.x), b: Math.round(pc.y), d: pc.dir }
-      : { t: pc.type === "peg" ? "p" : "b", a: Math.round(pc.x), b: Math.round(pc.y) });
+    (pc.type === "ramp" || pc.type === "boost")
+      ? { t: pc.type === "ramp" ? "r" : "o",
+          a: Math.round(pc.x1), b: Math.round(pc.y1), c: Math.round(pc.x2), d: Math.round(pc.y2) }
+    : (pc.type === "switch" || pc.type === "spin")
+      ? { t: TYPE_TO_TAG[pc.type], a: Math.round(pc.x), b: Math.round(pc.y), d: pc.dir }
+      : { t: TYPE_TO_TAG[pc.type], a: Math.round(pc.x), b: Math.round(pc.y) });
 }
 function layoutData() {
   return {
@@ -709,10 +859,12 @@ function applyLayout(data) {
   spawner.y = num(data.spawner?.y, 26);
   pieces = data.pieces
     .map(p =>
-      p.t === "r" ? { type: "ramp", x1: num(p.a), y1: num(p.b), x2: num(p.c), y2: num(p.d) }
-    : p.t === "s" ? { type: "switch", x: num(p.a), y: num(p.b), dir: p.d === -1 ? -1 : 1 }
-                  : { type: p.t === "p" ? "peg" : "bumper", x: num(p.a), y: num(p.b) })
-    .filter(p => p.type === "ramp"
+      (p.t === "r" || p.t === "o")
+        ? { type: p.t === "r" ? "ramp" : "boost", x1: num(p.a), y1: num(p.b), x2: num(p.c), y2: num(p.d) }
+      : (p.t === "s" || p.t === "w")
+        ? { type: TAG_TO_TYPE[p.t], x: num(p.a), y: num(p.b), dir: p.d === -1 ? -1 : 1 }
+        : { type: TAG_TO_TYPE[p.t] || "peg", x: num(p.a), y: num(p.b) })
+    .filter(p => (p.type === "ramp" || p.type === "boost")
       ? [p.x1, p.y1, p.x2, p.y2].every(isFinite)
       : [p.x, p.y].every(isFinite));
   selected = null;
@@ -765,6 +917,21 @@ const PRESETS = {
       ps.push({ type: "ramp", x1: x, y1: 565, x2: x, y2: H - 4 });
     return { spawner: { x: W / 2, y: 26 }, pieces: ps };
   },
+  "Gadget Gauntlet": () => ({
+    spawner: { x: 120, y: 26 },
+    pieces: [
+      { type: "boost", x1: 40, y1: 110, x2: 420, y2: 190 },
+      { type: "spin", x: 540, y: 250, dir: 1 },
+      { type: "ramp", x1: 960, y1: 210, x2: 640, y2: 300 },
+      { type: "mover", x: 430, y: 350 },
+      { type: "switch", x: 250, y: 400, dir: 1 },
+      { type: "spin", x: 700, y: 430, dir: -1 },
+      { type: "boost", x1: 60, y1: 460, x2: 400, y2: 545 },
+      { type: "bumper", x: 550, y: 575 },
+      { type: "bumper", x: 770, y: 560 },
+      { type: "mover", x: 200, y: 590 }
+    ]
+  }),
   "Zigzag Falls": () => {
     const ps = [];
     let y = 110;
