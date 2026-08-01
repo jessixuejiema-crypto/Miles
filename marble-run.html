@@ -245,6 +245,7 @@
   <button class="tool" data-tool="spin" title="Spinning bar. Tap a placed spinner to spin it the other way">🌀 Spinner</button>
   <button class="tool" data-tool="mover" title="Platform that slides left and right">↔️ Mover</button>
   <button class="tool" data-tool="motion" title="Drag from any piece to draw a path it will patrol — up-down, left-right, or any squiggle. Tap a moving piece to freeze it">🛤️ Motion</button>
+  <button class="tool" data-tool="pan" title="Drag to look around a big canvas (or use the mini-map)">🖐 Pan</button>
   <button class="tool" data-tool="erase" title="Click a piece to remove it">🧽 Erase</button>
   <div class="sep"></div>
   <button id="add1">+1 marble</button>
@@ -257,6 +258,10 @@
   <label class="chk"><input type="checkbox" id="recycle" checked> ♻️ recycle at bottom</label>
   <button id="pauseBtn">⏸ Pause</button>
   <button id="clearTrack" class="warn">Clear track</button>
+  <div class="sep"></div>
+  <button id="wider" title="Make the canvas 500 wider">🗺 Wider</button>
+  <button id="taller" title="Make the canvas 400 taller">🗺 Taller</button>
+  <button id="worldReset" title="Back to the normal canvas size">Reset size</button>
 </div>
 
 <div class="bar" id="stampBar">
@@ -298,7 +303,12 @@
 "use strict";
 
 // ---------- world ----------
-const W = 1000, H = 620;
+const W = 1000, H = 620;              // viewport (canvas) size
+const MAX_W = 5000, MAX_H = 4000;
+let worldW = W, worldH = H;           // expandable world size
+let camX = 0, camY = 0;               // camera scroll
+const clampCamX = v => Math.max(0, Math.min(worldW - W, v));
+const clampCamY = v => Math.max(0, Math.min(worldH - H, v));
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
 const hud = document.getElementById("hud");
@@ -545,7 +555,7 @@ function step(dt) {
 
       // walls
       if (m.x < MARBLE_R) { m.x = MARBLE_R; if (m.vx < 0) m.vx *= -WALL_E; }
-      else if (m.x > W - MARBLE_R) { m.x = W - MARBLE_R; if (m.vx > 0) m.vx *= -WALL_E; }
+      else if (m.x > worldW - MARBLE_R) { m.x = worldW - MARBLE_R; if (m.vx > 0) m.vx *= -WALL_E; }
       if (m.y < -80) { m.y = -80; if (m.vy < 0) m.vy = 0; }
 
       // pieces
@@ -589,9 +599,9 @@ function step(dt) {
       }
 
       // bottom
-      if (m.y > H - MARBLE_R) {
+      if (m.y > worldH - MARBLE_R) {
         if (recycle) recycleMarble(m);
-        else { m.y = H - MARBLE_R; if (m.vy > 0) { m.vy *= -WALL_E; m.vx *= 0.94; } }
+        else { m.y = worldH - MARBLE_R; if (m.vy > 0) { m.vy *= -WALL_E; m.vx *= 0.94; } }
       }
     }
     if (collide) marbleVsMarble();
@@ -599,14 +609,29 @@ function step(dt) {
 }
 
 // ---------- drawing ----------
+function mapRect() {
+  if (worldW <= W && worldH <= H) return null;
+  const s = Math.min(150 / worldW, 100 / worldH);
+  return { x: W - worldW * s - 12, y: H - worldH * s - 12, w: worldW * s, h: worldH * s, s };
+}
+
 function draw() {
   ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(-camX, -camY);
 
-  // faint dot grid
+  // faint dot grid over the visible region
   ctx.fillStyle = "rgba(255,255,255,0.05)";
-  for (let x = 40; x < W; x += 40)
-    for (let y = 40; y < H; y += 40)
+  const gx0 = Math.max(40, Math.ceil(camX / 40) * 40);
+  const gy0 = Math.max(40, Math.ceil(camY / 40) * 40);
+  for (let x = gx0; x < Math.min(camX + W, worldW); x += 40)
+    for (let y = gy0; y < Math.min(camY + H, worldH); y += 40)
       ctx.fillRect(x, y, 2, 2);
+
+  // world edge
+  ctx.strokeStyle = "rgba(154,160,208,0.45)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, worldW - 2, worldH - 2);
 
   // spawner
   ctx.save();
@@ -760,10 +785,30 @@ function draw() {
     for (let i = 0; i < marbles.length; i++) {
       const m = marbles[i];
       if (m.hue - bucketHue >= 30 || m.hue < bucketHue) continue;
+      if (m.x < camX - 6 || m.x > camX + W + 6 || m.y < camY - 6 || m.y > camY + H + 6) continue;
       ctx.moveTo(m.x + MARBLE_R, m.y);
       ctx.arc(m.x, m.y, MARBLE_R, 0, TWO_PI);
     }
     ctx.fill();
+  }
+  ctx.restore();
+
+  // mini-map (only when the world is bigger than the view)
+  const mr = mapRect();
+  if (mr) {
+    ctx.fillStyle = "rgba(16,18,42,0.85)";
+    ctx.fillRect(mr.x, mr.y, mr.w, mr.h);
+    ctx.strokeStyle = "#383d6e";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(mr.x, mr.y, mr.w, mr.h);
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    const stp = Math.max(1, (marbles.length / 400) | 0);
+    for (let i = 0; i < marbles.length; i += stp)
+      ctx.fillRect(mr.x + marbles[i].x * mr.s, mr.y + marbles[i].y * mr.s, 1.5, 1.5);
+    ctx.fillStyle = "#ffb703";
+    ctx.fillRect(mr.x + spawner.x * mr.s - 2, mr.y + spawner.y * mr.s - 2, 4, 4);
+    ctx.strokeStyle = "#4cc9f0";
+    ctx.strokeRect(mr.x + camX * mr.s, mr.y + camY * mr.s, W * mr.s, H * mr.s);
   }
 }
 
@@ -777,7 +822,9 @@ function frame(now) {
   draw();
   hud.textContent =
     `marbles: ${marbles.length}${spawnQueue ? " (+" + spawnQueue + " incoming)" : ""}` +
-    ` · ${collide ? "touch: ON 💥" : "no-touch 👻"} · ${Math.round(fps)} fps`;
+    ` · ${collide ? "touch: ON 💥" : "no-touch 👻"}` +
+    (worldW > W || worldH > H ? ` · world ${worldW}×${worldH}` : "") +
+    ` · ${Math.round(fps)} fps`;
   requestAnimationFrame(frame);
 }
 
@@ -790,10 +837,17 @@ let motionRec = null;  // in-progress path recording {piece, sx, sy, pts}
 
 function canvasPos(ev) {
   const r = cv.getBoundingClientRect();
-  return {
-    x: (ev.clientX - r.left) * (W / r.width),
-    y: (ev.clientY - r.top) * (H / r.height)
-  };
+  const sx = (ev.clientX - r.left) * (W / r.width);
+  const sy = (ev.clientY - r.top) * (H / r.height);
+  return { x: sx + camX, y: sy + camY, sx, sy };
+}
+let panInfo = null;   // drag-to-pan state
+let mapDrag = false;  // dragging inside the mini-map
+function mapJump(sx, sy) {
+  const mr = mapRect();
+  if (!mr) return;
+  camX = clampCamX((sx - mr.x) / mr.s - W / 2);
+  camY = clampCamY((sy - mr.y) / mr.s - H / 2);
 }
 
 function pickPiece(px, py) {
@@ -823,7 +877,17 @@ function pickPiece(px, py) {
 cv.addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
   cv.setPointerCapture(ev.pointerId);
-  const { x, y } = canvasPos(ev);
+  const { x, y, sx, sy } = canvasPos(ev);
+  const mr = mapRect();
+  if (mr && sx >= mr.x && sx <= mr.x + mr.w && sy >= mr.y && sy <= mr.y + mr.h) {
+    mapDrag = true;
+    mapJump(sx, sy);
+    return;
+  }
+  if (tool === "pan") {
+    panInfo = { cx: camX, cy: camY, sx, sy };
+    return;
+  }
   if (tool === "ramp" || tool === "boost") {
     drawing = { x1: x, y1: y, x2: x, y2: y, kind: tool };
   } else if (tool === "peg") {
@@ -873,7 +937,13 @@ cv.addEventListener("pointerdown", (ev) => {
 });
 
 cv.addEventListener("pointermove", (ev) => {
-  const { x, y } = canvasPos(ev);
+  const { x, y, sx, sy } = canvasPos(ev);
+  if (mapDrag) { mapJump(sx, sy); return; }
+  if (panInfo) {
+    camX = clampCamX(panInfo.cx - (sx - panInfo.sx));
+    camY = clampCamY(panInfo.cy - (sy - panInfo.sy));
+    return;
+  }
   if (drawing) { drawing.x2 = x; drawing.y2 = y; return; }
   if (motionRec) {
     const last = motionRec.pts[motionRec.pts.length - 1];
@@ -885,8 +955,8 @@ cv.addEventListener("pointermove", (ev) => {
   if (!dragInfo) return;
   const p = dragInfo.piece;
   if (dragInfo.mode === "spawner") {
-    spawner.x = Math.max(30, Math.min(W - 30, x - dragInfo.ox));
-    spawner.y = Math.max(14, Math.min(H - 40, y - dragInfo.oy));
+    spawner.x = Math.max(30, Math.min(worldW - 30, x - dragInfo.ox));
+    spawner.y = Math.max(14, Math.min(worldH - 40, y - dragInfo.oy));
   } else if (dragInfo.mode === "circle") {
     p.x = x - dragInfo.ox; p.y = y - dragInfo.oy;
   } else if (dragInfo.mode === "p1") { p.x1 = x; p.y1 = y; }
@@ -899,6 +969,8 @@ cv.addEventListener("pointermove", (ev) => {
 });
 
 cv.addEventListener("pointerup", () => {
+  mapDrag = false;
+  panInfo = null;
   if (motionRec) {
     const pc = motionRec.piece;
     let L = 0;
@@ -1224,6 +1296,23 @@ collideBtn.onclick = () => {
   toast(collide ? "Marbles bump into each other 💥" : "Ghost marbles — no touching! 👻");
 };
 document.getElementById("recycle").onchange = (e) => { recycle = e.target.checked; };
+document.getElementById("wider").onclick = () => {
+  if (worldW >= MAX_W) { toast(`That's as wide as it goes (${MAX_W})! 🗺`); return; }
+  worldW = Math.min(worldW + 500, MAX_W);
+  toast(`Canvas is now ${worldW}×${worldH} — use 🖐 Pan or the mini-map to explore!`);
+};
+document.getElementById("taller").onclick = () => {
+  if (worldH >= MAX_H) { toast(`That's as tall as it goes (${MAX_H})! 🗺`); return; }
+  worldH = Math.min(worldH + 400, MAX_H);
+  toast(`Canvas is now ${worldW}×${worldH} — use 🖐 Pan or the mini-map to explore!`);
+};
+document.getElementById("worldReset").onclick = () => {
+  worldW = W; worldH = H;
+  camX = 0; camY = 0;
+  spawner.x = Math.min(spawner.x, worldW - 30);
+  spawner.y = Math.min(spawner.y, worldH - 40);
+  toast("Back to the normal canvas size");
+};
 const pauseBtn = document.getElementById("pauseBtn");
 pauseBtn.onclick = () => {
   paused = !paused;
@@ -1263,6 +1352,7 @@ function compactPieces(list) {
 function layoutData() {
   return {
     v: 1,
+    w: worldW, h: worldH,
     spawner: { x: Math.round(spawner.x), y: Math.round(spawner.y) },
     pieces: compactPieces(pieces)
   };
@@ -1291,6 +1381,9 @@ function decompactPieces(arr) {
 }
 function applyLayout(data) {
   if (!data || !Array.isArray(data.pieces)) return false;
+  worldW = Math.max(W, Math.min(MAX_W, numOr(data.w, W)));
+  worldH = Math.max(H, Math.min(MAX_H, numOr(data.h, H)));
+  camX = 0; camY = 0;
   spawner.x = numOr(data.spawner?.x, W / 2);
   spawner.y = numOr(data.spawner?.y, 26);
   pieces = decompactPieces(data.pieces);
