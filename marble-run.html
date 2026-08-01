@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marble Run!</title>
+<style>
+  :root {
+    --bg: #14162b;
+    --panel: #1e2140;
+    --panel-2: #262a52;
+    --border: #383d6e;
+    --text: #eef0ff;
+    --muted: #9aa0d0;
+    --accent: #ffb703;
+    --accent-2: #4cc9f0;
+    --good: #6ee7a0;
+    --danger: #ff5d73;
+    --shadow: rgba(0, 0, 0, 0.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 50% -100px, #232759, var(--bg));
+    color: var(--text);
+    font-family: "Comic Sans MS", "Chalkboard SE", "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+  }
+  h1 {
+    margin: 4px 0 8px;
+    font-size: 26px;
+    letter-spacing: 1px;
+    text-shadow: 0 2px 0 rgba(0,0,0,.35);
+  }
+  h1 .m1 { color: var(--accent); }
+  h1 .m2 { color: var(--accent-2); }
+  h1 .m3 { color: var(--good); }
+  h1 .m4 { color: var(--danger); }
+
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 8px;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 14px var(--shadow);
+    max-width: 1040px;
+  }
+  .bar .sep {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  button {
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: transform .06s ease, background .15s ease;
+  }
+  button:hover { background: #303566; }
+  button:active { transform: scale(0.95); }
+  button.tool.on {
+    background: var(--accent);
+    color: #23200a;
+    border-color: var(--accent);
+    font-weight: bold;
+  }
+  button.big {
+    background: var(--accent-2);
+    color: #06263a;
+    font-weight: bold;
+    border-color: var(--accent-2);
+  }
+  button.big:hover { filter: brightness(1.1); }
+  button.warn { color: var(--danger); border-color: #6e3844; }
+  #collideBtn.colliding {
+    background: var(--good);
+    color: #0a2c18;
+    border-color: var(--good);
+    font-weight: bold;
+  }
+  #collideBtn.ghost {
+    background: #6d5bd0;
+    color: #fff;
+    border-color: #8a7ae0;
+    font-weight: bold;
+  }
+  label.chk {
+    font-size: 13px;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+  #stage {
+    position: relative;
+    border: 3px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px var(--shadow);
+    touch-action: none;
+    max-width: 100%;
+  }
+  canvas { display: block; background: #10122a; max-width: 100%; height: auto; }
+  #hud {
+    position: absolute;
+    left: 8px;
+    top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(16, 18, 42, 0.7);
+    padding: 2px 8px;
+    border-radius: 8px;
+    pointer-events: none;
+  }
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: #23200a;
+    font-weight: bold;
+    padding: 8px 16px;
+    border-radius: 10px;
+    box-shadow: 0 6px 20px var(--shadow);
+    opacity: 0;
+    transition: opacity .25s ease;
+    pointer-events: none;
+    z-index: 50;
+  }
+  #toast.show { opacity: 1; }
+
+  #tplPanel {
+    width: 100%;
+    max-width: 1040px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px;
+    margin-top: 8px;
+    box-shadow: 0 4px 14px var(--shadow);
+  }
+  #tplPanel h2 { margin: 0 0 6px; font-size: 15px; color: var(--accent); }
+  .tplRow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .tplRow input[type=text] {
+    font-family: inherit;
+    font-size: 13px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 9px;
+    padding: 6px 10px;
+    width: 180px;
+  }
+  #tplList { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tplCard {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px 6px;
+    font-size: 13px;
+  }
+  .tplCard .name { padding: 0 4px; font-weight: bold; }
+  .tplCard .preset { color: var(--accent-2); }
+  .tplCard button { padding: 3px 7px; font-size: 12px; border-radius: 7px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1><span class="m1">●</span> Marble <span class="m2">●</span> Run<span class="m3">!</span> <span class="m4">●</span></h1>
+
+<div class="bar" id="toolbar">
+  <button class="tool" data-tool="select" title="Move pieces around">✋ Move</button>
+  <button class="tool on" data-tool="ramp" title="Drag to draw a ramp">📏 Ramp</button>
+  <button class="tool" data-tool="peg" title="Click to drop pegs">📍 Peg</button>
+  <button class="tool" data-tool="bumper" title="Bouncy! Marbles get a boost">🍄 Bumper</button>
+  <button class="tool" data-tool="erase" title="Click a piece to remove it">🧽 Erase</button>
+  <div class="sep"></div>
+  <button id="add1">+1 marble</button>
+  <button id="add100">+100</button>
+  <button id="add1000" class="big">+1000 marbles!</button>
+  <button id="clearMarbles" class="warn">Clear marbles</button>
+  <div class="sep"></div>
+  <button id="collideBtn" class="colliding">💥 Touch mode</button>
+  <label class="chk"><input type="checkbox" id="recycle" checked> ♻️ recycle at bottom</label>
+  <button id="pauseBtn">⏸ Pause</button>
+  <button id="clearTrack" class="warn">Clear track</button>
+</div>
+
+<div id="stage">
+  <canvas id="cv" width="1000" height="620"></canvas>
+  <div id="hud"></div>
+</div>
+
+<div id="tplPanel">
+  <h2>💾 Templates</h2>
+  <div class="tplRow">
+    <input type="text" id="tplName" placeholder="Name your track…" maxlength="30">
+    <button id="tplSave" class="big">Save template</button>
+    <button id="tplLink">🔗 Copy link to this track</button>
+  </div>
+  <div id="tplList"></div>
+  <div class="hint">
+    Saved templates stay in this browser. <b>🔗 Link</b> copies a shareable URL — anyone who opens it
+    gets your track loaded and ready. Blue ones are built-in starters.
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+
+// ---------- world ----------
+const W = 1000, H = 620;
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const hud = document.getElementById("hud");
+
+const MARBLE_R = 4.5;
+const MAX_MARBLES = 3000;
+const GRAV = 620;            // px/s^2
+const AIR = 0.999;
+const WALL_E = 0.45;
+const SUBSTEPS = 2;
+
+let pieces = [];             // ramps, pegs, bumpers
+let spawner = { x: W / 2, y: 26 };
+let marbles = [];
+let spawnQueue = 0;
+let collide = true;          // marble-vs-marble collisions
+let recycle = true;
+let paused = false;
+
+// ---------- marbles ----------
+let hueSeed = 0;
+function spawnMarble() {
+  if (marbles.length >= MAX_MARBLES) return;
+  hueSeed = (hueSeed + 47) % 360;
+  marbles.push({
+    x: spawner.x + (Math.random() - 0.5) * 26,
+    y: spawner.y + (Math.random() - 0.5) * 8,
+    vx: (Math.random() - 0.5) * 40,
+    vy: 0,
+    hue: hueSeed
+  });
+}
+function recycleMarble(m) {
+  m.x = spawner.x + (Math.random() - 0.5) * 26;
+  m.y = spawner.y + (Math.random() - 0.5) * 8;
+  m.vx = (Math.random() - 0.5) * 40;
+  m.vy = 0;
+}
+
+// ---------- physics ----------
+function collideSegment(m, x1, y1, x2, y2, e, boost) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-9) return;
+  let t = ((m.x - x1) * dx + (m.y - y1) * dy) / len2;
+  t = t < 0 ? 0 : (t > 1 ? 1 : t);
+  const cx = x1 + dx * t, cy = y1 + dy * t;
+  let nx = m.x - cx, ny = m.y - cy;
+  const d2 = nx * nx + ny * ny;
+  const rr = MARBLE_R + 2.5; // half track thickness
+  if (d2 >= rr * rr) return;
+  let d = Math.sqrt(d2);
+  if (d < 1e-6) { nx = -dy; ny = dx; d = Math.sqrt(len2); }
+  nx /= d; ny /= d;
+  const push = rr - Math.sqrt(Math.max(d2, 1e-12));
+  m.x += nx * push;
+  m.y += ny * push;
+  const vn = m.vx * nx + m.vy * ny;
+  if (vn < 0) {
+    m.vx -= (1 + e) * vn * nx;
+    m.vy -= (1 + e) * vn * ny;
+    // tangential friction so marbles roll, not skate
+    const tx = -ny, ty = nx;
+    const vt = m.vx * tx + m.vy * ty;
+    m.vx -= vt * 0.015 * tx;
+    m.vy -= vt * 0.015 * ty;
+  }
+  if (boost) {
+    const sp = Math.hypot(m.vx, m.vy);
+    const target = Math.max(sp * 1.15, 240);
+    m.vx += nx * (target - sp) * 0.9;
+    m.vy += ny * (target - sp) * 0.9;
+  }
+}
+
+function collideCircle(m, cx, cy, r, e, boost) {
+  let nx = m.x - cx, ny = m.y - cy;
+  const rr = r + MARBLE_R;
+  const d2 = nx * nx + ny * ny;
+  if (d2 >= rr * rr) return;
+  let d = Math.sqrt(d2);
+  if (d < 1e-6) { nx = 0; ny = -1; d = 1; }
+  nx /= d; ny /= d;
+  m.x += nx * (rr - d);
+  m.y += ny * (rr - d);
+  const vn = m.vx * nx + m.vy * ny;
+  if (vn < 0) {
+    m.vx -= (1 + e) * vn * nx;
+    m.vy -= (1 + e) * vn * ny;
+  }
+  if (boost) {
+    const sp = Math.hypot(m.vx, m.vy);
+    const target = Math.max(sp * 1.2, 260);
+    m.vx += nx * (target - sp);
+    m.vy += ny * (target - sp);
+  }
+}
+
+// spatial hash for marble-marble collisions
+const CELL = 12;
+const grid = new Map();
+function marbleVsMarble() {
+  grid.clear();
+  for (let i = 0; i < marbles.length; i++) {
+    const m = marbles[i];
+    const key = ((m.x / CELL) | 0) * 4096 + ((m.y / CELL) | 0);
+    const bucket = grid.get(key);
+    if (bucket) bucket.push(i); else grid.set(key, [i]);
+  }
+  const rr = MARBLE_R * 2, rr2 = rr * rr;
+  for (let i = 0; i < marbles.length; i++) {
+    const a = marbles[i];
+    const cx = (a.x / CELL) | 0, cy = (a.y / CELL) | 0;
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gy = cy - 1; gy <= cy + 1; gy++) {
+        const bucket = grid.get(gx * 4096 + gy);
+        if (!bucket) continue;
+        for (let k = 0; k < bucket.length; k++) {
+          const j = bucket[k];
+          if (j <= i) continue;
+          const b = marbles[j];
+          let dx = b.x - a.x, dy = b.y - a.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= rr2 || d2 < 1e-9) continue;
+          const d = Math.sqrt(d2);
+          dx /= d; dy /= d;
+          const push = (rr - d) * 0.5;
+          a.x -= dx * push; a.y -= dy * push;
+          b.x += dx * push; b.y += dy * push;
+          const rvn = (b.vx - a.vx) * dx + (b.vy - a.vy) * dy;
+          if (rvn < 0) {
+            const imp = -(1 + 0.25) * rvn * 0.5;
+            a.vx -= dx * imp; a.vy -= dy * imp;
+            b.vx += dx * imp; b.vy += dy * imp;
+          }
+        }
+      }
+    }
+  }
+}
+
+function step(dt) {
+  // stream queued marbles in gently so +1000 doesn't explode in one spot
+  if (spawnQueue > 0) {
+    const n = Math.min(spawnQueue, 25);
+    for (let i = 0; i < n; i++) spawnMarble();
+    spawnQueue -= n;
+  }
+  const h = dt / SUBSTEPS;
+  for (let s = 0; s < SUBSTEPS; s++) {
+    for (let i = 0; i < marbles.length; i++) {
+      const m = marbles[i];
+      m.vy += GRAV * h;
+      m.vx *= AIR; m.vy *= AIR;
+      m.x += m.vx * h;
+      m.y += m.vy * h;
+
+      // walls
+      if (m.x < MARBLE_R) { m.x = MARBLE_R; if (m.vx < 0) m.vx *= -WALL_E; }
+      else if (m.x > W - MARBLE_R) { m.x = W - MARBLE_R; if (m.vx > 0) m.vx *= -WALL_E; }
+      if (m.y < -80) { m.y = -80; if (m.vy < 0) m.vy = 0; }
+
+      // pieces
+      for (let p = 0; p < pieces.length; p++) {
+        const pc = pieces[p];
+        if (pc.type === "ramp") collideSegment(m, pc.x1, pc.y1, pc.x2, pc.y2, 0.25, false);
+        else if (pc.type === "peg") collideCircle(m, pc.x, pc.y, 7, 0.55, false);
+        else collideCircle(m, pc.x, pc.y, 15, 0.9, true);
+      }
+
+      // bottom
+      if (m.y > H - MARBLE_R) {
+        if (recycle) recycleMarble(m);
+        else { m.y = H - MARBLE_R; if (m.vy > 0) { m.vy *= -WALL_E; m.vx *= 0.94; } }
+      }
+    }
+    if (collide) marbleVsMarble();
+  }
+}
+
+// ---------- drawing ----------
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // faint dot grid
+  ctx.fillStyle = "rgba(255,255,255,0.05)";
+  for (let x = 40; x < W; x += 40)
+    for (let y = 40; y < H; y += 40)
+      ctx.fillRect(x, y, 2, 2);
+
+  // spawner
+  ctx.save();
+  ctx.translate(spawner.x, spawner.y);
+  ctx.fillStyle = selected === spawner ? "#ffe08a" : "#ffb703";
+  ctx.beginPath();
+  ctx.moveTo(-26, -12); ctx.lineTo(26, -12); ctx.lineTo(14, 8); ctx.lineTo(-14, 8);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#10122a";
+  ctx.font = "bold 11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("DROP", 0, 1);
+  ctx.restore();
+
+  // pieces
+  for (const pc of pieces) {
+    const sel = pc === selected;
+    if (pc.type === "ramp") {
+      ctx.strokeStyle = sel ? "#ffe08a" : "#8d99ae";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(pc.x1, pc.y1); ctx.lineTo(pc.x2, pc.y2);
+      ctx.stroke();
+      if (sel) {
+        ctx.fillStyle = "#ffe08a";
+        for (const [hx, hy] of [[pc.x1, pc.y1], [pc.x2, pc.y2]]) {
+          ctx.beginPath(); ctx.arc(hx, hy, 6, 0, 7); ctx.fill();
+        }
+      }
+    } else if (pc.type === "peg") {
+      ctx.fillStyle = sel ? "#ffe08a" : "#b8c0ff";
+      ctx.beginPath(); ctx.arc(pc.x, pc.y, 7, 0, 7); ctx.fill();
+    } else {
+      ctx.fillStyle = sel ? "#ffe08a" : "#ff5d73";
+      ctx.beginPath(); ctx.arc(pc.x, pc.y, 15, 0, 7); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.beginPath(); ctx.arc(pc.x, pc.y, 6, 0, 7); ctx.fill();
+    }
+  }
+
+  // ramp preview while drawing
+  if (drawing) {
+    ctx.strokeStyle = "rgba(255,183,3,0.7)";
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(drawing.x1, drawing.y1); ctx.lineTo(drawing.x2, drawing.y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // marbles — batch by hue bucket to cut fillStyle churn
+  const TWO_PI = Math.PI * 2;
+  for (let bucketHue = 0; bucketHue < 360; bucketHue += 30) {
+    ctx.fillStyle = `hsl(${bucketHue + 15}, 85%, 62%)`;
+    ctx.beginPath();
+    for (let i = 0; i < marbles.length; i++) {
+      const m = marbles[i];
+      if (m.hue - bucketHue >= 30 || m.hue < bucketHue) continue;
+      ctx.moveTo(m.x + MARBLE_R, m.y);
+      ctx.arc(m.x, m.y, MARBLE_R, 0, TWO_PI);
+    }
+    ctx.fill();
+  }
+}
+
+// ---------- main loop ----------
+let last = performance.now(), fps = 60;
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.033);
+  last = now;
+  fps = fps * 0.95 + (1 / Math.max(dt, 1e-4)) * 0.05;
+  if (!paused) step(dt);
+  draw();
+  hud.textContent =
+    `marbles: ${marbles.length}${spawnQueue ? " (+" + spawnQueue + " incoming)" : ""}` +
+    ` · ${collide ? "touch: ON 💥" : "no-touch 👻"} · ${Math.round(fps)} fps`;
+  requestAnimationFrame(frame);
+}
+
+// ---------- editor ----------
+let tool = "ramp";
+let selected = null;   // piece object, or spawner
+let drawing = null;    // in-progress ramp
+let dragInfo = null;   // {piece, mode, ox, oy}
+
+function canvasPos(ev) {
+  const r = cv.getBoundingClientRect();
+  return {
+    x: (ev.clientX - r.left) * (W / r.width),
+    y: (ev.clientY - r.top) * (H / r.height)
+  };
+}
+
+function pickPiece(x, y) {
+  if (Math.abs(x - spawner.x) < 28 && Math.abs(y - spawner.y) < 15) return spawner;
+  for (let i = pieces.length - 1; i >= 0; i--) {
+    const pc = pieces[i];
+    if (pc.type === "ramp") {
+      const dx = pc.x2 - pc.x1, dy = pc.y2 - pc.y1;
+      const len2 = dx * dx + dy * dy || 1;
+      let t = ((x - pc.x1) * dx + (y - pc.y1) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      if (Math.hypot(x - (pc.x1 + dx * t), y - (pc.y1 + dy * t)) < 9) return pc;
+    } else {
+      const r = pc.type === "peg" ? 7 : 15;
+      if (Math.hypot(x - pc.x, y - pc.y) < r + 5) return pc;
+    }
+  }
+  return null;
+}
+
+cv.addEventListener("pointerdown", (ev) => {
+  ev.preventDefault();
+  cv.setPointerCapture(ev.pointerId);
+  const { x, y } = canvasPos(ev);
+  if (tool === "ramp") {
+    drawing = { x1: x, y1: y, x2: x, y2: y };
+  } else if (tool === "peg") {
+    pieces.push({ type: "peg", x, y });
+  } else if (tool === "bumper") {
+    pieces.push({ type: "bumper", x, y });
+  } else if (tool === "erase") {
+    const hit = pickPiece(x, y);
+    if (hit && hit !== spawner) pieces.splice(pieces.indexOf(hit), 1);
+    if (selected === hit) selected = null;
+  } else { // select / move
+    const hit = pickPiece(x, y);
+    selected = hit;
+    if (hit === spawner) {
+      dragInfo = { piece: hit, mode: "spawner", ox: x - spawner.x, oy: y - spawner.y };
+    } else if (hit && hit.type === "ramp") {
+      let mode = "whole";
+      if (Math.hypot(x - hit.x1, y - hit.y1) < 12) mode = "p1";
+      else if (Math.hypot(x - hit.x2, y - hit.y2) < 12) mode = "p2";
+      dragInfo = { piece: hit, mode, ox: x, oy: y };
+    } else if (hit) {
+      dragInfo = { piece: hit, mode: "circle", ox: x - hit.x, oy: y - hit.y };
+    }
+  }
+});
+
+cv.addEventListener("pointermove", (ev) => {
+  const { x, y } = canvasPos(ev);
+  if (drawing) { drawing.x2 = x; drawing.y2 = y; return; }
+  if (!dragInfo) return;
+  const p = dragInfo.piece;
+  if (dragInfo.mode === "spawner") {
+    spawner.x = Math.max(30, Math.min(W - 30, x - dragInfo.ox));
+    spawner.y = Math.max(14, Math.min(H - 40, y - dragInfo.oy));
+  } else if (dragInfo.mode === "circle") {
+    p.x = x - dragInfo.ox; p.y = y - dragInfo.oy;
+  } else if (dragInfo.mode === "p1") { p.x1 = x; p.y1 = y; }
+  else if (dragInfo.mode === "p2") { p.x2 = x; p.y2 = y; }
+  else if (dragInfo.mode === "whole") {
+    const dx = x - dragInfo.ox, dy = y - dragInfo.oy;
+    p.x1 += dx; p.y1 += dy; p.x2 += dx; p.y2 += dy;
+    dragInfo.ox = x; dragInfo.oy = y;
+  }
+});
+
+cv.addEventListener("pointerup", () => {
+  if (drawing) {
+    if (Math.hypot(drawing.x2 - drawing.x1, drawing.y2 - drawing.y1) > 12) {
+      pieces.push({ type: "ramp", x1: drawing.x1, y1: drawing.y1, x2: drawing.x2, y2: drawing.y2 });
+    }
+    drawing = null;
+  }
+  dragInfo = null;
+});
+
+window.addEventListener("keydown", (ev) => {
+  if ((ev.key === "Delete" || ev.key === "Backspace") && selected && selected !== spawner &&
+      document.activeElement.tagName !== "INPUT") {
+    pieces.splice(pieces.indexOf(selected), 1);
+    selected = null;
+    ev.preventDefault();
+  }
+});
+
+// ---------- toolbar ----------
+document.querySelectorAll("#toolbar .tool").forEach(btn => {
+  btn.addEventListener("click", () => {
+    tool = btn.dataset.tool;
+    selected = null;
+    document.querySelectorAll("#toolbar .tool").forEach(b => b.classList.toggle("on", b === btn));
+  });
+});
+document.getElementById("add1").onclick = () => { spawnQueue += 1; };
+document.getElementById("add100").onclick = () => { spawnQueue += 100; };
+document.getElementById("add1000").onclick = () => {
+  spawnQueue += 1000;
+  toast("1000 marbles on the way! 🎉");
+};
+document.getElementById("clearMarbles").onclick = () => { marbles = []; spawnQueue = 0; };
+document.getElementById("clearTrack").onclick = () => { pieces = []; selected = null; };
+
+const collideBtn = document.getElementById("collideBtn");
+collideBtn.onclick = () => {
+  collide = !collide;
+  collideBtn.textContent = collide ? "💥 Touch mode" : "👻 No-touch mode";
+  collideBtn.classList.toggle("colliding", collide);
+  collideBtn.classList.toggle("ghost", !collide);
+  toast(collide ? "Marbles bump into each other 💥" : "Ghost marbles — no touching! 👻");
+};
+document.getElementById("recycle").onchange = (e) => { recycle = e.target.checked; };
+const pauseBtn = document.getElementById("pauseBtn");
+pauseBtn.onclick = () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? "▶ Play" : "⏸ Pause";
+};
+
+// ---------- toast ----------
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+// ---------- templates ----------
+const LS_KEY = "marbleRunTemplates.v1";
+
+function compactPieces(list) {
+  return list.map(pc => pc.type === "ramp"
+    ? { t: "r", a: Math.round(pc.x1), b: Math.round(pc.y1), c: Math.round(pc.x2), d: Math.round(pc.y2) }
+    : { t: pc.type === "peg" ? "p" : "b", a: Math.round(pc.x), b: Math.round(pc.y) });
+}
+function layoutData() {
+  return {
+    v: 1,
+    spawner: { x: Math.round(spawner.x), y: Math.round(spawner.y) },
+    pieces: compactPieces(pieces)
+  };
+}
+function applyLayout(data) {
+  if (!data || !Array.isArray(data.pieces)) return false;
+  const num = (v, fb) => (typeof v === "number" && isFinite(v)) ? v : fb;
+  spawner.x = num(data.spawner?.x, W / 2);
+  spawner.y = num(data.spawner?.y, 26);
+  pieces = data.pieces
+    .map(p =>
+      p.t === "r" ? { type: "ramp", x1: num(p.a), y1: num(p.b), x2: num(p.c), y2: num(p.d) }
+                  : { type: p.t === "p" ? "peg" : "bumper", x: num(p.a), y: num(p.b) })
+    .filter(p => p.type === "ramp"
+      ? [p.x1, p.y1, p.x2, p.y2].every(isFinite)
+      : [p.x, p.y].every(isFinite));
+  selected = null;
+  return true;
+}
+
+function encodeLayout(data) {
+  return btoa(unescape(encodeURIComponent(JSON.stringify(data))))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function decodeLayout(str) {
+  try {
+    const b64 = str.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(decodeURIComponent(escape(atob(b64))));
+  } catch { return null; }
+}
+
+function loadStore() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveStore(store) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
+  catch { toast("Couldn't save — storage is full 😢"); }
+}
+
+// built-in starter templates
+const PRESETS = {
+  "Zigzag Falls": () => {
+    const ps = [];
+    let y = 110;
+    for (let i = 0; i < 5; i++) {
+      if (i % 2 === 0) ps.push({ type: "ramp", x1: 60, y1: y, x2: 780, y2: y + 60 });
+      else ps.push({ type: "ramp", x1: 940, y1: y, x2: 220, y2: y + 60 });
+      y += 100;
+    }
+    return { spawner: { x: 120, y: 26 }, pieces: ps };
+  },
+  "Peg Party": () => {
+    const ps = [];
+    for (let row = 0; row < 9; row++) {
+      const off = row % 2 ? 30 : 0;
+      for (let x = 120 + off; x <= 880; x += 60)
+        ps.push({ type: "peg", x, y: 110 + row * 44 });
+    }
+    for (let x = 100; x <= 900; x += 80)
+      ps.push({ type: "ramp", x1: x, y1: 530, x2: x, y2: H - 4 });
+    return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+  },
+  "Funnel Frenzy": () => {
+    const ps = [
+      { type: "ramp", x1: 40, y1: 90, x2: 460, y2: 260 },
+      { type: "ramp", x1: 960, y1: 90, x2: 540, y2: 260 },
+      { type: "ramp", x1: 460, y1: 260, x2: 460, y2: 320 },
+      { type: "ramp", x1: 540, y1: 260, x2: 540, y2: 320 },
+      { type: "bumper", x: 500, y: 420 },
+      { type: "bumper", x: 360, y: 500 },
+      { type: "bumper", x: 640, y: 500 },
+      { type: "ramp", x1: 60, y1: 380, x2: 300, y2: 560 },
+      { type: "ramp", x1: 940, y1: 380, x2: 700, y2: 560 }
+    ];
+    return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+  }
+};
+
+function templateURL(data) {
+  return location.origin + location.pathname + "#t=" + encodeLayout(data);
+}
+async function copyLink(data, name) {
+  const url = templateURL(data);
+  try {
+    await navigator.clipboard.writeText(url);
+    toast(`Link for “${name}” copied! 🔗`);
+  } catch {
+    window.prompt("Copy this link:", url);
+  }
+}
+
+function renderTplList() {
+  const list = document.getElementById("tplList");
+  list.innerHTML = "";
+  const addCard = (name, data, preset) => {
+    const card = document.createElement("div");
+    card.className = "tplCard";
+    const label = document.createElement("span");
+    label.className = "name" + (preset ? " preset" : "");
+    label.textContent = (preset ? "★ " : "") + name;
+    card.appendChild(label);
+    const loadBtn = document.createElement("button");
+    loadBtn.textContent = "Load";
+    loadBtn.onclick = () => {
+      applyLayout({ v: 1, ...data });
+      toast(`Loaded “${name}” 🛠`);
+    };
+    card.appendChild(loadBtn);
+    const linkBtn = document.createElement("button");
+    linkBtn.textContent = "🔗";
+    linkBtn.title = "Copy shareable link";
+    linkBtn.onclick = () => copyLink({ v: 1, ...data }, name);
+    card.appendChild(linkBtn);
+    if (!preset) {
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "✕";
+      delBtn.className = "warn";
+      delBtn.title = "Delete template";
+      delBtn.onclick = () => {
+        const store = loadStore();
+        delete store[name];
+        saveStore(store);
+        renderTplList();
+      };
+      card.appendChild(delBtn);
+    }
+    list.appendChild(card);
+  };
+  for (const [name, make] of Object.entries(PRESETS)) {
+    const d = make();
+    addCard(name, { spawner: d.spawner, pieces: compactPieces(d.pieces) }, true);
+  }
+  const store = loadStore();
+  for (const name of Object.keys(store).sort()) addCard(name, store[name], false);
+}
+
+document.getElementById("tplSave").onclick = () => {
+  const nameInput = document.getElementById("tplName");
+  const name = nameInput.value.trim() || "My track " + new Date().toLocaleTimeString();
+  const store = loadStore();
+  store[name] = layoutData();
+  saveStore(store);
+  nameInput.value = "";
+  renderTplList();
+  toast(`Saved “${name}” 💾`);
+};
+document.getElementById("tplLink").onclick = () => copyLink(layoutData(), "this track");
+
+// load from a shared link
+function tryLoadFromHash() {
+  const m = location.hash.match(/#t=([A-Za-z0-9_-]+)/);
+  if (!m) return false;
+  const data = decodeLayout(m[1]);
+  if (data && applyLayout(data)) {
+    toast("Loaded a shared track! 🔗✨");
+    return true;
+  }
+  return false;
+}
+window.addEventListener("hashchange", tryLoadFromHash);
+
+// ---------- boot ----------
+renderTplList();
+if (!tryLoadFromHash()) {
+  const d = PRESETS["Zigzag Falls"]();
+  applyLayout({ v: 1, spawner: d.spawner, pieces: compactPieces(d.pieces) });
+}
+spawnQueue = 200;
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
