@@ -263,22 +263,76 @@ function computeSequence(n) {
   return { seq, first };
 }
 
-// Shared deep-search state, extended on demand so repeated lookups reuse work.
-const DEEP_CAP = 2_000_000;
-const deep = { first: new Map([[0, 0]]), cur: 0, n: 0 };
+// Background search for numbers beyond the drawn range: simulate from scratch
+// with a growable bitset (memory-lean, so it can run for hundreds of millions
+// of steps), chunked through setTimeout so the page stays responsive.
+const answers = new Map([[0, 0]]);   // resolved lookups: value -> first-visit step
+let search = null;
 
-function deepFirstVisit(v) {
-  if (deep.first.has(v)) return deep.first.get(v);
-  while (deep.n < DEEP_CAP) {
-    const i = ++deep.n;
-    const back = deep.cur - i;
-    deep.cur = (back > 0 && !deep.first.has(back)) ? back : deep.cur + i;
-    if (!deep.first.has(deep.cur)) {
-      deep.first.set(deep.cur, i);
-      if (deep.cur === v) return i;
+function cancelSearch() {
+  if (search) { search.active = false; clearTimeout(search.timer); search = null; }
+}
+
+function bitGet(s, x) { return (s.bits[x >> 3] >> (x & 7)) & 1; }
+function bitSet(s, x) {
+  const idx = x >> 3;
+  if (idx >= s.bits.length) {
+    let len = s.bits.length;
+    while (idx >= len) len *= 2;
+    const nb = new Uint8Array(len);
+    nb.set(s.bits);
+    s.bits = nb;
+  }
+  s.bits[idx] |= 1 << (x & 7);
+}
+
+function runSearchChunk() {
+  if (!search || !search.active) return;
+  const s = search;
+  let { n, cur } = s;
+  let found = -1;
+  for (let k = 0; k < 2_000_000; k++) {
+    const i = ++n;
+    const back = cur - i;
+    cur = (back > 0 && !bitGet(s, back)) ? back : cur + i;
+    if (!bitGet(s, cur)) {
+      bitSet(s, cur);
+      if (cur === s.v) { found = i; break; }
     }
   }
-  return null;
+  s.n = n;
+  s.cur = cur;
+  if (found >= 0) {
+    const v = s.v;
+    answers.set(v, found);
+    cancelSearch();
+    if (selected === v) renderResult(v, found);
+    return;
+  }
+  const el = document.getElementById('searchN');
+  if (el) el.textContent = n.toLocaleString();
+  if (n >= 100_000_000) {
+    const note = document.getElementById('searchNote');
+    if (note) note.textContent = '— this one may take astronomically long, or never appear';
+  }
+  s.timer = setTimeout(runSearchChunk, 0);
+}
+
+function startSearch(v) {
+  readout.innerHTML = `<span class="big">${v.toLocaleString()}</span>
+    <span class="detail">searching… checked <strong id="searchN">0</strong> steps so far</span>
+    <span class="hint" id="searchNote"></span>
+    <button id="stopSearchBtn">Stop</button>`;
+  document.getElementById('stopSearchBtn').addEventListener('click', () => {
+    const n = search ? search.n : 0;
+    cancelSearch();
+    readout.innerHTML = `<span class="big">${v.toLocaleString()}</span>
+      <span class="detail">search stopped — <strong>not visited</strong> within the first
+      ${n.toLocaleString()} steps.</span>`;
+  });
+  search = { v, n: 0, cur: 0, bits: new Uint8Array(1 << 17), active: true, timer: 0 };
+  bitSet(search, 0);
+  runSearchChunk();
 }
 
 /* ---------- state ---------- */
@@ -457,23 +511,8 @@ function render() {
 
 /* ---------- selection & readout ---------- */
 
-function describeSelection(v) {
-  if (v < 0) {
-    readout.innerHTML = `<span class="big">${v}</span>
-      <span class="detail">is <strong>never</strong> visited — Recamán’s sequence stays at 0 or above.</span>`;
-    return;
-  }
-  let steps = first.get(v);
-  let beyondView = false;
-  if (steps === undefined) {
-    steps = deepFirstVisit(v);
-    beyondView = steps !== null;
-  }
-  if (steps === null || steps === undefined) {
-    readout.innerHTML = `<span class="big">${v.toLocaleString()}</span>
-      <span class="detail">is <strong>not visited</strong> within the first
-      ${DEEP_CAP.toLocaleString()} steps — it may take astronomically long, or never appear.</span>`;
-  } else if (beyondView) {
+function renderResult(v, steps) {
+  if (steps > termCount) {
     const canShow = steps <= 5000;
     readout.innerHTML = `<span class="big">${v.toLocaleString()}</span>
       <span class="detail">is first reached after <strong>${steps.toLocaleString()}</strong> steps
@@ -490,6 +529,19 @@ function describeSelection(v) {
       <span class="detail">is first reached after <strong>${steps.toLocaleString()}</strong>
       step${steps === 1 ? '' : 's'} &nbsp;·&nbsp; a(${steps.toLocaleString()}) = ${v.toLocaleString()}</span>`;
   }
+  requestRender();
+}
+
+function describeSelection(v) {
+  cancelSearch();
+  if (v < 0) {
+    readout.innerHTML = `<span class="big">${v}</span>
+      <span class="detail">is <strong>never</strong> visited — Recamán’s sequence stays at 0 or above.</span>`;
+    return;
+  }
+  const steps = first.has(v) ? first.get(v) : answers.get(v);
+  if (steps !== undefined) renderResult(v, steps);
+  else startSearch(v);
 }
 
 function select(v) {
@@ -537,6 +589,9 @@ document.getElementById('animateBtn').addEventListener('click', function () {
   if (anim.on) {
     anim.progress = 0;
     anim.last = performance.now();
+    anim.maxShown = 1;
+    anim.tracked = 0;
+    anim.userView = false;
     this.textContent = '⏸ Stop';
     tickAnim();
   } else {
@@ -545,15 +600,58 @@ document.getElementById('animateBtn').addEventListener('click', function () {
   }
 });
 
+// Once the animation catches up with the drawn range, grow the sequence in
+// place so it never has to stop.
+const ANIM_MAX = 50_000;
+
+function extendTo(n) {
+  let cur = seq[termCount];
+  for (let i = termCount + 1; i <= n; i++) {
+    const back = cur - i;
+    cur = (back > 0 && !first.has(back)) ? back : cur + i;
+    seq[i] = cur;
+    if (!first.has(cur)) first.set(cur, i);
+  }
+  termCount = n;
+  document.getElementById('terms').value = Math.min(n, 5000);
+  document.getElementById('termsVal').textContent = n.toLocaleString();
+  document.getElementById('legendEnd').textContent = 'step ' + n.toLocaleString();
+}
+
 function tickAnim() {
   if (!anim.on) return;
   const now = performance.now();
-  anim.progress += (now - anim.last) / 1000 * Math.max(termCount / 8, 4);
+  const rate = Math.min(Math.max(anim.progress / 4, 8), 400);
+  anim.progress += (now - anim.last) / 1000 * rate;
   anim.last = now;
-  if (anim.progress >= termCount) {
+
+  const needed = Math.ceil(anim.progress) + 1;
+  if (needed > termCount && termCount < ANIM_MAX) {
+    const prev = termCount;
+    extendTo(Math.min(Math.max(needed, termCount + 64), ANIM_MAX));
+    if (selected !== null && !search) {
+      const st = first.get(selected);
+      if (st !== undefined && st > prev && st <= termCount) renderResult(selected, st);
+    }
+  }
+  if (anim.progress >= ANIM_MAX) {
     anim.on = false;
     document.getElementById('animateBtn').textContent = '▶ Animate';
   }
+
+  // keep the growing figure in frame unless the user has taken over the view
+  const whole = Math.min(Math.floor(anim.progress) + 1, termCount);
+  for (let i = anim.tracked + 1; i <= whole; i++) {
+    if (seq[i] > anim.maxShown) anim.maxShown = seq[i];
+  }
+  anim.tracked = whole;
+  if (!anim.userView) {
+    const w = canvas.clientWidth;
+    const target = (w * 0.92) / (anim.maxShown + 4);
+    view.scale += (target - view.scale) * 0.08;
+    view.offset = -2 - (w * 0.04) / view.scale;
+  }
+
   render();
   if (anim.on) requestAnimationFrame(tickAnim);
 }
@@ -589,6 +687,7 @@ canvas.addEventListener('pointermove', e => {
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y);
     if (pinchDist > 0 && d > 0) {
+      if (anim.on) anim.userView = true;
       const mid = (a.x + b.x) / 2;
       zoomAt(mid, d / pinchDist);
       pinchDist = d;
@@ -600,6 +699,7 @@ canvas.addEventListener('pointermove', e => {
     const dx = e.offsetX - dragStart.x;
     if (Math.abs(dx) > 4) dragStart.moved = true;
     if (dragStart.moved) {
+      if (anim.on) anim.userView = true;
       view.offset = dragStart.offset - dx / view.scale;
       canvas.classList.add('panning');
       tooltip.style.display = 'none';
@@ -615,7 +715,7 @@ canvas.addEventListener('pointermove', e => {
     requestRender();
   }
   if (x >= 0) {
-    const steps = first.get(x);
+    const steps = first.has(x) ? first.get(x) : answers.get(x);
     tooltip.innerHTML = `<strong>${x.toLocaleString()}</strong> <span class="sub">${
       steps !== undefined
         ? '· step ' + steps.toLocaleString()
@@ -663,6 +763,7 @@ function zoomAt(sx, factor) {
 
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
+  if (anim.on) anim.userView = true;
   zoomAt(e.offsetX, Math.exp(-e.deltaY * 0.0015));
 }, { passive: false });
 
