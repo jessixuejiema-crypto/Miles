@@ -160,6 +160,8 @@
     gap: 4px;
     cursor: pointer;
   }
+  input[type=range] { accent-color: var(--accent); width: 90px; cursor: pointer; }
+  #gravVal { color: var(--accent); font-weight: bold; min-width: 34px; }
   #stage {
     position: relative;
     border: 3px solid var(--border);
@@ -265,6 +267,10 @@
   <button id="sfxBtn" class="toggled" title="Pop sounds when marbles recycle">🔊 Pops: on</button>
   <button id="collideBtn" class="colliding">💥 Touch mode</button>
   <label class="chk"><input type="checkbox" id="recycle" checked> ♻️ recycle at bottom</label>
+  <label class="chk" title="Slide left for moon-hops, right for heavy drops">🌍 gravity
+    <input type="range" id="gravSlider" min="10" max="250" value="100">
+    <span id="gravVal">1.0×</span>
+  </label>
   <button id="pauseBtn">⏸ Pause</button>
   <button id="clearTrack" class="warn">Clear track</button>
   <div class="sep"></div>
@@ -324,7 +330,9 @@ const hud = document.getElementById("hud");
 
 const MARBLE_R = 4.5;
 const MAX_MARBLES = 10000;
-const GRAV = 620;            // px/s^2
+const GRAV_BASE = 620;       // px/s^2 at 1.0x
+let GRAV = GRAV_BASE;        // set by the gravity slider
+const MAX_SPEED = 1400;
 const AIR = 0.999;
 const WALL_E = 0.45;
 const SUBSTEPS = 2;
@@ -416,9 +424,10 @@ let hueSeed = 0;
 function spawnMarble() {
   if (marbles.length >= MAX_MARBLES) return;
   hueSeed = (hueSeed + 47) % 360;
+  const sx = spawner.x + (Math.random() - 0.5) * 26;
+  const sy = spawner.y + (Math.random() - 0.5) * 8;
   marbles.push({
-    x: spawner.x + (Math.random() - 0.5) * 26,
-    y: spawner.y + (Math.random() - 0.5) * 8,
+    x: sx, y: sy, px: sx, py: sy,
     vx: (Math.random() - 0.5) * 40,
     vy: 0,
     hue: hueSeed
@@ -427,6 +436,7 @@ function spawnMarble() {
 function recycleMarble(m) {
   m.x = spawner.x + (Math.random() - 0.5) * 26;
   m.y = spawner.y + (Math.random() - 0.5) * 8;
+  m.px = m.x; m.py = m.y; // fresh prev-position so the teleport isn't seen as a fast move
   m.vx = (Math.random() - 0.5) * 40;
   m.vy = 0;
   pop();
@@ -469,7 +479,7 @@ function pathOffset(pc) {
   return ZERO4;
 }
 
-function collideSegment(m, x1, y1, x2, y2, e, boost) {
+function collideSegment(m, x1, y1, x2, y2, e, boost, px, py) {
   const dx = x2 - x1, dy = y2 - y1;
   const len2 = dx * dx + dy * dy;
   if (len2 < 1e-9) return false;
@@ -479,7 +489,49 @@ function collideSegment(m, x1, y1, x2, y2, e, boost) {
   let nx = m.x - cx, ny = m.y - cy;
   const d2 = nx * nx + ny * ny;
   const rr = MARBLE_R + 2.5; // half track thickness
-  if (d2 >= rr * rr) return false;
+  if (d2 >= rr * rr) {
+    // not overlapping now — but did a fast marble jump clean through this substep?
+    if (px === undefined) return false;
+    const invL = 1 / Math.sqrt(len2);
+    const nxL = -dy * invL, nyL = dx * invL;
+    const dPrev = (px - x1) * nxL + (py - y1) * nyL;
+    const dNow = (m.x - x1) * nxL + (m.y - y1) * nyL;
+    if (dPrev * dNow >= 0 || Math.abs(dPrev) > 60) return false;
+    const s = dPrev / (dPrev - dNow);
+    const hx = px + (m.x - px) * s, hy = py + (m.y - py) * s;
+    const tc = ((hx - x1) * dx + (hy - y1) * dy) / len2;
+    if (tc < 0 || tc > 1) return false;
+    const side = dPrev > 0 ? 1 : -1;
+    const snx = nxL * side, sny = nyL * side;
+    m.x = hx + snx * rr;
+    m.y = hy + sny * rr;
+    const svn = m.vx * snx + m.vy * sny;
+    if (svn < 0) {
+      m.vx -= (1 + e) * svn * snx;
+      m.vy -= (1 + e) * svn * sny;
+    }
+    return true;
+  }
+  // overlapping — but if the crowd shoved us across the centerline this substep,
+  // resolve back to the side we came from instead of ejecting out the far side
+  if (px !== undefined) {
+    const invL = 1 / Math.sqrt(len2);
+    const nxL = -dy * invL, nyL = dx * invL;
+    const dPrev = (px - x1) * nxL + (py - y1) * nyL;
+    const dNow = (m.x - x1) * nxL + (m.y - y1) * nyL;
+    if (dPrev * dNow < 0 && Math.abs(dPrev) <= 60) {
+      const side = dPrev > 0 ? 1 : -1;
+      const snx = nxL * side, sny = nyL * side;
+      m.x = cx + snx * rr;
+      m.y = cy + sny * rr;
+      const svn = m.vx * snx + m.vy * sny;
+      if (svn < 0) {
+        m.vx -= (1 + e) * svn * snx;
+        m.vy -= (1 + e) * svn * sny;
+      }
+      return true;
+    }
+  }
   let d = Math.sqrt(d2);
   if (d < 1e-6) { nx = -dy; ny = dx; d = Math.sqrt(len2); }
   nx /= d; ny /= d;
@@ -576,7 +628,7 @@ function marbleVsMarble() {
           if (d2 >= rr2 || d2 < 1e-9) continue;
           const d = Math.sqrt(d2);
           dx /= d; dy /= d;
-          const push = (rr - d) * 0.5;
+          const push = Math.min((rr - d) * 0.5, 3); // capped so piles can't ram marbles through walls
           a.x -= dx * push; a.y -= dy * push;
           b.x += dx * push; b.y += dy * push;
           const rvn = (b.vx - a.vx) * dx + (b.vy - a.vy) * dy;
@@ -637,6 +689,12 @@ function step(dt) {
       const m = marbles[i];
       m.vy += GRAV * h;
       m.vx *= AIR; m.vy *= AIR;
+      const sp2 = m.vx * m.vx + m.vy * m.vy;
+      if (sp2 > MAX_SPEED * MAX_SPEED) {
+        const k = MAX_SPEED / Math.sqrt(sp2);
+        m.vx *= k; m.vy *= k;
+      }
+      m.px = m.x; m.py = m.y;
       m.x += m.vx * h;
       m.y += m.vy * h;
 
@@ -644,20 +702,31 @@ function step(dt) {
       if (m.x < MARBLE_R) { m.x = MARBLE_R; if (m.vx < 0) m.vx *= -WALL_E; }
       else if (m.x > worldW - MARBLE_R) { m.x = worldW - MARBLE_R; if (m.vx > 0) m.vx *= -WALL_E; }
       if (m.y < -80) { m.y = -80; if (m.vy < 0) m.vy = 0; }
+    }
 
+    // marble-vs-marble BEFORE pieces: any marble squeezed through a ramp by the
+    // crowd still has its pre-squeeze position, so the swept check can rescue it
+    if (collide) marbleVsMarble();
+
+    for (let i = 0; i < marbles.length; i++) {
+      const m = marbles[i];
       // pieces
       for (let p = 0; p < pieces.length; p++) {
         const bb = bounds[p];
-        if (m.x < bb[0] || m.x > bb[1] || m.y < bb[2] || m.y > bb[3]) continue;
+        if ((m.x < bb[0] && m.px < bb[0]) || (m.x > bb[1] && m.px > bb[1]) ||
+            (m.y < bb[2] && m.py < bb[2]) || (m.y > bb[3] && m.py > bb[3])) continue;
         const pc = pieces[p];
         // collide in the patrolling piece's frame so it pushes marbles as it moves
         const o = offs[p];
-        if (o !== ZERO4) { m.x -= o[0]; m.y -= o[1]; m.vx -= o[2]; m.vy -= o[3]; }
-        if (pc.type === "ramp") collideSegment(m, pc.x1, pc.y1, pc.x2, pc.y2, 0.25, false);
+        if (o !== ZERO4) {
+          m.x -= o[0]; m.y -= o[1]; m.px -= o[0]; m.py -= o[1];
+          m.vx -= o[2]; m.vy -= o[3];
+        }
+        if (pc.type === "ramp") collideSegment(m, pc.x1, pc.y1, pc.x2, pc.y2, 0.25, false, m.px, m.py);
         else if (pc.type === "peg") collideCircle(m, pc.x, pc.y, 7, 0.55, false);
         else if (pc.type === "switch") collideSwitch(m, pc);
         else if (pc.type === "boost") {
-          if (collideSegment(m, pc.x1, pc.y1, pc.x2, pc.y2, 0.1, false)) {
+          if (collideSegment(m, pc.x1, pc.y1, pc.x2, pc.y2, 0.1, false, m.px, m.py)) {
             let bx = pc.x2 - pc.x1, by = pc.y2 - pc.y1;
             const bl = Math.hypot(bx, by) || 1;
             bx /= bl; by /= bl;
@@ -667,7 +736,7 @@ function step(dt) {
         } else if (pc.type === "spin") {
           const a = spinAngle(pc), c = Math.cos(a), sn = Math.sin(a);
           if (collideSegment(m, pc.x - c * SPIN_L, pc.y - sn * SPIN_L,
-                             pc.x + c * SPIN_L, pc.y + sn * SPIN_L, 0.5, false)) {
+                             pc.x + c * SPIN_L, pc.y + sn * SPIN_L, 0.5, false, m.px, m.py)) {
             // add the bar's surface velocity so it whacks marbles around
             const w = pc.dir * 2.4;
             m.vx += -(m.y - pc.y) * w * 0.6;
@@ -677,7 +746,7 @@ function step(dt) {
           // collide in the platform's moving frame so it pushes and carries marbles
           const mx = moverX(pc), pvx = moverVX(pc);
           m.vx -= pvx;
-          const hit = collideSegment(m, mx - MOVER_HALF, pc.y, mx + MOVER_HALF, pc.y, 0.2, false);
+          const hit = collideSegment(m, mx - MOVER_HALF, pc.y, mx + MOVER_HALF, pc.y, 0.2, false, m.px, m.py);
           m.vx += pvx;
           if (hit) m.x += pvx * h;
         } else if (pc.type === "brick") {
@@ -687,11 +756,14 @@ function step(dt) {
           if (dx * dx + dy * dy < MARBLE_R * MARBLE_R) {
             recycleMarble(m);
             // undo the frame shift so the respawn lands exactly at the dropper
-            if (o !== ZERO4) { m.x -= o[0]; m.y -= o[1]; m.vx -= o[2]; m.vy -= o[3]; }
+            if (o !== ZERO4) { m.x -= o[0]; m.y -= o[1]; m.px -= o[0]; m.py -= o[1]; m.vx -= o[2]; m.vy -= o[3]; }
           }
         }
         else collideCircle(m, pc.x, pc.y, 15, 0.9, true);
-        if (o !== ZERO4) { m.x += o[0]; m.y += o[1]; m.vx += o[2]; m.vy += o[3]; }
+        if (o !== ZERO4) {
+          m.x += o[0]; m.y += o[1]; m.px += o[0]; m.py += o[1];
+          m.vx += o[2]; m.vy += o[3];
+        }
       }
 
       // bottom
@@ -700,7 +772,6 @@ function step(dt) {
         else { m.y = worldH - MARBLE_R; if (m.vy > 0) { m.vy *= -WALL_E; m.vx *= 0.94; } }
       }
     }
-    if (collide) marbleVsMarble();
   }
 }
 
@@ -1408,6 +1479,11 @@ collideBtn.onclick = () => {
   toast(collide ? "Marbles bump into each other 💥" : "Ghost marbles — no touching! 👻");
 };
 document.getElementById("recycle").onchange = (e) => { recycle = e.target.checked; };
+const gravSlider = document.getElementById("gravSlider");
+gravSlider.oninput = () => {
+  GRAV = GRAV_BASE * gravSlider.value / 100;
+  document.getElementById("gravVal").textContent = (gravSlider.value / 100).toFixed(1) + "×";
+};
 const musicBtn = document.getElementById("musicBtn");
 musicBtn.onclick = () => {
   musicOn = !musicOn;
