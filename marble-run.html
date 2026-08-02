@@ -223,7 +223,15 @@
     padding: 6px 10px;
     width: 180px;
   }
-  #tplList { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  #tplList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    max-height: 76px;
+    overflow: hidden;
+  }
+  #tplList.open { max-height: 320px; overflow-y: auto; }
   .tplCard {
     display: inline-flex;
     align-items: center;
@@ -303,11 +311,13 @@
     <input type="text" id="tplName" placeholder="Name your track…" maxlength="30">
     <button id="tplSave" class="big">Save template</button>
     <button id="tplLink">🔗 Copy link to this track</button>
+    <button id="tplToggle">Show all tracks ▾</button>
   </div>
   <div id="tplList"></div>
   <div class="hint">
-    Saved templates stay in this browser. <b>🔗 Link</b> copies a shareable URL — anyone who opens it
-    gets your track loaded and ready. Blue ones are built-in starters.
+    <b>111 built-in tracks</b> plus your own saves — saved templates stay in this browser.
+    <b>🔗 Link</b> copies a shareable URL — anyone who opens it gets that track loaded and ready.
+    Blue ones are built-in.
   </div>
 </div>
 
@@ -1762,6 +1772,270 @@ const PRESETS = {
   }
 };
 
+// ---------- +100 generated race tracks ----------
+const bk = (x, y) => ({ type: "brick", x, y });
+function mulberry(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const ri = (rnd, lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+const rf = (rnd, lo, hi) => lo + rnd() * (hi - lo);
+
+function genZigzag(rnd) {
+  const ps = [];
+  const rows = ri(rnd, 4, 6), startLeft = rnd() < 0.5, dotted = rnd() < 0.35;
+  let left = startLeft, y = 110;
+  const dy = (560 - y) / rows;
+  for (let i = 0; i < rows; i++) {
+    const x1 = left ? 50 : 950, x2 = left ? 940 - rf(rnd, 0, 160) : 60 + rf(rnd, 0, 160);
+    if (dotted) pegLine(ps, x1, y, x2, y + dy * 0.55, 17);
+    else if (rnd() < 0.25) ps.push(bo(x1, y, x2, y + dy * 0.55));
+    else ps.push(rp(x1, y, x2, y + dy * 0.55));
+    left = !left;
+    y += dy;
+  }
+  return { spawner: { x: startLeft ? 100 : 900, y: 26 }, pieces: ps };
+}
+function genPegStorm(rnd) {
+  const ps = [];
+  const rows = ri(rnd, 6, 9), gap = ri(rnd, 46, 68);
+  for (let r = 0; r < rows; r++) {
+    const off = r % 2 ? gap / 2 : 0;
+    for (let x = 90 + off; x <= 910; x += gap)
+      ps.push(pg(x, 120 + r * (380 / rows)));
+  }
+  if (rnd() < 0.7)
+    for (let x = 120; x <= 880; x += ri(rnd, 70, 110)) ps.push(rp(x, 545, x, 616));
+  return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+}
+function genSwitchTree(rnd) {
+  const ps = [rp(340, 55, 488, 102), rp(660, 55, 512, 102)];
+  const rows = ri(rnd, 3, 5), gx = ri(rnd, 145, 175), gy = ri(rnd, 92, 106);
+  for (let r = 0; r < rows; r++)
+    for (let i = 0; i <= r; i++)
+      ps.push(sw(500 + (i - r / 2) * gx, 132 + r * gy, i % 2 ? -1 : 1));
+  for (let x = 140; x <= 860; x += 80) ps.push(rp(x, 555, x, 616));
+  return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+}
+function genWaves(rnd) {
+  const ps = [];
+  const n = ri(rnd, 2, 4);
+  for (let r = 0; r < n; r++) {
+    const baseY = 150 + r * (380 / n), amp = rf(rnd, 24, 46);
+    const freq = rf(rnd, 70, 110), phase = rf(rnd, 0, 6), gapX = rf(rnd, 120, 880);
+    for (let x = 50; x <= 950; x += 15) {
+      if (Math.abs(x - gapX) < 24) continue;
+      ps.push(pg(x, baseY + Math.sin(x / freq + phase) * amp));
+    }
+  }
+  return { spawner: { x: rf(rnd, 200, 800), y: 26 }, pieces: ps };
+}
+function genHourglass(rnd) {
+  const ps = [];
+  const n = ri(rnd, 2, 3);
+  const holes = [-150, 0, 150];
+  for (let k = 0; k < n; k++) {
+    const yb = 210 + k * (330 / n), hole = holes[ri(rnd, 0, 2)], curve = rf(rnd, 500, 750);
+    for (let x = 160; x <= 840; x += 15) {
+      if (Math.abs(x - (500 + hole)) < 14) continue;
+      ps.push(pg(x, yb - (x - 500) * (x - 500) / curve));
+    }
+  }
+  ps.push(bp(rf(rnd, 300, 450), 570), bp(rf(rnd, 550, 700), 570));
+  return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+}
+function genSpinCity(rnd) {
+  const ps = [];
+  const rows = ri(rnd, 2, 3), cols = ri(rnd, 3, 4);
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      ps.push(sp(170 + c * (660 / (cols - 1)), 150 + r * 150, (r + c) % 2 ? -1 : 1));
+      if (rnd() < 0.5) ps.push(pg(170 + c * (660 / (cols - 1)), 150 + r * 150 + 75));
+    }
+  ps.push(rp(60, 500, 480, 600), rp(940, 500, 520, 600));
+  return { spawner: { x: rf(rnd, 300, 700), y: 26 }, pieces: ps };
+}
+function genBumperBash(rnd) {
+  const ps = [];
+  const n = ri(rnd, 8, 14);
+  for (let i = 0; i < n; i++) ps.push(bp(rf(rnd, 90, 910), rf(rnd, 120, 500)));
+  ps.push(rp(60, 540, 460, 610), rp(940, 540, 540, 610));
+  return { spawner: { x: rf(rnd, 250, 750), y: 26 }, pieces: ps };
+}
+function genSlalom(rnd) {
+  const ps = [];
+  const rows = ri(rnd, 5, 7);
+  for (let i = 0; i < rows; i++) {
+    const y = 110 + i * (450 / rows);
+    if (i % 2 === 0) {
+      ps.push(rp(60, y, 60 + rf(rnd, 300, 420), y + 45));
+      ps.push(pg(760, y + 20), pg(820, y + 40), pg(880, y + 20));
+    } else {
+      ps.push(rp(940, y, 940 - rf(rnd, 300, 420), y + 45));
+      ps.push(pg(120, y + 20), pg(180, y + 40), pg(240, y + 20));
+    }
+  }
+  return { spawner: { x: 120, y: 26 }, pieces: ps };
+}
+function genElevators(rnd) {
+  const ps = [
+    rp(60, 170, 330, 205), rp(940, 170, 670, 205),
+    Object.assign(rp(400, 260, 600, 260), { path: [[0, 0], [0, ri(rnd, 140, 240)]] }),
+    mv(rf(rnd, 200, 350), 420), mv(rf(rnd, 650, 800), 420),
+    rp(60, 520, 430, 605), rp(940, 520, 570, 605)
+  ];
+  if (rnd() < 0.6) ps.push(Object.assign(bp(500, 560), { path: [[0, 0], [rf(rnd, -180, -80), 0]] }));
+  return { spawner: { x: rf(rnd, 150, 850), y: 26 }, pieces: ps };
+}
+function genBrickMaze(rnd) {
+  const ps = [];
+  const rows = ri(rnd, 3, 5);
+  for (let r = 0; r < rows; r++) {
+    const y = 150 + r * (380 / rows), gapX = rf(rnd, 120, 880);
+    for (let x = 60; x <= 940; x += 47)
+      if (Math.abs(x - gapX) > 45) ps.push(bk(x, y));
+  }
+  for (let x = 200; x <= 800; x += 120) ps.push(pg(x, 570));
+  return { spawner: { x: rf(rnd, 200, 800), y: 26 }, pieces: ps };
+}
+function genFunnelFalls(rnd) {
+  const ps = [];
+  let cx = 500;
+  const widths = [rf(rnd, 300, 380), rf(rnd, 200, 270), rf(rnd, 120, 180)];
+  widths.forEach((wd, k) => {
+    const y = 80 + k * 170;
+    cx = Math.max(200, Math.min(800, cx + rf(rnd, -140, 140)));
+    ps.push(rp(cx - wd, y, cx - 12, y + 75), rp(cx + wd, y, cx + 12, y + 75));
+    if (rnd() < 0.5) ps.push(bp(cx + rf(rnd, -60, 60), y + 135));
+  });
+  return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+}
+function genTurboLanes(rnd) {
+  const ps = [];
+  let left = rnd() < 0.5;
+  const startLeft = left;
+  for (let i = 0; i < 4; i++) {
+    const y = 120 + i * 110;
+    ps.push(left ? bo(50, y, 900, y + 55) : bo(950, y, 100, y + 55));
+    left = !left;
+  }
+  ps.push(bo(rf(rnd, 250, 400), 600, rf(rnd, 500, 650), 470)); // launcher back up
+  ps.push(bp(rf(rnd, 700, 850), 560));
+  return { spawner: { x: startLeft ? 100 : 900, y: 26 }, pieces: ps };
+}
+function genStairs(rnd) {
+  const ps = [];
+  const steps = ri(rnd, 5, 7), goRight = rnd() < 0.5;
+  for (let i = 0; i < steps; i++) {
+    const x = goRight ? 80 + i * (760 / steps) : 920 - i * (760 / steps);
+    const y = 110 + i * (430 / steps);
+    ps.push(rp(x - 55, y, x + 55, y + 9));
+    if (rnd() < 0.35) ps.push(pg(x + (goRight ? 85 : -85), y + 40));
+  }
+  ps.push(bp(goRight ? 880 : 120, 585));
+  return { spawner: { x: goRight ? 110 : 890, y: 26 }, pieces: ps };
+}
+function genPachinko(rnd) {
+  const ps = [];
+  const rows = ri(rnd, 5, 7), gap = ri(rnd, 44, 54);
+  for (let r = 0; r < rows; r++)
+    for (let i = 0; i <= r; i++)
+      ps.push(pg(500 + (i - r / 2) * gap, 110 + r * 42));
+  const sws = ri(rnd, 3, 5);
+  for (let i = 0; i < sws; i++)
+    ps.push(sw(500 + (i - (sws - 1) / 2) * 90, 430, i % 2 ? -1 : 1));
+  for (let x = 150; x <= 850; x += 70) ps.push(rp(x, 540, x, 616));
+  return { spawner: { x: W / 2, y: 26 }, pieces: ps };
+}
+function genSpiral(rnd) {
+  const ps = [];
+  const turns = rf(rnd, 3.6, 5), grow = rf(rnd, 15, 21);
+  for (let a = 0.8; a < Math.PI * turns; a += 0.27) {
+    const r = 35 + a * grow;
+    ps.push(pg(500 + Math.cos(a) * r * 1.5, 310 + Math.sin(a) * r * 0.75));
+  }
+  return { spawner: { x: 500, y: 26 }, pieces: ps };
+}
+function genTower(rnd) {
+  const ps = [];
+  const h = ri(rnd, 2, 3) * 620;
+  const floors = Math.floor(h / 160);
+  for (let f = 1; f < floors; f++) {
+    const y = f * 160, kind = ri(rnd, 0, 4), left = f % 2 === 0;
+    if (kind === 0) ps.push(left ? rp(40, y, 880, y + 50) : rp(960, y, 120, y + 50));
+    else if (kind === 1) for (let x = 110; x <= 890; x += 60) ps.push(pg(x + (f % 2 ? 30 : 0), y));
+    else if (kind === 2) for (let i = 0; i < 4; i++) ps.push(sw(200 + i * 200, y, i % 2 ? -1 : 1));
+    else if (kind === 3) ps.push(sp(300, y, 1), sp(700, y, -1));
+    else {
+      const gapX = rf(rnd, 150, 850);
+      for (let x = 60; x <= 940; x += 47) if (Math.abs(x - gapX) > 50) ps.push(bk(x, y));
+    }
+  }
+  return { h, spawner: { x: rf(rnd, 200, 800), y: 26 }, pieces: ps };
+}
+function genMarathon(rnd) {
+  const ps = [];
+  const w = ri(rnd, 2, 3) * 1000;
+  let left = true, y = 100;
+  const rows = 4;
+  for (let i = 0; i < rows; i++) {
+    const x1 = left ? 40 : w - 40, x2 = left ? w - 120 : 120;
+    ps.push(i % 2 === 1 ? bo(x1, y, x2, y + 70) : rp(x1, y, x2, y + 70));
+    left = !left;
+    y += 120;
+  }
+  for (let x = 200; x < w - 100; x += ri(rnd, 130, 200)) ps.push(pg(x, y + rf(rnd, 0, 60)));
+  return { w, spawner: { x: 90, y: 26 }, pieces: ps };
+}
+function genChaos(rnd) {
+  const ps = [];
+  const n = ri(rnd, 16, 26);
+  for (let i = 0; i < n; i++) {
+    const x = rf(rnd, 90, 910), y = rf(rnd, 110, 560), pick = rnd();
+    if (pick < 0.3) ps.push(pg(x, y));
+    else if (pick < 0.45) ps.push(bp(x, y));
+    else if (pick < 0.6) ps.push(sw(x, y, rnd() < 0.5 ? 1 : -1));
+    else if (pick < 0.7) ps.push(sp(x, y, rnd() < 0.5 ? 1 : -1));
+    else if (pick < 0.78) ps.push(mv(x, y));
+    else if (pick < 0.85) ps.push(bk(x, y));
+    else if (pick < 0.95) ps.push(rp(x - rf(rnd, 60, 130), y, x + rf(rnd, 60, 130), y + rf(rnd, 15, 60)));
+    else ps.push(bo(x - rf(rnd, 60, 110), y, x + rf(rnd, 60, 110), y + rf(rnd, 15, 50)));
+  }
+  return { spawner: { x: rf(rnd, 200, 800), y: 26 }, pieces: ps };
+}
+
+const RACE_KINDS = [
+  ["Zigzag Rally", 6, genZigzag],
+  ["Peg Storm", 6, genPegStorm],
+  ["Switch Tree", 6, genSwitchTree],
+  ["Wavy Ocean", 5, genWaves],
+  ["Hourglass", 6, genHourglass],
+  ["Spin City", 6, genSpinCity],
+  ["Bumper Bash", 5, genBumperBash],
+  ["Slalom", 6, genSlalom],
+  ["Elevator Park", 5, genElevators],
+  ["Brick Maze", 6, genBrickMaze],
+  ["Funnel Falls", 6, genFunnelFalls],
+  ["Turbo Lanes", 6, genTurboLanes],
+  ["Stair Master", 5, genStairs],
+  ["Pachinko Palace", 6, genPachinko],
+  ["Spiral Galaxy", 5, genSpiral],
+  ["Mega Tower", 5, genTower],
+  ["Marathon", 4, genMarathon],
+  ["Total Chaos", 6, genChaos]
+];
+RACE_KINDS.forEach(([base, count, gen], k) => {
+  for (let i = 0; i < count; i++) {
+    const seed = (k + 1) * 1000 + i * 97 + 7;
+    PRESETS[`${base} ${i + 1}`] = () => gen(mulberry(seed));
+  }
+});
+
 function templateURL(data) {
   return location.origin + location.pathname + "#t=" + encodeLayout(data);
 }
@@ -1814,7 +2088,7 @@ function renderTplList() {
   };
   for (const [name, make] of Object.entries(PRESETS)) {
     const d = make();
-    addCard(name, { spawner: d.spawner, pieces: compactPieces(d.pieces) }, true);
+    addCard(name, { w: d.w, h: d.h, spawner: d.spawner, pieces: compactPieces(d.pieces) }, true);
   }
   const store = loadStore();
   for (const name of Object.keys(store).sort()) addCard(name, store[name], false);
@@ -1831,6 +2105,14 @@ document.getElementById("tplSave").onclick = () => {
   toast(`Saved “${name}” 💾`);
 };
 document.getElementById("tplLink").onclick = () => copyLink(layoutData(), "this track");
+const tplToggle = document.getElementById("tplToggle");
+tplToggle.onclick = () => {
+  const list = document.getElementById("tplList");
+  list.classList.toggle("open");
+  tplToggle.textContent = list.classList.contains("open")
+    ? "Show fewer ▴"
+    : "Show all tracks ▾";
+};
 
 // load from a shared link
 function tryLoadFromHash() {
