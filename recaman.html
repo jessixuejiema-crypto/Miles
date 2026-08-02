@@ -603,6 +603,7 @@ document.getElementById('animateBtn').addEventListener('click', function () {
 // Once the animation catches up with the drawn range, grow the sequence in
 // place so it never has to stop.
 const ANIM_MAX = 50_000;
+const ANIM_RATE = 30;   // steps per second — constant, so long runs stay smooth
 
 function extendTo(n) {
   let cur = seq[termCount];
@@ -621,8 +622,7 @@ function extendTo(n) {
 function tickAnim() {
   if (!anim.on) return;
   const now = performance.now();
-  const rate = Math.min(Math.max(anim.progress / 4, 8), 400);
-  anim.progress += (now - anim.last) / 1000 * rate;
+  anim.progress += (now - anim.last) / 1000 * ANIM_RATE;
   anim.last = now;
 
   const needed = Math.ceil(anim.progress) + 1;
