@@ -88,6 +88,12 @@
   }
   button.big:hover { filter: brightness(1.1); }
   button.warn { color: var(--danger); border-color: #6e3844; }
+  button.toggled {
+    background: var(--good);
+    color: #0a2c18;
+    border-color: var(--good);
+    font-weight: bold;
+  }
   #collideBtn.colliding {
     background: var(--good);
     color: #0a2c18;
@@ -244,6 +250,7 @@
   <button class="tool" data-tool="boost" title="Drag to draw a speed pad — marbles zoom along it">⚡ Boost</button>
   <button class="tool" data-tool="spin" title="Spinning bar. Tap a placed spinner to spin it the other way">🌀 Spinner</button>
   <button class="tool" data-tool="mover" title="Platform that slides left and right">↔️ Mover</button>
+  <button class="tool" data-tool="brick" title="Danger! Any marble that touches it pops back to the dropper">🧱 Brick</button>
   <button class="tool" data-tool="motion" title="Drag from any piece to draw a path it will patrol — up-down, left-right, or any squiggle. Tap a moving piece to freeze it">🛤️ Motion</button>
   <button class="tool" data-tool="pan" title="Drag to look around a big canvas (or use the mini-map)">🖐 Pan</button>
   <button class="tool" data-tool="erase" title="Click a piece to remove it">🧽 Erase</button>
@@ -254,6 +261,8 @@
   <button id="add5000">+5000</button>
   <button id="clearMarbles" class="warn">Clear marbles</button>
   <div class="sep"></div>
+  <button id="musicBtn" class="toggled" title="Background music on/off">🎵 Music: on</button>
+  <button id="sfxBtn" class="toggled" title="Pop sounds when marbles recycle">🔊 Pops: on</button>
   <button id="collideBtn" class="colliding">💥 Touch mode</button>
   <label class="chk"><input type="checkbox" id="recycle" checked> ♻️ recycle at bottom</label>
   <button id="pauseBtn">⏸ Pause</button>
@@ -328,6 +337,80 @@ let collide = true;          // marble-vs-marble collisions
 let recycle = true;
 let paused = false;
 
+// ---------- audio: a cheery chiptune loop + pop sounds ----------
+let audio = null, musicOn = true, sfxOn = true;
+let musicTimer = null, stepIdx = 0, nextT = 0;
+function initAudio() {
+  if (audio) return;
+  try { audio = new (window.AudioContext || window.webkitAudioContext)(); }
+  catch { audio = null; }
+}
+function noteAt(midi, t, dur, type, gain) {
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = type;
+  o.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(audio.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+// 4 bars of 8th notes — C / Am / F / G, C-pentatonic melody
+const MELODY = [76,79,81,79, 76,74,72,74, 76,79,81,84, 81,79,76,79,
+                81,79,76,74, 72,74,76,79, 76,74,72,69, 72,0,0,0];
+const BASSL  = [48,0,55,0, 48,0,55,0, 45,0,52,0, 45,0,52,0,
+                41,0,48,0, 41,0,48,0, 43,0,50,0, 43,0,50,0];
+const STEP_T = 0.2586; // ~116 bpm 8ths
+function musicTick() {
+  while (nextT < audio.currentTime + 0.35) {
+    const m = MELODY[stepIdx % 32], b = BASSL[stepIdx % 32];
+    if (m) noteAt(m, nextT, 0.24, "triangle", 0.14);
+    if (b) noteAt(b, nextT, 0.42, "sine", 0.2);
+    nextT += STEP_T;
+    stepIdx++;
+  }
+}
+function startMusic() {
+  initAudio();
+  if (!audio) return;
+  audio.resume();
+  if (musicTimer) return;
+  nextT = audio.currentTime + 0.05;
+  musicTimer = setInterval(musicTick, 120);
+}
+function stopMusic() {
+  clearInterval(musicTimer);
+  musicTimer = null;
+}
+let popBudget = 0, popWindow = 0;
+function pop() {
+  if (!audio || !sfxOn || audio.state !== "running") return;
+  // throttle so 10,000 recycles don't stack 10,000 oscillators
+  const now = performance.now();
+  if (now - popWindow > 90) { popWindow = now; popBudget = 6; }
+  if (popBudget <= 0) return;
+  popBudget--;
+  const t = audio.currentTime;
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = "sine";
+  const f = 350 + Math.random() * 420;
+  o.frequency.setValueAtTime(f, t);
+  o.frequency.exponentialRampToValueAtTime(f * 0.35, t + 0.09);
+  g.gain.setValueAtTime(0.22, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+  o.connect(g).connect(audio.destination);
+  o.start(t); o.stop(t + 0.1);
+}
+// browsers only allow sound after a first tap/click — unlock then
+function unlockAudio() {
+  initAudio();
+  if (audio) {
+    audio.resume();
+    if (musicOn) startMusic();
+  }
+  window.removeEventListener("pointerdown", unlockAudio);
+}
+window.addEventListener("pointerdown", unlockAudio);
+
 // ---------- marbles ----------
 let hueSeed = 0;
 function spawnMarble() {
@@ -346,6 +429,7 @@ function recycleMarble(m) {
   m.y = spawner.y + (Math.random() - 0.5) * 8;
   m.vx = (Math.random() - 0.5) * 40;
   m.vy = 0;
+  pop();
 }
 
 // ---------- physics ----------
@@ -445,6 +529,7 @@ function collideCircle(m, cx, cy, r, e, boost) {
 }
 
 const SWITCH_R = 10;
+const BRICK_HW = 23, BRICK_HH = 8; // red brick half-size
 function collideSwitch(m, pc) {
   const rr = SWITCH_R + MARBLE_R;
   const nx = m.x - pc.x, ny = m.y - pc.y;
@@ -539,6 +624,8 @@ function step(dt) {
       } else if (pc.type === "mover") {
         const mx = moverX(pc);
         bb = [mx - MOVER_HALF - 8, mx + MOVER_HALF + 8, pc.y - 8, pc.y + 8];
+      } else if (pc.type === "brick") {
+        bb = [pc.x - BRICK_HW - 6, pc.x + BRICK_HW + 6, pc.y - BRICK_HH - 6, pc.y + BRICK_HH + 6];
       } else {
         const e = (pc.type === "peg" ? 7 : pc.type === "switch" ? SWITCH_R : 15) + MARBLE_R + 1;
         bb = [pc.x - e, pc.x + e, pc.y - e, pc.y + e];
@@ -593,6 +680,15 @@ function step(dt) {
           const hit = collideSegment(m, mx - MOVER_HALF, pc.y, mx + MOVER_HALF, pc.y, 0.2, false);
           m.vx += pvx;
           if (hit) m.x += pvx * h;
+        } else if (pc.type === "brick") {
+          // touch the red brick -> straight back to the dropper
+          const dx = Math.max(Math.abs(m.x - pc.x) - BRICK_HW, 0);
+          const dy = Math.max(Math.abs(m.y - pc.y) - BRICK_HH, 0);
+          if (dx * dx + dy * dy < MARBLE_R * MARBLE_R) {
+            recycleMarble(m);
+            // undo the frame shift so the respawn lands exactly at the dropper
+            if (o !== ZERO4) { m.x -= o[0]; m.y -= o[1]; m.vx -= o[2]; m.vy -= o[3]; }
+          }
         }
         else collideCircle(m, pc.x, pc.y, 15, 0.9, true);
         if (o !== ZERO4) { m.x += o[0]; m.y += o[1]; m.vx += o[2]; m.vy += o[3]; }
@@ -735,6 +831,18 @@ function draw() {
       ctx.font = "10px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("◄ ►", mx, pc.y + 14);
+    } else if (pc.type === "brick") {
+      ctx.fillStyle = sel ? "#ffe08a" : "#e63946";
+      ctx.fillRect(pc.x - BRICK_HW, pc.y - BRICK_HH, BRICK_HW * 2, BRICK_HH * 2);
+      ctx.strokeStyle = "#8f1d27";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(pc.x - BRICK_HW, pc.y - BRICK_HH, BRICK_HW * 2, BRICK_HH * 2);
+      ctx.beginPath();
+      ctx.moveTo(pc.x - BRICK_HW, pc.y); ctx.lineTo(pc.x + BRICK_HW, pc.y);
+      ctx.moveTo(pc.x - 8, pc.y - BRICK_HH); ctx.lineTo(pc.x - 8, pc.y);
+      ctx.moveTo(pc.x + 8, pc.y - BRICK_HH); ctx.lineTo(pc.x + 8, pc.y);
+      ctx.moveTo(pc.x, pc.y); ctx.lineTo(pc.x, pc.y + BRICK_HH);
+      ctx.stroke();
     } else if (pc.type === "switch") {
       ctx.fillStyle = sel ? "#ffe08a" : "#4cc9f0";
       ctx.beginPath(); ctx.arc(pc.x, pc.y, SWITCH_R, 0, 7); ctx.fill();
@@ -866,6 +974,8 @@ function pickPiece(px, py) {
       if (Math.hypot(x - pc.x, y - pc.y) < 18) return pc;
     } else if (pc.type === "mover") {
       if (Math.abs(x - moverX(pc)) < MOVER_HALF + 6 && Math.abs(y - pc.y) < 12) return pc;
+    } else if (pc.type === "brick") {
+      if (Math.abs(x - pc.x) < BRICK_HW + 5 && Math.abs(y - pc.y) < BRICK_HH + 5) return pc;
     } else {
       const r = pc.type === "peg" ? 7 : pc.type === "switch" ? SWITCH_R : 15;
       if (Math.hypot(x - pc.x, y - pc.y) < r + 5) return pc;
@@ -908,6 +1018,8 @@ cv.addEventListener("pointerdown", (ev) => {
     } else pieces.push({ type: "spin", x, y, dir: 1 });
   } else if (tool === "mover") {
     pieces.push({ type: "mover", x, y });
+  } else if (tool === "brick") {
+    pieces.push({ type: "brick", x, y });
   } else if (tool === "stamp") {
     stampAt(x, y);
   } else if (tool === "motion") {
@@ -1296,6 +1408,20 @@ collideBtn.onclick = () => {
   toast(collide ? "Marbles bump into each other 💥" : "Ghost marbles — no touching! 👻");
 };
 document.getElementById("recycle").onchange = (e) => { recycle = e.target.checked; };
+const musicBtn = document.getElementById("musicBtn");
+musicBtn.onclick = () => {
+  musicOn = !musicOn;
+  if (musicOn) startMusic(); else stopMusic();
+  musicBtn.textContent = musicOn ? "🎵 Music: on" : "🎵 Music: off";
+  musicBtn.classList.toggle("toggled", musicOn);
+};
+const sfxBtn = document.getElementById("sfxBtn");
+sfxBtn.onclick = () => {
+  sfxOn = !sfxOn;
+  if (sfxOn) { initAudio(); if (audio) audio.resume(); }
+  sfxBtn.textContent = sfxOn ? "🔊 Pops: on" : "🔊 Pops: off";
+  sfxBtn.classList.toggle("toggled", sfxOn);
+};
 document.getElementById("wider").onclick = () => {
   if (worldW >= MAX_W) { toast(`That's as wide as it goes (${MAX_W})! 🗺`); return; }
   worldW = Math.min(worldW + 500, MAX_W);
@@ -1332,8 +1458,8 @@ function toast(msg) {
 // ---------- templates ----------
 const LS_KEY = "marbleRunTemplates.v1";
 
-const TYPE_TO_TAG = { peg: "p", bumper: "b", switch: "s", spin: "w", mover: "m" };
-const TAG_TO_TYPE = { p: "peg", b: "bumper", s: "switch", w: "spin", m: "mover" };
+const TYPE_TO_TAG = { peg: "p", bumper: "b", switch: "s", spin: "w", mover: "m", brick: "k" };
+const TAG_TO_TYPE = { p: "peg", b: "bumper", s: "switch", w: "spin", m: "mover", k: "brick" };
 function compactPieces(list) {
   return list.map(pc => {
     let o;
