@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fraction Grid</title>
+<style>
+  :root {
+    --surface: #fcfcfb;
+    --panel: #ffffff;
+    --border: #e4e2dd;
+    --ink: #21242a;
+    --ink-2: #5b6069;
+    --ink-3: #8a8f98;
+    --blue: #2563EB;   /* lowest terms (gcd = 1) */
+    --yellow: #B8860B; /* simplifiable (gcd > 1) */
+    --highlight-ring: #21242a;
+    --shadow: rgba(30, 32, 38, 0.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface: #1a1a19;
+      --panel: #222221;
+      --border: #383836;
+      --ink: #ececea;
+      --ink-2: #b0b0ac;
+      --ink-3: #82827e;
+      --blue: #3B82F6;
+      --yellow: #B8860B;
+      --highlight-ring: #ececea;
+      --shadow: rgba(0, 0, 0, 0.45);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 48px;
+  }
+  main { width: min(880px, 100%); }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--ink-2); margin: 0 0 20px; font-size: 14px; }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 24px;
+    margin-bottom: 14px;
+  }
+  .control { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+  .control output { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 2.5ch; font-weight: 600; }
+  input[type="range"] { accent-color: var(--blue); width: 180px; }
+
+  .legend { display: flex; gap: 18px; align-items: center; font-size: 13px; color: var(--ink-2); margin-left: auto; }
+  .legend .item { display: flex; align-items: center; gap: 7px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .swatch.blue { background: var(--blue); }
+  .swatch.yellow { background: var(--yellow); }
+
+  .chart-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 18px 12px;
+  }
+  .chart-wrap { position: relative; }
+  canvas { display: block; width: 100%; cursor: crosshair; }
+
+  .stat { margin: 10px 2px 2px; font-size: 13px; color: var(--ink-2); }
+  .stat b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  .hint { margin: 14px 2px 0; font-size: 12.5px; color: var(--ink-3); }
+
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px var(--shadow);
+    padding: 8px 11px;
+    font-size: 13px;
+    line-height: 1.45;
+    z-index: 10;
+    display: none;
+    max-width: 230px;
+  }
+  #tooltip .frac { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+  #tooltip .status { display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+  #tooltip .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fraction Grid</h1>
+  <p class="subtitle">
+    Every fraction <em>n</em>/<em>d</em> plotted with the numerator on the x-axis and the
+    denominator on the y-axis. <span style="white-space:nowrap;">Yellow cells</span> can be simplified
+    (numerator and denominator share a common factor); blue cells are already in lowest terms.
+  </p>
+
+  <div class="controls">
+    <label class="control">
+      Grid size
+      <input type="range" id="size" min="10" max="60" value="24" aria-label="Grid size: maximum numerator and denominator">
+      <output id="sizeOut">24</output>
+    </label>
+    <div class="legend" role="list" aria-label="Legend">
+      <span class="item" role="listitem"><span class="swatch yellow"></span> Simplifiable (gcd &gt; 1)</span>
+      <span class="item" role="listitem"><span class="swatch blue"></span> Lowest terms (gcd = 1)</span>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-wrap">
+      <canvas id="grid" role="img" aria-label="Grid of fractions colored yellow if simplifiable, blue if in lowest terms"></canvas>
+      <div id="tooltip"></div>
+    </div>
+    <p class="stat" id="stat" aria-live="polite"></p>
+  </div>
+
+  <p class="hint">
+    Hover (or tap) a cell to see its simplified form — its whole family of equivalent fractions
+    lights up along a ray from the origin. Click to pin a family. As the grid grows, the share of
+    blue cells approaches 6/&pi;&sup2; &asymp; 60.8%.
+  </p>
+</main>
+
+<script>
+(() => {
+  const canvas = document.getElementById('grid');
+  const ctx = canvas.getContext('2d');
+  const tooltip = document.getElementById('tooltip');
+  const statEl = document.getElementById('stat');
+  const sizeInput = document.getElementById('size');
+  const sizeOut = document.getElementById('sizeOut');
+
+  const MARGIN = { top: 8, right: 8, bottom: 40, left: 46 };
+  const GAP = 2; // surface gap between cell fills
+
+  let N = +sizeInput.value;
+  let cell = 0, plotW = 0, plotH = 0, dpr = 1;
+  let hovered = null;  // {n, d} under cursor
+  let pinned = null;   // clicked family stays lit
+
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  // cell (n,d) -> top-left pixel of its fill (d increases upward)
+  const cellX = n => MARGIN.left + (n - 1) * cell + GAP / 2;
+  const cellY = d => MARGIN.top + (N - d) * cell + GAP / 2;
+
+  function layout() {
+    const width = canvas.parentElement.clientWidth;
+    plotW = width - MARGIN.left - MARGIN.right;
+    cell = plotW / N;
+    plotH = cell * N;
+    const height = plotH + MARGIN.top + MARGIN.bottom;
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.height = height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function familyOf(n, d) {
+    const g = gcd(n, d);
+    const n0 = n / g, d0 = d / g;
+    const cells = [];
+    for (let k = 1; k * Math.max(n0, d0) <= N; k++) cells.push([k * n0, k * d0]);
+    return { n0, d0, g, cells };
+  }
+
+  function draw() {
+    const blue = css('--blue'), yellow = css('--yellow');
+    const ink2 = css('--ink-2'), ink3 = css('--ink-3');
+    const ring = css('--highlight-ring'), surface = css('--panel');
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // cells
+    const size = cell - GAP;
+    const radius = Math.min(3, size / 3);
+    let coprime = 0;
+    for (let d = 1; d <= N; d++) {
+      for (let n = 1; n <= N; n++) {
+        const simplifiable = gcd(n, d) > 1;
+        if (!simplifiable) coprime++;
+        ctx.fillStyle = simplifiable ? yellow : blue;
+        ctx.beginPath();
+        ctx.roundRect(cellX(n), cellY(d), size, size, radius);
+        ctx.fill();
+      }
+    }
+
+    // family highlight: 2px surface ring, then ink outline
+    const focus = hovered || pinned;
+    if (focus) {
+      const fam = familyOf(focus.n, focus.d);
+      for (const [n, d] of fam.cells) {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = surface;
+        ctx.strokeRect(cellX(n) - 1, cellY(d) - 1, size + 2, size + 2);
+        ctx.strokeStyle = ring;
+        ctx.strokeRect(cellX(n) - 3, cellY(d) - 3, size + 6, size + 6);
+      }
+    }
+
+    // axes
+    ctx.fillStyle = ink3;
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const step = N > 40 ? 10 : 5;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let n = 1; n <= N; n++) {
+      if (n === 1 || n % step === 0) {
+        ctx.fillText(n, cellX(n) + size / 2, MARGIN.top + plotH + 6);
+      }
+    }
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let d = 1; d <= N; d++) {
+      if (d === 1 || d % step === 0) {
+        ctx.fillText(d, MARGIN.left - 8, cellY(d) + size / 2);
+      }
+    }
+
+    // axis titles
+    ctx.fillStyle = ink2;
+    ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Numerator →', MARGIN.left + plotW / 2, MARGIN.top + plotH + 22);
+    ctx.save();
+    ctx.translate(12, MARGIN.top + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Denominator →', 0, 0);
+    ctx.restore();
+
+    const total = N * N;
+    statEl.innerHTML = `<b>${coprime.toLocaleString()}</b> of <b>${total.toLocaleString()}</b> fractions ` +
+      `(<b>${(100 * coprime / total).toFixed(1)}%</b>) are already in lowest terms.`;
+  }
+
+  function cellAt(evt) {
+    const rect = canvas.getBoundingClientRect();
+    const x = evt.clientX - rect.left, y = evt.clientY - rect.top;
+    const n = Math.floor((x - MARGIN.left) / cell) + 1;
+    const d = N - Math.floor((y - MARGIN.top) / cell);
+    if (n < 1 || n > N || d < 1 || d > N) return null;
+    return { n, d };
+  }
+
+  function showTooltip(evt, c) {
+    const { n0, d0, g } = familyOf(c.n, c.d);
+    const simplifiable = g > 1;
+    const color = simplifiable ? css('--yellow') : css('--blue');
+    const detail = simplifiable
+      ? `Simplifiable &mdash; divide by ${g} &rarr; <b>${n0}/${d0}</b>`
+      : 'Already in lowest terms';
+    tooltip.innerHTML =
+      `<div class="frac">${c.n}/${c.d}</div>` +
+      `<div class="status"><span class="dot" style="background:${color}"></span>${detail}</div>`;
+    tooltip.style.display = 'block';
+    const pad = 14;
+    let tx = evt.clientX + pad, ty = evt.clientY + pad;
+    const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+    if (tx + tw > window.innerWidth - 8) tx = evt.clientX - tw - pad;
+    if (ty + th > window.innerHeight - 8) ty = evt.clientY - th - pad;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+  }
+
+  canvas.addEventListener('pointermove', evt => {
+    const c = cellAt(evt);
+    const changed = !c !== !hovered || (c && hovered && (c.n !== hovered.n || c.d !== hovered.d));
+    hovered = c;
+    if (c) showTooltip(evt, c);
+    else tooltip.style.display = 'none';
+    if (changed) draw();
+  });
+
+  canvas.addEventListener('pointerleave', () => {
+    hovered = null;
+    tooltip.style.display = 'none';
+    draw();
+  });
+
+  canvas.addEventListener('click', evt => {
+    const c = cellAt(evt);
+    pinned = (c && pinned && c.n === pinned.n && c.d === pinned.d) ? null : c;
+    draw();
+  });
+
+  sizeInput.addEventListener('input', () => {
+    N = +sizeInput.value;
+    sizeOut.textContent = N;
+    hovered = null;
+    pinned = null;
+    tooltip.style.display = 'none';
+    layout();
+    draw();
+  });
+
+  window.addEventListener('resize', () => { layout(); draw(); });
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+  }
+
+  layout();
+  draw();
+})();
+</script>
+</body>
+</html>
