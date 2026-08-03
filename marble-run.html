@@ -275,8 +275,8 @@
   <button id="sfxBtn" class="toggled" title="Pop sounds when marbles recycle">🔊 Pops: on</button>
   <button id="collideBtn" class="colliding">💥 Touch mode</button>
   <label class="chk"><input type="checkbox" id="recycle" checked> ♻️ recycle at bottom</label>
-  <label class="chk" title="Slide left for moon-hops, right for heavy drops">🌍 gravity
-    <input type="range" id="gravSlider" min="10" max="250" value="100">
+  <label class="chk" title="0 = zero-g floating, 1 = normal, 10 = mega slam">🌍 gravity
+    <input type="range" id="gravSlider" min="0" max="1000" step="10" value="100">
     <span id="gravVal">1.0×</span>
   </label>
   <button id="pauseBtn">⏸ Pause</button>
