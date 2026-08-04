@@ -14,6 +14,9 @@
     --ink-3: #8a8f98;
     --blue: #2563EB;   /* lowest terms (gcd = 1) */
     --yellow: #B8860B; /* simplifiable (gcd > 1) */
+    --ramp0: #83B3F8;  /* crowding ramp after merge: sparse → dense */
+    --ramp1: #3B82F6;
+    --ramp2: #172554;
     --highlight-ring: #21242a;
     --shadow: rgba(30, 32, 38, 0.12);
   }
@@ -27,6 +30,9 @@
       --ink-3: #82827e;
       --blue: #3B82F6;
       --yellow: #B8860B;
+      --ramp0: #2E5187;
+      --ramp1: #4C8DF6;
+      --ramp2: #93C5FD;
       --highlight-ring: #ececea;
       --shadow: rgba(0, 0, 0, 0.45);
     }
@@ -74,6 +80,15 @@
   .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
   .swatch.blue { background: var(--blue); }
   .swatch.yellow { background: var(--yellow); }
+  .legend[hidden] { display: none; }
+  #legendCrowd { gap: 8px; }
+  #legendCrowd .bar {
+    width: 110px;
+    height: 12px;
+    border-radius: 3px;
+    background: linear-gradient(to right, var(--ramp0), var(--ramp1), var(--ramp2));
+  }
+  #legendCrowd .num { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
   .chart-card {
     background: var(--panel);
@@ -124,9 +139,15 @@
       <output id="sizeOut">24</output>
     </label>
     <button id="mergeBtn" type="button">Merge all</button>
-    <div class="legend" role="list" aria-label="Legend">
+    <div class="legend" id="legendBinary" role="list" aria-label="Legend">
       <span class="item" role="listitem"><span class="swatch yellow"></span> Simplifiable (gcd &gt; 1)</span>
       <span class="item" role="listitem"><span class="swatch blue"></span> Lowest terms (gcd = 1)</span>
+    </div>
+    <div class="legend" id="legendCrowd" aria-label="Legend: fractions stacked per cell" hidden>
+      Fractions stacked
+      <span class="num">1</span>
+      <span class="bar" aria-hidden="true"></span>
+      <span class="num" id="crowdMax">24</span>
     </div>
   </div>
 
@@ -141,8 +162,10 @@
   <p class="hint">
     Hover (or tap) a cell to see its simplified form — its whole family of equivalent fractions
     lights up along a ray from the origin. Click to pin a family. Press <em>Merge all</em> to watch
-    every yellow fraction slide onto its lowest-terms form, leaving its cell blank. As the grid
-    grows, the share of blue cells approaches 6/&pi;&sup2; &asymp; 60.8%.
+    every yellow fraction slide onto its lowest-terms form, leaving its cell blank &mdash; the
+    surviving cells then recolor by crowding: the more fractions stacked onto a cell, the
+    stronger its color. As the grid grows, the share of blue cells approaches
+    6/&pi;&sup2; &asymp; 60.8%.
   </p>
 </main>
 
@@ -165,11 +188,34 @@
   let merged = 0;      // 0 = full grid, 1 = every fraction moved to lowest terms
   let animating = false;
   const mergeBtn = document.getElementById('mergeBtn');
+  const legendBinary = document.getElementById('legendBinary');
+  const legendCrowd = document.getElementById('legendCrowd');
+  const crowdMax = document.getElementById('crowdMax');
   const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const gcd = (a, b) => b ? gcd(b, a % b) : a;
 
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  const hexRgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const mixArr = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+  const rgbCss = a => `rgb(${a.map(Math.round).join(',')})`;
+
+  // how many fractions sit on lowest-terms cell (n,d) after merging: itself + its multiples
+  const stackCount = (n, d) => Math.floor(N / Math.max(n, d));
+
+  // crowding ramp, log-scaled so the sparse majority still spreads across the low end
+  function crowdArr(count, stops) {
+    const t = Math.log(count) / Math.log(N);
+    return t < 0.5 ? mixArr(stops[0], stops[1], t * 2) : mixArr(stops[1], stops[2], (t - 0.5) * 2);
+  }
+
+  function updateLegend() {
+    const crowd = merged === 1 && !animating;
+    legendBinary.hidden = crowd;
+    legendCrowd.hidden = !crowd;
+    crowdMax.textContent = N;
+  }
 
   // cell (n,d) -> top-left pixel of its fill (d increases upward)
   const cellX = n => MARGIN.left + (n - 1) * cell + GAP / 2;
@@ -208,13 +254,17 @@
     const radius = Math.min(3, size / 3);
     const ease = p < 0.5 ? 2 * p * p : 1 - 2 * (1 - p) * (1 - p);
 
-    // lowest-terms cells stay put
+    // lowest-terms cells stay put; their color morphs from flat blue to the
+    // crowding ramp as the merge progresses
+    const blueRgb = hexRgb(blue);
+    const rampStops = [hexRgb(css('--ramp0')), hexRgb(css('--ramp1')), hexRgb(css('--ramp2'))];
     let coprime = 0;
-    ctx.fillStyle = blue;
     for (let d = 1; d <= N; d++) {
       for (let n = 1; n <= N; n++) {
         if (gcd(n, d) === 1) {
           coprime++;
+          ctx.fillStyle = ease === 0 ? blue
+            : rgbCss(mixArr(blueRgb, crowdArr(stackCount(n, d), rampStops), ease));
           ctx.beginPath();
           ctx.roundRect(cellX(n), cellY(d), size, size, radius);
           ctx.fill();
@@ -311,14 +361,18 @@
   function showTooltip(evt, c) {
     const { n0, d0, g, cells } = familyOf(c.n, c.d);
     const simplifiable = g > 1;
-    const color = simplifiable ? css('--yellow') : css('--blue');
+    let color = simplifiable ? css('--yellow') : css('--blue');
     let detail;
     if (merged === 1) {
-      detail = simplifiable
-        ? `Merged into <b>${n0}/${d0}</b> (divided by ${g})`
-        : cells.length > 1
-          ? `Lowest terms &mdash; absorbed ${cells.length - 1} equivalent fraction${cells.length > 2 ? 's' : ''}`
-          : 'Lowest terms';
+      if (simplifiable) {
+        detail = `Merged into <b>${n0}/${d0}</b> (divided by ${g})`;
+      } else {
+        const stops = [hexRgb(css('--ramp0')), hexRgb(css('--ramp1')), hexRgb(css('--ramp2'))];
+        color = rgbCss(crowdArr(cells.length, stops));
+        detail = cells.length > 1
+          ? `Lowest terms &mdash; <b>${cells.length}</b> fractions stacked here`
+          : 'Lowest terms &mdash; nothing merged in';
+      }
     } else {
       detail = simplifiable
         ? `Simplifiable &mdash; divide by ${g} &rarr; <b>${n0}/${d0}</b>`
@@ -345,11 +399,13 @@
     if (reducedMotion) {
       merged = to;
       mergeBtn.textContent = to ? 'Reset' : 'Merge all';
+      updateLegend();
       draw();
       return;
     }
     animating = true;
     mergeBtn.disabled = true;
+    updateLegend();
     const dur = 900;
     const start = performance.now();
     const step = now => {
@@ -363,6 +419,7 @@
         animating = false;
         mergeBtn.disabled = false;
         mergeBtn.textContent = to ? 'Reset' : 'Merge all';
+        updateLegend();
         draw();
       }
     };
@@ -406,6 +463,7 @@
     mergeBtn.disabled = false;
     mergeBtn.textContent = 'Merge all';
     tooltip.style.display = 'none';
+    updateLegend();
     layout();
     draw();
   });
