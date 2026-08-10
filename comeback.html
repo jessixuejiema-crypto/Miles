@@ -141,6 +141,7 @@
   }
   .result .grade { color: var(--gold); }
   .result .gain { color: var(--blue); font-variant-numeric: tabular-nums; }
+  .result .readout { color: var(--muted); font-weight: 700; font-size: 0.72rem; }
 
   .care {
     background: var(--panel);
@@ -171,6 +172,7 @@
     max-height: 260px;
     overflow-y: auto;
   }
+  .fight[hidden] { display: none; }
   .fight .round {
     color: var(--muted);
     font-size: 0.7rem;
@@ -283,6 +285,7 @@
     <div class="meta">
       <span class="grade" id="grade"></span>
       <span class="gain" id="gain"></span>
+      <span class="readout" id="readout"></span>
       <button class="act small" id="copyBtn" type="button">copy</button>
     </div>
   </div>
@@ -321,115 +324,110 @@ const CATEGORIES = [
     id:'appearance',
     words:['ugly','fat','skinny','hair','face','clothes','outfit','shoes','looks','look like','teeth','nose','short','small','ears','skin','gross','hideous','cooked face'],
     lines:[
-      "You spent your whole day thinking about how I look. Rent free. In your head. No charge.",
-      "I looked in the mirror this morning and won. What happened when you tried?",
-      "My style is called confidence — sorry it doesn't come in your size.",
-      "Funny how the fashion police always show up dressed like that.",
-      "I'd rather look like me on my worst day than act like you on your best one.",
-      "The mirror isn't scared of me. Can you say the same?",
-      "You're rating my looks like your opinion made the leaderboard. It didn't qualify.",
-      "I get my style from confidence. Where'd you get yours — the lost and found?",
+      "My mirror's a fan. Yours quit.",
+      "Still prettier than your attitude.",
+      "You stared that long? Fan behavior.",
+      "The opposite, actually. Ask anyone.",
+      "I woke up like this. You chose that.",
+      "Bold words for someone dodging mirrors.",
     ]
   },
   {
     id:'smarts',
     words:['dumb','stupid','idiot','brain','smart','iq','slow','can\'t read','cant read','failing','grades','no brain cells','braindead'],
     lines:[
-      "You calling anyone dumb is the funniest thing you've said all year. Unintentionally.",
-      "I'd explain why you're wrong, but I left my crayons at home.",
-      "Big words scare you, so I'll keep it short: no.",
-      "My brain has bad days. Yours has a bad career.",
-      "Takes real confidence to call someone dumb while spelling like the keyboard fought back.",
-      "I failed one quiz. You're failing the vibe check daily. We are not the same.",
-      "Every time you talk, a teacher somewhere sighs and doesn't know why.",
-      "You'd need a map, a flashlight, and a guide to find the point. Let me know when you get there.",
+      "Says the one losing this argument.",
+      "Big word. Did it hurt?",
+      "The opposite. That's why you're mad.",
+      "I'm the test you keep failing.",
+      "My grades talk. You just yap.",
+      "Smart enough to beat you. Done.",
     ]
   },
   {
     id:'social',
     words:['no friends','friendless','loner','nobody likes','no one likes','loser','lonely','sit alone','weirdo','outcast','left out','unpopular'],
     lines:[
-      "I'd rather have two real friends than an audience I have to bully to keep.",
-      "Nobody likes me? Weird — you can't stop talking to me.",
-      "You count followers. I count people who'd actually show up. I'm winning.",
-      "Being alone is a Tuesday. Being you is a life sentence.",
-      "The only person here working THIS hard for attention is you. Take a break, king.",
-      "Quality over quantity. That's why I'm not friends with you.",
-      "If I'm such a loser, why am I the main character of your whole day?",
-      "You need a crowd to feel brave. I don't even need to raise my voice.",
+      "Then why are you still talking to me?",
+      "My friends are real. Your audience is rented.",
+      "You follow me around and I'M the loner?",
+      "People like me. They tolerate you.",
+      "The opposite. Check who's obsessed.",
+      "Losers don't live rent free in your head. I do.",
     ]
   },
   {
     id:'skill',
     words:['trash','garbage','noob','bad at','you suck','terrible','worst','carried','bot','washed','no skill','dogwater','ratio','ez','easy clap','get good','1v1'],
     lines:[
-      "I'm trash? You've studied my gameplay more than your homework.",
-      "Talking like an esports coach, playing like a tutorial NPC.",
-      "You only win arguments in your imagination — and even there it's close.",
-      "Scoreboard talk from someone who peaked in the loading screen. Bold.",
-      "I don't need to be the best. I just need to be better than you, and the bar is on the floor.",
-      "You spectate my losses. I don't even watch your wins. That's the difference.",
-      "'EZ' says the person sweating through their keyboard. Hydrate.",
-      "Keep coaching from the bench. It's the only position you've ever earned.",
+      "Trash? You're the one I keep beating.",
+      "Scoreboard says otherwise.",
+      "Skill issue — yours.",
+      "Say it after you win something.",
+      "My worst game beats your best.",
+      "I practice. You complain. Results differ.",
     ]
   },
   {
     id:'laughing',
     words:['lol','lmao','lmfao','haha','😂','🤣','💀','xd','hilarious','so funny','dying'],
     lines:[
-      "Laughing alone at your own message. That's the saddest party I've ever seen.",
-      "You laugh like it's a comeback. It's a loading screen for someone with nothing to say.",
-      "'Lol' — the official sound of running out of arguments.",
-      "Glad I'm funny to you. You're funny to everyone, just not on purpose.",
-      "That 😂 is doing all the work your brain couldn't.",
-      "Keep laughing. It's the only thing you've committed to all week.",
+      "'Lol' means you're out of words.",
+      "Laugh now. Lose later.",
+      "That laugh is your only comeback.",
+      "Rent free in your head. Love it.",
+      "Still watching my every move though.",
     ]
   },
   {
     id:'cringe',
     words:['cringe','weird','embarrassing','try hard','tryhard','pick me','npc','mid','basic','lame','corny','yapping','yap'],
     lines:[
-      "Calling things cringe is the personality starter pack. Did yours come with anything else?",
-      "I'm mid? You're the extended warranty of people. Nobody asked, nobody wants it.",
-      "'Weird' is what boring people call anyone having more fun than them.",
-      "I'd rather be cringe and happy than cool and exhausting like you.",
-      "You call everything mid because 'better than me' hurts to type.",
-      "NPC? You've said the same three insults since September. Update your dialogue tree.",
-      "Yap detected? Buddy, you wrote me a paragraph. About me. Again.",
+      "Mid? I'm your main topic.",
+      "Weird beats boring. Every time.",
+      "Cringe is just fun you're scared of.",
+      "The opposite. That's why you keep watching.",
+      "You study me hard for someone 'unbothered'.",
     ]
   },
   {
     id:'threats',
     words:['kill','kys','die','hurt you','beat you up','punch','fight you','end you','watch your back','unalive'],
     lines:[
-      "That's not tough, that's you announcing you lost the argument. Screenshot saved.",
-      "Threats are what people type when their brain taps out. Noted, saved, and reported to my archive.",
-      "You went from words to threats — thanks for admitting defeat in writing.",
+      "Threats mean you lost. Screenshot saved.",
+      "Written proof you ran out of words.",
+      "Saved. Shared. Handled.",
     ],
     care:true
   },
 ];
 
+/* Echo flips — the AI quotes their exact word and throws it back */
+const ECHO = [
+  "'{word}'? That's you, actually.",
+  "'{word}' — congrats, you described yourself.",
+  "'{word}'? Mirror check, buddy.",
+  "Project much? '{word}' is all yours.",
+  "'{word}'? The opposite, and you know it.",
+  "You'd know all about '{word}', expert.",
+];
+
 const GENERIC = [
-  "I'd take you seriously, but then we'd both be embarrassed.",
-  "You spent effort typing that. I'm spending none reading it.",
-  "Your opinion has been received, reviewed, and recycled.",
-  "Is being annoying a hobby, or are you going pro?",
-  "I've been ignored by better people than you. You don't even make the list.",
-  "Say it again slower — maybe it'll sound smart the second time. (It won't.)",
-  "You're not my hater. You're my unpaid promoter.",
-  "Every villain thinks they're the main character. You're not even in the credits.",
-  "I'm not arguing with you. I'm just watching you lose to yourself.",
-  "Somewhere out there is a tree making oxygen for you. Apologize to it.",
-  "You bring nothing to the conversation but volume.",
-  "Keep talking. Aura donations are always welcome.",
+  "All that typing for zero damage.",
+  "Noted. Ignored.",
+  "My aura didn't even flinch.",
+  "You done? Cool.",
+  "Loud, but still wrong.",
+  "That's a you problem.",
+  "The opposite, actually.",
+  "Try again with facts.",
 ];
 
 const MULTI_OPENERS = [
-  "Two messages? All that typing just to hand me aura twice.",
-  "A double text AND an L? You're speedrunning embarrassment.",
-  "Sending messages in waves doesn't help when every wave is this weak.",
-  "You needed multiple messages. I only need one.",
+  "Two texts, one L.",
+  "Spamming won't save you.",
+  "All those messages, still losing.",
+  "Double text, double wrong.",
 ];
 
 /* Bully AI lines for fight mode — each tagged so the Comeback AI counters in kind */
@@ -478,29 +476,40 @@ function pickLine(pool, id){
 
 function detect(text){
   const t = text.toLowerCase();
-  let best = null, bestScore = 0;
+  let best = null, bestScore = 0, bestWord = '';
   for(const cat of CATEGORIES){
-    let score = 0;
-    for(const w of cat.words) if(t.includes(w)) score += w.length; // longer match = stronger signal
-    if(score > bestScore){ bestScore = score; best = cat; }
+    let score = 0, word = '';
+    for(const w of cat.words) if(t.includes(w)){
+      score += w.length;                       // longer match = stronger signal
+      if(w.length > word.length) word = w;     // remember their exact strongest word
+    }
+    if(score > bestScore){ bestScore = score; best = cat; bestWord = word; }
   }
-  return best;
+  return { cat: best, word: bestWord };
 }
 
+/* Echo flips only work on real insult words, not emoji/laughs */
+const NO_ECHO = new Set(['laughing','threats']);
+
 function buildComeback(messages){
-  const cat = detect(messages.join(' \n '));
-  const pool = cat ? cat.lines : GENERIC;
-  const id = cat ? cat.id : 'generic';
-  let line = pickLine(pool, id);
+  const { cat, word } = detect(messages.join(' \n '));
+  let line, flipped = false;
+  if(cat && word && !NO_ECHO.has(cat.id) && Math.random() < 0.55){
+    line = pickLine(ECHO, 'echo').replaceAll('{word}', word);
+    flipped = true;                            // perfect read: their own word, thrown back
+  } else {
+    line = pickLine(cat ? cat.lines : GENERIC, cat ? cat.id : 'generic');
+  }
   if(messages.length > 1 && !(cat && cat.care)){
     line = pickLine(MULTI_OPENERS, 'multi') + ' ' + line;
   }
-  // matched category = sharper hit; multi-message claps harder; small crit chance
-  let gain = 60 + Math.floor(Math.random()*45);
-  if(cat) gain += 25;
+  // short + targeted hits harder: category read pays, echo flip pays extra
+  let gain = 70 + Math.floor(Math.random()*35);
+  if(cat) gain += 20;
+  if(flipped) gain += 40;
   if(messages.length > 1) gain += 15 * (messages.length - 1);
   if(Math.random() < 0.15) gain += 80; // CRIT
-  return { line, gain, care: !!(cat && cat.care) };
+  return { line, gain, care: !!(cat && cat.care), word, flipped };
 }
 
 /* ─────────── Aura state + UI ─────────── */
@@ -583,7 +592,7 @@ function fire(){
   $('verdict').textContent = '…cooking a comeback 🍳';
 
   setTimeout(() => {
-    const { line, gain, care } = buildComeback(messages);
+    const { line, gain, care, word, flipped } = buildComeback(messages);
     lastLine = line;
     const they = $('theySaid');
     they.innerHTML = '<b>They said:</b> ';
@@ -591,6 +600,9 @@ function fire(){
     $('comebackLine').textContent = line;
     $('grade').textContent = GRADES.find(g => gain >= g[0])[1];
     $('gain').textContent = '+' + gain + ' aura';
+    $('readout').textContent =
+      flipped ? '🎯 read “' + word + '” — flipped it back' :
+      word    ? '🎯 read “' + word + '”' : '';
     $('result').hidden = false;
     if(care) $('care').hidden = false;
     blueAura += gain;
