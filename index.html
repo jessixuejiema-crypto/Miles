@@ -244,7 +244,7 @@
     border-radius: 0 4px 4px 0;
     border-left: 2px solid var(--baseline);
     min-width: 2px;
-    transition: width 0.35s ease;
+    transition: width 0.25s ease;
   }
   .bar-row.active .bar-fill { background: var(--accent-hi); }
   .bar-val {
@@ -259,7 +259,7 @@
 <body>
 
 <h1>🌀 Digit Walker</h1>
-<p class="subtitle">Pick a number, get its digits, and watch them walk across the page — then see which digits show up the most.</p>
+<p class="subtitle">Pick a number and watch its digits walk across the page forever — and see which digits show up the most.</p>
 
 <div class="panel">
   <div class="row">
@@ -279,11 +279,14 @@
     <span id="picker-chips" style="display:flex;flex-wrap:wrap;gap:8px;"></span>
   </div>
   <div class="row">
-    <span class="row-label">How many</span>
+    <span class="row-label">Simulate</span>
+    <button class="chip" id="play-btn">⏸ Pause</button>
     <div class="slider-group">
-      <input type="range" id="ndigits" min="10" max="2000" step="10" value="300">
-      <span class="slider-val" id="ndigits-val">300 digits</span>
+      <label for="speed">Speed</label>
+      <input type="range" id="speed" min="5" max="300" step="5" value="60">
+      <span class="slider-val" id="speed-val">60 ⁄s</span>
     </div>
+    <span class="viz-note" id="count-note"></span>
   </div>
 </div>
 
@@ -314,7 +317,8 @@
   </div>
   <div class="row">
     <span class="row-label">Colors</span>
-    <button class="chip" id="color-fade" title="Start light, end dark">Fade along walk</button>
+    <button class="chip" id="color-rainbow" title="The line cycles through the whole rainbow">Rainbow</button>
+    <button class="chip" id="color-fade" title="The line fades light and dark as it goes">Fade along walk</button>
     <button class="chip" id="color-digit" title="Every digit gets its own color">Color by digit</button>
   </div>
   <div class="row">
@@ -339,7 +343,7 @@
     </div>
     <div id="walk-wrap">
       <canvas id="walk-canvas"></canvas>
-      <button id="replay-btn">▶ Replay</button>
+      <button id="replay-btn">⟲ Restart</button>
     </div>
   </div>
   <div class="panel">
@@ -418,43 +422,17 @@ function sqrtFixed(m, prec) {        // √m at fixed point
   return isqrt(BigInt(m) * one * one);
 }
 
-// Turn a fixed-point value into { intPart, frac, stream } with `total` digits used.
-function fixedToDigits(value, prec, total) {
+// Turn a fixed-point value into { intPart, stream } dropping guard digits.
+function fixedToDigits(value, prec) {
   const one = pow10(prec);
   const intPart = (value / one).toString();
   let frac = (value % one).toString().padStart(prec, "0");
-  frac = frac.slice(0, Math.max(0, prec - 8));       // drop guard digits
-  const fracNeeded = Math.max(0, total - intPart.length);
-  const fracUsed = frac.slice(0, fracNeeded);
-  return { intPart, frac: fracUsed, stream: intPart + fracUsed };
+  frac = frac.slice(0, Math.max(0, prec - 8));
+  return { intPart, stream: intPart + frac };
 }
 
-function rationalDigits(p, q, total) {               // long division
-  const P = BigInt(p), Q = BigInt(q);
-  const intPart = (P / Q).toString();
-  let r = P % Q, frac = "";
-  const fracNeeded = Math.max(0, total - intPart.length);
-  for (let i = 0; i < fracNeeded; i++) {
-    r *= 10n;
-    frac += (r / Q).toString();
-    r %= Q;
-  }
-  return { intPart, frac, stream: intPart + frac };
-}
+/* ══════════════ integer sequences ══════════════ */
 
-/* ══════════════ integer sequences (terms squished into one digit stream) ═══ */
-
-function seqDigits(gen, total) {
-  const terms = [];
-  let stream = "";
-  for (const t of gen()) {
-    const s = t.toString();
-    terms.push(s);
-    stream += s;
-    if (stream.length >= total) break;
-  }
-  return { terms, stream: stream.slice(0, total) };
-}
 function* genCounting()   { for (let n = 1n; ; n++) yield n; }
 function* genFibonacci()  { let a = 1n, b = 1n; while (true) { yield a; [a, b] = [b, a + b]; } }
 function* genSquares()    { for (let n = 1n; ; n++) yield n * n; }
@@ -472,26 +450,26 @@ function* genPrimes() {
 /* ══════════════ the menu ══════════════ */
 
 const IRRATIONALS = [
-  { id: "pi",    label: "π",    calc: (t) => { const p = t + 8; return fixedToDigits(piFixed(p), p, t); } },
-  { id: "pi2x",  label: "π × 2", calc: (t) => { const p = t + 8; return fixedToDigits(2n * piFixed(p), p, t); } },
-  { id: "pisq",  label: "π²",   calc: (t) => { const p = t + 8; const v = piFixed(p); return fixedToDigits(v * v / pow10(p), p, t); } },
-  { id: "e",     label: "e",    calc: (t) => { const p = t + 8; return fixedToDigits(eFixed(p), p, t); } },
-  { id: "esq",   label: "e²",   calc: (t) => { const p = t + 8; return fixedToDigits(e2Fixed(p), p, t); } },
-  { id: "sqrt2", label: "√2",   calc: (t) => { const p = t + 8; return fixedToDigits(sqrtFixed(2, p), p, t); } },
-  { id: "sqrt3", label: "√3",   calc: (t) => { const p = t + 8; return fixedToDigits(sqrtFixed(3, p), p, t); } },
-  { id: "phi",   label: "φ",    calc: (t) => { const p = t + 8; return fixedToDigits((pow10(p) + sqrtFixed(5, p)) / 2n, p, t); } },
-  { id: "ln2",   label: "ln 2", calc: (t) => { const p = t + 8; return fixedToDigits(ln2Fixed(p), p, t); } },
-  { id: "sqrtpi",   label: "√π",     calc: (t) => { const p = t + 8; return fixedToDigits(isqrt(piFixed(p) * pow10(p)), p, t); } },
-  { id: "sqrtpi2",  label: "√(π⁄2)", calc: (t) => { const p = t + 8; return fixedToDigits(isqrt(piFixed(p) * pow10(p) / 2n), p, t); } },
-  { id: "halffact", label: "0.5!",   calc: (t) => { const p = t + 8; return fixedToDigits(isqrt(piFixed(p) * pow10(p)) / 2n, p, t); } },
+  { id: "pi",    label: "π",    calc: (p) => fixedToDigits(piFixed(p), p) },
+  { id: "pi2x",  label: "π × 2", calc: (p) => fixedToDigits(2n * piFixed(p), p) },
+  { id: "pisq",  label: "π²",   calc: (p) => { const v = piFixed(p); return fixedToDigits(v * v / pow10(p), p); } },
+  { id: "e",     label: "e",    calc: (p) => fixedToDigits(eFixed(p), p) },
+  { id: "esq",   label: "e²",   calc: (p) => fixedToDigits(e2Fixed(p), p) },
+  { id: "sqrt2", label: "√2",   calc: (p) => fixedToDigits(sqrtFixed(2, p), p) },
+  { id: "sqrt3", label: "√3",   calc: (p) => fixedToDigits(sqrtFixed(3, p), p) },
+  { id: "phi",   label: "φ",    calc: (p) => fixedToDigits((pow10(p) + sqrtFixed(5, p)) / 2n, p) },
+  { id: "ln2",   label: "ln 2", calc: (p) => fixedToDigits(ln2Fixed(p), p) },
+  { id: "sqrtpi",   label: "√π",     calc: (p) => fixedToDigits(isqrt(piFixed(p) * pow10(p)), p) },
+  { id: "sqrtpi2",  label: "√(π⁄2)", calc: (p) => fixedToDigits(isqrt(piFixed(p) * pow10(p) / 2n), p) },
+  { id: "halffact", label: "0.5!",   calc: (p) => fixedToDigits(isqrt(piFixed(p) * pow10(p)) / 2n, p) },
 ];
 const RATIONALS = [
-  { id: "r13",   label: "1⁄3",     calc: (t) => rationalDigits(1, 3, t) },
-  { id: "r17",   label: "1⁄7",     calc: (t) => rationalDigits(1, 7, t) },
-  { id: "r227",  label: "22⁄7",    calc: (t) => rationalDigits(22, 7, t) },
-  { id: "r355",  label: "355⁄113", calc: (t) => rationalDigits(355, 113, t) },
-  { id: "r181",  label: "1⁄81",    calc: (t) => rationalDigits(1, 81, t) },
-  { id: "r9801", label: "1⁄9801",  calc: (t) => rationalDigits(1, 9801, t) },
+  { id: "r13",   label: "1⁄3",     pq: [1, 3] },
+  { id: "r17",   label: "1⁄7",     pq: [1, 7] },
+  { id: "r227",  label: "22⁄7",    pq: [22, 7] },
+  { id: "r355",  label: "355⁄113", pq: [355, 113] },
+  { id: "r181",  label: "1⁄81",    pq: [1, 81] },
+  { id: "r9801", label: "1⁄9801",  pq: [1, 9801] },
 ];
 const SEQUENCES = [
   { id: "count",  label: "g + 1",       formula: "g + 1",             gen: genCounting },
@@ -508,21 +486,22 @@ const state = {
   type: "irrational",        // irrational | rational | integers
   mode: "digits",            // digits | sequence  (locked by type)
   pick: "pi",
-  total: 300,
   spreadMode: "even",        // even | custom
   turnMode: "relative",      // relative | absolute
   startDir: 0,
   spread: 36,
   customAngles: Array.from({ length: 10 }, (_, d) => d * 36),
-  colorMode: "fade",         // fade | digit
+  colorMode: "rainbow",      // rainbow | fade | digit
   digitColors: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4",
                 "#008300", "#4a3aa7", "#e34948", "#0d9ec9", "#8f6bde"],
-  rateX: 10,                 // generations per rate-graph group
+  rateX: 10,
+  speed: 60,                 // digits per second
+  running: true,
   hoverDigit: null,
 };
-const cache = new Map();
-let current = null;          // { stream, intPart?, frac?, terms? }
-let walkPts = [];            // [{x, y, digit}]
+
+const IRR_PREC_CAP = 16000;  // recomputing π gets slow past this
+const STREAM_CAP = 100000;   // stop appending points after this many digits
 
 const $ = (id) => document.getElementById(id);
 
@@ -540,53 +519,132 @@ const TYPE_RULES = {
 function menuFor(type) {
   return type === "irrational" ? IRRATIONALS : type === "rational" ? RATIONALS : SEQUENCES;
 }
-
-function setType(type) {
-  state.type = type;
-  state.mode = TYPE_RULES[type].mode;
-  state.pick = menuFor(type)[0].id;
-  render();
-}
-
-/* ══════════════ compute digits ══════════════ */
-
-function compute() {
-  const key = `${state.type}:${state.pick}:${state.total}`;
-  if (cache.has(key)) { current = cache.get(key); return; }
+function currentItem() {
   const menu = menuFor(state.type);
-  const item = menu.find((m) => m.id === state.pick) || menu[0];
-  current = state.type === "integers"
-    ? seqDigits(item.gen, state.total)
-    : item.calc(state.total);
-  cache.set(key, current);
+  return menu.find((m) => m.id === state.pick) || menu[0];
 }
 
-/* ══════════════ the walk ══════════════ */
+/* ══════════════ endless digit sources ══════════════ */
+
+function makeSource() {
+  const item = currentItem();
+  if (state.type === "integers") {
+    const it = item.gen();
+    return {
+      terms: [], intLen: 0, capped: false,
+      pull(n) {
+        let out = "";
+        while (out.length < n) {
+          const t = it.next().value.toString();
+          this.terms.push(t);
+          out += t;
+        }
+        return out;
+      },
+    };
+  }
+  if (state.type === "rational") {
+    const P = BigInt(item.pq[0]), Q = BigInt(item.pq[1]);
+    let r = null;
+    return {
+      terms: null, intLen: 0, capped: false,
+      pull(n) {
+        let out = "";
+        if (r === null) { out = (P / Q).toString(); this.intLen = out.length; r = P % Q; }
+        while (out.length < n) { r *= 10n; out += (r / Q).toString(); r %= Q; }
+        return out;
+      },
+    };
+  }
+  // irrational: recompute at doubled precision whenever the sim catches up
+  let prec = 1000, digits = null, used = 0;
+  return {
+    terms: null, intLen: 0, capped: false,
+    pull(n) {
+      if (!digits) {
+        const d = item.calc(prec);
+        digits = d.stream; this.intLen = d.intPart.length;
+      }
+      while (used + n > digits.length && prec < IRR_PREC_CAP) {
+        prec = Math.min(IRR_PREC_CAP, prec * 2);
+        digits = item.calc(prec).stream;
+      }
+      const out = digits.slice(used, Math.min(used + n, digits.length));
+      used += out.length;
+      if (out.length < n) this.capped = true;
+      return out;
+    },
+  };
+}
+
+/* ══════════════ the simulation ══════════════ */
+
+let sim = null;
+let walkPts = [];            // [{x, y, digit}]
 
 function anglesNow() {
   if (state.spreadMode === "custom") return state.customAngles.slice();
   return Array.from({ length: 10 }, (_, d) => d * state.spread);
 }
 
-function buildWalk() {
+function walkAppendGeom(str) {
   const angles = anglesNow();
-  const rad = (deg) => (deg - 90) * Math.PI / 180;   // 0° = straight up
-  let heading = state.startDir;
-  let x = 0, y = 0;
-  walkPts = [{ x, y, digit: null }];
-  for (const ch of current.stream) {
+  for (const ch of str) {
     const d = ch.charCodeAt(0) - 48;
     if (d < 0 || d > 9) continue;
-    if (state.turnMode === "relative") heading += angles[d];
-    else heading = state.startDir + angles[d];
-    const a = rad(heading);
-    x += Math.cos(a); y += Math.sin(a);
-    walkPts.push({ x, y, digit: d });
+    if (state.turnMode === "relative") sim.heading += angles[d];
+    else sim.heading = state.startDir + angles[d];
+    const a = (sim.heading - 90) * Math.PI / 180;   // 0° = straight up
+    sim.x += Math.cos(a); sim.y += Math.sin(a);
+    walkPts.push({ x: sim.x, y: sim.y, digit: d });
   }
 }
 
-function cssVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+function appendDigits(str) {
+  walkAppendGeom(str);
+  for (const ch of str) {
+    const d = ch.charCodeAt(0) - 48;
+    if (d >= 0 && d <= 9) sim.counts[d]++;
+  }
+  sim.stream += str;
+}
+
+function rebuildWalk() {                 // after angle/turn changes: same digits, new shape
+  sim.heading = state.startDir; sim.x = 0; sim.y = 0;
+  walkPts = [{ x: 0, y: 0, digit: null }];
+  walkAppendGeom(sim.stream);
+  view = null;
+  drawAll();
+}
+
+function resetSim() {
+  sim = {
+    source: makeSource(), stream: "",
+    counts: Array(10).fill(0),
+    heading: state.startDir, x: 0, y: 0,
+    carry: 0, done: false,
+  };
+  walkPts = [{ x: 0, y: 0, digit: null }];
+  view = null;
+  state.running = true;
+  state.hoverDigit = null;
+  updatePlayBtn();
+  drawAll();
+  drawBars();
+  drawStrip();
+  drawRate();
+}
+
+/* ══════════════ canvas walk drawing ══════════════ */
+
+let view = null;             // {scale, cx, cy, lim: padded world bounds}
+let ctx = null, canvasSize = 0;
+const pal = {};
+
+function refreshPal() {
+  const get = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  pal.walkA = get("--walk-a"); pal.walkB = get("--walk-b");
+  pal.grid = get("--grid"); pal.good = get("--good"); pal.hi = get("--accent-hi");
 }
 function hexToRgb(h) {
   const n = parseInt(h.slice(1), 16);
@@ -597,91 +655,99 @@ function lerpColor(c1, c2, t) {
   return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
 }
 
-let animToken = 0;
+function segColor(i) {
+  const d = walkPts[i].digit;
+  if (state.hoverDigit !== null) {
+    if (d !== state.hoverDigit) return pal.grid;
+    return state.colorMode === "digit" ? state.digitColors[d] : pal.hi;
+  }
+  if (state.colorMode === "digit") return state.digitColors[d];
+  if (state.colorMode === "rainbow") return `hsl(${(i * 1.5) % 360}, 85%, 50%)`;
+  const P = 800, ph = (i % P) / P;                  // fade loops light↔dark
+  return lerpColor(pal.walkA, pal.walkB, ph < 0.5 ? ph * 2 : 2 - ph * 2);
+}
 
-function drawWalk(animate) {
+function setupCanvas() {
   const canvas = $("walk-canvas");
   const dpr = window.devicePixelRatio || 1;
-  const size = canvas.clientWidth;
-  if (!size) return;
-  canvas.width = size * dpr; canvas.height = size * dpr;
-  const ctx = canvas.getContext("2d");
+  canvasSize = canvas.clientWidth;
+  canvas.width = canvasSize * dpr; canvas.height = canvasSize * dpr;
+  ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
+}
 
+function computeView() {
   let minX = 0, maxX = 0, minY = 0, maxY = 0;
   for (const p of walkPts) {
     if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
     if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
   }
-  const pad = 24;
+  // pad the box 30% so the walk can grow a while before we rescale
+  const spanX = Math.max(maxX - minX, 4), spanY = Math.max(maxY - minY, 4);
+  const lim = {
+    minX: minX - spanX * 0.3, maxX: maxX + spanX * 0.3,
+    minY: minY - spanY * 0.3, maxY: maxY + spanY * 0.3,
+  };
+  const pad = 20;
   const scale = Math.min(
-    (size - pad * 2) / Math.max(maxX - minX, 1e-9),
-    (size - pad * 2) / Math.max(maxY - minY, 1e-9),
-    (size - pad * 2) / 2                       // never blow up a tiny walk
+    (canvasSize - pad * 2) / (lim.maxX - lim.minX),
+    (canvasSize - pad * 2) / (lim.maxY - lim.minY)
   );
-  const cx = size / 2 - ((minX + maxX) / 2) * scale;
-  const cy = size / 2 - ((minY + maxY) / 2) * scale;
-  const px = (p) => [cx + p.x * scale, cy + p.y * scale];
-
-  const walkA = cssVar("--walk-a"), walkB = cssVar("--walk-b");
-  const gridCol = cssVar("--grid"), goodCol = cssVar("--good");
-  const hiCol = cssVar("--accent-hi");
-  const byDigit = state.colorMode === "digit";
-  const dim = state.hoverDigit !== null;
-  const n = walkPts.length;
-  const token = ++animToken;
-
-  function segColor(i) {
-    const d = walkPts[i].digit;
-    if (dim) {
-      if (d !== state.hoverDigit) return gridCol;
-      return byDigit ? state.digitColors[d] : hiCol;
-    }
-    return byDigit
-      ? state.digitColors[d]
-      : lerpColor(walkA, walkB, n > 2 ? (i - 1) / (n - 2) : 0);
-  }
-
-  function paint(upto) {
-    ctx.clearRect(0, 0, size, size);
-    ctx.lineWidth = 2; ctx.lineCap = "round";
-    for (let i = 1; i < upto; i++) {
-      const [x1, y1] = px(walkPts[i - 1]);
-      const [x2, y2] = px(walkPts[i]);
-      ctx.strokeStyle = segColor(i);
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    }
-    // start + end markers
-    const [sx, sy] = px(walkPts[0]);
-    ctx.fillStyle = goodCol;
-    ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2); ctx.fill();
-    if (upto > 1) {
-      const [ex, ey] = px(walkPts[upto - 1]);
-      ctx.fillStyle = dim ? hiCol : walkB;
-      ctx.beginPath(); ctx.arc(ex, ey, 4, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
-  if (!animate || n < 3) { paint(n); return; }
-  const durMs = 1600;
-  const t0 = performance.now();
-  (function frame(now) {
-    if (token !== animToken) return;
-    const t = Math.min(1, (now - t0) / durMs);
-    paint(Math.max(2, Math.round(2 + t * (n - 2))));
-    if (t < 1) requestAnimationFrame(frame);
-  })(t0);
+  view = {
+    scale, lim,
+    cx: canvasSize / 2 - ((lim.minX + lim.maxX) / 2) * scale,
+    cy: canvasSize / 2 - ((lim.minY + lim.maxY) / 2) * scale,
+  };
 }
 
-/* ══════════════ the bar chart ══════════════ */
+const px = (p) => [view.cx + p.x * view.scale, view.cy + p.y * view.scale];
+
+function strokeSegs(from) {
+  ctx.lineWidth = 1.5; ctx.lineCap = "round";
+  for (let i = Math.max(1, from); i < walkPts.length; i++) {
+    const [x1, y1] = px(walkPts[i - 1]);
+    const [x2, y2] = px(walkPts[i]);
+    ctx.strokeStyle = segColor(i);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+}
+
+function drawAll() {
+  setupCanvas();
+  if (!canvasSize) return;
+  refreshPal();
+  computeView();
+  ctx.clearRect(0, 0, canvasSize, canvasSize);
+  strokeSegs(1);
+  const [sx, sy] = px(walkPts[0]);                  // start marker
+  ctx.fillStyle = pal.good;
+  ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawIncremental(from) {
+  if (!view || !ctx) { drawAll(); return; }
+  const { lim } = view;
+  for (let i = from; i < walkPts.length; i++) {
+    const p = walkPts[i];
+    if (p.x < lim.minX || p.x > lim.maxX || p.y < lim.minY || p.y > lim.maxY) {
+      drawAll();                                    // outgrew the view: zoom out
+      return;
+    }
+  }
+  strokeSegs(from);
+}
+
+/* ══════════════ the frequency bar chart ══════════════ */
 
 function drawBars() {
-  const counts = Array(10).fill(0);
-  for (const ch of current.stream) {
-    const d = ch.charCodeAt(0) - 48;
-    if (d >= 0 && d <= 9) counts[d]++;
-  }
+  const counts = sim.counts;
   const totalDigits = counts.reduce((a, b) => a + b, 0);
+  const topEl = $("chart-top");
+  if (!totalDigits) {
+    $("bars").innerHTML = "";
+    topEl.innerHTML = "warming up…";
+    return;
+  }
   const order = counts.map((c, d) => ({ d, c }))
     .sort((a, b) => b.c - a.c || a.d - b.d);
   const max = Math.max(1, order[0].c);
@@ -692,7 +758,7 @@ function drawBars() {
   for (const { d, c } of order) {
     const row = document.createElement("div");
     row.className = "bar-row" + (state.hoverDigit === d ? " active" : "");
-    const pct = totalDigits ? (100 * c / totalDigits).toFixed(1) : "0";
+    const pct = (100 * c / totalDigits).toFixed(1);
     const col = state.digitColors[d];
     const btnStyle = byDigit ? ` style="border-color:${col};color:${col}"` : "";
     const fillStyle = byDigit ? `;background:${col}` : "";
@@ -705,15 +771,21 @@ function drawBars() {
     barsEl.appendChild(row);
   }
 
-  const topEl = $("chart-top");
   if (state.hoverDigit !== null) {
     const c = counts[state.hoverDigit];
-    const pct = totalDigits ? (100 * c / totalDigits).toFixed(1) : "0";
+    const pct = (100 * c / totalDigits).toFixed(1);
     topEl.innerHTML = `Digit <b>${state.hoverDigit}</b> appears <b>${c}</b> times (${pct}%) — its steps glow in the walk`;
   } else {
     const champ = order[0];
-    topEl.innerHTML = `🏆 Most common: <b>${champ.d}</b> with <b>${champ.c}</b> of ${totalDigits} digits — hover a bar to spotlight it`;
+    topEl.innerHTML = `🏆 Most common so far: <b>${champ.d}</b> with <b>${champ.c}</b> of ${totalDigits} digits — hover a bar to spotlight it`;
   }
+}
+
+function setHover(d) {
+  if (state.hoverDigit === d) return;
+  state.hoverDigit = d;
+  drawBars();
+  drawAll();
 }
 
 /* ══════════════ rate graph (integers only) ══════════════
@@ -725,11 +797,14 @@ function drawRate() {
   const panel = $("rate-panel");
   if (state.type !== "integers") { panel.style.display = "none"; return; }
   panel.style.display = "";
+  const terms = sim.source.terms;
+  if (!terms.length) { $("rate-bars").innerHTML = ""; $("rate-top").innerHTML = "warming up…"; return; }
 
-  const x = state.rateX;
+  // keep the graph readable: auto-grow the group size past 120 bars
+  const x = Math.max(state.rateX, Math.ceil(terms.length / 120 / state.rateX) * state.rateX);
   const groups = [];
-  for (let i = 0; i < current.terms.length; i += x) {
-    const slice = current.terms.slice(i, i + x);
+  for (let i = 0; i < terms.length; i += x) {
+    const slice = terms.slice(i, i + x);
     groups.push({
       g0: i, g1: i + slice.length - 1,
       count: slice.reduce((a, s) => a + s.length, 0),
@@ -762,39 +837,90 @@ function drawRate() {
   });
   setTop(champ, true);
 
-  $("rate-note").textContent = `how many numbers each group of ${x} generation${x > 1 ? "s" : ""} makes`;
+  $("rate-note").textContent =
+    `how many numbers each group of ${x} generation${x > 1 ? "s" : ""} makes` +
+    (x > state.rateX ? " (groups grew so the bars still fit)" : "");
   $("rate-gens").innerHTML =
-    `<span>gen 0</span><span>gen ${groups.length ? groups[groups.length - 1].g1 : 0}</span>`;
-}
-
-function setHover(d) {
-  if (state.hoverDigit === d) return;
-  state.hoverDigit = d;
-  drawBars();
-  drawWalk(false);
+    `<span>gen 0</span><span>gen ${groups[groups.length - 1].g1}</span>`;
 }
 
 /* ══════════════ digit strip ══════════════ */
 
+const STRIP_CHAR_CAP = 30000;
+
 function drawStrip() {
   const strip = $("digit-strip");
-  const item = menuFor(state.type).find((m) => m.id === state.pick);
+  const item = currentItem();
+  const count = Math.max(0, walkPts.length - 1);
+  const status = sim.done
+    ? (sim.source.capped ? "that's as far as I can compute!" : "reached the cap — what a walk!")
+    : (state.running ? "still going…" : "paused");
+
   if (state.type === "integers") {
     $("strip-title").textContent = `${item.label} sequence`;
     $("strip-note").textContent =
-      `generation g → ${item.formula} · ${current.terms.length} generations, squished into ${current.stream.length} digits`;
-    strip.innerHTML = `<span class="int-part">${current.terms.join(", ")}</span>`;
+      `generation g → ${item.formula} · ${sim.source.terms.length} generations, ${count} digits · ${status}`;
+    const s = sim.source.terms.join(", ");
+    strip.innerHTML = `<span class="int-part"></span>`;
+    strip.firstChild.textContent = s.length > 4000 ? "… " + s.slice(-4000) : s;
   } else {
     $("strip-title").textContent = `Digits of ${item.label}`;
-    $("strip-note").textContent = `${current.stream.length} digits`;
+    $("strip-note").textContent = `${count} digits · ${status}`;
+    const intLen = sim.source.intLen || 1;
+    const shown = sim.stream.slice(0, STRIP_CHAR_CAP);
     strip.innerHTML =
-      `<span class="int-part">${current.intPart}${current.frac ? "." : ""}</span>${current.frac}`;
+      `<span class="int-part">${shown.slice(0, intLen)}${shown.length > intLen ? "." : ""}</span>` +
+      shown.slice(intLen) + (sim.stream.length > STRIP_CHAR_CAP ? " …" : "");
+  }
+  strip.scrollTop = strip.scrollHeight;
+  $("count-note").textContent = `${count.toLocaleString()} digits so far`;
+}
+
+/* ══════════════ the endless loop ══════════════ */
+
+let lastT = 0, lastUi = 0, uiDirty = false;
+
+function tick(t) {
+  requestAnimationFrame(tick);
+  const dt = Math.min(0.25, (t - lastT) / 1000 || 0);
+  lastT = t;
+  if (!sim || !state.running || sim.done) return;
+
+  sim.carry += state.speed * dt;
+  const n = Math.min(400, Math.floor(sim.carry));
+  if (n >= 1) {
+    sim.carry -= n;
+    const str = sim.source.pull(n);
+    if (str.length) {
+      const from = walkPts.length;
+      appendDigits(str);
+      drawIncremental(from);
+    }
+    if (sim.source.capped || walkPts.length - 1 >= STREAM_CAP) {
+      sim.done = true;
+      state.running = false;
+      updatePlayBtn();
+      drawAll();
+    }
+    uiDirty = true;
+  }
+  if (uiDirty && t - lastUi > 250) {
+    lastUi = t; uiDirty = false;
+    if (state.hoverDigit === null) drawBars();   // don't yank bars out from under the mouse
+    drawRate();
+    drawStrip();
   }
 }
 
 /* ══════════════ UI wiring ══════════════ */
 
-function renderTypeButtons() {
+function updatePlayBtn() {
+  const b = $("play-btn");
+  b.textContent = state.running ? "⏸ Pause" : (sim && sim.done ? "▶ Again" : "▶ Go");
+  b.classList.toggle("on", state.running);
+}
+
+function renderControls() {
   for (const t of ["irrational", "rational", "integers"]) {
     $("type-" + t).classList.toggle("on", state.type === t);
   }
@@ -807,73 +933,68 @@ function renderTypeButtons() {
   seqBtn.classList.toggle("blackout", rule.mode !== "sequence");
   seqBtn.disabled = rule.mode !== "sequence";
   $("mode-note").textContent = rule.note;
-}
 
-function renderPicker() {
   const wrap = $("picker-chips");
   wrap.innerHTML = "";
   for (const item of menuFor(state.type)) {
     const b = document.createElement("button");
     b.className = "chip math" + (state.pick === item.id ? " on" : "");
     b.textContent = item.label;
-    b.addEventListener("click", () => { state.pick = item.id; render(); });
+    b.addEventListener("click", () => { state.pick = item.id; renderControls(); resetSim(); });
     wrap.appendChild(b);
   }
-}
 
-function renderAngleButtons() {
   $("spread-even").classList.toggle("on", state.spreadMode === "even");
   $("spread-custom").classList.toggle("on", state.spreadMode === "custom");
   $("turn-relative").classList.toggle("on", state.turnMode === "relative");
   $("turn-absolute").classList.toggle("on", state.turnMode === "absolute");
   $("even-controls").style.display = state.spreadMode === "even" ? "flex" : "none";
   $("custom-angles").classList.toggle("show", state.spreadMode === "custom");
+  $("color-rainbow").classList.toggle("on", state.colorMode === "rainbow");
   $("color-fade").classList.toggle("on", state.colorMode === "fade");
   $("color-digit").classList.toggle("on", state.colorMode === "digit");
   $("digit-colors").classList.toggle("show", state.colorMode === "digit");
 }
 
-function rebuildViz(animate) {
-  buildWalk();
-  drawWalk(animate);
-  drawBars();
-  drawRate();
-}
-
-function render(animate = true) {
-  renderTypeButtons();
-  renderPicker();
-  renderAngleButtons();
-  state.hoverDigit = null;
-  compute();
-  drawStrip();
-  rebuildViz(animate);
+function setType(type) {
+  state.type = type;
+  state.mode = TYPE_RULES[type].mode;
+  state.pick = menuFor(type)[0].id;
+  renderControls();
+  resetSim();
 }
 
 $("type-irrational").addEventListener("click", () => setType("irrational"));
 $("type-rational").addEventListener("click", () => setType("rational"));
 $("type-integers").addEventListener("click", () => setType("integers"));
 
-$("ndigits").addEventListener("input", (e) => {
-  state.total = +e.target.value;
-  $("ndigits-val").textContent = state.total + " digits";
-  render(false);
+$("play-btn").addEventListener("click", () => {
+  if (sim.done) { resetSim(); return; }
+  state.running = !state.running;
+  updatePlayBtn();
+  drawStrip();
+});
+$("replay-btn").addEventListener("click", () => resetSim());
+
+$("speed").addEventListener("input", (e) => {
+  state.speed = +e.target.value;
+  $("speed-val").textContent = state.speed + " ⁄s";
 });
 
-$("spread-even").addEventListener("click", () => { state.spreadMode = "even"; renderAngleButtons(); rebuildViz(true); });
-$("spread-custom").addEventListener("click", () => { state.spreadMode = "custom"; renderAngleButtons(); rebuildViz(true); });
-$("turn-relative").addEventListener("click", () => { state.turnMode = "relative"; renderAngleButtons(); rebuildViz(true); });
-$("turn-absolute").addEventListener("click", () => { state.turnMode = "absolute"; renderAngleButtons(); rebuildViz(true); });
+$("spread-even").addEventListener("click", () => { state.spreadMode = "even"; renderControls(); rebuildWalk(); });
+$("spread-custom").addEventListener("click", () => { state.spreadMode = "custom"; renderControls(); rebuildWalk(); });
+$("turn-relative").addEventListener("click", () => { state.turnMode = "relative"; renderControls(); rebuildWalk(); });
+$("turn-absolute").addEventListener("click", () => { state.turnMode = "absolute"; renderControls(); rebuildWalk(); });
 
 $("startdir").addEventListener("input", (e) => {
   state.startDir = +e.target.value;
   $("startdir-val").textContent = state.startDir + "°";
-  rebuildViz(false);
+  rebuildWalk();
 });
 $("spread").addEventListener("input", (e) => {
   state.spread = +e.target.value;
   $("spread-val").textContent = state.spread + "°";
-  rebuildViz(false);
+  rebuildWalk();
 });
 
 const caWrap = $("custom-angles");
@@ -885,14 +1006,15 @@ for (let d = 0; d <= 9; d++) {
   inp.type = "number"; inp.step = "5"; inp.value = state.customAngles[d];
   inp.addEventListener("input", () => {
     state.customAngles[d] = +inp.value || 0;
-    rebuildViz(false);
+    rebuildWalk();
   });
   cell.appendChild(inp);
   caWrap.appendChild(cell);
 }
 
-$("color-fade").addEventListener("click", () => { state.colorMode = "fade"; renderAngleButtons(); drawWalk(false); drawBars(); });
-$("color-digit").addEventListener("click", () => { state.colorMode = "digit"; renderAngleButtons(); drawWalk(false); drawBars(); });
+$("color-rainbow").addEventListener("click", () => { state.colorMode = "rainbow"; renderControls(); drawAll(); drawBars(); });
+$("color-fade").addEventListener("click", () => { state.colorMode = "fade"; renderControls(); drawAll(); drawBars(); });
+$("color-digit").addEventListener("click", () => { state.colorMode = "digit"; renderControls(); drawAll(); drawBars(); });
 
 const dcWrap = $("digit-colors");
 for (let d = 0; d <= 9; d++) {
@@ -903,7 +1025,8 @@ for (let d = 0; d <= 9; d++) {
   inp.type = "color"; inp.value = state.digitColors[d];
   inp.addEventListener("input", () => {
     state.digitColors[d] = inp.value;
-    drawWalk(false); drawBars(); drawRate();
+    if (state.colorMode === "digit") drawAll();
+    drawBars(); drawRate();
   });
   cell.appendChild(inp);
   dcWrap.appendChild(cell);
@@ -915,16 +1038,18 @@ $("ratex").addEventListener("input", (e) => {
   drawRate();
 });
 
-$("replay-btn").addEventListener("click", () => { state.hoverDigit = null; drawBars(); drawWalk(true); });
-
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => drawWalk(false), 120);
+  resizeTimer = setTimeout(() => drawAll(), 120);
 });
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => render(false));
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  drawAll(); drawBars(); drawRate();
+});
 
-render(true);
+renderControls();
+resetSim();
+requestAnimationFrame(tick);
 </script>
 </body>
 </html>
