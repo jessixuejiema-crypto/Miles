@@ -126,6 +126,50 @@
     background: var(--page); color: var(--text-primary);
   }
 
+  #digit-colors {
+    display: none;
+    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+    gap: 6px; width: 100%;
+  }
+  #digit-colors.show { display: grid; }
+  .dc-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .dc-cell span { font-size: 11px; font-weight: 700; color: var(--muted); }
+  .dc-cell input {
+    width: 100%; height: 30px; padding: 2px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--page); cursor: pointer;
+  }
+
+  /* ── rate graph ── */
+  #rate-top {
+    font-size: 13px; color: var(--text-secondary);
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px; margin-bottom: 10px;
+  }
+  #rate-top b { color: var(--text-primary); font-size: 15px; }
+  #rate-bars {
+    display: flex; align-items: flex-end; gap: 2px;
+    height: 174px; padding-top: 24px;
+    border-bottom: 2px solid var(--baseline);
+  }
+  .rate-bar {
+    flex: 1 1 0; min-width: 3px;
+    background: var(--series-1);
+    border-radius: 3px 3px 0 0;
+    position: relative; cursor: pointer;
+  }
+  .rate-bar:hover { opacity: 0.75; }
+  .rate-val {
+    position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; font-weight: 800; color: var(--text-primary);
+  }
+  #rate-gens {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--muted); margin-top: 4px;
+  }
+
   #digit-strip {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 13px; line-height: 1.7;
@@ -268,6 +312,15 @@
     <span class="row-label"></span>
     <div id="custom-angles"></div>
   </div>
+  <div class="row">
+    <span class="row-label">Colors</span>
+    <button class="chip" id="color-fade" title="Start light, end dark">Fade along walk</button>
+    <button class="chip" id="color-digit" title="Every digit gets its own color">Color by digit</button>
+  </div>
+  <div class="row">
+    <span class="row-label"></span>
+    <div id="digit-colors"></div>
+  </div>
 </div>
 
 <div class="panel">
@@ -297,6 +350,23 @@
     <div id="chart-top"></div>
     <div id="bars"></div>
   </div>
+</div>
+
+<div class="panel" id="rate-panel" style="display:none;">
+  <div class="viz-head">
+    <span class="viz-title">Rate graph</span>
+    <span class="viz-note" id="rate-note"></span>
+  </div>
+  <div class="row">
+    <span class="row-label">Group size</span>
+    <div class="slider-group">
+      <input type="range" id="ratex" min="1" max="50" step="1" value="10">
+      <span class="slider-val" id="ratex-val">10 gens</span>
+    </div>
+  </div>
+  <div id="rate-top"></div>
+  <div id="rate-bars"></div>
+  <div id="rate-gens"></div>
 </div>
 
 <script>
@@ -411,6 +481,9 @@ const IRRATIONALS = [
   { id: "sqrt3", label: "√3",   calc: (t) => { const p = t + 8; return fixedToDigits(sqrtFixed(3, p), p, t); } },
   { id: "phi",   label: "φ",    calc: (t) => { const p = t + 8; return fixedToDigits((pow10(p) + sqrtFixed(5, p)) / 2n, p, t); } },
   { id: "ln2",   label: "ln 2", calc: (t) => { const p = t + 8; return fixedToDigits(ln2Fixed(p), p, t); } },
+  { id: "sqrtpi",   label: "√π",     calc: (t) => { const p = t + 8; return fixedToDigits(isqrt(piFixed(p) * pow10(p)), p, t); } },
+  { id: "sqrtpi2",  label: "√(π⁄2)", calc: (t) => { const p = t + 8; return fixedToDigits(isqrt(piFixed(p) * pow10(p) / 2n), p, t); } },
+  { id: "halffact", label: "0.5!",   calc: (t) => { const p = t + 8; return fixedToDigits(isqrt(piFixed(p) * pow10(p)) / 2n, p, t); } },
 ];
 const RATIONALS = [
   { id: "r13",   label: "1⁄3",     calc: (t) => rationalDigits(1, 3, t) },
@@ -421,12 +494,12 @@ const RATIONALS = [
   { id: "r9801", label: "1⁄9801",  calc: (t) => rationalDigits(1, 9801, t) },
 ];
 const SEQUENCES = [
-  { id: "fib",    label: "Fibonacci",   gen: genFibonacci },
-  { id: "primes", label: "Primes",      gen: genPrimes },
-  { id: "sq",     label: "Squares",     gen: genSquares },
-  { id: "tri",    label: "Triangular",  gen: genTriangular },
-  { id: "p2",     label: "Powers of 2", gen: genPow2 },
-  { id: "count",  label: "Counting",    gen: genCounting },
+  { id: "count",  label: "g + 1",       formula: "g + 1",             gen: genCounting },
+  { id: "fib",    label: "Fibonacci",   formula: "F(g), add the two before", gen: genFibonacci },
+  { id: "primes", label: "Primes",      formula: "the g-th prime",    gen: genPrimes },
+  { id: "sq",     label: "Squares",     formula: "(g + 1)²",          gen: genSquares },
+  { id: "tri",    label: "Triangular",  formula: "(g + 1)(g + 2) ⁄ 2", gen: genTriangular },
+  { id: "p2",     label: "Powers of 2", formula: "2^g",               gen: genPow2 },
 ];
 
 /* ══════════════ state ══════════════ */
@@ -441,6 +514,10 @@ const state = {
   startDir: 0,
   spread: 36,
   customAngles: Array.from({ length: 10 }, (_, d) => d * 36),
+  colorMode: "fade",         // fade | digit
+  digitColors: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4",
+                "#008300", "#4a3aa7", "#e34948", "#0d9ec9", "#8f6bde"],
+  rateX: 10,                 // generations per rate-graph group
   hoverDigit: null,
 };
 const cache = new Map();
@@ -549,9 +626,21 @@ function drawWalk(animate) {
   const walkA = cssVar("--walk-a"), walkB = cssVar("--walk-b");
   const gridCol = cssVar("--grid"), goodCol = cssVar("--good");
   const hiCol = cssVar("--accent-hi");
+  const byDigit = state.colorMode === "digit";
   const dim = state.hoverDigit !== null;
   const n = walkPts.length;
   const token = ++animToken;
+
+  function segColor(i) {
+    const d = walkPts[i].digit;
+    if (dim) {
+      if (d !== state.hoverDigit) return gridCol;
+      return byDigit ? state.digitColors[d] : hiCol;
+    }
+    return byDigit
+      ? state.digitColors[d]
+      : lerpColor(walkA, walkB, n > 2 ? (i - 1) / (n - 2) : 0);
+  }
 
   function paint(upto) {
     ctx.clearRect(0, 0, size, size);
@@ -559,10 +648,7 @@ function drawWalk(animate) {
     for (let i = 1; i < upto; i++) {
       const [x1, y1] = px(walkPts[i - 1]);
       const [x2, y2] = px(walkPts[i]);
-      const isHi = dim && walkPts[i].digit === state.hoverDigit;
-      ctx.strokeStyle = dim
-        ? (isHi ? hiCol : gridCol)
-        : lerpColor(walkA, walkB, n > 2 ? (i - 1) / (n - 2) : 0);
+      ctx.strokeStyle = segColor(i);
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
     }
     // start + end markers
@@ -600,15 +686,19 @@ function drawBars() {
     .sort((a, b) => b.c - a.c || a.d - b.d);
   const max = Math.max(1, order[0].c);
 
+  const byDigit = state.colorMode === "digit";
   const barsEl = $("bars");
   barsEl.innerHTML = "";
   for (const { d, c } of order) {
     const row = document.createElement("div");
     row.className = "bar-row" + (state.hoverDigit === d ? " active" : "");
     const pct = totalDigits ? (100 * c / totalDigits).toFixed(1) : "0";
+    const col = state.digitColors[d];
+    const btnStyle = byDigit ? ` style="border-color:${col};color:${col}"` : "";
+    const fillStyle = byDigit ? `;background:${col}` : "";
     row.innerHTML =
-      `<div class="digit-btn">${d}</div>` +
-      `<div class="bar-track"><div class="bar-fill" style="width:${(100 * c / max).toFixed(2)}%"></div></div>` +
+      `<div class="digit-btn"${btnStyle}>${d}</div>` +
+      `<div class="bar-track"><div class="bar-fill" style="width:${(100 * c / max).toFixed(2)}%${fillStyle}"></div></div>` +
       `<div class="bar-val">${c}<small>${pct}%</small></div>`;
     row.addEventListener("mouseenter", () => setHover(d));
     row.addEventListener("mouseleave", () => setHover(null));
@@ -626,6 +716,57 @@ function drawBars() {
   }
 }
 
+/* ══════════════ rate graph (integers only) ══════════════
+   Group the generations x at a time and count how many digits (numbers)
+   each group makes. The biggest group wears the color of its value's
+   first digit — changeable in the Colors row.                          */
+
+function drawRate() {
+  const panel = $("rate-panel");
+  if (state.type !== "integers") { panel.style.display = "none"; return; }
+  panel.style.display = "";
+
+  const x = state.rateX;
+  const groups = [];
+  for (let i = 0; i < current.terms.length; i += x) {
+    const slice = current.terms.slice(i, i + x);
+    groups.push({
+      g0: i, g1: i + slice.length - 1,
+      count: slice.reduce((a, s) => a + s.length, 0),
+    });
+  }
+  const max = Math.max(...groups.map((g) => g.count));
+  const champIdx = groups.findIndex((g) => g.count === max);
+  const champ = groups[champIdx];
+  const champColor = state.digitColors[+String(champ.count)[0]];
+
+  const setTop = (g, isChamp) => {
+    $("rate-top").innerHTML = isChamp
+      ? `🏆 Biggest: generations <b>${g.g0}–${g.g1}</b> made <b style="color:${champColor}">${g.count}</b> numbers — colored by its first digit, ${String(g.count)[0]}`
+      : `Generations <b>${g.g0}–${g.g1}</b> made <b>${g.count}</b> numbers`;
+  };
+
+  const wrap = $("rate-bars");
+  wrap.innerHTML = "";
+  groups.forEach((g, i) => {
+    const bar = document.createElement("div");
+    bar.className = "rate-bar";
+    bar.style.height = (100 * g.count / max).toFixed(1) + "%";
+    if (i === champIdx) {
+      bar.style.background = champColor;
+      bar.innerHTML = `<span class="rate-val">${g.count}</span>`;
+    }
+    bar.addEventListener("mouseenter", () => setTop(g, i === champIdx));
+    bar.addEventListener("mouseleave", () => setTop(champ, true));
+    wrap.appendChild(bar);
+  });
+  setTop(champ, true);
+
+  $("rate-note").textContent = `how many numbers each group of ${x} generation${x > 1 ? "s" : ""} makes`;
+  $("rate-gens").innerHTML =
+    `<span>gen 0</span><span>gen ${groups.length ? groups[groups.length - 1].g1 : 0}</span>`;
+}
+
 function setHover(d) {
   if (state.hoverDigit === d) return;
   state.hoverDigit = d;
@@ -640,7 +781,8 @@ function drawStrip() {
   const item = menuFor(state.type).find((m) => m.id === state.pick);
   if (state.type === "integers") {
     $("strip-title").textContent = `${item.label} sequence`;
-    $("strip-note").textContent = `${current.terms.length} terms, squished into ${current.stream.length} digits`;
+    $("strip-note").textContent =
+      `generation g → ${item.formula} · ${current.terms.length} generations, squished into ${current.stream.length} digits`;
     strip.innerHTML = `<span class="int-part">${current.terms.join(", ")}</span>`;
   } else {
     $("strip-title").textContent = `Digits of ${item.label}`;
@@ -686,12 +828,16 @@ function renderAngleButtons() {
   $("turn-absolute").classList.toggle("on", state.turnMode === "absolute");
   $("even-controls").style.display = state.spreadMode === "even" ? "flex" : "none";
   $("custom-angles").classList.toggle("show", state.spreadMode === "custom");
+  $("color-fade").classList.toggle("on", state.colorMode === "fade");
+  $("color-digit").classList.toggle("on", state.colorMode === "digit");
+  $("digit-colors").classList.toggle("show", state.colorMode === "digit");
 }
 
 function rebuildViz(animate) {
   buildWalk();
   drawWalk(animate);
   drawBars();
+  drawRate();
 }
 
 function render(animate = true) {
@@ -744,6 +890,30 @@ for (let d = 0; d <= 9; d++) {
   cell.appendChild(inp);
   caWrap.appendChild(cell);
 }
+
+$("color-fade").addEventListener("click", () => { state.colorMode = "fade"; renderAngleButtons(); drawWalk(false); drawBars(); });
+$("color-digit").addEventListener("click", () => { state.colorMode = "digit"; renderAngleButtons(); drawWalk(false); drawBars(); });
+
+const dcWrap = $("digit-colors");
+for (let d = 0; d <= 9; d++) {
+  const cell = document.createElement("div");
+  cell.className = "dc-cell";
+  cell.innerHTML = `<span>digit ${d}</span>`;
+  const inp = document.createElement("input");
+  inp.type = "color"; inp.value = state.digitColors[d];
+  inp.addEventListener("input", () => {
+    state.digitColors[d] = inp.value;
+    drawWalk(false); drawBars(); drawRate();
+  });
+  cell.appendChild(inp);
+  dcWrap.appendChild(cell);
+}
+
+$("ratex").addEventListener("input", (e) => {
+  state.rateX = +e.target.value;
+  $("ratex-val").textContent = state.rateX + (state.rateX > 1 ? " gens" : " gen");
+  drawRate();
+});
 
 $("replay-btn").addEventListener("click", () => { state.hoverDigit = null; drawBars(); drawWalk(true); });
 
