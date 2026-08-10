@@ -627,6 +627,8 @@ function fightLine(cls, name, text, gain){
   $('fight').scrollTop = $('fight').scrollHeight;
 }
 
+let fighting = false;
+
 async function aiFight(){
   const fight = $('fight');
   fight.innerHTML = '';
@@ -635,19 +637,21 @@ async function aiFight(){
   $('care').hidden = true;
   $('fireBtn').disabled = true;
   $('addBtn').disabled = true;
-  $('fightBtn').disabled = true;
+  $('fightBtn').textContent = '🛑 Stop fight';
 
   const startBlue = blueAura, startRed = redAura;
-  const rounds = 3 + Math.floor(Math.random()*2); // 3–4 rounds
+  let round = 0;
 
-  for(let r = 1; r <= rounds; r++){
+  while(fighting){
+    round++;
     const roundTag = document.createElement('div');
     roundTag.className = 'round';
-    roundTag.textContent = 'Round ' + r + ' of ' + rounds;
+    roundTag.textContent = 'Round ' + round;
     fight.appendChild(roundTag);
 
     $('verdict').textContent = '😈 Bully AI is typing…';
     await sleep(700 + Math.random()*400);
+    if(!fighting) break;
     const jab = pickLine(BULLY_AI_LINES, 'bullyAI');
     const redGain = 40 + Math.floor(Math.random()*55);
     redAura += redGain;
@@ -656,6 +660,7 @@ async function aiFight(){
 
     $('verdict').textContent = '🤖 Comeback AI is cooking…';
     await sleep(800 + Math.random()*500);
+    if(!fighting) break;
     const cat = CATEGORIES.find(c => c.id === jab.cat);
     const line = pickLine(cat ? cat.lines : GENERIC, cat ? cat.id : 'generic');
     let blueGain = 55 + Math.floor(Math.random()*50);
@@ -675,10 +680,14 @@ async function aiFight(){
 
   $('fireBtn').disabled = false;
   $('addBtn').disabled = false;
-  $('fightBtn').disabled = false;
+  $('fightBtn').textContent = '⚔️ AI vs AI fight';
 }
 
-$('fightBtn').addEventListener('click', aiFight);
+$('fightBtn').addEventListener('click', () => {
+  if(fighting){ fighting = false; return; }  // stop pressed: fight loop ends, winner declared
+  fighting = true;
+  aiFight();
+});
 
 $('fireBtn').addEventListener('click', fire);
 document.addEventListener('keydown', e => {
@@ -693,6 +702,7 @@ $('copyBtn').addEventListener('click', function(){
 });
 
 $('resetBtn').addEventListener('click', () => {
+  fighting = false;
   blueAura = 0; redAura = 0;
   updateCircle();
   $('result').hidden = true;
