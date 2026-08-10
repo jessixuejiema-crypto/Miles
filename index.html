@@ -18,6 +18,7 @@
     --series-1:       #2a78d6;
     --accent-hi:      #eb6834;
     --good:           #0ca30c;
+    --bad:            #d03b3b;
     --walk-a:         #86b6ef;
     --walk-b:         #0d366b;
     --chip-on-bg:     #2a78d6;
@@ -39,6 +40,7 @@
       --series-1:       #3987e5;
       --accent-hi:      #d95926;
       --good:           #0ca30c;
+      --bad:            #e66767;
       --walk-a:         #cde2fb;
       --walk-b:         #3987e5;
       --chip-on-bg:     #3987e5;
@@ -101,7 +103,49 @@
     text-decoration: line-through;
     transform: none;
   }
-  button.chip.math { font-size: 16px; }
+
+  /* ── formula box + math keyboard ── */
+  .formula-box {
+    flex: 1 1 240px; min-height: 46px; max-width: 560px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 21px;
+    background: var(--page);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 8px 12px;
+    display: flex; align-items: center; flex-wrap: wrap;
+    word-break: break-all;
+    cursor: text; outline: none;
+  }
+  .formula-box:focus { border-color: var(--series-1); }
+  .formula-box .caret {
+    display: inline-block; width: 2px; height: 24px;
+    background: var(--series-1); margin-left: 2px;
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  #formula-error { color: var(--bad); font-size: 13px; font-weight: 600; }
+  #kb {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(44px, 64px));
+    gap: 6px;
+  }
+  .kb-key {
+    font: inherit; font-size: 17px; font-weight: 700;
+    padding: 10px 0;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--page); color: var(--text-primary);
+    cursor: pointer;
+  }
+  .kb-key:hover:not(:disabled) { border-color: var(--series-1); }
+  .kb-key.op { background: var(--surface-1); }
+  .kb-key.go { background: var(--chip-on-bg); color: var(--chip-on-ink); border-color: var(--chip-on-bg); }
+  .kb-key:disabled {
+    background: var(--blackout-bg); color: var(--blackout-ink);
+    border-color: transparent; cursor: not-allowed;
+    text-decoration: line-through;
+  }
 
   .slider-group { display: flex; align-items: center; gap: 8px; }
   .slider-group label { font-size: 13px; color: var(--text-secondary); }
@@ -275,7 +319,7 @@
 <body>
 
 <h1>🌀 Digit Walker</h1>
-<p class="subtitle">Pick a number and watch its digits walk across the page forever — and see which digits show up the most.</p>
+<p class="subtitle">Type any formula, and watch its digits walk across the page forever — and see which digits show up the most.</p>
 
 <div class="panel">
   <div class="row">
@@ -291,8 +335,16 @@
     <span class="viz-note" id="mode-note"></span>
   </div>
   <div class="row">
-    <span class="row-label">Pick one</span>
-    <span id="picker-chips" style="display:flex;flex-wrap:wrap;gap:8px;"></span>
+    <span class="row-label">Formula</span>
+    <div id="formula-box" class="formula-box" tabindex="0"></div>
+  </div>
+  <div class="row">
+    <span class="row-label"></span>
+    <span id="formula-error"></span>
+  </div>
+  <div class="row">
+    <span class="row-label">Keyboard</span>
+    <div id="kb"></div>
   </div>
   <div class="row">
     <span class="row-label">Simulate</span>
@@ -397,7 +449,7 @@
 <script>
 "use strict";
 
-/* ══════════════ big-number digit engines (BigInt fixed point) ══════════════ */
+/* ══════════════ big-number engines (BigInt fixed point) ══════════════ */
 
 function pow10(n) { return 10n ** BigInt(n); }
 
@@ -421,27 +473,15 @@ function eFixed(prec) {              // Σ 1/k!
   while (t > 0n) { t = t / k; sum += t; k += 1n; }
   return sum;
 }
-function e2Fixed(prec) {             // Σ 2^k/k!
-  const one = pow10(prec);
-  let t = one, sum = one, k = 1n;
-  while (t > 0n) { t = t * 2n / k; sum += t; k += 1n; }
-  return sum;
-}
-function ln2Fixed(prec) {            // Σ 1/(k·2^k)
-  const one = pow10(prec);
-  let p = one, sum = 0n, k = 1n;
-  while (true) { p = p / 2n; if (p === 0n) break; sum += p / k; k += 1n; }
-  return sum;
-}
 function isqrt(n) {
   if (n < 2n) return n;
   let x = 1n << BigInt(Math.ceil(n.toString(2).length / 2) + 1);
   while (true) { const y = (x + n / x) >> 1n; if (y >= x) return x; x = y; }
 }
-function sqrtFixed(m, prec) {        // √m at fixed point
-  const one = pow10(prec);
-  return isqrt(BigInt(m) * one * one);
-}
+
+const piMemo = new Map(), eMemo = new Map();
+function piAt(p) { if (!piMemo.has(p)) piMemo.set(p, piFixed(p)); return piMemo.get(p); }
+function eAt(p)  { if (!eMemo.has(p))  eMemo.set(p, eFixed(p));   return eMemo.get(p); }
 
 // Turn a fixed-point value into { intPart, stream } dropping guard digits.
 function fixedToDigits(value, prec) {
@@ -452,61 +492,252 @@ function fixedToDigits(value, prec) {
   return { intPart, stream: intPart + frac };
 }
 
-/* ══════════════ integer sequences ══════════════ */
+/* ══════════════ formula parser (the typed language) ══════════════
+   digits . + − × ÷ ^ ! ( ) √ π e φ g — with implicit multiplication,
+   so g(g+1)÷2, 2π and 3√2 all read the way you'd write them.        */
 
-function* genCounting()   { for (let n = 1n; ; n++) yield n; }
-function* genFibonacci()  { let a = 1n, b = 1n; while (true) { yield a; [a, b] = [b, a + b]; } }
-function* genSquares()    { for (let n = 1n; ; n++) yield n * n; }
-function* genTriangular() { for (let n = 1n; ; n++) yield n * (n + 1n) / 2n; }
-function* genPow2()       { let p = 1n; while (true) { yield p; p *= 2n; } }
-function* genPrimes() {
-  const found = [];
-  for (let n = 2n; ; n++) {
-    let prime = true;
-    for (const p of found) { if (p * p > n) break; if (n % p === 0n) { prime = false; break; } }
-    if (prime) { found.push(n); yield n; }
+class FErr extends Error {}
+
+function tokenize(src) {
+  const toks = [];
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === " ") { i++; continue; }
+    if (/[0-9.]/.test(c)) {
+      let j = i;
+      while (j < src.length && /[0-9.]/.test(src[j])) j++;
+      const raw = src.slice(i, j);
+      if ((raw.match(/\./g) || []).length > 1) throw new FErr("a number can only have one decimal point");
+      toks.push({ t: "num", v: raw.startsWith(".") ? "0" + raw : raw });
+      i = j; continue;
+    }
+    if (c === "π" || c === "e" || c === "φ") { toks.push({ t: "const", v: c }); i++; continue; }
+    if (c === "g") { toks.push({ t: "g" }); i++; continue; }
+    if (c === "-" || c === "−") { toks.push({ t: "−" }); i++; continue; }
+    if (c === "*") { toks.push({ t: "×" }); i++; continue; }
+    if (c === "/") { toks.push({ t: "÷" }); i++; continue; }
+    if ("+×÷^!()√".includes(c)) { toks.push({ t: c }); i++; continue; }
+    throw new FErr(`I don't know the symbol "${c}"`);
   }
+  return toks;
 }
 
-/* ══════════════ the menu ══════════════ */
+function parseFormula(src, intMode) {
+  const toks = tokenize(src);
+  if (!toks.length) throw new FErr("type a formula first!");
+  let pos = 0;
+  const peek = () => toks[pos];
+  const next = () => toks[pos++];
+  const startsPrimary = (tk) =>
+    tk && (tk.t === "num" || tk.t === "const" || tk.t === "g" || tk.t === "(" || tk.t === "√");
 
-const IRRATIONALS = [
-  { id: "pi",    label: "π",    calc: (p) => fixedToDigits(piFixed(p), p) },
-  { id: "pi2x",  label: "π × 2", calc: (p) => fixedToDigits(2n * piFixed(p), p) },
-  { id: "pisq",  label: "π²",   calc: (p) => { const v = piFixed(p); return fixedToDigits(v * v / pow10(p), p); } },
-  { id: "e",     label: "e",    calc: (p) => fixedToDigits(eFixed(p), p) },
-  { id: "esq",   label: "e²",   calc: (p) => fixedToDigits(e2Fixed(p), p) },
-  { id: "sqrt2", label: "√2",   calc: (p) => fixedToDigits(sqrtFixed(2, p), p) },
-  { id: "sqrt3", label: "√3",   calc: (p) => fixedToDigits(sqrtFixed(3, p), p) },
-  { id: "phi",   label: "φ",    calc: (p) => fixedToDigits((pow10(p) + sqrtFixed(5, p)) / 2n, p) },
-  { id: "ln2",   label: "ln 2", calc: (p) => fixedToDigits(ln2Fixed(p), p) },
-  { id: "sqrtpi",   label: "√π",     calc: (p) => fixedToDigits(isqrt(piFixed(p) * pow10(p)), p) },
-  { id: "sqrtpi2",  label: "√(π⁄2)", calc: (p) => fixedToDigits(isqrt(piFixed(p) * pow10(p) / 2n), p) },
-  { id: "halffact", label: "0.5!",   calc: (p) => fixedToDigits(isqrt(piFixed(p) * pow10(p)) / 2n, p) },
-];
-const RATIONALS = [
-  { id: "r13",   label: "1⁄3",     pq: [1, 3] },
-  { id: "r17",   label: "1⁄7",     pq: [1, 7] },
-  { id: "r227",  label: "22⁄7",    pq: [22, 7] },
-  { id: "r355",  label: "355⁄113", pq: [355, 113] },
-  { id: "r181",  label: "1⁄81",    pq: [1, 81] },
-  { id: "r9801", label: "1⁄9801",  pq: [1, 9801] },
-];
-const SEQUENCES = [
-  { id: "count",  label: "g + 1",       formula: "g + 1",             gen: genCounting },
-  { id: "fib",    label: "Fibonacci",   formula: "F(g), add the two before", gen: genFibonacci },
-  { id: "primes", label: "Primes",      formula: "the g-th prime",    gen: genPrimes },
-  { id: "sq",     label: "Squares",     formula: "(g + 1)²",          gen: genSquares },
-  { id: "tri",    label: "Triangular",  formula: "(g + 1)(g + 2) ⁄ 2", gen: genTriangular },
-  { id: "p2",     label: "Powers of 2", formula: "2^g",               gen: genPow2 },
-];
+  function parseExpr() {
+    let node = parseTerm();
+    while (peek() && (peek().t === "+" || peek().t === "−")) {
+      node = { t: next().t === "+" ? "add" : "sub", a: node, b: parseTerm() };
+    }
+    return node;
+  }
+  function parseTerm() {
+    let node = parseFactor();
+    while (peek() && (peek().t === "×" || peek().t === "÷" || startsPrimary(peek()))) {
+      if (peek().t === "×" || peek().t === "÷") {
+        node = { t: next().t === "×" ? "mul" : "div", a: node, b: parseFactor() };
+      } else {
+        node = { t: "mul", a: node, b: parseFactor() };   // implicit ×
+      }
+    }
+    return node;
+  }
+  function parseFactor() {
+    if (peek() && peek().t === "−") { next(); return { t: "neg", a: parseFactor() }; }
+    return parsePower();
+  }
+  function parsePower() {
+    const base = parsePostfix();
+    if (peek() && peek().t === "^") { next(); return { t: "pow", a: base, b: parseFactor() }; }
+    return base;
+  }
+  function parsePostfix() {
+    let node = parsePrimary();
+    while (peek() && peek().t === "!") { next(); node = { t: "fact", a: node }; }
+    return node;
+  }
+  function parsePrimary() {
+    const tk = next();
+    if (!tk) throw new FErr("the formula ends too soon");
+    if (tk.t === "num") return { t: "num", v: tk.v };
+    if (tk.t === "const") {
+      if (intMode) throw new FErr(`${tk.v} isn't a whole number — Integers formulas use g and numbers`);
+      return { t: "const", v: tk.v };
+    }
+    if (tk.t === "g") {
+      if (!intMode) throw new FErr("g only works in Integers sequences");
+      return { t: "g" };
+    }
+    if (tk.t === "(") {
+      const node = parseExpr();
+      const close = next();
+      if (!close || close.t !== ")") throw new FErr("missing a closing )");
+      return node;
+    }
+    if (tk.t === "√") {
+      if (intMode) throw new FErr("√ makes non-whole numbers — not for Integers");
+      return { t: "sqrt", a: parsePostfix() };
+    }
+    throw new FErr("I got confused reading the formula");
+  }
+
+  const ast = parseExpr();
+  if (pos < toks.length) throw new FErr("there's extra stuff at the end I don't understand");
+  return ast;
+}
+
+/* ── evaluator #1: fixed-point at prec digits (Irrational/Rational) ── */
+
+function powFixed(a, n, one) {
+  let inv = false;
+  if (n < 0n) { inv = true; n = -n; }
+  if (n > 10000n) throw new FErr("that power is too big for me");
+  let r = one, b = a;
+  while (n > 0n) {
+    if (n & 1n) r = r * b / one;
+    n >>= 1n;
+    if (n > 0n) b = b * b / one;
+  }
+  if (inv) { if (r === 0n) throw new FErr("can't divide by zero"); r = one * one / r; }
+  return r;
+}
+
+function factFixed(a, one, p) {
+  if (a < 0n) throw new FErr("factorial needs a number ≥ 0");
+  const twice = 2n * a;
+  if (twice % one !== 0n) throw new FErr("factorial works on wholes and halves (like 3! or 0.5!)");
+  const m2 = twice / one;
+  if (m2 > 4000n) throw new FErr("that factorial is way too big");
+  if (m2 % 2n === 0n) {
+    let r = 1n;
+    for (let k = 2n; k <= m2 / 2n; k++) r *= k;
+    return r * one;
+  }
+  // half numbers: (1/2)! = √π ⁄ 2, then multiply up by 3/2, 5/2, …
+  let r = isqrt(piAt(p) * one) / 2n;
+  for (let j = 1n; j <= (m2 - 1n) / 2n; j++) {
+    r = r * ((2n * j + 1n) * one / 2n) / one;
+  }
+  return r;
+}
+
+function evalFixed(node, p) {
+  const one = pow10(p);
+  const f = (n) => {
+    switch (n.t) {
+      case "num": {
+        const [a, b = ""] = n.v.split(".");
+        return BigInt(a + b) * one / pow10(b.length);
+      }
+      case "const":
+        if (n.v === "π") return piAt(p);
+        if (n.v === "e") return eAt(p);
+        return (one + isqrt(5n * one * one)) / 2n;      // φ
+      case "add": return f(n.a) + f(n.b);
+      case "sub": return f(n.a) - f(n.b);
+      case "neg": return -f(n.a);
+      case "mul": return f(n.a) * f(n.b) / one;
+      case "div": {
+        const d = f(n.b);
+        if (d === 0n) throw new FErr("can't divide by zero");
+        return f(n.a) * one / d;
+      }
+      case "sqrt": {
+        const a = f(n.a);
+        if (a < 0n) throw new FErr("can't take √ of a negative");
+        return isqrt(a * one);
+      }
+      case "pow": {
+        const b = f(n.b);
+        if (b % one !== 0n) throw new FErr("powers need whole numbers — use √ for halves");
+        return powFixed(f(n.a), b / one, one);
+      }
+      case "fact": return factFixed(f(n.a), one, p);
+    }
+  };
+  return f(node);
+}
+
+/* ── evaluator #2: exact fractions with g (Integers sequences) ── */
+
+function bgcd(a, b) {
+  a = a < 0n ? -a : a; b = b < 0n ? -b : b;
+  while (b) { [a, b] = [b, a % b]; }
+  return a;
+}
+function frac(n, d) {
+  if (d < 0n) { n = -n; d = -d; }
+  const g = bgcd(n, d) || 1n;
+  return { n: n / g, d: d / g };
+}
+
+function evalFrac(node, g) {
+  const f = (nd) => {
+    switch (nd.t) {
+      case "num": {
+        const [a, b = ""] = nd.v.split(".");
+        return frac(BigInt(a + b), pow10(b.length));
+      }
+      case "g": return { n: g, d: 1n };
+      case "add": { const x = f(nd.a), y = f(nd.b); return frac(x.n * y.d + y.n * x.d, x.d * y.d); }
+      case "sub": { const x = f(nd.a), y = f(nd.b); return frac(x.n * y.d - y.n * x.d, x.d * y.d); }
+      case "neg": { const x = f(nd.a); return { n: -x.n, d: x.d }; }
+      case "mul": { const x = f(nd.a), y = f(nd.b); return frac(x.n * y.n, x.d * y.d); }
+      case "div": {
+        const x = f(nd.a), y = f(nd.b);
+        if (y.n === 0n) throw new FErr("can't divide by zero");
+        return frac(x.n * y.d, x.d * y.n);
+      }
+      case "pow": {
+        const b = f(nd.b);
+        if (b.d !== 1n) throw new FErr("powers need whole numbers");
+        let e = b.n, x = f(nd.a), inv = false;
+        if (e < 0n) { inv = true; e = -e; }
+        if (e > 2000n) throw new FErr("that power got too big");
+        if (BigInt(x.n.toString().length) * e > 100000n) throw new FErr("the numbers got way too big");
+        const r = { n: x.n ** e, d: x.d ** e };
+        if (inv) { if (r.n === 0n) throw new FErr("can't divide by zero"); return frac(r.d, r.n); }
+        return r;
+      }
+      case "fact": {
+        const x = f(nd.a);
+        if (x.d !== 1n || x.n < 0n) throw new FErr("factorial needs a whole number ≥ 0 here");
+        if (x.n > 2000n) throw new FErr("that factorial is too big");
+        let r = 1n;
+        for (let k = 2n; k <= x.n; k++) r *= k;
+        return { n: r, d: 1n };
+      }
+      default: throw new FErr("that doesn't work in Integers formulas");
+    }
+  };
+  return f(node);
+}
+
+function* genFormula(ast) {
+  for (let g = 0n; ; g++) {
+    const v = evalFrac(ast, g);
+    let t = v.n / v.d;                 // whole part; negatives walk by size
+    if (t < 0n) t = -t;
+    yield t;
+  }
+}
 
 /* ══════════════ state ══════════════ */
 
 const state = {
   type: "irrational",        // irrational | rational | integers
   mode: "digits",            // digits | sequence  (locked by type)
-  pick: "pi",
+  formulas: { irrational: "π", rational: "22÷7", integers: "g+1" },   // being typed
+  applied:  { irrational: "π", rational: "22÷7", integers: "g+1" },   // running now
+  asts: {},
   spreadMode: "even",        // even | custom
   turnMode: "relative",      // relative | absolute
   startDir: 0,
@@ -522,7 +753,7 @@ const state = {
   hoverDigit: null,
 };
 
-const IRR_PREC_CAP = 16000;  // recomputing π gets slow past this
+const IRR_PREC_CAP = 16000;  // recomputing constants gets slow past this
 const STREAM_CAP = 200000;   // stop appending points after this many digits
 
 /* Rainbow by rank: the digit with the highest count wears red, the
@@ -549,61 +780,49 @@ const $ = (id) => document.getElementById(id);
 const TYPE_RULES = {
   irrational: { mode: "digits",   note: "irrational numbers only come as digits" },
   rational:   { mode: "digits",   note: "rational numbers only come as digits" },
-  integers:   { mode: "sequence", note: "integers only come as a sequence" },
+  integers:   { mode: "sequence", note: "integers only come as a sequence — use g in the formula" },
 };
-
-function menuFor(type) {
-  return type === "irrational" ? IRRATIONALS : type === "rational" ? RATIONALS : SEQUENCES;
-}
-function currentItem() {
-  const menu = menuFor(state.type);
-  return menu.find((m) => m.id === state.pick) || menu[0];
-}
 
 /* ══════════════ endless digit sources ══════════════ */
 
 function makeSource() {
-  const item = currentItem();
+  const ast = state.asts[state.type];
   if (state.type === "integers") {
-    const it = item.gen();
+    const it = genFormula(ast);
     return {
-      terms: [], intLen: 0, capped: false,
+      terms: [], intLen: 0, neg: false, capped: false, err: null,
       pull(n) {
         let out = "";
-        while (out.length < n) {
-          const t = it.next().value.toString();
-          this.terms.push(t);
-          out += t;
+        try {
+          while (out.length < n) {
+            const t = it.next().value.toString();
+            if (t.length > 15000) throw new FErr("the numbers got way too long");
+            this.terms.push(t);
+            out += t;
+          }
+        } catch (e) {
+          this.capped = true;
+          this.err = e instanceof FErr ? e.message : "the formula broke";
         }
         return out;
       },
     };
   }
-  if (state.type === "rational") {
-    const P = BigInt(item.pq[0]), Q = BigInt(item.pq[1]);
-    let r = null;
-    return {
-      terms: null, intLen: 0, capped: false,
-      pull(n) {
-        let out = "";
-        if (r === null) { out = (P / Q).toString(); this.intLen = out.length; r = P % Q; }
-        while (out.length < n) { r *= 10n; out += (r / Q).toString(); r %= Q; }
-        return out;
-      },
-    };
-  }
-  // irrational: recompute at doubled precision whenever the sim catches up
+  // digits types: evaluate the formula at growing precision
   let prec = 1000, digits = null, used = 0;
-  return {
-    terms: null, intLen: 0, capped: false,
+  const src = {
+    terms: null, intLen: 0, neg: false, capped: false, err: null,
     pull(n) {
-      if (!digits) {
-        const d = item.calc(prec);
-        digits = d.stream; this.intLen = d.intPart.length;
-      }
-      while (used + n > digits.length && prec < IRR_PREC_CAP) {
-        prec = Math.min(IRR_PREC_CAP, prec * 2);
-        digits = item.calc(prec).stream;
+      try {
+        if (!digits) load(prec);
+        while (used + n > digits.length && prec < IRR_PREC_CAP) {
+          prec = Math.min(IRR_PREC_CAP, prec * 2);
+          load(prec);
+        }
+      } catch (e) {
+        this.capped = true;
+        this.err = e instanceof FErr ? e.message : "the formula broke";
+        return "";
       }
       const out = digits.slice(used, Math.min(used + n, digits.length));
       used += out.length;
@@ -611,6 +830,14 @@ function makeSource() {
       return out;
     },
   };
+  function load(p) {
+    let v = evalFixed(ast, p);
+    if (v < 0n) { v = -v; src.neg = true; }
+    const d = fixedToDigits(v, p);
+    digits = d.stream;
+    src.intLen = d.intPart.length;
+  }
+  return src;
 }
 
 /* ══════════════ the simulation ══════════════ */
@@ -846,7 +1073,7 @@ function drawRate() {
   if (state.type !== "integers") { panel.style.display = "none"; return; }
   panel.style.display = "";
   const terms = sim.source.terms;
-  if (!terms.length) { $("rate-bars").innerHTML = ""; $("rate-top").innerHTML = "warming up…"; return; }
+  if (!terms || !terms.length) { $("rate-bars").innerHTML = ""; $("rate-top").innerHTML = "warming up…"; return; }
 
   // keep the graph readable: auto-grow the group size past 120 bars
   const x = Math.max(state.rateX, Math.ceil(terms.length / 120 / state.rateX) * state.rateX);
@@ -898,26 +1125,28 @@ const STRIP_CHAR_CAP = 30000;
 
 function drawStrip() {
   const strip = $("digit-strip");
-  const item = currentItem();
+  const formula = state.applied[state.type];
   const count = Math.max(0, walkPts.length - 1);
   const status = sim.done
-    ? (sim.source.capped ? "that's as far as I can compute!" : "reached the cap — what a walk!")
+    ? (sim.source.err ? `stopped: ${sim.source.err}`
+       : sim.source.capped ? "that's as far as I can compute!"
+       : "reached the cap — what a walk!")
     : (state.running ? "still going…" : "paused");
 
   if (state.type === "integers") {
-    $("strip-title").textContent = `${item.label} sequence`;
+    $("strip-title").textContent = `Sequence of ${formula}`;
     $("strip-note").textContent =
-      `generation g → ${item.formula} · ${sim.source.terms.length} generations, ${count} digits · ${status}`;
+      `generation g → ${formula} · ${sim.source.terms.length} generations, ${count} digits · ${status}`;
     const s = sim.source.terms.join(", ");
     strip.innerHTML = `<span class="int-part"></span>`;
     strip.firstChild.textContent = s.length > 4000 ? "… " + s.slice(-4000) : s;
   } else {
-    $("strip-title").textContent = `Digits of ${item.label}`;
+    $("strip-title").textContent = `Digits of ${formula}`;
     $("strip-note").textContent = `${count} digits · ${status}`;
     const intLen = sim.source.intLen || 1;
     const shown = sim.stream.slice(0, STRIP_CHAR_CAP);
     strip.innerHTML =
-      `<span class="int-part">${shown.slice(0, intLen)}${shown.length > intLen ? "." : ""}</span>` +
+      `<span class="int-part">${sim.source.neg ? "−" : ""}${shown.slice(0, intLen)}${shown.length > intLen ? "." : ""}</span>` +
       shown.slice(intLen) + (sim.stream.length > STRIP_CHAR_CAP ? " …" : "");
   }
   strip.scrollTop = strip.scrollHeight;
@@ -981,6 +1210,75 @@ function tick(t) {
   }
 }
 
+/* ══════════════ formula box + keyboard ══════════════ */
+
+const KB_KEYS = [
+  { k: "7" }, { k: "8" }, { k: "9" }, { k: "÷", op: 1 }, { k: "(", op: 1 }, { k: ")", op: 1 }, { k: "⌫", op: 1, act: "bs" },
+  { k: "4" }, { k: "5" }, { k: "6" }, { k: "×", op: 1 }, { k: "√", ins: "√(", op: 1, needs: "digits" }, { k: "^", op: 1 }, { k: "C", op: 1, act: "clr" },
+  { k: "1" }, { k: "2" }, { k: "3" }, { k: "−", op: 1 }, { k: "π", needs: "digits" }, { k: "e", needs: "digits" }, { k: "!", op: 1 },
+  { k: "0" }, { k: "." }, { k: "g", needs: "seq" }, { k: "+", op: 1 }, { k: "φ", needs: "digits" }, { k: "x²", ins: "^2", op: 1 }, { k: "GO", act: "go", go: 1 },
+];
+
+function renderFormula() {
+  const box = $("formula-box");
+  box.textContent = state.formulas[state.type];
+  const c = document.createElement("span");
+  c.className = "caret";
+  box.appendChild(c);
+}
+
+function applyFormula() {
+  const text = state.formulas[state.type];
+  try {
+    state.asts[state.type] = parseFormula(text, state.type === "integers");
+    state.applied[state.type] = text;
+    $("formula-error").textContent = "";
+    resetSim();
+  } catch (err) {
+    $("formula-error").textContent =
+      err instanceof FErr ? err.message : "I don't understand that formula";
+  }
+}
+
+function kbPress(key) {
+  if (key.act === "go") { applyFormula(); return; }
+  const ty = state.type;
+  if (key.act === "bs") state.formulas[ty] = state.formulas[ty].slice(0, -1);
+  else if (key.act === "clr") state.formulas[ty] = "";
+  else state.formulas[ty] += key.ins || key.k;
+  renderFormula();
+}
+
+const kbWrap = $("kb");
+const kbButtons = [];
+for (const key of KB_KEYS) {
+  const b = document.createElement("button");
+  b.className = "kb-key" + (key.op ? " op" : "") + (key.go ? " go" : "");
+  b.textContent = key.k;
+  b.addEventListener("click", () => kbPress(key));
+  kbButtons.push({ el: b, key });
+  kbWrap.appendChild(b);
+}
+
+function renderKb() {
+  for (const { el, key } of kbButtons) {
+    const ok = !key.needs
+      || (key.needs === "digits" && state.type !== "integers")
+      || (key.needs === "seq" && state.type === "integers");
+    el.disabled = !ok;
+  }
+}
+
+// physical typing on the formula box
+const KEYMAP = { "-": "−", "*": "×", "/": "÷", "p": "π", "f": "φ", "s": "√(", "e": "e", "g": "g" };
+$("formula-box").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { applyFormula(); e.preventDefault(); return; }
+  if (e.key === "Backspace") { kbPress({ act: "bs" }); e.preventDefault(); return; }
+  if (e.key === "Escape") { kbPress({ act: "clr" }); e.preventDefault(); return; }
+  const ins = /^[0-9.+^!()]$/.test(e.key) ? e.key : KEYMAP[e.key];
+  if (ins) { state.formulas[state.type] += ins; renderFormula(); e.preventDefault(); }
+});
+
 /* ══════════════ UI wiring ══════════════ */
 
 function updatePlayBtn() {
@@ -1003,16 +1301,6 @@ function renderControls() {
   seqBtn.disabled = rule.mode !== "sequence";
   $("mode-note").textContent = rule.note;
 
-  const wrap = $("picker-chips");
-  wrap.innerHTML = "";
-  for (const item of menuFor(state.type)) {
-    const b = document.createElement("button");
-    b.className = "chip math" + (state.pick === item.id ? " on" : "");
-    b.textContent = item.label;
-    b.addEventListener("click", () => { state.pick = item.id; renderControls(); resetSim(); });
-    wrap.appendChild(b);
-  }
-
   $("spread-even").classList.toggle("on", state.spreadMode === "even");
   $("spread-custom").classList.toggle("on", state.spreadMode === "custom");
   $("turn-relative").classList.toggle("on", state.turnMode === "relative");
@@ -1023,12 +1311,15 @@ function renderControls() {
   $("color-fade").classList.toggle("on", state.colorMode === "fade");
   $("color-digit").classList.toggle("on", state.colorMode === "digit");
   $("digit-colors").classList.toggle("show", state.colorMode === "digit");
+
+  renderFormula();
+  renderKb();
 }
 
 function setType(type) {
   state.type = type;
   state.mode = TYPE_RULES[type].mode;
-  state.pick = menuFor(type)[0].id;
+  $("formula-error").textContent = "";
   renderControls();
   resetSim();
 }
@@ -1106,6 +1397,8 @@ $("zoom-in").addEventListener("click", () => zoomAt(canvasSize / 2, canvasSize /
 $("zoom-out").addEventListener("click", () => zoomAt(canvasSize / 2, canvasSize / 2, 1 / 1.4));
 $("zoom-fit").addEventListener("click", () => { manualView = false; view = null; queueRedraw(); });
 
+/* ── sliders & pickers ── */
+
 $("speed").addEventListener("input", (e) => {
   state.speed = +e.target.value;
   state.maxMode = state.speed > 300;
@@ -1178,6 +1471,11 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
   drawAll(); drawBars(); drawRate();
 });
 
+/* ══════════════ boot ══════════════ */
+
+for (const ty of ["irrational", "rational", "integers"]) {
+  state.asts[ty] = parseFormula(state.formulas[ty], ty === "integers");
+}
 renderControls();
 resetSim();
 requestAnimationFrame(tick);
