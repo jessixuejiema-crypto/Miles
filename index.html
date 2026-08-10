@@ -283,7 +283,7 @@
     <button class="chip" id="play-btn">⏸ Pause</button>
     <div class="slider-group">
       <label for="speed">Speed</label>
-      <input type="range" id="speed" min="5" max="300" step="5" value="60">
+      <input type="range" id="speed" min="5" max="305" step="5" value="60">
       <span class="slider-val" id="speed-val">60 ⁄s</span>
     </div>
     <span class="viz-note" id="count-note"></span>
@@ -317,7 +317,7 @@
   </div>
   <div class="row">
     <span class="row-label">Colors</span>
-    <button class="chip" id="color-rainbow" title="The line cycles through the whole rainbow">Rainbow</button>
+    <button class="chip" id="color-rainbow" title="Red = most common digit, violet = rarest — follows the rankings live">Rainbow</button>
     <button class="chip" id="color-fade" title="The line fades light and dark as it goes">Fade along walk</button>
     <button class="chip" id="color-digit" title="Every digit gets its own color">Color by digit</button>
   </div>
@@ -495,13 +495,28 @@ const state = {
   digitColors: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4",
                 "#008300", "#4a3aa7", "#e34948", "#0d9ec9", "#8f6bde"],
   rateX: 10,
-  speed: 60,                 // digits per second
+  speed: 60,                 // digits per second; > 300 = MAX (adaptive)
+  maxMode: false,
   running: true,
   hoverDigit: null,
 };
 
 const IRR_PREC_CAP = 16000;  // recomputing π gets slow past this
-const STREAM_CAP = 100000;   // stop appending points after this many digits
+const STREAM_CAP = 200000;   // stop appending points after this many digits
+
+/* Rainbow by rank: the digit with the highest count wears red, the
+   runner-up orange … down to violet for the rarest.                  */
+const RANK_COLORS = Array.from({ length: 10 },
+  (_, i) => `hsl(${Math.round(i * 300 / 9)}, 85%, 48%)`);
+let rankOf = Array.from({ length: 10 }, (_, d) => d);   // digit → current rank
+
+function computeRankOf() {
+  const order = [...Array(10).keys()]
+    .sort((a, b) => sim.counts[b] - sim.counts[a] || a - b);
+  const r = Array(10);
+  order.forEach((d, i) => { r[d] = i; });
+  return r;
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -622,7 +637,7 @@ function resetSim() {
     source: makeSource(), stream: "",
     counts: Array(10).fill(0),
     heading: state.startDir, x: 0, y: 0,
-    carry: 0, done: false,
+    carry: 0, chunk: 400, done: false,
   };
   walkPts = [{ x: 0, y: 0, digit: null }];
   view = null;
@@ -659,10 +674,12 @@ function segColor(i) {
   const d = walkPts[i].digit;
   if (state.hoverDigit !== null) {
     if (d !== state.hoverDigit) return pal.grid;
-    return state.colorMode === "digit" ? state.digitColors[d] : pal.hi;
+    if (state.colorMode === "digit") return state.digitColors[d];
+    if (state.colorMode === "rainbow") return RANK_COLORS[rankOf[d]];
+    return pal.hi;
   }
   if (state.colorMode === "digit") return state.digitColors[d];
-  if (state.colorMode === "rainbow") return `hsl(${(i * 1.5) % 360}, 85%, 50%)`;
+  if (state.colorMode === "rainbow") return RANK_COLORS[rankOf[d]];
   const P = 800, ph = (i % P) / P;                  // fade loops light↔dark
   return lerpColor(pal.walkA, pal.walkB, ph < 0.5 ? ph * 2 : 2 - ph * 2);
 }
@@ -716,6 +733,7 @@ function drawAll() {
   setupCanvas();
   if (!canvasSize) return;
   refreshPal();
+  if (sim) rankOf = computeRankOf();
   computeView();
   ctx.clearRect(0, 0, canvasSize, canvasSize);
   strokeSegs(1);
@@ -753,15 +771,17 @@ function drawBars() {
   const max = Math.max(1, order[0].c);
 
   const byDigit = state.colorMode === "digit";
+  const byRank = state.colorMode === "rainbow";
   const barsEl = $("bars");
   barsEl.innerHTML = "";
-  for (const { d, c } of order) {
+  order.forEach(({ d, c }, idx) => {
     const row = document.createElement("div");
     row.className = "bar-row" + (state.hoverDigit === d ? " active" : "");
     const pct = (100 * c / totalDigits).toFixed(1);
-    const col = state.digitColors[d];
-    const btnStyle = byDigit ? ` style="border-color:${col};color:${col}"` : "";
-    const fillStyle = byDigit ? `;background:${col}` : "";
+    const col = byRank ? RANK_COLORS[idx] : state.digitColors[d];
+    const colored = byDigit || byRank;
+    const btnStyle = colored ? ` style="border-color:${col};color:${col}"` : "";
+    const fillStyle = colored ? `;background:${col}` : "";
     row.innerHTML =
       `<div class="digit-btn"${btnStyle}>${d}</div>` +
       `<div class="bar-track"><div class="bar-fill" style="width:${(100 * c / max).toFixed(2)}%${fillStyle}"></div></div>` +
@@ -769,7 +789,7 @@ function drawBars() {
     row.addEventListener("mouseenter", () => setHover(d));
     row.addEventListener("mouseleave", () => setHover(null));
     barsEl.appendChild(row);
-  }
+  });
 
   if (state.hoverDigit !== null) {
     const c = counts[state.hoverDigit];
@@ -886,26 +906,46 @@ function tick(t) {
   lastT = t;
   if (!sim || !state.running || sim.done) return;
 
-  sim.carry += state.speed * dt;
-  const n = Math.min(400, Math.floor(sim.carry));
+  let n;
+  if (state.maxMode) {
+    n = sim.chunk;                               // adaptive: as much as a frame can take
+  } else {
+    sim.carry += state.speed * dt;
+    n = Math.min(400, Math.floor(sim.carry));
+    if (n >= 1) sim.carry -= n;
+  }
   if (n >= 1) {
-    sim.carry -= n;
+    const t0 = performance.now();
     const str = sim.source.pull(n);
     if (str.length) {
       const from = walkPts.length;
       appendDigits(str);
       drawIncremental(from);
     }
+    if (state.maxMode) {                         // tune the chunk to the frame budget
+      const work = performance.now() - t0;
+      if (work < 8) sim.chunk = Math.min(6000, Math.round(sim.chunk * 1.25));
+      else if (work > 18) sim.chunk = Math.max(100, Math.round(sim.chunk * 0.7));
+    }
     if (sim.source.capped || walkPts.length - 1 >= STREAM_CAP) {
       sim.done = true;
       state.running = false;
       updatePlayBtn();
       drawAll();
+      drawBars();
+      drawRate();
+      drawStrip();
+      uiDirty = false;
+      return;
     }
     uiDirty = true;
   }
   if (uiDirty && t - lastUi > 250) {
     lastUi = t; uiDirty = false;
+    if (state.colorMode === "rainbow") {         // repaint when the rankings shuffle
+      const nr = computeRankOf();
+      if (nr.join() !== rankOf.join()) { rankOf = nr; drawAll(); }
+    }
     if (state.hoverDigit === null) drawBars();   // don't yank bars out from under the mouse
     drawRate();
     drawStrip();
@@ -978,7 +1018,8 @@ $("replay-btn").addEventListener("click", () => resetSim());
 
 $("speed").addEventListener("input", (e) => {
   state.speed = +e.target.value;
-  $("speed-val").textContent = state.speed + " ⁄s";
+  state.maxMode = state.speed > 300;
+  $("speed-val").textContent = state.maxMode ? "MAX 🚀" : state.speed + " ⁄s";
 });
 
 $("spread-even").addEventListener("click", () => { state.spreadMode = "even"; renderControls(); rebuildWalk(); });
