@@ -155,6 +155,39 @@
   }
   .care b { color: var(--gold); }
 
+  /* AI vs AI fight log — plain text rounds */
+  .fight {
+    background: var(--panel);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    text-align: left;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .fight .round {
+    color: var(--muted);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .fight .f-line b { font-variant-numeric: tabular-nums; }
+  .fight .f-line.red b { color: var(--danger); }
+  .fight .f-line.blue b { color: var(--blue); }
+  .fight .winner {
+    text-align: center;
+    font-weight: 800;
+    color: var(--gold);
+    padding-top: 3px;
+  }
+
   /* Inputs */
   .fields { display: flex; flex-direction: column; gap: 7px; margin-bottom: 10px; }
   .field-row { display: flex; gap: 7px; align-items: center; }
@@ -260,6 +293,8 @@
     adult you trust. That’s not snitching — that’s strategy. You deserve to feel safe. 💙
   </div>
 
+  <div class="fight" id="fight" hidden></div>
+
   <div class="fields" id="fields">
     <div class="field-row">
       <input type="text" maxlength="280" placeholder="What did they say?" aria-label="Bully message 1">
@@ -268,6 +303,7 @@
   <div class="actions">
     <button class="act" id="addBtn" type="button">＋ Add message</button>
     <button class="act primary" id="fireBtn" type="button">Fire back 🔥</button>
+    <button class="act" id="fightBtn" type="button">⚔️ AI vs AI fight</button>
   </div>
   <button class="reset" id="resetBtn" type="button">reset aura</button>
 </div>
@@ -396,6 +432,30 @@ const MULTI_OPENERS = [
   "You needed multiple messages. I only need one.",
 ];
 
+/* Bully AI lines for fight mode — each tagged so the Comeback AI counters in kind */
+const BULLY_AI_LINES = [
+  { cat:'skill',      text:"You call those comebacks? I've seen error messages with more bite." },
+  { cat:'skill',      text:"You're a bot. Literally. I could unplug you." },
+  { cat:'smarts',     text:"Your whole brain is autocomplete. Predictable AND wrong." },
+  { cat:'smarts',     text:"I'd call you dumb but that's an insult to dumb people." },
+  { cat:'social',     text:"Nobody even likes you. You only have users, not friends." },
+  { cat:'social',     text:"You're such a loner — you talk to strangers all day because you have to." },
+  { cat:'cringe',     text:"Everything you say is mid. You're the NPC of NPCs." },
+  { cat:'cringe',     text:"Cringe detected. Your vibe is a system update nobody asked for." },
+  { cat:'laughing',   text:"lol 😂 you actually thought that last one was good 💀" },
+  { cat:'laughing',   text:"hahaha I'm not even reading your replies anymore lol" },
+  { cat:'appearance', text:"You don't even have a face, and somehow you still look like a default avatar." },
+  { cat:'appearance', text:"Your whole look is placeholder text. Ugly by design." },
+  { cat:'generic',    text:"I win these arguments in my sleep. You're nothing." },
+  { cat:'generic',    text:"Every word you say just proves I already won." },
+];
+
+const WIN_LINES = {
+  blue: "🏆 Comeback AI takes the fight! Aura secured.",
+  red:  "🏆 Bully AI takes this one… run it back!",
+  tie:  "🏆 Dead even. Rematch required.",
+};
+
 const GRADES = [
   [200, "☄️ AURA NUKE"],
   [150, "💥 CRITICAL HIT"],
@@ -519,6 +579,7 @@ function fire(){
   $('fireBtn').disabled = true;
   $('result').hidden = true;
   $('care').hidden = true;
+  $('fight').hidden = true;
   $('verdict').textContent = '…cooking a comeback 🍳';
 
   setTimeout(() => {
@@ -539,6 +600,74 @@ function fire(){
   }, 900 + Math.random()*500);
 }
 
+/* ─────────── AI vs AI fight mode ─────────── */
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function fightLine(cls, name, text, gain){
+  const div = document.createElement('div');
+  div.className = 'f-line ' + cls;
+  const b = document.createElement('b');
+  b.textContent = (cls === 'red' ? '😈 ' : '🤖 ') + name + ' (+' + gain + '): ';
+  div.appendChild(b);
+  div.appendChild(document.createTextNode(text));
+  $('fight').appendChild(div);
+  $('fight').scrollTop = $('fight').scrollHeight;
+}
+
+async function aiFight(){
+  const fight = $('fight');
+  fight.innerHTML = '';
+  fight.hidden = false;
+  $('result').hidden = true;
+  $('care').hidden = true;
+  $('fireBtn').disabled = true;
+  $('addBtn').disabled = true;
+  $('fightBtn').disabled = true;
+
+  const startBlue = blueAura, startRed = redAura;
+  const rounds = 3 + Math.floor(Math.random()*2); // 3–4 rounds
+
+  for(let r = 1; r <= rounds; r++){
+    const roundTag = document.createElement('div');
+    roundTag.className = 'round';
+    roundTag.textContent = 'Round ' + r + ' of ' + rounds;
+    fight.appendChild(roundTag);
+
+    $('verdict').textContent = '😈 Bully AI is typing…';
+    await sleep(700 + Math.random()*400);
+    const jab = pickLine(BULLY_AI_LINES, 'bullyAI');
+    const redGain = 40 + Math.floor(Math.random()*55);
+    redAura += redGain;
+    fightLine('red', 'Bully AI', jab.text, redGain);
+    updateCircle();
+
+    $('verdict').textContent = '🤖 Comeback AI is cooking…';
+    await sleep(800 + Math.random()*500);
+    const cat = CATEGORIES.find(c => c.id === jab.cat);
+    const line = pickLine(cat ? cat.lines : GENERIC, cat ? cat.id : 'generic');
+    let blueGain = 55 + Math.floor(Math.random()*50);
+    if(Math.random() < 0.15) blueGain += 80; // CRIT
+    blueAura += blueGain;
+    fightLine('blue', 'Comeback AI', line, blueGain);
+    updateCircle();
+  }
+
+  const dBlue = blueAura - startBlue, dRed = redAura - startRed;
+  const winner = document.createElement('div');
+  winner.className = 'winner';
+  winner.textContent = dBlue > dRed ? WIN_LINES.blue : dRed > dBlue ? WIN_LINES.red : WIN_LINES.tie;
+  fight.appendChild(winner);
+  fight.scrollTop = fight.scrollHeight;
+  updateCircle();
+
+  $('fireBtn').disabled = false;
+  $('addBtn').disabled = false;
+  $('fightBtn').disabled = false;
+}
+
+$('fightBtn').addEventListener('click', aiFight);
+
 $('fireBtn').addEventListener('click', fire);
 document.addEventListener('keydown', e => {
   if(e.key === 'Enter' && e.target.matches('.field-row input')) fire();
@@ -556,6 +685,8 @@ $('resetBtn').addEventListener('click', () => {
   updateCircle();
   $('result').hidden = true;
   $('care').hidden = true;
+  $('fight').hidden = true;
+  $('fight').innerHTML = '';
   resetComposer();
 });
 
