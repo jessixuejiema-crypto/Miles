@@ -196,7 +196,23 @@
     background: var(--page);
     border: 1px solid var(--border);
     border-radius: 10px;
+    cursor: grab;
+    touch-action: none;
   }
+  #walk-canvas.dragging { cursor: grabbing; }
+  .zoom-btns {
+    position: absolute; right: 10px; bottom: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .zoom-btns button {
+    width: 36px; height: 36px;
+    font: inherit; font-size: 17px; font-weight: 800;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary);
+    cursor: pointer;
+  }
+  .zoom-btns button:hover { border-color: var(--series-1); }
   #replay-btn {
     position: absolute; top: 10px; right: 10px;
     font: inherit; font-size: 12px; font-weight: 700;
@@ -339,11 +355,16 @@
   <div class="panel">
     <div class="viz-head">
       <span class="viz-title">Digit walk</span>
-      <span class="viz-note">start at the center · one step per digit</span>
+      <span class="viz-note">scroll or pinch to zoom · drag to move</span>
     </div>
     <div id="walk-wrap">
       <canvas id="walk-canvas"></canvas>
       <button id="replay-btn">⟲ Restart</button>
+      <div class="zoom-btns">
+        <button id="zoom-in" title="Zoom in">＋</button>
+        <button id="zoom-out" title="Zoom out">－</button>
+        <button id="zoom-fit" title="Fit the whole walk">⛶</button>
+      </div>
     </div>
   </div>
   <div class="panel">
@@ -629,6 +650,7 @@ function rebuildWalk() {                 // after angle/turn changes: same digit
   walkPts = [{ x: 0, y: 0, digit: null }];
   walkAppendGeom(sim.stream);
   view = null;
+  manualView = false;
   drawAll();
 }
 
@@ -641,6 +663,7 @@ function resetSim() {
   };
   walkPts = [{ x: 0, y: 0, digit: null }];
   view = null;
+  manualView = false;
   state.running = true;
   state.hoverDigit = null;
   updatePlayBtn();
@@ -653,8 +676,12 @@ function resetSim() {
 /* ══════════════ canvas walk drawing ══════════════ */
 
 let view = null;             // {scale, cx, cy, lim: padded world bounds}
+let manualView = false;      // true once the user zooms/pans; ⛶ returns to auto-fit
+let redrawQueued = false;    // coalesce interactive redraws to one per frame
 let ctx = null, canvasSize = 0;
 const pal = {};
+
+function queueRedraw() { redrawQueued = true; }
 
 function refreshPal() {
   const get = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -734,7 +761,7 @@ function drawAll() {
   if (!canvasSize) return;
   refreshPal();
   if (sim) rankOf = computeRankOf();
-  computeView();
+  if (!manualView || !view) computeView();
   ctx.clearRect(0, 0, canvasSize, canvasSize);
   strokeSegs(1);
   const [sx, sy] = px(walkPts[0]);                  // start marker
@@ -744,6 +771,7 @@ function drawAll() {
 
 function drawIncremental(from) {
   if (!view || !ctx) { drawAll(); return; }
+  if (manualView) { strokeSegs(from); return; }   // clipping handles off-screen parts
   const { lim } = view;
   for (let i = from; i < walkPts.length; i++) {
     const p = walkPts[i];
@@ -904,6 +932,7 @@ function tick(t) {
   requestAnimationFrame(tick);
   const dt = Math.min(0.25, (t - lastT) / 1000 || 0);
   lastT = t;
+  if (redrawQueued) { redrawQueued = false; drawAll(); }
   if (!sim || !state.running || sim.done) return;
 
   let n;
@@ -1015,6 +1044,67 @@ $("play-btn").addEventListener("click", () => {
   drawStrip();
 });
 $("replay-btn").addEventListener("click", () => resetSim());
+
+/* ── map zoom & pan ── */
+
+const walkCanvas = $("walk-canvas");
+
+function zoomAt(mx, my, f) {
+  if (!view) return;
+  manualView = true;
+  view.scale *= f;
+  view.cx = mx - (mx - view.cx) * f;
+  view.cy = my - (my - view.cy) * f;
+  queueRedraw();
+}
+
+walkCanvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = walkCanvas.getBoundingClientRect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+}, { passive: false });
+
+const pointers = new Map();
+let lastPinchDist = 0;
+walkCanvas.addEventListener("pointerdown", (e) => {
+  walkCanvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  walkCanvas.classList.add("dragging");
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    lastPinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+  }
+});
+walkCanvas.addEventListener("pointermove", (e) => {
+  const p = pointers.get(e.pointerId);
+  if (!p || !view) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if (pointers.size === 1) {
+    manualView = true;
+    view.cx += dx; view.cy += dy;
+    queueRedraw();
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (lastPinchDist > 0 && d > 0) {
+      const r = walkCanvas.getBoundingClientRect();
+      zoomAt((a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, d / lastPinchDist);
+    }
+    lastPinchDist = d;
+  }
+});
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  lastPinchDist = 0;
+  if (!pointers.size) walkCanvas.classList.remove("dragging");
+}
+walkCanvas.addEventListener("pointerup", endPointer);
+walkCanvas.addEventListener("pointercancel", endPointer);
+
+$("zoom-in").addEventListener("click", () => zoomAt(canvasSize / 2, canvasSize / 2, 1.4));
+$("zoom-out").addEventListener("click", () => zoomAt(canvasSize / 2, canvasSize / 2, 1 / 1.4));
+$("zoom-fit").addEventListener("click", () => { manualView = false; view = null; queueRedraw(); });
 
 $("speed").addEventListener("input", (e) => {
   state.speed = +e.target.value;
