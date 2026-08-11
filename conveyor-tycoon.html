@@ -263,7 +263,7 @@
       <li><b>Right-click</b> (or the &#129529; broom) removes a machine for a 50% refund &mdash; and any items it was carrying are swept into your &#127890; inventory, where you can sell them.</li>
       <li>The &#127795; button shows the whole <b>recipe tree</b>: what turns into what, with which machine, and the profit of each step.</li>
       <li>The <b>hand</b> &#9995; pans the map. Mouse wheel or +/&minus; zooms. Click a placed <b>Item Cutter</b> with the hand to switch it between slabs / stairs / fences. Click a fully grown tree to hand-harvest it for quick cash.</li>
-      <li><b>Layers:</b> a Lift Conveyor pushes items straight up; place a conveyor on the layer above it (use the &#9650; button) to catch them. A Down Conveyor drops them back. Stack lifts to reach layer 3+.</li>
+      <li><b>Layers:</b> a Lift Conveyor is a ramp going up &mdash; items land one layer up, one tile ahead in the direction it faces (rotate with <kbd>R</kbd>). Go up a layer (&#9650; button) and you'll see a dashed <b style="color:#8fd0ff">blue landing box</b>: put a conveyor there to catch them. Down Conveyors are the reverse, with a <b style="color:#d0a8ff">purple landing box</b> on the layer below, and they show as a ghost from underneath so you always see both ends. Chain lifts to reach layer 3+.</li>
       <li><b>Tree logic:</b> a Tree Detector lights up next to a grown tree. Wires carry its signal to a Tree Cutter sitting next to the tree; the cutter chops, drops wood on the belt it faces, and the tree regrows. The Tree Farm is the same rig, pre-packaged.</li>
     </ul>
     <h2>Furnace recipes</h2><div id="recFurnace"></div>
@@ -347,8 +347,8 @@ const SHOP = [
   {t:'turnR',     n:'Turn Right',      p:20,  cat:'Conveyors', d:'Items riding this belt turn to the right.'},
   {t:'splitter',  n:'Split Conveyor',  p:20,  cat:'Conveyors', d:'Splits one line in two: items go alternately left and right.'},
   {t:'merger',    n:'Merge Conveyor',  p:40,  cat:'Conveyors', d:'Takes items from three sides and sends them out of one.'},
-  {t:'lift',      n:'Lift Conveyor',   p:30,  cat:'Conveyors', d:'Pushes items straight UP one layer. Put a conveyor on the layer above to catch them.'},
-  {t:'drop',      n:'Down Conveyor',   p:30,  cat:'Conveyors', d:'Drops items straight DOWN one layer. Put a conveyor on the layer below to catch them.'},
+  {t:'lift',      n:'Lift Conveyor',   p:30,  cat:'Conveyors', d:'A ramp UP: carries items one layer up, landing one tile ahead in its direction (R rotates). The landing tile is marked in blue on the layer above.'},
+  {t:'drop',      n:'Down Conveyor',   p:30,  cat:'Conveyors', d:'A ramp DOWN: carries items one layer down, landing one tile ahead in its direction (R rotates). The landing tile is marked in purple on the layer below.'},
   {t:'cash',      n:'Cash Block',      p:50,  cat:'Conveyors', d:'Sells every item that rides into it. This is how you earn money!'},
   {t:'oak',       n:'Oak Sapling',     p:100, cat:'Nature',    d:'Grows in 5–8 s. Chop with a Tree Cutter (or click it) for Oak Wood.'},
   {t:'pine',      n:'Pine Tree',       p:150, cat:'Nature',    d:'Grows in 10–12 s. Gives Pine Wood, worth more than oak.'},
@@ -465,8 +465,9 @@ function outDir(t){
   return t.dir;
 }
 function destKeyOf(t, dir){
-  if (t.type === 'lift') return K(t.x, t.y, t.z+1);
-  if (t.type === 'drop') return K(t.x, t.y, t.z-1);
+  // lifts and drops work like ramps: one tile forward in their direction, one layer up/down
+  if (t.type === 'lift'){ const d = DIRS[t.dir]; return K(t.x+d.x, t.y+d.y, t.z+1); }
+  if (t.type === 'drop'){ const d = DIRS[t.dir]; return K(t.x+d.x, t.y+d.y, t.z-1); }
   const d = DIRS[dir === undefined ? outDir(t) : dir];
   return K(t.x + d.x, t.y + d.y, t.z);
 }
@@ -770,19 +771,30 @@ function drawTileGraphic(c, t, ts, time, forIcon){
     }
     case 'lift': case 'drop': {
       const up = t.type === 'lift';
-      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.14);
+      rotSave();
+      rr(c, ts*0.06, ts*0.06, ts*0.88, ts*0.88, ts*0.14);
       c.fillStyle = up ? '#3a4a58' : '#4a3a58'; c.fill();
       c.strokeStyle = '#1d242c'; c.lineWidth = ts*0.05; c.stroke();
-      c.strokeStyle = up ? '#8fd0ff' : '#d0a8ff'; c.lineWidth = ts*0.09; c.lineCap='round'; c.lineJoin='round';
-      const off = (time*ts*0.5) % (ts*0.3);
-      for (let i=0;i<2;i++){
-        const yy = up ? ts*0.72 - off - i*ts*0.3 : ts*0.28 + off + i*ts*0.3;
+      // ramp: items travel forward (+x) while going up/down a layer
+      const col = up ? '#8fd0ff' : '#d0a8ff';
+      const x0 = ts*0.2, x1 = ts*0.8;
+      const y0 = up ? ts*0.74 : ts*0.26, y1 = up ? ts*0.26 : ts*0.74;
+      const ang = Math.atan2(y1-y0, x1-x0);
+      c.strokeStyle = 'rgba(18,24,30,.6)'; c.lineWidth = ts*0.16; c.lineCap='round';
+      c.beginPath(); c.moveTo(x0,y0); c.lineTo(x1,y1); c.stroke();
+      c.strokeStyle = col; c.lineWidth = ts*0.075; c.lineJoin='round';
+      const offq = (time*0.8) % (1/3);
+      for (let i=0;i<3;i++){
+        const q = offq + i/3;
+        const px = x0+(x1-x0)*q, py = y0+(y1-y0)*q;
+        c.save(); c.translate(px, py); c.rotate(ang);
         c.beginPath();
-        c.moveTo(cx - ts*0.18, yy + (up? ts*0.12 : -ts*0.12));
-        c.lineTo(cx, yy);
-        c.lineTo(cx + ts*0.18, yy + (up? ts*0.12 : -ts*0.12));
+        c.moveTo(-ts*0.08, -ts*0.1); c.lineTo(ts*0.05, 0); c.lineTo(-ts*0.08, ts*0.1);
         c.stroke();
+        c.restore();
       }
+      c.restore();
+      drawOutArrow(c, t, ts);
       break;
     }
     case 'wire': {
@@ -1031,7 +1043,10 @@ function drawProcBar(c, t, ts, kind){
 /* item world position on a transport tile (tile-local 0..1 offsets from center) */
 function itemOffset(t, it){
   const p = it.prog;
-  if (t.type === 'lift' || t.type === 'drop') return { x:0, y:0, lift:(t.type==='lift'? p : -p) };
+  if (t.type === 'lift' || t.type === 'drop'){
+    const v = DIRS[t.dir];
+    return { x:(p-0.5)*v.x, y:(p-0.5)*v.y, lift:(t.type==='lift'? p : -p) };
+  }
   const od = outDir(t);
   if (t.type === 'turnL' || t.type === 'turnR'){
     const inV = DIRS[t.dir], outV = DIRS[od];
@@ -1109,6 +1124,43 @@ function render(time){
   }
 
   renderLayer(curZ, 1, time);
+
+  // cross-layer connectors: lifts below and drops above land on this layer —
+  // show them on both layers they connect, with a marked landing tile
+  for (const t of tiles.values()){
+    const liftBelow = t.type === 'lift' && t.z === curZ-1;
+    const dropAbove = t.type === 'drop' && t.z === curZ+1;
+    if (!liftBelow && !dropAbove) continue;
+    const d = DIRS[t.dir];
+    const lx = t.x + d.x, ly = t.y + d.y;
+    if (dropAbove){
+      // the machine itself hovers ghost-like overhead so you can see where it is
+      g.save(); g.globalAlpha = 0.45;
+      g.translate(w2sX(t.x), w2sY(t.y));
+      drawTileGraphic(g, t, ts, time, false);
+      g.restore();
+    }
+    const col = liftBelow ? '#8fd0ff' : '#d0a8ff';
+    const sx = w2sX(lx), sy = w2sY(ly), mid = sx + ts/2;
+    g.save();
+    g.strokeStyle = col; g.lineWidth = 2.5;
+    g.setLineDash([ts*0.14, ts*0.1]);
+    g.lineDashOffset = -time*ts*0.4;
+    g.strokeRect(sx+2, sy+2, ts-4, ts-4);
+    g.setLineDash([]);
+    g.lineWidth = ts*0.06; g.lineCap = 'round'; g.lineJoin = 'round';
+    const bob = Math.sin(time*3) * ts*0.03;
+    for (let i=0;i<2;i++){
+      const yy = liftBelow
+        ? sy + ts*0.62 - i*ts*0.18 - bob
+        : sy + ts*0.38 + i*ts*0.18 + bob;
+      g.beginPath();
+      if (liftBelow){ g.moveTo(mid - ts*0.15, yy); g.lineTo(mid, yy - ts*0.13); g.lineTo(mid + ts*0.15, yy); }
+      else { g.moveTo(mid - ts*0.15, yy); g.lineTo(mid, yy + ts*0.13); g.lineTo(mid + ts*0.15, yy); }
+      g.stroke();
+    }
+    g.restore();
+  }
 
   // ghost preview
   if (hoverTX !== null && tool !== 'hand' && tool !== 'erase'){
@@ -1231,7 +1283,7 @@ $('layerDn').onclick = () => setLayer(curZ-1);
 function setLayer(z){
   curZ = Math.max(0, Math.min(MAX_LAYER, z));
   $('layerLbl').textContent = 'LAYER ' + (curZ+1);
-  if (curZ > 0) setInfo('Layer '+(curZ+1)+': the layer below shows dimly. A <b>Lift Conveyor</b> below pushes items up here — catch them with a conveyor right above it.');
+  if (curZ > 0) setInfo('Layer '+(curZ+1)+': the layer below shows dimly. A <b>Lift Conveyor</b> below sends items up here — its landing tile shows as a dashed <b>blue box</b>. Put a conveyor on it to catch them.');
 }
 function zoomBy(f, px, py){
   const wx = s2wX(px), wy = s2wY(py);
