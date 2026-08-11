@@ -263,7 +263,7 @@
       <li><b>Right-click</b> (or the &#129529; broom) removes a machine for a 50% refund &mdash; and any items it was carrying are swept into your &#127890; inventory, where you can sell them.</li>
       <li>The &#127795; button shows the whole <b>recipe tree</b>: what turns into what, with which machine, and the profit of each step.</li>
       <li>The <b>hand</b> &#9995; pans the map. Mouse wheel or +/&minus; zooms. Click a placed <b>Item Cutter</b> with the hand to switch it between slabs / stairs / fences. Click a fully grown tree to hand-harvest it for quick cash.</li>
-      <li><b>Layers:</b> a Lift Conveyor is a ramp going up &mdash; items land one layer up, one tile ahead in the direction it faces (rotate with <kbd>R</kbd>). Go up a layer (&#9650; button) and you'll see a dashed <b style="color:#8fd0ff">blue landing box</b>: put a conveyor there to catch them. Down Conveyors are the reverse, with a <b style="color:#d0a8ff">purple landing box</b> on the layer below, and they show as a ghost from underneath so you always see both ends. Chain lifts to reach layer 3+.</li>
+      <li><b>Layers:</b> a Lift Conveyor lifts items <b>exactly one layer up</b>, straight up. Go up a layer (&#9650; button) and you'll see a dashed <b style="color:#8fd0ff">blue landing box</b> on the same tile: put a conveyor there to catch them. Down Conveyors bring items one layer down the same way, with a <b style="color:#d0a8ff">purple landing box</b> below, and show as a ghost from underneath so you always see both ends. <kbd>R</kbd> turns them to line up with your belts. Chain lift &rarr; belt &rarr; lift to reach layer 3+.</li>
       <li><b>Tree logic:</b> a Tree Detector lights up next to a grown tree. Wires carry its signal to a Tree Cutter sitting next to the tree; the cutter chops, drops wood on the belt it faces, and the tree regrows. The Tree Farm is the same rig, pre-packaged.</li>
     </ul>
     <h2>Furnace recipes</h2><div id="recFurnace"></div>
@@ -347,8 +347,8 @@ const SHOP = [
   {t:'turnR',     n:'Turn Right',      p:20,  cat:'Conveyors', d:'Items riding this belt turn to the right.'},
   {t:'splitter',  n:'Split Conveyor',  p:20,  cat:'Conveyors', d:'Splits one line in two: items go alternately left and right.'},
   {t:'merger',    n:'Merge Conveyor',  p:40,  cat:'Conveyors', d:'Takes items from three sides and sends them out of one.'},
-  {t:'lift',      n:'Lift Conveyor',   p:30,  cat:'Conveyors', d:'A ramp UP: carries items one layer up, landing one tile ahead in its direction (R rotates). The landing tile is marked in blue on the layer above.'},
-  {t:'drop',      n:'Down Conveyor',   p:30,  cat:'Conveyors', d:'A ramp DOWN: carries items one layer down, landing one tile ahead in its direction (R rotates). The landing tile is marked in purple on the layer below.'},
+  {t:'lift',      n:'Lift Conveyor',   p:30,  cat:'Conveyors', d:'Lifts items UP exactly one layer, straight up. Go up a layer and place a conveyor on the blue-marked tile to catch them. R turns it to line up with your belts.'},
+  {t:'drop',      n:'Down Conveyor',   p:30,  cat:'Conveyors', d:'Brings items DOWN exactly one layer, straight down. The landing tile is marked in purple on the layer below. R turns it to line up with your belts.'},
   {t:'cash',      n:'Cash Block',      p:50,  cat:'Conveyors', d:'Sells every item that rides into it. This is how you earn money!'},
   {t:'oak',       n:'Oak Sapling',     p:100, cat:'Nature',    d:'Grows in 5–8 s. Chop with a Tree Cutter (or click it) for Oak Wood.'},
   {t:'pine',      n:'Pine Tree',       p:150, cat:'Nature',    d:'Grows in 10–12 s. Gives Pine Wood, worth more than oak.'},
@@ -465,9 +465,9 @@ function outDir(t){
   return t.dir;
 }
 function destKeyOf(t, dir){
-  // lifts and drops work like ramps: one tile forward in their direction, one layer up/down
-  if (t.type === 'lift'){ const d = DIRS[t.dir]; return K(t.x+d.x, t.y+d.y, t.z+1); }
-  if (t.type === 'drop'){ const d = DIRS[t.dir]; return K(t.x+d.x, t.y+d.y, t.z-1); }
+  // lifts and drops move items by exactly one layer, straight up or down (same tile)
+  if (t.type === 'lift') return K(t.x, t.y, t.z+1);
+  if (t.type === 'drop') return K(t.x, t.y, t.z-1);
   const d = DIRS[dir === undefined ? outDir(t) : dir];
   return K(t.x + d.x, t.y + d.y, t.z);
 }
@@ -1043,10 +1043,8 @@ function drawProcBar(c, t, ts, kind){
 /* item world position on a transport tile (tile-local 0..1 offsets from center) */
 function itemOffset(t, it){
   const p = it.prog;
-  if (t.type === 'lift' || t.type === 'drop'){
-    const v = DIRS[t.dir];
-    return { x:(p-0.5)*v.x, y:(p-0.5)*v.y, lift:(t.type==='lift'? p : -p) };
-  }
+  if (t.type === 'lift' || t.type === 'drop')
+    return { x:0, y:0, lift:(t.type==='lift'? p : -p) };
   const od = outDir(t);
   if (t.type === 'turnL' || t.type === 'turnR'){
     const inV = DIRS[t.dir], outV = DIRS[od];
@@ -1131,8 +1129,7 @@ function render(time){
     const liftBelow = t.type === 'lift' && t.z === curZ-1;
     const dropAbove = t.type === 'drop' && t.z === curZ+1;
     if (!liftBelow && !dropAbove) continue;
-    const d = DIRS[t.dir];
-    const lx = t.x + d.x, ly = t.y + d.y;
+    const lx = t.x, ly = t.y; // items arrive on the same tile, one layer over
     if (dropAbove){
       // the machine itself hovers ghost-like overhead so you can see where it is
       g.save(); g.globalAlpha = 0.45;
