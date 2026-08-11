@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Beltworks Meadow</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+  /* Single committed theme: voxel meadow workshop. All colors explicit. */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; }
+  body {
+    background:#182119;
+    color:#e9eddc;
+    font-family: ui-rounded, "Segoe UI", system-ui, -apple-system, sans-serif;
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  #game { position:fixed; inset:0; display:block; cursor:crosshair; }
+  .hud { position:fixed; z-index:10; }
+
+  /* money chip / shop button */
+  #moneyBtn {
+    top:12px; left:12px;
+    display:flex; align-items:center; gap:10px;
+    background:#243026; border:2px solid #3b4a3c;
+    border-bottom-width:4px;
+    border-radius:14px; padding:8px 16px 8px 10px;
+    cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.4);
+    transition: transform .08s;
+  }
+  #moneyBtn:active { transform:translateY(2px); }
+  #moneyBtn.broke { animation: shake .3s; border-color:#b3443c; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+  #coin {
+    width:30px; height:30px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #ffe08a, #f2c14e 60%, #c68f1f);
+    border:2px solid #8a6512;
+    display:flex; align-items:center; justify-content:center;
+    color:#6b4c0a; font-weight:900; font-size:18px;
+    flex:none;
+  }
+  #money {
+    font-size:22px; font-weight:800; color:#f2c14e;
+    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    line-height:1;
+  }
+  #moneyBtn small { display:block; font-size:10px; letter-spacing:.12em; color:#95a68f; font-weight:700; }
+
+  /* right controls */
+  #rightCtl { top:12px; right:12px; display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  .btnrow { display:flex; gap:8px; }
+  .hbtn {
+    background:#243026; border:2px solid #3b4a3c; border-bottom-width:4px;
+    color:#e9eddc; border-radius:12px;
+    min-width:42px; height:42px; padding:0 10px;
+    font-size:17px; font-weight:800; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    box-shadow:0 3px 10px rgba(0,0,0,.35);
+    font-family:inherit;
+  }
+  .hbtn:active { transform:translateY(2px); }
+  .hbtn.sel { background:#3d5a34; border-color:#6da944; color:#d8f0c2; }
+  .hbtn:focus-visible { outline:3px solid #f2c14e; outline-offset:2px; }
+  #layerLbl {
+    background:#243026; border:2px solid #3b4a3c; border-radius:12px;
+    height:42px; padding:0 14px; display:flex; align-items:center;
+    font-weight:800; letter-spacing:.06em; font-size:14px; color:#cfe0b8;
+  }
+
+  /* info line */
+  #infoLine {
+    left:50%; transform:translateX(-50%);
+    bottom:150px;
+    background:rgba(24,33,25,.88); border:1px solid #3b4a3c;
+    border-radius:10px; padding:6px 14px;
+    font-size:13px; color:#c6d3b6; pointer-events:none;
+    max-width:min(92vw, 640px); text-align:center;
+    transition: bottom .25s;
+  }
+  #infoLine.low { bottom:16px; }
+
+  /* shop drawer */
+  #shop {
+    left:0; right:0; bottom:0;
+    background:#1f2a21;
+    border-top:3px solid #3b4a3c;
+    transform:translateY(100%);
+    transition: transform .25s ease;
+    box-shadow:0 -8px 30px rgba(0,0,0,.5);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  #shop.open { transform:translateY(0); }
+  #shopTabs {
+    display:flex; gap:6px; padding:10px 12px 0;
+    overflow-x:auto; scrollbar-width:none;
+  }
+  .tab {
+    background:#243026; color:#95a68f;
+    border:2px solid #3b4a3c; border-bottom:none;
+    border-radius:10px 10px 0 0;
+    padding:7px 16px; font-weight:800; font-size:13px; letter-spacing:.05em;
+    cursor:pointer; white-space:nowrap; font-family:inherit;
+  }
+  .tab.sel { background:#2c3a2d; color:#e9eddc; border-color:#5a7050; }
+  #shopItems {
+    display:flex; gap:10px; padding:12px;
+    overflow-x:auto; overflow-y:hidden;
+    background:#2c3a2d; border-top:2px solid #5a7050;
+    min-height:118px;
+  }
+  #shopItems::-webkit-scrollbar { height:8px; }
+  #shopItems::-webkit-scrollbar-thumb { background:#5a7050; border-radius:4px; }
+  .card {
+    flex:none; width:96px;
+    background:#243026; border:2px solid #3b4a3c; border-bottom-width:5px;
+    border-radius:12px; padding:8px 6px 7px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:5px;
+    font-family:inherit; color:#e9eddc;
+  }
+  .card:active { transform:translateY(2px); }
+  .card.sel { border-color:#f2c14e; background:#33402c; box-shadow:0 0 12px rgba(242,193,78,.35); }
+  .card canvas { width:48px; height:48px; image-rendering:auto; }
+  .card .nm { font-size:11px; font-weight:800; text-align:center; line-height:1.15; min-height:25px; display:flex; align-items:center; }
+  .card .pr { font-size:12px; font-weight:900; color:#f2c14e; font-family:ui-monospace,monospace; }
+  .card.cant { opacity:.45; }
+  .card.cant .pr { color:#d97a6c; }
+
+  /* modal */
+  #modalWrap {
+    position:fixed; inset:0; z-index:50;
+    background:rgba(10,14,10,.72);
+    display:none; align-items:center; justify-content:center; padding:20px;
+  }
+  #modalWrap.open { display:flex; }
+  #modal {
+    background:#1f2a21; border:2px solid #5a7050; border-radius:16px;
+    max-width:640px; width:100%; max-height:84vh; overflow-y:auto;
+    padding:22px 24px;
+  }
+  #modal h1 { font-size:22px; color:#f2c14e; letter-spacing:.02em; margin-bottom:4px; }
+  #modal h2 { font-size:14px; color:#9fd07a; text-transform:uppercase; letter-spacing:.12em; margin:18px 0 6px; }
+  #modal p, #modal li { font-size:13.5px; line-height:1.55; color:#c6d3b6; }
+  #modal ul { padding-left:18px; }
+  #modal table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  #modal td, #modal th { border:1px solid #3b4a3c; padding:4px 8px; text-align:left; color:#c6d3b6; }
+  #modal th { color:#e9eddc; background:#243026; }
+  #modal kbd {
+    background:#243026; border:1px solid #5a7050; border-bottom-width:3px;
+    border-radius:5px; padding:1px 6px; font-family:ui-monospace,monospace; font-size:12px; color:#e9eddc;
+  }
+  .modalBtns { display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; }
+  .mbtn {
+    background:#3d5a34; color:#d8f0c2; border:2px solid #6da944; border-bottom-width:4px;
+    border-radius:10px; padding:8px 18px; font-weight:800; cursor:pointer; font-size:14px; font-family:inherit;
+  }
+  .mbtn.danger { background:#4a2a26; color:#f0c2ba; border-color:#b3443c; }
+  .mbtn:active { transform:translateY(2px); }
+</style>
+
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<button class="hud" id="moneyBtn" title="Open shop">
+  <span id="coin">$</span>
+  <span><small>SHOP&nbsp;&middot;&nbsp;CASH</small><span id="money">100</span></span>
+</button>
+
+<div class="hud" id="rightCtl">
+  <div class="btnrow">
+    <button class="hbtn" id="layerDn" title="Go down a layer">&#9660;</button>
+    <span id="layerLbl">LAYER 1</span>
+    <button class="hbtn" id="layerUp" title="Go up a layer">&#9650;</button>
+  </div>
+  <div class="btnrow">
+    <button class="hbtn" id="handBtn" title="Hand: drag to pan, click machines">&#9995;</button>
+    <button class="hbtn" id="eraseBtn" title="Eraser: refund half price">&#129529;</button>
+    <button class="hbtn" id="rotBtn" title="Rotate (R)">&#8635; <span id="rotArrow">&#8594;</span></button>
+    <button class="hbtn" id="helpBtn" title="Help">?</button>
+  </div>
+  <div class="btnrow">
+    <button class="hbtn" id="zoomOut" title="Zoom out">&minus;</button>
+    <button class="hbtn" id="zoomIn" title="Zoom in">+</button>
+  </div>
+</div>
+
+<div class="hud" id="infoLine">Press the <b>$ coin</b> to open the shop. Drag with the hand to look around.</div>
+
+<div class="hud" id="shop">
+  <div id="shopTabs"></div>
+  <div id="shopItems"></div>
+</div>
+
+<div id="modalWrap">
+  <div id="modal">
+    <h1>Beltworks Meadow</h1>
+    <p>Build farms, route items on conveyors across layers, process them into fancier goods, and feed everything into your <b>Cash Block</b> to earn money.</p>
+    <h2>How to play</h2>
+    <ul>
+      <li>Tap the <b>$ coin</b> (top-left) to open the shop. Pick a thing, then click / drag on the ground to place it.</li>
+      <li><kbd>R</kbd> or the &#8635; button rotates before placing. Dragging conveyors auto-turns them along your path.</li>
+      <li><b>Right-click</b> (or the &#129529; eraser) removes a machine for a 50% refund.</li>
+      <li>The <b>hand</b> &#9995; pans the map. Mouse wheel or +/&minus; zooms. Click a placed <b>Item Cutter</b> with the hand to switch it between slabs / stairs / fences. Click a fully grown tree to hand-harvest it for quick cash.</li>
+      <li><b>Layers:</b> a Lift Conveyor pushes items straight up; place a conveyor on the layer above it (use the &#9650; button) to catch them. A Down Conveyor drops them back. Stack lifts to reach layer 3+.</li>
+      <li><b>Tree logic:</b> a Tree Detector lights up next to a grown tree. Wires carry its signal to a Tree Cutter sitting next to the tree; the cutter chops, drops wood on the belt it faces, and the tree regrows. The Tree Farm is the same rig, pre-packaged.</li>
+    </ul>
+    <h2>Furnace recipes</h2><div id="recFurnace"></div>
+    <h2>Item Grinder recipes</h2><div id="recGrinder"></div>
+    <h2>Item Cutter recipes (click to switch mode)</h2><div id="recCutter"></div>
+    <h2>Item prices</h2><div id="recValues"></div>
+    <div class="modalBtns">
+      <button class="mbtn" id="closeModal">Back to building</button>
+      <button class="mbtn danger" id="resetSave">Reset save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ================= DATA ================= */
+const DIRS = [{x:1,y:0},{x:0,y:1},{x:-1,y:0},{x:0,y:-1}]; // 0 E, 1 S, 2 W, 3 N
+const rotR = d => (d+1)%4, rotL = d => (d+3)%4;
+const DIR_ARROWS = ['→','↓','←','↑'];
+
+const ITEMS = {
+  cobblestone:{n:'Cobblestone', v:2,  c:'#8d8d8d', c2:'#6f6f6f', shape:'rock'},
+  stone:      {n:'Stone',       v:5,  c:'#b3b3b3', c2:'#8f8f8f', shape:'block'},
+  basalt:     {n:'Basalt',      v:12, c:'#4c4c58', c2:'#33333d', shape:'block'},
+  dirt:       {n:'Dirt',        v:3,  c:'#8b5a2b', c2:'#6d451f', shape:'rock'},
+  grass:      {n:'Grass Block', v:6,  c:'#8b5a2b', c2:'#57a03a', shape:'grass'},
+  sand:       {n:'Sand',        v:4,  c:'#e8d48b', c2:'#cbb469', shape:'pile'},
+  glass:      {n:'Glass',       v:10, c:'#c2e6ec', c2:'#8fc3cc', shape:'glass'},
+  gravel:     {n:'Gravel',      v:6,  c:'#9c9489', c2:'#7c756c', shape:'pile'},
+  flint:      {n:'Flint',       v:14, c:'#3a342f', c2:'#211d1a', shape:'shard'},
+  oakwood:    {n:'Oak Wood',    v:6,  c:'#a9825a', c2:'#7d5c3b', shape:'log'},
+  pinewood:   {n:'Pine Wood',   v:9,  c:'#7d5a3c', c2:'#5b3f28', shape:'log'},
+  baobabwood: {n:'Baobab Wood', v:15, c:'#c49a6c', c2:'#96714a', shape:'log'},
+  tanbark:    {n:'Tanbark',     v:8,  c:'#6e4a2f', c2:'#4e3220', shape:'pile'},
+  charcoal:   {n:'Charcoal',    v:12, c:'#2c2723', c2:'#171412', shape:'rock'},
+  wheat:      {n:'Wheat',       v:5,  c:'#d9b84a', c2:'#b3922f', shape:'wheat'},
+  bread:      {n:'Bread',       v:14, c:'#c88f4a', c2:'#a06c30', shape:'bread'},
+  carrot:     {n:'Carrot',      v:6,  c:'#ed7a1c', c2:'#c05c0d', shape:'carrot'},
+  roastcarrot:{n:'Roast Carrot',v:13, c:'#b85c10', c2:'#8a420a', shape:'carrot'},
+  woodslab:   {n:'Wood Slab',   v:9,  c:'#a9825a', c2:'#7d5c3b', shape:'slab'},
+  woodstair:  {n:'Wood Stairs', v:11, c:'#a9825a', c2:'#7d5c3b', shape:'stair'},
+  woodfence:  {n:'Wood Fence',  v:13, c:'#a9825a', c2:'#7d5c3b', shape:'fence'},
+  stoneslab:  {n:'Stone Slab',  v:9,  c:'#b3b3b3', c2:'#8f8f8f', shape:'slab'},
+  stonestair: {n:'Stone Stairs',v:12, c:'#b3b3b3', c2:'#8f8f8f', shape:'stair'},
+  stonefence: {n:'Stone Fence', v:15, c:'#b3b3b3', c2:'#8f8f8f', shape:'fence'},
+  basaltslab: {n:'Basalt Slab', v:20, c:'#4c4c58', c2:'#33333d', shape:'slab'},
+  basaltstair:{n:'Basalt Stairs',v:24,c:'#4c4c58', c2:'#33333d', shape:'stair'},
+  basaltfence:{n:'Basalt Fence',v:28, c:'#4c4c58', c2:'#33333d', shape:'fence'},
+};
+
+const RECIPES = {
+  furnace: { cobblestone:'stone', stone:'basalt', sand:'glass',
+             oakwood:'charcoal', pinewood:'charcoal', baobabwood:'charcoal',
+             wheat:'bread', carrot:'roastcarrot', dirt:'grass' },
+  grinder: { cobblestone:'sand', stone:'dirt', basalt:'gravel', gravel:'flint',
+             glass:'sand', oakwood:'tanbark', pinewood:'tanbark', baobabwood:'tanbark' },
+  sawmill: {
+    slab:  { oakwood:'woodslab',  pinewood:'woodslab',  baobabwood:'woodslab',  stone:'stoneslab',  basalt:'basaltslab' },
+    stair: { oakwood:'woodstair', pinewood:'woodstair', baobabwood:'woodstair', stone:'stonestair', basalt:'basaltstair' },
+    fence: { oakwood:'woodfence', pinewood:'woodfence', baobabwood:'woodfence', stone:'stonefence', basalt:'basaltfence' },
+  }
+};
+const SAW_MODES = ['slab','stair','fence'];
+
+const TREES = {
+  oak:    { grow:[5,8],   wood:'oakwood'    },
+  pine:   { grow:[10,12], wood:'pinewood'   },
+  baobab: { grow:[20,22], wood:'baobabwood' },
+};
+const FARM_PRODUCTS = {
+  cobbfarm:  { item:'cobblestone', rate:3.0 },
+  wheatfarm: { item:'wheat',       rate:5.0 },
+  carrotfarm:{ item:'carrot',      rate:6.0 },
+  treefarm:  { item:'oakwood',     rate:6.0 },
+};
+const PROC_TIME = { furnace:1.6, grinder:1.6, sawmill:1.8 };
+
+const SHOP = [
+  {t:'belt',      n:'Conveyor',        p:10,  cat:'Conveyors', d:'Carries items forward. Belts pointing into each other merge automatically. Drag to draw a path.'},
+  {t:'turnL',     n:'Turn Left',       p:20,  cat:'Conveyors', d:'Items riding this belt turn to the left.'},
+  {t:'turnR',     n:'Turn Right',      p:20,  cat:'Conveyors', d:'Items riding this belt turn to the right.'},
+  {t:'splitter',  n:'Split Conveyor',  p:20,  cat:'Conveyors', d:'Splits one line in two: items go alternately left and right.'},
+  {t:'merger',    n:'Merge Conveyor',  p:40,  cat:'Conveyors', d:'Takes items from three sides and sends them out of one.'},
+  {t:'lift',      n:'Lift Conveyor',   p:30,  cat:'Conveyors', d:'Pushes items straight UP one layer. Put a conveyor on the layer above to catch them.'},
+  {t:'drop',      n:'Down Conveyor',   p:30,  cat:'Conveyors', d:'Drops items straight DOWN one layer. Put a conveyor on the layer below to catch them.'},
+  {t:'cash',      n:'Cash Block',      p:50,  cat:'Conveyors', d:'Sells every item that rides into it. This is how you earn money!'},
+  {t:'oak',       n:'Oak Sapling',     p:100, cat:'Nature',    d:'Grows in 5–8 s. Chop with a Tree Cutter (or click it) for Oak Wood.'},
+  {t:'pine',      n:'Pine Tree',       p:150, cat:'Nature',    d:'Grows in 10–12 s. Gives Pine Wood, worth more than oak.'},
+  {t:'baobab',    n:'Baobab Tree',     p:250, cat:'Nature',    d:'Grows in 20–22 s. Gives chunky, valuable Baobab Wood.'},
+  {t:'detector',  n:'Tree Detector',   p:40,  cat:'Nature',    d:'Lights up when a tree next to it is fully grown. Sends power through wires.'},
+  {t:'wire',      n:'Wire',            p:5,   cat:'Nature',    d:'Carries the detector signal along the ground to a Tree Cutter.'},
+  {t:'treecutter',n:'Tree Cutter',     p:80,  cat:'Nature',    d:'When powered and next to a grown tree, chops it onto the belt it faces. The tree regrows.'},
+  {t:'cobbfarm',  n:'Cobblestone Farm',p:100, cat:'Farms',     d:'Water meets lava, Minecraft style: makes a cobblestone every 3 s onto the belt it faces.'},
+  {t:'wheatfarm', n:'Wheat Farm',      p:120, cat:'Farms',     d:'Grows a wheat every 5 s onto the belt it faces.'},
+  {t:'carrotfarm',n:'Carrot Farm',     p:140, cat:'Farms',     d:'Grows a carrot every 6 s onto the belt it faces.'},
+  {t:'treefarm',  n:'Tree Farm',       p:300, cat:'Farms',     d:'Grass block + oak + detector + cutter + wires in one tile. Oak wood every 6 s.'},
+  {t:'furnace',   n:'Furnace',         p:200, cat:'Machines',  d:'Smelts what rides in and sends it out the front: cobble→stone, stone→basalt, sand→glass, wood→charcoal…'},
+  {t:'grinder',   n:'Item Grinder',    p:200, cat:'Machines',  d:'Grinds items down: cobble→sand, wood→tanbark, stone→dirt, basalt→gravel→flint…'},
+  {t:'sawmill',   n:'Item Cutter',     p:250, cat:'Machines',  d:'Cuts wood, stone or basalt into slabs, stairs or fences. Click it with the hand to switch mode.'},
+];
+const SHOP_BY_TYPE = {}; SHOP.forEach(s => SHOP_BY_TYPE[s.t] = s);
+const CATS = ['Conveyors','Nature','Farms','Machines'];
+
+const TRANSPORT = new Set(['belt','turnL','turnR','splitter','merger','lift','drop']);
+const PROCESSOR = new Set(['furnace','grinder','sawmill']);
+const FARMS = new Set(Object.keys(FARM_PRODUCTS));
+const BELT_SPEED = 1.7, LIFT_SPEED = 1.1;
+const MAX_LAYER = 7; // layers 1..8
+
+/* ================= STATE ================= */
+const K = (x,y,z) => x+','+y+','+z;
+let tiles = new Map();
+let money = 100;
+let curZ = 0;
+let cam = { x:0.5, y:0.5, zoom:1 };
+let tool = 'hand';          // 'hand' | 'erase' | machine type
+let rot = 0;
+let floaters = [];          // {x,y,z,txt,age,color}
+let simTime = 0;
+let powered = new Set();    // wire keys powered this tick
+let activeDet = new Set();  // detector keys active this tick
+
+function rnd(a,b){ return a + Math.random()*(b-a); }
+function itemVal(t){ return ITEMS[t] ? ITEMS[t].v : 1; }
+
+function makeTile(type, x, y, z, dir){
+  const t = { type, x, y, z, dir: dir||0 };
+  if (TREES[type]) { t.stage = 0; t.growTime = rnd(...TREES[type].grow); }
+  if (FARMS.has(type)) t.timer = FARM_PRODUCTS[type].rate;
+  if (PROCESSOR.has(type)) { t.inItem = null; t.inT = 0; t.outItem = null; }
+  if (type === 'treecutter') t.outItem = null;
+  if (type === 'sawmill') t.mode = 0;
+  if (type === 'splitter') t.flip = 0;
+  if (type === 'cash') t.pulse = 0;
+  return t;
+}
+
+function starterWorld(){
+  tiles = new Map(); money = 100; curZ = 0;
+  const put = t => tiles.set(K(t.x,t.y,t.z), t);
+  put(makeTile('cobbfarm', -2, 0, 0, 0));
+  put(makeTile('belt', -1, 0, 0, 0));
+  put(makeTile('belt',  0, 0, 0, 0));
+  put(makeTile('belt',  1, 0, 0, 0));
+  put(makeTile('cash',  2, 0, 0, 0));
+  cam = { x:0.5, y:0.5, zoom:1 };
+}
+
+/* ================= SAVE / LOAD ================= */
+const SAVE_KEY = 'beltworksMeadow.v1';
+function save(){
+  try {
+    const arr = [];
+    for (const t of tiles.values()){
+      const o = { t:t.type, x:t.x, y:t.y, z:t.z, d:t.dir };
+      if (t.stage !== undefined) { o.s = +t.stage.toFixed(3); o.g = +t.growTime.toFixed(2); }
+      if (t.timer !== undefined) o.tm = +t.timer.toFixed(2);
+      if (t.mode !== undefined) o.m = t.mode;
+      if (t.flip) o.f = 1;
+      if (t.inItem) { o.ii = t.inItem; o.it = +t.inT.toFixed(2); }
+      if (t.outItem) o.oi = t.outItem;
+      if (t.item) o.c = [t.item.type, +t.item.prog.toFixed(3)];
+      arr.push(o);
+    }
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ money, curZ, cam, tiles:arr }));
+  } catch(e){}
+}
+function load(){
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    tiles = new Map();
+    for (const o of d.tiles){
+      const t = makeTile(o.t, o.x, o.y, o.z, o.d);
+      if (o.s !== undefined) { t.stage = o.s; t.growTime = o.g; }
+      if (o.tm !== undefined) t.timer = o.tm;
+      if (o.m !== undefined) t.mode = o.m;
+      if (o.f) t.flip = 1;
+      if (o.ii) { t.inItem = o.ii; t.inT = o.it; }
+      if (o.oi) t.outItem = o.oi;
+      if (o.c) t.item = { type:o.c[0], prog:o.c[1], moved:false };
+      tiles.set(K(t.x,t.y,t.z), t);
+    }
+    money = d.money; curZ = d.curZ || 0;
+    if (d.cam) cam = d.cam;
+    return true;
+  } catch(e){ return false; }
+}
+setInterval(save, 8000);
+addEventListener('beforeunload', save);
+
+/* ================= SIMULATION ================= */
+function outDir(t){
+  if (t.type === 'turnL') return rotL(t.dir);
+  if (t.type === 'turnR') return rotR(t.dir);
+  return t.dir;
+}
+function destKeyOf(t, dir){
+  if (t.type === 'lift') return K(t.x, t.y, t.z+1);
+  if (t.type === 'drop') return K(t.x, t.y, t.z-1);
+  const d = DIRS[dir === undefined ? outDir(t) : dir];
+  return K(t.x + d.x, t.y + d.y, t.z);
+}
+// deliver an item type into tile at key; returns true if it was accepted
+function deliver(key, itemType){
+  const d = tiles.get(key);
+  if (!d) return false;
+  if (TRANSPORT.has(d.type)){
+    if (d.item) return false;
+    d.item = { type:itemType, prog:0, moved:true };
+    return true;
+  }
+  if (PROCESSOR.has(d.type)){
+    if (d.inItem || d.outItem) return false;
+    d.inItem = itemType; d.inT = PROC_TIME[d.type];
+    return true;
+  }
+  if (d.type === 'cash'){
+    const v = itemVal(itemType);
+    money += v; d.pulse = 1;
+    floaters.push({ x:d.x+0.5, y:d.y, z:d.z, txt:'+$'+v, age:0, color:'#f2c14e' });
+    return true;
+  }
+  return false;
+}
+function neighborsKeys(t){
+  return DIRS.map(d => K(t.x+d.x, t.y+d.y, t.z));
+}
+function computePower(){
+  powered = new Set(); activeDet = new Set();
+  const queue = [];
+  for (const t of tiles.values()){
+    if (t.type !== 'detector') continue;
+    let on = false;
+    for (const nk of neighborsKeys(t)){
+      const n = tiles.get(nk);
+      if (n && TREES[n.type] && n.stage >= 1) { on = true; break; }
+    }
+    if (on){ activeDet.add(K(t.x,t.y,t.z)); queue.push(t); }
+  }
+  while (queue.length){
+    const t = queue.pop();
+    for (const nk of neighborsKeys(t)){
+      const n = tiles.get(nk);
+      if (n && n.type === 'wire' && !powered.has(nk)){ powered.add(nk); queue.push(n); }
+    }
+  }
+}
+function cutterPowered(t){
+  for (const nk of neighborsKeys(t)){
+    if (activeDet.has(nk) || powered.has(nk)) return true;
+  }
+  return false;
+}
+function processorResult(t){
+  if (t.type === 'sawmill') return RECIPES.sawmill[SAW_MODES[t.mode]][t.inItem] || t.inItem;
+  return RECIPES[t.type][t.inItem] || t.inItem;
+}
+
+function update(dt){
+  simTime += dt;
+  computePower();
+
+  for (const t of tiles.values()){
+    if (TREES[t.type]){
+      if (t.stage < 1) t.stage = Math.min(1, t.stage + dt/t.growTime);
+    }
+    else if (FARMS.has(t.type)){
+      t.timer -= dt;
+      if (t.timer <= 0){
+        if (deliver(destKeyOf(t, t.dir), FARM_PRODUCTS[t.type].item))
+          t.timer = FARM_PRODUCTS[t.type].rate;
+        else t.timer = 0; // waiting for space
+      }
+    }
+    else if (t.type === 'treecutter'){
+      if (t.outItem){
+        if (deliver(destKeyOf(t, t.dir), t.outItem)) t.outItem = null;
+      } else if (cutterPowered(t)){
+        for (const nk of neighborsKeys(t)){
+          const n = tiles.get(nk);
+          if (n && TREES[n.type] && n.stage >= 1){
+            n.stage = 0; n.growTime = rnd(...TREES[n.type].grow);
+            t.outItem = TREES[n.type].wood;
+            t.sawSpin = 1;
+            break;
+          }
+        }
+      }
+      if (t.sawSpin) t.sawSpin = Math.max(0, t.sawSpin - dt*1.5);
+    }
+    else if (PROCESSOR.has(t.type)){
+      if (t.inItem){
+        t.inT -= dt;
+        if (t.inT <= 0){ t.outItem = processorResult(t); t.inItem = null; }
+      }
+      if (t.outItem){
+        if (deliver(destKeyOf(t, t.dir), t.outItem)) t.outItem = null;
+      }
+    }
+    else if (t.type === 'cash' && t.pulse > 0) t.pulse = Math.max(0, t.pulse - dt*3);
+  }
+
+  // belt movement
+  for (const t of tiles.values()) if (t.item) t.item.moved = false;
+  for (const t of tiles.values()){
+    if (!TRANSPORT.has(t.type) || !t.item || t.item.moved) continue;
+    const it = t.item;
+    const spd = (t.type === 'lift' || t.type === 'drop') ? LIFT_SPEED : BELT_SPEED;
+    it.prog = Math.min(1, it.prog + spd*dt);
+    if (it.prog >= 1){
+      if (t.type === 'splitter'){
+        const first = t.flip ? rotL(t.dir) : rotR(t.dir);
+        const second = t.flip ? rotR(t.dir) : rotL(t.dir);
+        if (deliver(destKeyOf(t, first), it.type)){ t.item = null; t.flip ^= 1; }
+        else if (deliver(destKeyOf(t, second), it.type)){ t.item = null; }
+      } else {
+        if (deliver(destKeyOf(t), it.type)) t.item = null;
+      }
+    }
+  }
+
+  for (let i = floaters.length-1; i >= 0; i--){
+    const f = floaters[i];
+    f.age += dt;
+    if (f.age > 1.2) floaters.splice(i,1);
+  }
+}
+
+/* ================= RENDER ================= */
+const cv = document.getElementById('game');
+const g = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W*DPR; cv.height = H*DPR;
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+}
+addEventListener('resize', resize); resize();
+
+const TS = () => 52 * cam.zoom;
+function w2sX(wx){ return (wx - cam.x)*TS() + W/2; }
+function w2sY(wy){ return (wy - cam.y)*TS() + H/2; }
+function s2wX(sx){ return (sx - W/2)/TS() + cam.x; }
+function s2wY(sy){ return (sy - H/2)/TS() + cam.y; }
+
+function rr(c, x, y, w, h, r){
+  c.beginPath();
+  c.moveTo(x+r, y);
+  c.arcTo(x+w, y, x+w, y+h, r);
+  c.arcTo(x+w, y+h, x, y+h, r);
+  c.arcTo(x, y+h, x, y, r);
+  c.arcTo(x, y, x+w, y, r);
+  c.closePath();
+}
+
+/* --- item icons, drawn centered at 0,0 with size s --- */
+function drawItem(c, type, s){
+  const it = ITEMS[type]; if (!it) return;
+  const h = s/2;
+  c.save();
+  c.lineWidth = Math.max(1, s*0.09);
+  c.strokeStyle = it.c2; c.fillStyle = it.c;
+  switch (it.shape){
+    case 'log':
+      rr(c, -h, -h*0.62, s, s*0.62, s*0.16); c.fill(); c.stroke();
+      c.fillStyle = it.c2;
+      c.beginPath(); c.ellipse(h*0.62, 0, s*0.14, s*0.24, 0, 0, 7); c.fill();
+      break;
+    case 'grass':
+      rr(c, -h, -h, s, s, s*0.14); c.fill(); c.stroke();
+      c.fillStyle = it.c2;
+      rr(c, -h, -h, s, s*0.42, s*0.14); c.fill();
+      break;
+    case 'glass':
+      c.globalAlpha = 0.8;
+      rr(c, -h, -h, s, s, s*0.14); c.fill(); c.stroke();
+      c.globalAlpha = 1;
+      c.strokeStyle = '#ffffff';
+      c.beginPath(); c.moveTo(-h*0.4, h*0.35); c.lineTo(h*0.35, -h*0.4); c.stroke();
+      break;
+    case 'pile':
+      c.beginPath();
+      c.moveTo(-h, h*0.6); c.quadraticCurveTo(0, -h, h, h*0.6); c.closePath();
+      c.fill(); c.stroke();
+      break;
+    case 'rock':
+      c.beginPath();
+      c.moveTo(-h*0.9, h*0.35); c.lineTo(-h*0.55, -h*0.65); c.lineTo(h*0.4, -h*0.8);
+      c.lineTo(h*0.9, -h*0.05); c.lineTo(h*0.55, h*0.7); c.lineTo(-h*0.4, h*0.75);
+      c.closePath(); c.fill(); c.stroke();
+      break;
+    case 'shard':
+      c.beginPath();
+      c.moveTo(0,-h); c.lineTo(h*0.8, h*0.2); c.lineTo(0,h); c.lineTo(-h*0.8, h*0.2);
+      c.closePath(); c.fill(); c.stroke();
+      break;
+    case 'slab':
+      rr(c, -h, 0, s, h, s*0.12); c.fill(); c.stroke();
+      break;
+    case 'stair':
+      c.beginPath();
+      c.moveTo(-h, h); c.lineTo(-h, 0); c.lineTo(0, 0); c.lineTo(0, -h);
+      c.lineTo(h, -h); c.lineTo(h, h); c.closePath();
+      c.fill(); c.stroke();
+      break;
+    case 'fence':
+      c.fillRect(-h*0.75, -h, s*0.22, s);
+      c.fillRect(h*0.53, -h, s*0.22, s);
+      c.fillRect(-h, -h*0.45, s, s*0.2);
+      c.fillRect(-h, h*0.25, s, s*0.2);
+      break;
+    case 'wheat':
+      c.strokeStyle = it.c; c.lineWidth = s*0.13;
+      for (let i=-1;i<=1;i++){
+        c.beginPath(); c.moveTo(i*h*0.5, h); c.quadraticCurveTo(i*h*0.7, 0, i*h*0.35, -h); c.stroke();
+      }
+      c.fillStyle = it.c2;
+      for (let i=-1;i<=1;i++){ c.beginPath(); c.arc(i*h*0.35, -h*0.8, s*0.14, 0, 7); c.fill(); }
+      break;
+    case 'carrot':
+      c.beginPath(); c.moveTo(-h*0.5,-h*0.5); c.lineTo(h*0.7,h*0.2); c.lineTo(-h*0.1,h*0.6); c.closePath();
+      c.fill(); c.stroke();
+      c.strokeStyle = '#57a03a'; c.beginPath(); c.moveTo(-h*0.35,-h*0.4); c.lineTo(-h*0.8,-h*0.9); c.stroke();
+      break;
+    case 'bread':
+      c.beginPath(); c.ellipse(0, 0, h*0.95, h*0.6, 0, 0, 7); c.fill(); c.stroke();
+      break;
+    default:
+      rr(c, -h, -h, s, s, s*0.14); c.fill(); c.stroke();
+  }
+  c.restore();
+}
+
+/* --- machine renderers, tile-local coords 0..ts --- */
+function chevron(c, x, cy, w){
+  c.beginPath();
+  c.moveTo(x, cy - w); c.lineTo(x + w, cy); c.lineTo(x, cy + w);
+}
+function drawBeltBase(c, ts){
+  rr(c, ts*0.04, ts*0.1, ts*0.92, ts*0.8, ts*0.1);
+  c.fillStyle = '#33383f'; c.fill();
+  c.fillStyle = '#20242a';
+  c.fillRect(ts*0.04, ts*0.1, ts*0.92, ts*0.1);
+  c.fillRect(ts*0.04, ts*0.8, ts*0.92, ts*0.1);
+}
+function drawTileGraphic(c, t, ts, time, forIcon){
+  const cx = ts/2, cy = ts/2;
+  const anim = (time * BELT_SPEED * ts * 0.55) % (ts*0.42);
+  const rotSave = () => { c.save(); c.translate(cx, cy); c.rotate(t.dir * Math.PI/2); c.translate(-cx, -cy); };
+
+  switch (t.type){
+    case 'belt': {
+      rotSave();
+      drawBeltBase(c, ts);
+      c.strokeStyle = '#f2c14e'; c.lineWidth = ts*0.07; c.lineJoin='round'; c.lineCap='round';
+      for (let i=0;i<3;i++){
+        const x = ts*0.06 + ((anim + i*ts*0.42) % (ts*0.84));
+        chevron(c, x, cy, ts*0.13); c.stroke();
+      }
+      c.restore(); break;
+    }
+    case 'turnL': case 'turnR': {
+      rotSave();
+      const sgn = t.type === 'turnL' ? -1 : 1;
+      rr(c, ts*0.04, ts*0.1, ts*0.92, ts*0.8, ts*0.1);
+      c.fillStyle = '#33383f'; c.fill();
+      c.strokeStyle = '#20242a'; c.lineWidth = ts*0.09;
+      c.beginPath(); c.moveTo(ts*0.04, cy); c.quadraticCurveTo(cx, cy, cx, cy + sgn*ts*0.38); c.stroke();
+      c.strokeStyle = '#f2c14e'; c.lineWidth = ts*0.07; c.lineCap='round'; c.lineJoin='round';
+      c.beginPath(); c.moveTo(ts*0.1, cy); c.quadraticCurveTo(cx, cy, cx, cy + sgn*ts*0.3); c.stroke();
+      c.beginPath();
+      c.moveTo(cx - ts*0.12, cy + sgn*ts*0.2);
+      c.lineTo(cx, cy + sgn*ts*0.36);
+      c.lineTo(cx + ts*0.12, cy + sgn*ts*0.2);
+      c.stroke();
+      c.restore(); break;
+    }
+    case 'splitter': {
+      rotSave();
+      drawBeltBase(c, ts);
+      c.strokeStyle = '#7dc4e8'; c.lineWidth = ts*0.07; c.lineCap='round'; c.lineJoin='round';
+      c.beginPath(); c.moveTo(ts*0.1, cy); c.lineTo(cx, cy); c.stroke();
+      c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx, ts*0.2); c.moveTo(cx - ts*0.1, ts*0.32); c.lineTo(cx, ts*0.18) ; c.lineTo(cx + ts*0.1, ts*0.32); c.stroke();
+      c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx, ts*0.8); c.moveTo(cx - ts*0.1, ts*0.68); c.lineTo(cx, ts*0.82); c.lineTo(cx + ts*0.1, ts*0.68); c.stroke();
+      c.restore(); break;
+    }
+    case 'merger': {
+      rotSave();
+      drawBeltBase(c, ts);
+      c.strokeStyle = '#c79bde'; c.lineWidth = ts*0.07; c.lineCap='round'; c.lineJoin='round';
+      c.beginPath(); c.moveTo(ts*0.1, cy); c.lineTo(ts*0.86, cy); c.stroke();
+      c.beginPath(); c.moveTo(cx, ts*0.16); c.lineTo(cx, cy); c.moveTo(cx, ts*0.84); c.lineTo(cx, cy); c.stroke();
+      chevron(c, ts*0.66, cy, ts*0.13); c.stroke();
+      c.restore(); break;
+    }
+    case 'lift': case 'drop': {
+      const up = t.type === 'lift';
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.14);
+      c.fillStyle = up ? '#3a4a58' : '#4a3a58'; c.fill();
+      c.strokeStyle = '#1d242c'; c.lineWidth = ts*0.05; c.stroke();
+      c.strokeStyle = up ? '#8fd0ff' : '#d0a8ff'; c.lineWidth = ts*0.09; c.lineCap='round'; c.lineJoin='round';
+      const off = (time*ts*0.5) % (ts*0.3);
+      for (let i=0;i<2;i++){
+        const yy = up ? ts*0.72 - off - i*ts*0.3 : ts*0.28 + off + i*ts*0.3;
+        c.beginPath();
+        c.moveTo(cx - ts*0.18, yy + (up? ts*0.12 : -ts*0.12));
+        c.lineTo(cx, yy);
+        c.lineTo(cx + ts*0.18, yy + (up? ts*0.12 : -ts*0.12));
+        c.stroke();
+      }
+      break;
+    }
+    case 'wire': {
+      const key = K(t.x,t.y,t.z);
+      const on = powered.has(key);
+      c.strokeStyle = on ? '#ffd54a' : '#a4643c'; c.lineWidth = ts*0.12; c.lineCap='round';
+      let any = false;
+      if (!forIcon) for (let d=0; d<4; d++){
+        const n = tiles.get(K(t.x+DIRS[d].x, t.y+DIRS[d].y, t.z));
+        if (n && (n.type==='wire' || n.type==='detector' || n.type==='treecutter')){
+          any = true;
+          c.beginPath(); c.moveTo(cx, cy);
+          c.lineTo(cx + DIRS[d].x*ts*0.5, cy + DIRS[d].y*ts*0.5); c.stroke();
+        }
+      }
+      if (!any){ c.beginPath(); c.moveTo(cx-ts*0.2, cy); c.lineTo(cx+ts*0.2, cy); c.stroke(); }
+      c.fillStyle = on ? '#ffe89a' : '#c17c4c';
+      c.beginPath(); c.arc(cx, cy, ts*0.11, 0, 7); c.fill();
+      if (on){ c.globalAlpha=.35; c.beginPath(); c.arc(cx,cy,ts*0.2,0,7); c.fillStyle='#ffd54a'; c.fill(); c.globalAlpha=1; }
+      break;
+    }
+    case 'detector': {
+      const on = forIcon ? true : activeDet.has(K(t.x,t.y,t.z));
+      rr(c, ts*0.14, ts*0.14, ts*0.72, ts*0.72, ts*0.12);
+      c.fillStyle = '#57524a'; c.fill();
+      c.strokeStyle = '#2e2b26'; c.lineWidth = ts*0.05; c.stroke();
+      c.beginPath(); c.arc(cx, cy, ts*0.2, 0, 7);
+      c.fillStyle = '#241f1c'; c.fill();
+      c.beginPath(); c.arc(cx, cy, ts*0.11, 0, 7);
+      c.fillStyle = on ? '#7dff6e' : '#41493f'; c.fill();
+      if (on){ c.globalAlpha=.3; c.beginPath(); c.arc(cx,cy,ts*0.28,0,7); c.fillStyle='#7dff6e'; c.fill(); c.globalAlpha=1; }
+      break;
+    }
+    case 'treecutter': {
+      rotSave();
+      rr(c, ts*0.1, ts*0.14, ts*0.8, ts*0.72, ts*0.12);
+      c.fillStyle = '#6b4a2e'; c.fill();
+      c.strokeStyle = '#402a17'; c.lineWidth = ts*0.05; c.stroke();
+      c.strokeStyle = '#f2c14e'; c.lineWidth = ts*0.06; c.lineCap='round';
+      chevron(c, ts*0.74, cy, ts*0.1); c.stroke();
+      // saw blade
+      const spin = (t.sawSpin ? time*20 : time*2);
+      c.save(); c.translate(cx - ts*0.08, cy); c.rotate(spin);
+      c.fillStyle = '#cfd6dd';
+      for (let i=0;i<8;i++){
+        c.rotate(Math.PI/4);
+        c.beginPath(); c.moveTo(0,0); c.lineTo(ts*0.22, -ts*0.06); c.lineTo(ts*0.22, ts*0.06); c.closePath(); c.fill();
+      }
+      c.beginPath(); c.arc(0,0, ts*0.12, 0, 7); c.fillStyle='#8b959e'; c.fill();
+      c.restore();
+      c.restore(); break;
+    }
+    case 'oak': case 'pine': case 'baobab': {
+      const st = forIcon ? 1 : t.stage;
+      const sc = 0.35 + 0.65*st;
+      // dirt mound
+      c.beginPath(); c.ellipse(cx, ts*0.8, ts*0.3, ts*0.12, 0, 0, 7);
+      c.fillStyle = '#6d451f'; c.fill();
+      c.save(); c.translate(cx, ts*0.8); c.scale(sc, sc);
+      if (t.type === 'oak'){
+        c.fillStyle = '#7d5c3b'; c.fillRect(-ts*0.06, -ts*0.42, ts*0.12, ts*0.42);
+        c.beginPath(); c.arc(0, -ts*0.52, ts*0.26, 0, 7);
+        c.fillStyle = '#4e8f3a'; c.fill();
+        c.beginPath(); c.arc(-ts*0.1, -ts*0.6, ts*0.13, 0, 7); c.fillStyle='#61a94a'; c.fill();
+      } else if (t.type === 'pine'){
+        c.fillStyle = '#5b3f28'; c.fillRect(-ts*0.05, -ts*0.34, ts*0.1, ts*0.34);
+        c.fillStyle = '#2e6b3d';
+        for (let i=0;i<3;i++){
+          const w = ts*(0.32 - i*0.08), yy = -ts*(0.3 + i*0.18);
+          c.beginPath(); c.moveTo(-w, yy); c.lineTo(0, yy - ts*0.2); c.lineTo(w, yy); c.closePath(); c.fill();
+        }
+      } else {
+        c.fillStyle = '#96714a';
+        c.beginPath();
+        c.moveTo(-ts*0.16, 0); c.quadraticCurveTo(-ts*0.1, -ts*0.4, -ts*0.2, -ts*0.5);
+        c.lineTo(ts*0.2, -ts*0.5); c.quadraticCurveTo(ts*0.1, -ts*0.4, ts*0.16, 0);
+        c.closePath(); c.fill();
+        c.beginPath(); c.ellipse(0, -ts*0.56, ts*0.34, ts*0.14, 0, 0, 7);
+        c.fillStyle = '#5f9948'; c.fill();
+      }
+      c.restore();
+      if (!forIcon && st >= 1){
+        c.strokeStyle = 'rgba(242,193,78,.65)'; c.lineWidth = 2;
+        c.beginPath(); c.arc(cx, cy, ts*0.42 + Math.sin(time*4)*1.5, 0, 7); c.stroke();
+      } else if (!forIcon){
+        c.fillStyle = 'rgba(24,33,25,.65)';
+        rr(c, ts*0.2, ts*0.06, ts*0.6, ts*0.09, ts*0.04); c.fill();
+        c.fillStyle = '#7dff6e';
+        rr(c, ts*0.2, ts*0.06, ts*0.6*st, ts*0.09, ts*0.04); c.fill();
+      }
+      break;
+    }
+    case 'cobbfarm': {
+      rr(c, ts*0.05, ts*0.05, ts*0.9, ts*0.9, ts*0.1);
+      c.fillStyle = '#57524a'; c.fill();
+      c.strokeStyle = '#2e2b26'; c.lineWidth = ts*0.05; c.stroke();
+      // water / lava halves
+      c.save(); rr(c, ts*0.12, ts*0.12, ts*0.76, ts*0.76, ts*0.06); c.clip();
+      c.fillStyle = '#3a6fb0'; c.fillRect(ts*0.12, ts*0.12, ts*0.38, ts*0.76);
+      c.fillStyle = '#d3641e'; c.fillRect(cx, ts*0.12, ts*0.38, ts*0.76);
+      c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = ts*0.035;
+      c.beginPath(); c.moveTo(ts*0.16, ts*0.3 + Math.sin(time*3)*2);
+      c.quadraticCurveTo(ts*0.3, ts*0.24, ts*0.44, ts*0.3); c.stroke();
+      c.strokeStyle = 'rgba(255,220,120,.6)';
+      c.beginPath(); c.moveTo(ts*0.56, ts*0.68 + Math.cos(time*3)*2);
+      c.quadraticCurveTo(ts*0.7, ts*0.62, ts*0.84, ts*0.68); c.stroke();
+      c.restore();
+      // forming cobble in the middle
+      const p = 1 - Math.max(0, t.timer !== undefined ? t.timer : 0)/FARM_PRODUCTS.cobbfarm.rate;
+      c.save(); c.translate(cx, cy); c.scale(0.6+0.4*p, 0.6+0.4*p);
+      drawItem(c, 'cobblestone', ts*0.34); c.restore();
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'wheatfarm': case 'carrotfarm': {
+      rr(c, ts*0.05, ts*0.05, ts*0.9, ts*0.9, ts*0.1);
+      c.fillStyle = '#5d4126'; c.fill();
+      c.strokeStyle = '#3a2917'; c.lineWidth = ts*0.05; c.stroke();
+      c.strokeStyle = '#4a3320'; c.lineWidth = ts*0.06;
+      for (let i=0;i<3;i++){ c.beginPath(); c.moveTo(ts*0.15, ts*(0.28+i*0.24)); c.lineTo(ts*0.85, ts*(0.28+i*0.24)); c.stroke(); }
+      const rate = FARM_PRODUCTS[t.type].rate;
+      const p = forIcon ? 1 : 1 - Math.max(0, t.timer)/rate;
+      const wheat = t.type === 'wheatfarm';
+      for (let i=0;i<3;i++) for (let j=0;j<3;j++){
+        const px = ts*(0.22+j*0.28), py = ts*(0.28+i*0.24);
+        const hgt = ts*0.16*(0.3+0.7*p);
+        c.strokeStyle = wheat ? '#8faf3c' : '#57a03a'; c.lineWidth = ts*0.035;
+        c.beginPath(); c.moveTo(px, py); c.lineTo(px, py - hgt); c.stroke();
+        if (p > 0.6){
+          c.fillStyle = wheat ? '#d9b84a' : '#ed7a1c';
+          c.beginPath(); c.arc(px, py - hgt, ts*0.045, 0, 7); c.fill();
+        }
+      }
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'treefarm': {
+      rr(c, ts*0.05, ts*0.05, ts*0.9, ts*0.9, ts*0.1);
+      c.fillStyle = '#4f8a3c'; c.fill();
+      c.strokeStyle = '#2f5a22'; c.lineWidth = ts*0.05; c.stroke();
+      const p = forIcon ? 1 : 1 - Math.max(0, t.timer)/FARM_PRODUCTS.treefarm.rate;
+      c.save(); c.translate(cx - ts*0.08, ts*0.74); c.scale(0.45+0.35*p, 0.45+0.35*p);
+      c.fillStyle = '#7d5c3b'; c.fillRect(-ts*0.06, -ts*0.42, ts*0.12, ts*0.42);
+      c.beginPath(); c.arc(0, -ts*0.52, ts*0.26, 0, 7); c.fillStyle = '#4e8f3a'; c.fill();
+      c.restore();
+      // mini saw
+      c.save(); c.translate(ts*0.76, ts*0.7); c.rotate(simTime*4);
+      c.fillStyle = '#cfd6dd';
+      for (let i=0;i<6;i++){ c.rotate(Math.PI/3); c.fillRect(0, -ts*0.02, ts*0.12, ts*0.04); }
+      c.restore();
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'furnace': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#6f6f6f'; c.fill();
+      c.strokeStyle = '#454545'; c.lineWidth = ts*0.05; c.stroke();
+      c.fillStyle = '#3a3a3a'; c.fillRect(ts*0.08, ts*0.08, ts*0.84, ts*0.16);
+      rr(c, ts*0.26, ts*0.42, ts*0.48, ts*0.36, ts*0.06);
+      c.fillStyle = '#241f1c'; c.fill();
+      if (forIcon || t.inItem){
+        const fl = Math.sin(time*10)*ts*0.03;
+        c.fillStyle = '#ff8c2e';
+        c.beginPath();
+        c.moveTo(ts*0.3, ts*0.78); c.quadraticCurveTo(ts*0.4, ts*0.5 - fl, cx, ts*0.62);
+        c.quadraticCurveTo(ts*0.6, ts*0.48 + fl, ts*0.7, ts*0.78); c.closePath(); c.fill();
+        c.fillStyle = '#ffd54a';
+        c.beginPath();
+        c.moveTo(ts*0.38, ts*0.78); c.quadraticCurveTo(cx, ts*0.58 + fl, ts*0.62, ts*0.78);
+        c.closePath(); c.fill();
+      }
+      drawProcBar(c, t, ts, 'furnace');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'grinder': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#5a6270'; c.fill();
+      c.strokeStyle = '#333a45'; c.lineWidth = ts*0.05; c.stroke();
+      const spin = t.inItem || forIcon ? time*5 : time*0.8;
+      c.save(); c.translate(cx, cy); c.rotate(spin);
+      c.fillStyle = '#333a45';
+      for (let i=0;i<8;i++){ c.rotate(Math.PI/4); c.fillRect(ts*0.14, -ts*0.05, ts*0.14, ts*0.1); }
+      c.beginPath(); c.arc(0,0, ts*0.18, 0, 7); c.fillStyle = '#8b959e'; c.fill();
+      c.beginPath(); c.arc(0,0, ts*0.07, 0, 7); c.fillStyle = '#333a45'; c.fill();
+      c.restore();
+      drawProcBar(c, t, ts, 'grinder');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'sawmill': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#8a6a44'; c.fill();
+      c.strokeStyle = '#57401f'; c.lineWidth = ts*0.05; c.stroke();
+      const spin = t.inItem || forIcon ? time*10 : time*1.5;
+      c.save(); c.translate(cx, cy - ts*0.04); c.rotate(spin);
+      c.fillStyle = '#cfd6dd';
+      for (let i=0;i<10;i++){
+        c.rotate(Math.PI/5);
+        c.beginPath(); c.moveTo(0,0); c.lineTo(ts*0.24, -ts*0.05); c.lineTo(ts*0.24, ts*0.05); c.closePath(); c.fill();
+      }
+      c.beginPath(); c.arc(0,0, ts*0.1, 0, 7); c.fillStyle='#8b959e'; c.fill();
+      c.restore();
+      if (!forIcon){
+        c.fillStyle = '#1f1608';
+        rr(c, ts*0.16, ts*0.7, ts*0.68, ts*0.2, ts*0.05); c.fill();
+        c.fillStyle = '#ffd77a';
+        c.font = '800 '+Math.round(ts*0.15)+'px ui-monospace, monospace';
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(SAW_MODES[t.mode].toUpperCase(), cx, ts*0.81);
+      }
+      drawProcBar(c, t, ts, 'sawmill');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'cash': {
+      const pu = forIcon ? 0 : t.pulse;
+      c.save(); c.translate(cx, cy); c.scale(1+pu*0.12, 1+pu*0.12); c.translate(-cx, -cy);
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.14);
+      c.fillStyle = '#c68f1f'; c.fill();
+      c.strokeStyle = '#8a6512'; c.lineWidth = ts*0.06; c.stroke();
+      rr(c, ts*0.17, ts*0.17, ts*0.66, ts*0.66, ts*0.1);
+      c.fillStyle = '#f2c14e'; c.fill();
+      c.fillStyle = '#6b4c0a';
+      c.font = '900 '+Math.round(ts*0.5)+'px ui-rounded, system-ui, sans-serif';
+      c.textAlign='center'; c.textBaseline='middle';
+      c.fillText('$', cx, cy + ts*0.02);
+      c.restore();
+      break;
+    }
+  }
+}
+function drawOutArrow(c, t, ts){
+  const d = DIRS[t.dir], cx = ts/2, cy = ts/2;
+  c.save();
+  c.translate(cx + d.x*ts*0.38, cy + d.y*ts*0.38);
+  c.rotate(Math.atan2(d.y, d.x));
+  c.fillStyle = '#f2c14e'; c.strokeStyle = '#8a6512'; c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(-ts*0.07, -ts*0.09); c.lineTo(ts*0.09, 0); c.lineTo(-ts*0.07, ts*0.09); c.closePath();
+  c.fill(); c.stroke();
+  c.restore();
+}
+function drawProcBar(c, t, ts, kind){
+  if (!t.inItem) return;
+  const p = 1 - t.inT/PROC_TIME[kind];
+  c.fillStyle = 'rgba(24,33,25,.7)';
+  rr(c, ts*0.14, ts*0.1, ts*0.72, ts*0.08, ts*0.04); c.fill();
+  c.fillStyle = '#7dff6e';
+  rr(c, ts*0.14, ts*0.1, ts*0.72*p, ts*0.08, ts*0.04); c.fill();
+}
+
+/* item world position on a transport tile (tile-local 0..1 offsets from center) */
+function itemOffset(t){
+  const p = t.item.prog;
+  if (t.type === 'lift' || t.type === 'drop') return { x:0, y:0, lift:(t.type==='lift'? p : -p) };
+  const od = outDir(t);
+  if (t.type === 'turnL' || t.type === 'turnR'){
+    const inV = DIRS[t.dir], outV = DIRS[od];
+    // quadratic bezier: entry edge -> center -> exit edge
+    const q = 1-p;
+    const x = q*q*(-0.5*inV.x) + 2*q*p*0 + p*p*(0.5*outV.x);
+    const y = q*q*(-0.5*inV.y) + 2*q*p*0 + p*p*(0.5*outV.y);
+    return { x, y, lift:0 };
+  }
+  const v = DIRS[od];
+  return { x:(p-0.5)*v.x, y:(p-0.5)*v.y, lift:0 };
+}
+
+function renderLayer(z, alpha, time){
+  const ts = TS();
+  const x0 = Math.floor(s2wX(0)) - 1, x1 = Math.ceil(s2wX(W)) + 1;
+  const y0 = Math.floor(s2wY(0)) - 1, y1 = Math.ceil(s2wY(H)) + 1;
+  g.save(); g.globalAlpha = alpha;
+  // tiles + items
+  for (let ty=y0; ty<=y1; ty++) for (let tx=x0; tx<=x1; tx++){
+    const t = tiles.get(K(tx,ty,z));
+    if (!t) continue;
+    const sx = w2sX(tx), sy = w2sY(ty);
+    g.save(); g.translate(sx, sy);
+    drawTileGraphic(g, t, ts, time, false);
+    g.restore();
+  }
+  for (let ty=y0; ty<=y1; ty++) for (let tx=x0; tx<=x1; tx++){
+    const t = tiles.get(K(tx,ty,z));
+    if (!t || !t.item) continue;
+    const off = itemOffset(t);
+    const sx = w2sX(tx + 0.5 + off.x), sy = w2sY(ty + 0.5 + off.y) - off.lift*ts*0.35;
+    const scale = 1 + off.lift*0.35;
+    g.save(); g.translate(sx, sy); g.scale(scale, scale);
+    if (off.lift){ g.globalAlpha = alpha; g.fillStyle='rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(0, off.lift*ts*0.35, ts*0.16, ts*0.07, 0, 0, 7); g.fill(); }
+    drawItem(g, t.item.type, ts*0.4);
+    g.restore();
+  }
+  g.restore();
+}
+
+let hoverTX = null, hoverTY = null;
+function render(time){
+  const ts = TS();
+  const x0 = Math.floor(s2wX(0)) - 1, x1 = Math.ceil(s2wX(W)) + 1;
+  const y0 = Math.floor(s2wY(0)) - 1, y1 = Math.ceil(s2wY(H)) + 1;
+
+  g.setTransform(DPR,0,0,DPR,0,0);
+  // ground
+  if (curZ === 0){
+    for (let ty=y0; ty<=y1; ty++) for (let tx=x0; tx<=x1; tx++){
+      g.fillStyle = ((tx+ty)&1) ? '#659e40' : '#6da944';
+      g.fillRect(w2sX(tx), w2sY(ty), ts+1, ts+1);
+      if (((tx*7349+ty*9151)%23) === 0){
+        g.fillStyle = 'rgba(255,255,255,.14)';
+        g.fillRect(w2sX(tx)+ts*0.3, w2sY(ty)+ts*0.55, ts*0.08, ts*0.08);
+      }
+    }
+  } else {
+    g.fillStyle = '#232e33';
+    g.fillRect(0,0,W,H);
+    renderLayer(curZ-1, 0.4, time);
+    g.fillStyle = 'rgba(16,22,26,.5)';
+    g.fillRect(0,0,W,H);
+    // sky grid
+    g.strokeStyle = 'rgba(160,190,200,.14)'; g.lineWidth = 1;
+    for (let tx=x0; tx<=x1; tx++){ g.beginPath(); g.moveTo(w2sX(tx),0); g.lineTo(w2sX(tx),H); g.stroke(); }
+    for (let ty=y0; ty<=y1; ty++){ g.beginPath(); g.moveTo(0,w2sY(ty)); g.lineTo(W,w2sY(ty)); g.stroke(); }
+  }
+
+  renderLayer(curZ, 1, time);
+
+  // ghost preview
+  if (hoverTX !== null && tool !== 'hand' && tool !== 'erase'){
+    const key = K(hoverTX, hoverTY, curZ);
+    const occupied = tiles.has(key);
+    const sx = w2sX(hoverTX), sy = w2sY(hoverTY);
+    g.save(); g.globalAlpha = 0.55; g.translate(sx, sy);
+    if (occupied){
+      g.fillStyle = 'rgba(200,60,50,.5)';
+      g.fillRect(0,0,ts,ts);
+    } else {
+      const ghost = makeTile(tool, hoverTX, hoverTY, curZ, rot);
+      if (ghost.stage !== undefined) ghost.stage = 1;
+      if (ghost.timer !== undefined) ghost.timer = 0;
+      drawTileGraphic(g, ghost, ts, time, true);
+    }
+    g.restore();
+    g.strokeStyle = occupied ? '#d05548' : '#f2c14e';
+    g.lineWidth = 2;
+    g.strokeRect(sx+1, sy+1, ts-2, ts-2);
+  } else if (hoverTX !== null && tool === 'erase'){
+    g.strokeStyle = '#d05548'; g.lineWidth = 2;
+    g.strokeRect(w2sX(hoverTX)+1, w2sY(hoverTY)+1, ts-2, ts-2);
+  }
+
+  // floaters
+  for (const f of floaters){
+    if (f.z !== curZ) continue;
+    const a = 1 - f.age/1.2;
+    g.globalAlpha = Math.max(0, a);
+    g.fillStyle = f.color;
+    g.font = '900 '+Math.round(ts*0.32)+'px ui-monospace, monospace';
+    g.textAlign = 'center';
+    g.strokeStyle = 'rgba(0,0,0,.55)'; g.lineWidth = 3;
+    const fy = w2sY(f.y) - f.age*ts*0.8;
+    g.strokeText(f.txt, w2sX(f.x), fy);
+    g.fillText(f.txt, w2sX(f.x), fy);
+    g.globalAlpha = 1;
+  }
+}
+
+/* ================= UI ================= */
+const $ = id => document.getElementById(id);
+const moneyEl = $('money'), moneyBtn = $('moneyBtn');
+const shopEl = $('shop'), tabsEl = $('shopTabs'), itemsEl = $('shopItems');
+const infoEl = $('infoLine');
+let curCat = 'Conveyors';
+
+function fmt(n){
+  n = Math.floor(n);
+  if (n >= 1e9) return (n/1e9).toFixed(2)+'B';
+  if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
+  if (n >= 1e4) return (n/1e3).toFixed(1)+'k';
+  return String(n);
+}
+function setInfo(html){ infoEl.innerHTML = html; }
+
+function buildTabs(){
+  tabsEl.innerHTML = '';
+  for (const c of CATS){
+    const b = document.createElement('button');
+    b.className = 'tab' + (c===curCat ? ' sel' : '');
+    b.textContent = c;
+    b.onclick = () => { curCat = c; buildTabs(); buildCards(); };
+    tabsEl.appendChild(b);
+  }
+}
+const cardEls = [];
+function buildCards(){
+  itemsEl.innerHTML = ''; cardEls.length = 0;
+  for (const s of SHOP){
+    if (s.cat !== curCat) continue;
+    const b = document.createElement('button');
+    b.className = 'card' + (tool===s.t ? ' sel' : '');
+    const ic = document.createElement('canvas');
+    ic.width = 96; ic.height = 96;
+    const c = ic.getContext('2d');
+    c.scale(2,2);
+    const fake = makeTile(s.t, 0, 0, 0, 0);
+    if (fake.stage !== undefined) fake.stage = 1;
+    if (fake.timer !== undefined) fake.timer = 0;
+    drawTileGraphic(c, fake, 48, 0.4, true);
+    const nm = document.createElement('span'); nm.className='nm'; nm.textContent = s.n;
+    const pr = document.createElement('span'); pr.className='pr'; pr.textContent = '$'+s.p;
+    b.append(ic, nm, pr);
+    b.onclick = () => {
+      if (tool === s.t){ setTool('hand'); return; }
+      setTool(s.t);
+      setInfo('<b>'+s.n+' &middot; $'+s.p+'</b> &mdash; '+s.d+' <i>(R rotates, right-click removes)</i>');
+    };
+    b._shop = s;
+    itemsEl.appendChild(b); cardEls.push(b);
+  }
+}
+function refreshCards(){
+  for (const b of cardEls){
+    b.classList.toggle('sel', tool === b._shop.t);
+    b.classList.toggle('cant', money < b._shop.p);
+  }
+}
+function setTool(t){
+  tool = t;
+  $('handBtn').classList.toggle('sel', t==='hand');
+  $('eraseBtn').classList.toggle('sel', t==='erase');
+  refreshCards();
+  if (t === 'hand') setInfo('Hand: drag to pan. Click an <b>Item Cutter</b> to switch its mode, or a grown tree to harvest it.');
+  if (t === 'erase') setInfo('Eraser: click machines to remove them for a <b>50% refund</b>.');
+}
+moneyBtn.onclick = () => {
+  shopEl.classList.toggle('open');
+  infoEl.classList.toggle('low', !shopEl.classList.contains('open'));
+};
+$('handBtn').onclick = () => setTool('hand');
+$('eraseBtn').onclick = () => setTool('erase');
+$('rotBtn').onclick = () => { rot = rotR(rot); $('rotArrow').textContent = DIR_ARROWS[rot]; };
+$('zoomIn').onclick = () => zoomBy(1.25, W/2, H/2);
+$('zoomOut').onclick = () => zoomBy(0.8, W/2, H/2);
+$('layerUp').onclick = () => setLayer(curZ+1);
+$('layerDn').onclick = () => setLayer(curZ-1);
+function setLayer(z){
+  curZ = Math.max(0, Math.min(MAX_LAYER, z));
+  $('layerLbl').textContent = 'LAYER ' + (curZ+1);
+  if (curZ > 0) setInfo('Layer '+(curZ+1)+': the layer below shows dimly. A <b>Lift Conveyor</b> below pushes items up here — catch them with a conveyor right above it.');
+}
+function zoomBy(f, px, py){
+  const wx = s2wX(px), wy = s2wY(py);
+  cam.zoom = Math.max(0.4, Math.min(2.4, cam.zoom * f));
+  cam.x = wx - (px - W/2)/TS();
+  cam.y = wy - (py - H/2)/TS();
+}
+
+/* help modal */
+function recipeTable(map){
+  let h = '<table><tr><th>In</th><th>Out</th><th>Value</th></tr>';
+  for (const [a,b] of Object.entries(map))
+    h += '<tr><td>'+ITEMS[a].n+' ($'+ITEMS[a].v+')</td><td>'+ITEMS[b].n+'</td><td>$'+ITEMS[b].v+'</td></tr>';
+  return h + '</table>';
+}
+$('recFurnace').innerHTML = recipeTable(RECIPES.furnace);
+$('recGrinder').innerHTML = recipeTable(RECIPES.grinder);
+{
+  let h = '<table><tr><th>In</th><th>Slab</th><th>Stairs</th><th>Fence</th></tr>';
+  for (const inp of ['oakwood','stone','basalt']){
+    h += '<tr><td>'+ITEMS[inp].n+'</td>';
+    for (const m of SAW_MODES){
+      const o = RECIPES.sawmill[m][inp];
+      h += '<td>'+ITEMS[o].n+' ($'+ITEMS[o].v+')</td>';
+    }
+    h += '</tr>';
+  }
+  h += '</table><p style="margin-top:6px">Pine and baobab wood cut into the same wood pieces.</p>';
+  $('recCutter').innerHTML = h;
+}
+{
+  const sorted = Object.entries(ITEMS).sort((a,b)=>a[1].v-b[1].v);
+  let h = '<table><tr>';
+  sorted.forEach(([k,it],i) => {
+    h += '<td>'+it.n+' <b style="color:#f2c14e">$'+it.v+'</b></td>';
+    if (i%3===2) h += '</tr><tr>';
+  });
+  $('recValues').innerHTML = h + '</tr></table>';
+}
+$('helpBtn').onclick = () => $('modalWrap').classList.add('open');
+$('closeModal').onclick = () => $('modalWrap').classList.remove('open');
+$('modalWrap').onclick = e => { if (e.target === $('modalWrap')) $('modalWrap').classList.remove('open'); };
+$('resetSave').onclick = () => {
+  if (confirm('Wipe your whole factory and start over?')){
+    localStorage.removeItem(SAVE_KEY);
+    removeEventListener('beforeunload', save);
+    location.reload();
+  }
+};
+
+/* ================= INPUT ================= */
+let dragging = false, panMode = false, lastPX = 0, lastPY = 0, lastPlaceKey = null, movedDist = 0;
+function tileAt(px, py){ return { x: Math.floor(s2wX(px)), y: Math.floor(s2wY(py)) }; }
+
+function tryPlace(tx, ty, dir){
+  const key = K(tx, ty, curZ);
+  if (tiles.has(key)) return;
+  const s = SHOP_BY_TYPE[tool]; if (!s) return;
+  if (money < s.p){
+    moneyBtn.classList.remove('broke'); void moneyBtn.offsetWidth; moneyBtn.classList.add('broke');
+    setInfo('Not enough cash for a <b>'+s.n+'</b> ($'+s.p+'). Feed more items into your Cash Block!');
+    return;
+  }
+  money -= s.p;
+  tiles.set(key, makeTile(tool, tx, ty, curZ, dir === undefined ? rot : dir));
+  floaters.push({ x:tx+0.5, y:ty, z:curZ, txt:'-$'+s.p, age:0, color:'#d8f0c2' });
+  lastPlaceKey = key;
+}
+function erase(tx, ty){
+  const key = K(tx, ty, curZ);
+  const t = tiles.get(key);
+  if (!t) return;
+  tiles.delete(key);
+  const s = SHOP_BY_TYPE[t.type];
+  if (s){
+    const back = Math.floor(s.p/2);
+    money += back;
+    floaters.push({ x:tx+0.5, y:ty, z:curZ, txt:'+$'+back, age:0, color:'#c6d3b6' });
+  }
+}
+function handClick(tx, ty){
+  const t = tiles.get(K(tx, ty, curZ));
+  if (!t) return;
+  if (t.type === 'sawmill'){
+    t.mode = (t.mode+1) % SAW_MODES.length;
+    setInfo('Item Cutter now makes <b>'+SAW_MODES[t.mode].toUpperCase()+'S</b>.');
+  } else if (TREES[t.type] && t.stage >= 1){
+    const wood = TREES[t.type].wood, v = itemVal(wood);
+    money += v; t.stage = 0; t.growTime = rnd(...TREES[t.type].grow);
+    floaters.push({ x:tx+0.5, y:ty, z:curZ, txt:'+$'+v, age:0, color:'#f2c14e' });
+  } else {
+    const s = SHOP_BY_TYPE[t.type];
+    if (s) setInfo('<b>'+s.n+'</b> &mdash; '+s.d);
+  }
+}
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  dragging = true; movedDist = 0;
+  lastPX = e.clientX; lastPY = e.clientY;
+  panMode = (tool === 'hand' || e.button === 1);
+  const {x,y} = tileAt(e.clientX, e.clientY);
+  if (e.button === 2){ erase(x, y); panMode = false; dragging = 'erase2'; return; }
+  if (panMode) return;
+  if (tool === 'erase') erase(x, y);
+  else { tryPlace(x, y); }
+});
+cv.addEventListener('pointermove', e => {
+  const {x,y} = tileAt(e.clientX, e.clientY);
+  hoverTX = x; hoverTY = y;
+  if (!dragging) return;
+  const dx = e.clientX - lastPX, dy = e.clientY - lastPY;
+  movedDist += Math.abs(dx) + Math.abs(dy);
+  if (dragging === 'erase2'){ erase(x, y); lastPX = e.clientX; lastPY = e.clientY; return; }
+  if (panMode){
+    cam.x -= dx/TS(); cam.y -= dy/TS();
+    lastPX = e.clientX; lastPY = e.clientY;
+    return;
+  }
+  lastPX = e.clientX; lastPY = e.clientY;
+  if (tool === 'erase'){ erase(x, y); return; }
+  const key = K(x, y, curZ);
+  if (key === lastPlaceKey) return;
+  // belt dragging: orient along the drag path, and re-point the previous belt
+  if (tool === 'belt' && lastPlaceKey){
+    const prev = tiles.get(lastPlaceKey);
+    if (prev && Math.abs(x-prev.x)+Math.abs(y-prev.y) === 1){
+      const d = DIRS.findIndex(v => v.x === x-prev.x && v.y === y-prev.y);
+      if (prev.type === 'belt') prev.dir = d;
+      rot = d; $('rotArrow').textContent = DIR_ARROWS[rot];
+      tryPlace(x, y, d);
+      return;
+    }
+  }
+  tryPlace(x, y);
+});
+addEventListener('pointerup', e => {
+  if (dragging && panMode && movedDist < 8 && tool === 'hand'){
+    const {x,y} = tileAt(e.clientX, e.clientY);
+    handClick(x, y);
+  }
+  dragging = false; panMode = false; lastPlaceKey = null;
+});
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomBy(e.deltaY < 0 ? 1.12 : 0.89, e.clientX, e.clientY);
+}, { passive:false });
+
+addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R'){ rot = rotR(rot); $('rotArrow').textContent = DIR_ARROWS[rot]; }
+  if (e.key === 'Escape'){ setTool('hand'); $('modalWrap').classList.remove('open'); }
+  if (e.key === 'PageUp') setLayer(curZ+1);
+  if (e.key === 'PageDown') setLayer(curZ-1);
+});
+
+/* ================= BOOT & LOOP ================= */
+if (!load()) starterWorld();
+buildTabs(); buildCards(); setLayer(curZ);
+if (tiles.size <= 5) shopEl.classList.add('open');
+else infoEl.classList.add('low');
+
+let lastT = performance.now(), acc = 0;
+function frame(now){
+  let dt = (now - lastT)/1000; lastT = now;
+  if (dt > 0.25) dt = 0.25;
+  // fixed-ish steps for stable belt logic
+  acc += dt;
+  const step = 1/60;
+  let n = 0;
+  while (acc >= step && n < 8){ update(step); acc -= step; n++; }
+  moneyEl.textContent = fmt(money);
+  refreshCards();
+  render(simTime);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
