@@ -265,7 +265,7 @@
       <li>The &#127795; button shows the whole <b>recipe tree</b>: what turns into what, with which machine, and the profit of each step.</li>
       <li>The <b>hand</b> &#9995; pans the map. Mouse wheel or +/&minus; zooms. Click a placed <b>Item Cutter</b> with the hand to switch it between slabs / stairs / fences. Click a fully grown tree to hand-harvest it for quick cash.</li>
       <li><b>Layers:</b> a Lift Conveyor lifts items <b>exactly one layer up</b>, straight up. Go up a layer (&#9650; button) and you'll see a dashed <b style="color:#8fd0ff">blue landing box</b> on the same tile: put a conveyor there to catch them. Down Conveyors bring items one layer down the same way, with a <b style="color:#d0a8ff">purple landing box</b> below, and show as a ghost from underneath so you always see both ends. <kbd>R</kbd> turns them to line up with your belts. Chain lift &rarr; belt &rarr; lift to reach layer 3+.</li>
-      <li><b>Tree logic:</b> a Tree Detector lights up next to a grown tree. Wires carry its signal to a Tree Cutter sitting next to the tree; the cutter chops, drops wood on the belt it faces, and the tree regrows. The Tree Farm is the same rig, pre-packaged.</li>
+      <li><b>Tree logic:</b> a Tree Detector lights up next to a grown tree. A Tree Cutter beside the <i>same</i> tree then chops it automatically — no wire needed for that simple rig. Wires, levers and clocks can also power a cutter from farther away. The wood drops on the belt the cutter faces (or any belt beside it), the tree regrows, and the cutter shows a ⚡ badge whenever it has no signal. The Tree Farm is the same rig, pre-packaged.</li>
     </ul>
     <h2>Furnace recipes</h2><div id="recFurnace"></div>
     <h2>Item Grinder recipes</h2><div id="recGrinder"></div>
@@ -504,7 +504,7 @@ const SHOP = [
   {t:'pine',      n:'Pine Tree',       p:150, cat:'Nature',    d:'Grows in 10–12 s. Gives Pine Wood, worth more than oak.'},
   {t:'baobab',    n:'Baobab Tree',     p:250, cat:'Nature',    d:'Grows in 20–22 s. Gives chunky, valuable Baobab Wood.'},
   {t:'detector',  n:'Tree Detector',   p:40,  cat:'Nature',    d:'Lights up when a tree next to it is fully grown. Sends power through wires.'},
-  {t:'treecutter',n:'Tree Cutter',     p:80,  cat:'Nature',    d:'When powered and next to a grown tree, chops it onto the belt it faces. The tree regrows.'},
+  {t:'treecutter',n:'Tree Cutter',     p:80,  cat:'Nature',    d:'Stand it next to a tree with a Tree Detector watching the same tree (or wire it to any power) and it chops onto the belt it faces — or any belt beside it. The tree regrows. Shows ⚡ while it has no signal.'},
   {t:'cobbfarm',  n:'Cobblestone Farm',p:100, cat:'Farms',     d:'Water meets lava, Minecraft style: makes a cobblestone every 3 s onto the belt it faces.'},
   {t:'wheatfarm', n:'Wheat Farm',      p:120, cat:'Farms',     d:'Grows a wheat every 5 s onto the belt it faces.'},
   {t:'carrotfarm',n:'Carrot Farm',     p:140, cat:'Farms',     d:'Grows a carrot every 6 s onto the belt it faces.'},
@@ -725,6 +725,18 @@ function isPowered(t){
   }
   return false;
 }
+// the tree cutter also counts as activated when a detector watches the same
+// tree it's standing next to — no wire needed for the simple rig
+function cutterActive(t){
+  if (isPowered(t)) return true;
+  for (const nk of neighborsKeys(t)){
+    const n = tiles.get(nk);
+    if (n && TREES[n.type]){
+      for (const dk of neighborsKeys(n)) if (activeDet.has(dk)) return true;
+    }
+  }
+  return false;
+}
 function processorResult(t){
   const modes = MACHINE_MODES[t.type];
   if (modes) return RECIPES[t.type][modes[t.mode % modes.length]][t.inItem] || t.inItem;
@@ -757,8 +769,11 @@ function update(dt){
     }
     else if (t.type === 'treecutter'){
       if (t.outItem){
-        if (deliver(destKeyOf(t, t.dir), t.outItem)) t.outItem = null;
-      } else if (isPowered(t)){
+        // prefer the belt it faces, but never let wood jam it up — try every side
+        for (const d of [t.dir, rotL(t.dir), rotR(t.dir), (t.dir+2)%4]){
+          if (deliver(destKeyOf(t, d), t.outItem)){ t.outItem = null; break; }
+        }
+      } else if (cutterActive(t)){
         for (const nk of neighborsKeys(t)){
           const n = tiles.get(nk);
           if (n && TREES[n.type] && n.stage >= 1){
@@ -1519,7 +1534,9 @@ function drawTileGraphic(c, t, ts, time, forIcon){
     c.fillText(FORM_DEFS[mm[t.mode % mm.length]].n.toUpperCase(), cx, ts*0.82);
   }
   // "needs power" badge
-  if (!forIcon && (t.type === 'oremine' || t.type === 'enchanter') && !isPowered(t)){
+  if (!forIcon &&
+      ((t.type === 'oremine' || t.type === 'enchanter') && !isPowered(t) ||
+       t.type === 'treecutter' && !cutterActive(t))){
     c.fillStyle = 'rgba(24,33,25,.8)';
     c.beginPath(); c.arc(ts*0.8, ts*0.2, ts*0.16, 0, 7); c.fill();
     c.fillStyle = '#ffd54a';
