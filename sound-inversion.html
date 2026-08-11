@@ -156,7 +156,9 @@
     <button id="playBoth" disabled>▶ both → zero</button>
     <button id="stopBtn" disabled>■ stop</button>
     <span class="spacer"></span>
-    <button class="demo-link" id="demoBtn">no mic? load a demo chord</button>
+    <button class="demo-link" id="fileBtn">load an audio file</button>
+    <button class="demo-link" id="demoBtn">demo chord</button>
+    <input type="file" id="fileInput" accept="audio/*" hidden>
   </div>
 
   <div class="offset">
@@ -201,6 +203,7 @@
   const $ = id => document.getElementById(id);
   const recBtn = $("recBtn"), playOrig = $("playOrig"), playInv = $("playInv"),
         playBoth = $("playBoth"), stopBtn = $("stopBtn"), demoBtn = $("demoBtn"),
+        fileBtn = $("fileBtn"), fileInput = $("fileInput"),
         delaySlider = $("delaySlider"), delayVal = $("delayVal"),
         statusEl = $("status"), clock = $("clock"),
         barFill = $("barFill"), dbOut = $("dbOut"),
@@ -398,7 +401,9 @@
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
       });
     } catch (e) {
-      setStatus("Microphone unavailable (" + e.name + "). Try the demo chord instead →", "err");
+      setStatus(micBlockedByEmbed()
+        ? "This embedded page blocks the microphone — use “load an audio file” or the demo chord, or open the HTML file directly in your browser to record."
+        : "Microphone unavailable (" + e.name + "). Check the browser's mic permission, or load an audio file instead.", "err");
       return;
     }
     stopPlayback();
@@ -459,6 +464,28 @@
     setStatus("Demo chord loaded (A major, 2.5 s). Try each button — then both at once.");
   }
 
+  function micBlockedByEmbed() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return true;
+      if (document.featurePolicy && !document.featurePolicy.allowsFeature("microphone")) return true;
+    } catch (e) {}
+    return false;
+  }
+
+  async function loadFile(f) {
+    ensureCtx();
+    stopPlayback();
+    try {
+      const raw = await f.arrayBuffer();
+      origBuf = await ctx.decodeAudioData(raw);
+      invBuf = invert(origBuf);
+      haveRecording();
+      setStatus("Loaded “" + f.name + "” (" + origBuf.duration.toFixed(1) + " s). Try original, inverted, then both at once.");
+    } catch (e) {
+      setStatus("Couldn’t decode that file — try a wav, mp3, m4a, or ogg.", "err");
+    }
+  }
+
   recBtn.addEventListener("click", () => {
     if (recorder && recorder.state === "recording") recorder.stop();
     else startRecording();
@@ -468,6 +495,11 @@
   playBoth.addEventListener("click", () => play("both"));
   stopBtn.addEventListener("click", () => { stopPlayback(); setStatus("Stopped."); });
   demoBtn.addEventListener("click", loadDemo);
+  fileBtn.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) loadFile(fileInput.files[0]);
+    fileInput.value = "";
+  });
   delaySlider.addEventListener("input", () => {
     const ms = parseFloat(delaySlider.value);
     delayVal.classList.toggle("zeroed", ms === 0);
@@ -479,5 +511,8 @@
   window.addEventListener("resize", () => { origBuf ? drawBuffers() : clearScope(); });
 
   clearScope();
+  if (micBlockedByEmbed()) {
+    setStatus("Heads up: this embedded page can’t reach your microphone. “Load an audio file” and the demo chord still work — or open the HTML file directly in a browser to record.", "err");
+  }
 })();
 </script>
