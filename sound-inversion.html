@@ -163,10 +163,10 @@
 
   <div class="offset">
     <span class="meter-label">inverted delay</span>
-    <input type="range" id="delaySlider" min="0" max="2" step="0.01" value="0"
-           aria-label="Delay applied to the inverted copy, in milliseconds">
-    <span class="delay-val zeroed" id="delayVal">0.00 ms</span>
-    <span class="hint" id="delayHint">At 0 ms the waves cancel exactly. Even a tenth of a millisecond — a handful of samples — misaligns the mirror, and the highest frequencies leak through first.</span>
+    <input type="range" id="delaySlider" min="0" max="1000" step="1" value="0"
+           aria-label="Delay applied to the inverted copy, logarithmic from zero to 50 milliseconds">
+    <span class="delay-val zeroed" id="delayVal">0 — perfect</span>
+    <span class="hint" id="delayHint">Logarithmic sweep: 0, then 0.0001 ms (100 ns) up to 50 ms. Below one sample (≈0.02 ms) the delay is interpolated between samples — the mirror is only nanoseconds late, and the leftover sound sits far below hearing. Watch the meter climb as you slide right.</span>
   </div>
 
   <div class="meter">
@@ -218,6 +218,19 @@
   let liveAnalyser = null, liveData = null, rafId = 0;
 
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  // Slider position 0 = no delay; 1..1000 sweep 0.0001 ms → 50 ms logarithmically.
+  const DELAY_MIN_MS = 1e-4, DELAY_MAX_MS = 50;
+  function sliderToMs(p) {
+    if (p <= 0) return 0;
+    return DELAY_MIN_MS * Math.pow(DELAY_MAX_MS / DELAY_MIN_MS, (p - 1) / 999);
+  }
+  function fmtDelay(ms) {
+    if (ms === 0) return "0 — perfect";
+    if (ms >= 1) return ms.toFixed(2) + " ms";
+    if (ms >= 0.001) return (ms * 1000).toFixed(2) + " µs";
+    return (ms * 1e6).toFixed(0) + " ns";
+  }
 
   function ensureCtx() {
     if (!ctx) {
@@ -358,15 +371,24 @@
   function play(mode) {
     ensureCtx();
     stopPlayback();
-    const delayMs = mode === "both" ? parseFloat(delaySlider.value) : 0;
+    const delayMs = mode === "both" ? sliderToMs(parseInt(delaySlider.value, 10)) : 0;
     const t0 = ctx.currentTime + 0.12;
     const wanted = mode === "original" ? [[origBuf, 0]]
                  : mode === "inverted" ? [[invBuf, 0]]
                  : [[origBuf, 0], [invBuf, delayMs / 1000]];
-    wanted.forEach(([buf, offset]) => {
+    wanted.forEach(([buf, delaySec]) => {
       const s = ctx.createBufferSource();
       s.buffer = buf;
-      s.connect(masterGain);
+      if (delaySec > 0) {
+        // A DelayNode interpolates fractional-sample delays, so even
+        // nanosecond offsets shift the waveform instead of rounding away.
+        const dn = ctx.createDelay(0.1);
+        dn.delayTime.value = delaySec;
+        s.connect(dn);
+        dn.connect(masterGain);
+      } else {
+        s.connect(masterGain);
+      }
       s.onended = () => {
         activeSources = activeSources.filter(x => x !== s);
         if (!activeSources.length) {
@@ -374,19 +396,19 @@
           if (mode === "both") {
             setStatus(delayMs === 0
               ? "Done. Peak output during playback: total silence."
-              : "Done. With a " + delayMs.toFixed(2) + " ms offset the cancellation was only partial.",
+              : "Done. With a " + fmtDelay(delayMs) + " offset the cancellation was only partial.",
               delayMs === 0 ? "zero" : "");
           }
         }
       };
-      s.start(t0 + offset);
+      s.start(t0);
       activeSources.push(s);
     });
     stopBtn.disabled = false;
     if (mode === "both") {
       setStatus(delayMs === 0
         ? "Playing original + inverted together. The sum of every sample is zero."
-        : "Playing both, but the inverted copy is " + delayMs.toFixed(2) + " ms late — the mirror no longer lines up, so sound leaks through.",
+        : "Playing both, but the inverted copy is " + fmtDelay(delayMs) + " late — the mirror no longer lines up, so sound leaks through.",
         delayMs === 0 ? "zero" : "");
     } else {
       setStatus("Playing the " + mode + " recording — they sound identical on their own.");
@@ -501,12 +523,15 @@
     fileInput.value = "";
   });
   delaySlider.addEventListener("input", () => {
-    const ms = parseFloat(delaySlider.value);
+    const ms = sliderToMs(parseInt(delaySlider.value, 10));
     delayVal.classList.toggle("zeroed", ms === 0);
-    if (ms === 0) { delayVal.textContent = "0.00 ms"; return; }
+    if (ms === 0) { delayVal.textContent = "0 — perfect"; return; }
     const sr = ctx ? ctx.sampleRate : 48000;
     const samples = ms / 1000 * sr;
-    delayVal.textContent = ms.toFixed(2) + " ms (≈" + Math.round(samples) + " smp)";
+    const smp = samples >= 10 ? Math.round(samples).toString()
+              : samples >= 0.01 ? samples.toFixed(2)
+              : samples.toFixed(4);
+    delayVal.textContent = fmtDelay(ms) + " (" + smp + " smp)";
   });
   window.addEventListener("resize", () => { origBuf ? drawBuffers() : clearScope(); });
 
