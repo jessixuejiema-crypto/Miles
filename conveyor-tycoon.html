@@ -126,26 +126,26 @@
   .card.cant { opacity:.45; }
   .card.cant .pr { color:#d97a6c; }
 
-  /* modal */
-  #modalWrap {
+  /* modals */
+  .mwrap {
     position:fixed; inset:0; z-index:50;
     background:rgba(10,14,10,.72);
     display:none; align-items:center; justify-content:center; padding:20px;
   }
-  #modalWrap.open { display:flex; }
-  #modal {
+  .mwrap.open { display:flex; }
+  .mbox {
     background:#1f2a21; border:2px solid #5a7050; border-radius:16px;
     max-width:640px; width:100%; max-height:84vh; overflow-y:auto;
     padding:22px 24px;
   }
-  #modal h1 { font-size:22px; color:#f2c14e; letter-spacing:.02em; margin-bottom:4px; }
-  #modal h2 { font-size:14px; color:#9fd07a; text-transform:uppercase; letter-spacing:.12em; margin:18px 0 6px; }
-  #modal p, #modal li { font-size:13.5px; line-height:1.55; color:#c6d3b6; }
-  #modal ul { padding-left:18px; }
-  #modal table { border-collapse:collapse; width:100%; font-size:12.5px; }
-  #modal td, #modal th { border:1px solid #3b4a3c; padding:4px 8px; text-align:left; color:#c6d3b6; }
-  #modal th { color:#e9eddc; background:#243026; }
-  #modal kbd {
+  .mbox h1 { font-size:22px; color:#f2c14e; letter-spacing:.02em; margin-bottom:4px; }
+  .mbox h2 { font-size:14px; color:#9fd07a; text-transform:uppercase; letter-spacing:.12em; margin:18px 0 6px; }
+  .mbox p, .mbox li { font-size:13.5px; line-height:1.55; color:#c6d3b6; }
+  .mbox ul { padding-left:18px; }
+  .mbox table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  .mbox td, .mbox th { border:1px solid #3b4a3c; padding:4px 8px; text-align:left; color:#c6d3b6; }
+  .mbox th { color:#e9eddc; background:#243026; }
+  .mbox kbd {
     background:#243026; border:1px solid #5a7050; border-bottom-width:3px;
     border-radius:5px; padding:1px 6px; font-family:ui-monospace,monospace; font-size:12px; color:#e9eddc;
   }
@@ -156,6 +156,39 @@
   }
   .mbtn.danger { background:#4a2a26; color:#f0c2ba; border-color:#b3443c; }
   .mbtn:active { transform:translateY(2px); }
+
+  /* inventory */
+  #invBadge {
+    font-size:12px; font-weight:900; color:#f2c14e;
+    font-family:ui-monospace, monospace; min-width:14px;
+  }
+  .invRow {
+    display:flex; align-items:center; gap:12px;
+    padding:7px 6px; border-bottom:1px solid #3b4a3c;
+  }
+  .invRow canvas { width:28px; height:28px; flex:none; }
+  .invRow .inm { flex:1; font-size:13.5px; font-weight:800; color:#e9eddc; }
+  .invRow .icnt { font-family:ui-monospace, monospace; color:#c6d3b6; font-size:13px; }
+  .sellBtn {
+    background:#3d5a34; color:#d8f0c2; border:2px solid #6da944; border-bottom-width:3px;
+    border-radius:8px; padding:4px 12px; font-weight:800; cursor:pointer;
+    font-size:12px; font-family:inherit; white-space:nowrap;
+  }
+  .sellBtn:active { transform:translateY(1px); }
+
+  /* recipe tree */
+  .rroot { margin-bottom:18px; padding:10px 12px; background:#243026; border:1px solid #3b4a3c; border-radius:12px; }
+  .rnode { display:flex; align-items:center; gap:8px; padding:3px 0; flex-wrap:wrap; }
+  .rnode canvas { width:26px; height:26px; flex:none; }
+  .rname { font-size:13px; font-weight:800; color:#e9eddc; }
+  .rval { color:#f2c14e; font-family:ui-monospace, monospace; font-size:12.5px; font-weight:800; }
+  .redgeLbl { font-size:11px; font-weight:800; color:#95a68f; text-transform:uppercase; letter-spacing:.06em; }
+  .rgain { font-size:11.5px; font-weight:800; font-family:ui-monospace, monospace;
+    padding:1px 7px; border-radius:8px; }
+  .rgain.pos { color:#9fe08a; background:rgba(125,255,110,.12); }
+  .rgain.neg { color:#e0938a; background:rgba(224,110,98,.12); }
+  .rloop { font-size:11px; color:#95a68f; font-style:italic; }
+  .rkids { margin-left:12px; padding-left:14px; border-left:2px solid #3b4a3c; }
 </style>
 
 </head>
@@ -183,6 +216,10 @@
     <button class="hbtn" id="zoomOut" title="Zoom out">&minus;</button>
     <button class="hbtn" id="zoomIn" title="Zoom in">+</button>
   </div>
+  <div class="btnrow">
+    <button class="hbtn" id="invBtn" title="Inventory: stuff your broom swept up">&#127890; <span id="invBadge">0</span></button>
+    <button class="hbtn" id="treeBtn" title="Recipe tree: every crafting chain and its profit">&#127795;</button>
+  </div>
 </div>
 
 <div class="hud" id="infoLine">Press the <b>$ coin</b> to open the shop. Drag with the hand to look around.</div>
@@ -192,15 +229,39 @@
   <div id="shopItems"></div>
 </div>
 
-<div id="modalWrap">
-  <div id="modal">
+<div id="invWrap" class="mwrap">
+  <div class="mbox">
+    <h1>&#127890; Inventory</h1>
+    <p>Everything your broom sweeps up lands here &mdash; items riding belts, items inside machines, even the wood of a grown tree you broom away. Sell it whenever you like, at full price.</p>
+    <div id="invList"></div>
+    <div class="modalBtns">
+      <button class="mbtn" id="sellAll">Sell everything</button>
+      <button class="mbtn" id="closeInv">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="treeWrap" class="mwrap">
+  <div class="mbox">
+    <h1>&#127795; Recipe Tree</h1>
+    <p>Every crafting chain, starting from what your farms and trees make. Each arrow shows the machine that does it and how much profit the step adds.</p>
+    <div id="treeList"></div>
+    <div class="modalBtns">
+      <button class="mbtn" id="closeTree">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalWrap" class="mwrap">
+  <div id="modal" class="mbox">
     <h1>Beltworks Meadow</h1>
     <p>Build farms, route items on conveyors across layers, process them into fancier goods, and feed everything into your <b>Cash Block</b> to earn money.</p>
     <h2>How to play</h2>
     <ul>
       <li>Tap the <b>$ coin</b> (top-left) to open the shop. Pick a thing, then click / drag on the ground to place it.</li>
       <li><kbd>R</kbd> or the &#8635; button rotates before placing. Dragging conveyors auto-turns them along your path.</li>
-      <li><b>Right-click</b> (or the &#129529; eraser) removes a machine for a 50% refund.</li>
+      <li><b>Right-click</b> (or the &#129529; broom) removes a machine for a 50% refund &mdash; and any items it was carrying are swept into your &#127890; inventory, where you can sell them.</li>
+      <li>The &#127795; button shows the whole <b>recipe tree</b>: what turns into what, with which machine, and the profit of each step.</li>
       <li>The <b>hand</b> &#9995; pans the map. Mouse wheel or +/&minus; zooms. Click a placed <b>Item Cutter</b> with the hand to switch it between slabs / stairs / fences. Click a fully grown tree to hand-harvest it for quick cash.</li>
       <li><b>Layers:</b> a Lift Conveyor pushes items straight up; place a conveyor on the layer above it (use the &#9650; button) to catch them. A Down Conveyor drops them back. Stack lifts to reach layer 3+.</li>
       <li><b>Tree logic:</b> a Tree Detector lights up next to a grown tree. Wires carry its signal to a Tree Cutter sitting next to the tree; the cutter chops, drops wood on the belt it faces, and the tree regrows. The Tree Farm is the same rig, pre-packaged.</li>
@@ -316,6 +377,7 @@ const MAX_LAYER = 7; // layers 1..8
 const K = (x,y,z) => x+','+y+','+z;
 let tiles = new Map();
 let money = 100;
+let inv = {};               // item type -> count, filled by the broom
 let curZ = 0;
 let cam = { x:0.5, y:0.5, zoom:1 };
 let tool = 'hand';          // 'hand' | 'erase' | machine type
@@ -367,7 +429,7 @@ function save(){
       if (t.item) o.c = [t.item.type, +t.item.prog.toFixed(3)];
       arr.push(o);
     }
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ money, curZ, cam, tiles:arr }));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ money, curZ, cam, inv, tiles:arr }));
   } catch(e){}
 }
 function load(){
@@ -387,7 +449,7 @@ function load(){
       if (o.c) t.item = { type:o.c[0], prog:o.c[1], moved:false };
       tiles.set(K(t.x,t.y,t.z), t);
     }
-    money = d.money; curZ = d.curZ || 0;
+    money = d.money; curZ = d.curZ || 0; inv = d.inv || {};
     if (d.cam) cam = d.cam;
     return true;
   } catch(e){ return false; }
@@ -1142,7 +1204,7 @@ function setTool(t){
   $('eraseBtn').classList.toggle('sel', t==='erase');
   refreshCards();
   if (t === 'hand') setInfo('Hand: drag to pan. Click an <b>Item Cutter</b> to switch its mode, or a grown tree to harvest it.');
-  if (t === 'erase') setInfo('Eraser: click machines to remove them for a <b>50% refund</b>.');
+  if (t === 'erase') setInfo('Broom: click machines to remove them for a <b>50% refund</b>. Items they were carrying get swept into your &#127890; inventory.');
 }
 moneyBtn.onclick = () => {
   shopEl.classList.toggle('open');
@@ -1209,6 +1271,130 @@ $('resetSave').onclick = () => {
   }
 };
 
+/* ---- inventory (filled by the broom) ---- */
+const invWrap = $('invWrap'), invList = $('invList'), invBadge = $('invBadge');
+function invCount(){ let n = 0; for (const k in inv) n += inv[k]; return n; }
+function itemIconCanvas(type, px){
+  const ic = document.createElement('canvas');
+  ic.width = px*2; ic.height = px*2;
+  const c = ic.getContext('2d');
+  c.translate(px, px); c.scale(2, 2);
+  drawItem(c, type, px*0.72);
+  return ic;
+}
+function buildInv(){
+  invList.innerHTML = '';
+  const entries = Object.entries(inv).filter(e => e[1] > 0)
+    .sort((a,b) => ITEMS[b[0]].v*b[1] - ITEMS[a[0]].v*a[1]);
+  if (!entries.length){
+    invList.innerHTML = '<p style="padding:10px 0">Nothing in the pack yet. Broom a belt that has items riding it &mdash; or a machine mid-recipe, or a grown tree &mdash; and the goods land here.</p>';
+    return;
+  }
+  for (const [k, cnt] of entries){
+    const row = document.createElement('div'); row.className = 'invRow';
+    const nm = document.createElement('span'); nm.className = 'inm';
+    nm.textContent = ITEMS[k].n;
+    const c2 = document.createElement('span'); c2.className = 'icnt';
+    c2.textContent = '×' + cnt + ' · $' + ITEMS[k].v + ' each';
+    const sb = document.createElement('button'); sb.className = 'sellBtn';
+    sb.textContent = 'Sell $' + fmt(ITEMS[k].v * cnt);
+    sb.onclick = () => {
+      money += ITEMS[k].v * cnt;
+      delete inv[k];
+      buildInv();
+    };
+    row.append(itemIconCanvas(k, 14), nm, c2, sb);
+    invList.appendChild(row);
+  }
+}
+$('invBtn').onclick = () => { buildInv(); invWrap.classList.add('open'); };
+$('closeInv').onclick = () => invWrap.classList.remove('open');
+invWrap.onclick = e => { if (e.target === invWrap) invWrap.classList.remove('open'); };
+$('sellAll').onclick = () => {
+  let tot = 0;
+  for (const k in inv) tot += ITEMS[k].v * inv[k];
+  if (!tot) return;
+  money += tot; inv = {};
+  buildInv();
+  setInfo('Sold the whole pack for <b>$' + fmt(tot) + '</b>.');
+};
+
+/* ---- recipe tree ---- */
+const treeWrap = $('treeWrap');
+function edgesFrom(item){
+  const out = [];
+  if (RECIPES.furnace[item]) out.push({ from:item, to:RECIPES.furnace[item], via:'furnace', lbl:'Furnace' });
+  if (RECIPES.grinder[item]) out.push({ from:item, to:RECIPES.grinder[item], via:'grinder', lbl:'Grinder' });
+  for (const m of SAW_MODES){
+    const to = RECIPES.sawmill[m][item];
+    if (to) out.push({ from:item, to, via:'sawmill', lbl:'Cutter·' + m });
+  }
+  return out;
+}
+function machineIconCanvas(type){
+  const ic = document.createElement('canvas');
+  ic.width = 52; ic.height = 52;
+  const c = ic.getContext('2d'); c.scale(2, 2);
+  drawTileGraphic(c, makeTile(type, 0, 0, 0, 0), 26, 0.4, true);
+  return ic;
+}
+function recipeNode(k, edge){
+  const row = document.createElement('div'); row.className = 'rnode';
+  if (edge){
+    row.appendChild(machineIconCanvas(edge.via));
+    const el = document.createElement('span'); el.className = 'redgeLbl';
+    el.textContent = edge.lbl + ' →';
+    row.appendChild(el);
+  }
+  row.appendChild(itemIconCanvas(k, 13));
+  const nm = document.createElement('span'); nm.className = 'rname'; nm.textContent = ITEMS[k].n;
+  const v = document.createElement('span'); v.className = 'rval'; v.textContent = '$' + ITEMS[k].v;
+  row.append(nm, v);
+  if (edge){
+    const gain = ITEMS[k].v - ITEMS[edge.from].v;
+    const gs = document.createElement('span');
+    gs.className = 'rgain ' + (gain >= 0 ? 'pos' : 'neg');
+    gs.textContent = (gain >= 0 ? '+$' : '−$') + Math.abs(gain) + ' profit';
+    row.appendChild(gs);
+  }
+  return row;
+}
+function buildBranch(k, container, ancestors){
+  for (const e of edgesFrom(k)){
+    const wrap = document.createElement('div');
+    const row = recipeNode(e.to, e);
+    wrap.appendChild(row);
+    if (ancestors.has(e.to)){
+      row.style.opacity = .55;
+      const loop = document.createElement('span'); loop.className = 'rloop';
+      loop.textContent = '(loops back)';
+      row.appendChild(loop);
+    } else {
+      const kids = document.createElement('div'); kids.className = 'rkids';
+      const next = new Set(ancestors); next.add(e.to);
+      buildBranch(e.to, kids, next);
+      if (kids.children.length) wrap.appendChild(kids);
+    }
+    container.appendChild(wrap);
+  }
+}
+let treeBuilt = false;
+function buildTreeModal(){
+  const list = $('treeList'); list.innerHTML = '';
+  for (const r of ['cobblestone','oakwood','pinewood','baobabwood','wheat','carrot']){
+    const sec = document.createElement('div'); sec.className = 'rroot';
+    sec.appendChild(recipeNode(r));
+    const kids = document.createElement('div'); kids.className = 'rkids';
+    buildBranch(r, kids, new Set([r]));
+    sec.appendChild(kids);
+    list.appendChild(sec);
+  }
+  treeBuilt = true;
+}
+$('treeBtn').onclick = () => { if (!treeBuilt) buildTreeModal(); treeWrap.classList.add('open'); };
+$('closeTree').onclick = () => treeWrap.classList.remove('open');
+treeWrap.onclick = e => { if (e.target === treeWrap) treeWrap.classList.remove('open'); };
+
 /* ================= INPUT ================= */
 let dragging = false, panMode = false, lastPX = 0, lastPY = 0, lastPlaceKey = null, movedDist = 0;
 function tileAt(px, py){ return { x: Math.floor(s2wX(px)), y: Math.floor(s2wY(py)) }; }
@@ -1231,6 +1417,13 @@ function erase(tx, ty){
   const key = K(tx, ty, curZ);
   const t = tiles.get(key);
   if (!t) return;
+  // the broom sweeps any items the tile was carrying into the inventory
+  let swept = 0;
+  const grab = it => { if (it){ inv[it] = (inv[it]||0) + 1; swept++; } };
+  grab(t.item && t.item.type);
+  grab(t.inItem);
+  grab(t.outItem);
+  if (TREES[t.type] && t.stage >= 1) grab(TREES[t.type].wood);
   tiles.delete(key);
   const s = SHOP_BY_TYPE[t.type];
   if (s){
@@ -1238,6 +1431,8 @@ function erase(tx, ty){
     money += back;
     floaters.push({ x:tx+0.5, y:ty, z:curZ, txt:'+$'+back, age:0, color:'#c6d3b6' });
   }
+  if (swept)
+    floaters.push({ x:tx+0.5, y:ty+0.5, z:curZ, txt:'+'+swept+' \u{1F392}', age:0, color:'#7dc4e8' });
 }
 function handClick(tx, ty){
   const t = tiles.get(K(tx, ty, curZ));
@@ -1310,7 +1505,12 @@ cv.addEventListener('wheel', e => {
 
 addEventListener('keydown', e => {
   if (e.key === 'r' || e.key === 'R'){ rot = rotR(rot); $('rotArrow').textContent = DIR_ARROWS[rot]; }
-  if (e.key === 'Escape'){ setTool('hand'); $('modalWrap').classList.remove('open'); }
+  if (e.key === 'Escape'){
+    setTool('hand');
+    $('modalWrap').classList.remove('open');
+    invWrap.classList.remove('open');
+    treeWrap.classList.remove('open');
+  }
   if (e.key === 'PageUp') setLayer(curZ+1);
   if (e.key === 'PageDown') setLayer(curZ-1);
 });
@@ -1321,7 +1521,7 @@ buildTabs(); buildCards(); setLayer(curZ);
 if (tiles.size <= 5) shopEl.classList.add('open');
 else infoEl.classList.add('low');
 
-let lastT = performance.now(), acc = 0;
+let lastT = performance.now(), acc = 0, lastInvCt = -1;
 function frame(now){
   let dt = (now - lastT)/1000; lastT = now;
   if (dt > 0.25) dt = 0.25;
@@ -1331,6 +1531,8 @@ function frame(now){
   let n = 0;
   while (acc >= step && n < 8){ update(step); acc -= step; n++; }
   moneyEl.textContent = fmt(money);
+  const ic = invCount();
+  if (ic !== lastInvCt){ invBadge.textContent = fmt(ic); lastInvCt = ic; }
   refreshCards();
   render(simTime);
   requestAnimationFrame(frame);
