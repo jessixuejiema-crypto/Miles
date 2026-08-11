@@ -1,0 +1,436 @@
+<title>Antiphase — record a sound, cancel it with its mirror</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ink: #0b0e14;
+    --panel: #121722;
+    --panel-edge: #1e2636;
+    --text: #e9ecf2;
+    --muted: #77809a;
+    --amber: #ffb454;
+    --cyan: #4fd8e0;
+    --red: #ff5c5c;
+    --green: #6fe0a8;
+    --mono: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    --sans: "Avenir Next", Avenir, Seravek, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { color-scheme: dark; }
+  body {
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px 80px;
+  }
+  .rig { width: 100%; max-width: 860px; display: flex; flex-direction: column; gap: 28px; }
+
+  header { display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  h1 {
+    font-size: clamp(30px, 5vw, 44px); font-weight: 600; letter-spacing: -0.01em;
+    text-wrap: balance; line-height: 1.1;
+  }
+  h1 .flip { color: var(--cyan); }
+  h1 .orig { color: var(--amber); }
+  .lede { color: var(--muted); font-size: 16px; max-width: 58ch; line-height: 1.55; }
+
+  .scope {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .scope-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid var(--panel-edge);
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .legend { display: flex; gap: 18px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  .swatch.a { background: var(--amber); }
+  .swatch.c { background: var(--cyan); }
+  #clock { font-variant-numeric: tabular-nums; }
+  #clock.rec { color: var(--red); }
+  canvas { display: block; width: 100%; height: 240px; }
+
+  .transport { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  button {
+    font-family: var(--mono); font-size: 13px; letter-spacing: 0.04em;
+    padding: 12px 18px; border-radius: 4px; cursor: pointer;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--panel-edge);
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  button:disabled { opacity: 0.35; cursor: default; }
+  #recBtn { border-color: var(--red); color: var(--red); }
+  #recBtn.armed { background: var(--red); color: var(--ink); }
+  #playOrig { color: var(--amber); }
+  #playInv  { color: var(--cyan); }
+  #playBoth { border-color: var(--green); color: var(--green); }
+  .spacer { flex: 1; }
+  .demo-link {
+    background: none; border: none; padding: 6px 0;
+    color: var(--muted); text-decoration: underline; text-underline-offset: 3px;
+  }
+  .demo-link:hover { color: var(--text); }
+
+  .meter {
+    background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 6px;
+    padding: 16px 18px; display: flex; align-items: center; gap: 18px;
+  }
+  .meter-label { font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  .bar { flex: 1; height: 10px; background: var(--ink); border-radius: 5px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0%; background: var(--amber); border-radius: 5px; }
+  .bar i.silent { background: var(--green); }
+  .db {
+    font-family: var(--mono); font-size: 15px; min-width: 9ch; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .db.silent { color: var(--green); }
+
+  .status { font-family: var(--mono); font-size: 13px; color: var(--muted); min-height: 1.4em; }
+  .status.err { color: var(--red); }
+  .status.zero { color: var(--green); }
+
+  .explain {
+    border-top: 1px solid var(--panel-edge); padding-top: 22px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 22px;
+  }
+  .explain h2 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .explain h2.a { color: var(--amber); }
+  .explain h2.c { color: var(--cyan); }
+  .explain h2.g { color: var(--green); }
+  .explain p { color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+  @media (prefers-reduced-motion: reduce) {
+    button { transition: none; }
+  }
+</style>
+
+<div class="rig">
+  <header>
+    <div class="eyebrow">Antiphase · destructive interference lab</div>
+    <h1>Record <span class="orig">a sound</span>. Flip it into <span class="flip">anti-sound</span>. Play both — hear nothing.</h1>
+    <p class="lede">Every sample of the inverted copy is the exact negative of the original. Summed in the same audio stream, they cancel to a mathematically perfect zero — watch the output meter when you press “play both.”</p>
+  </header>
+
+  <div class="scope">
+    <div class="scope-head">
+      <div class="legend">
+        <span><i class="swatch a"></i>original</span>
+        <span><i class="swatch c"></i>inverted</span>
+      </div>
+      <span id="clock">00.0 s</span>
+    </div>
+    <canvas id="scope" height="240"></canvas>
+  </div>
+
+  <div class="transport">
+    <button id="recBtn">● record</button>
+    <button id="playOrig" disabled>▶ original</button>
+    <button id="playInv" disabled>▶ inverted</button>
+    <button id="playBoth" disabled>▶ both → zero</button>
+    <button id="stopBtn" disabled>■ stop</button>
+    <span class="spacer"></span>
+    <button class="demo-link" id="demoBtn">no mic? load a demo chord</button>
+  </div>
+
+  <div class="meter">
+    <span class="meter-label">output level</span>
+    <div class="bar"><i id="barFill"></i></div>
+    <span class="db" id="dbOut">−∞ dB</span>
+  </div>
+
+  <p class="status" id="status">Press record and make some noise — up to 10 seconds.</p>
+
+  <section class="explain">
+    <div>
+      <h2 class="a">1 · The sound</h2>
+      <p>Your microphone captures air pressure over time as a list of numbers between −1 and 1. That list, drawn left to right, is the amber wave above.</p>
+    </div>
+    <div>
+      <h2 class="c">2 · The anti-sound</h2>
+      <p>Multiply every number by −1 and you get the cyan wave: a perfect mirror. On its own it sounds identical to the original — your ear can’t hear absolute polarity.</p>
+    </div>
+    <div>
+      <h2 class="g">3 · The zero</h2>
+      <p>Play both at once and each sample adds to its own negative: x + (−x) = 0. The speaker cone never moves. This is the same trick noise-cancelling headphones pull off in real time.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const recBtn = $("recBtn"), playOrig = $("playOrig"), playInv = $("playInv"),
+        playBoth = $("playBoth"), stopBtn = $("stopBtn"), demoBtn = $("demoBtn"),
+        statusEl = $("status"), clock = $("clock"),
+        barFill = $("barFill"), dbOut = $("dbOut"),
+        canvas = $("scope"), g = canvas.getContext("2d");
+
+  const MAX_SECONDS = 10;
+  let ctx = null;               // AudioContext, created on first gesture
+  let masterGain = null, analyser = null, meterData = null;
+  let origBuf = null, invBuf = null;
+  let activeSources = [];
+  let recorder = null, recChunks = [], recStream = null, recStart = 0, recTimer = 0;
+  let liveAnalyser = null, liveData = null, rafId = 0;
+
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function ensureCtx() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = ctx.createGain();
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      meterData = new Float32Array(analyser.fftSize);
+      masterGain.connect(analyser);
+      analyser.connect(ctx.destination);
+    }
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+
+  function setStatus(msg, cls) {
+    statusEl.textContent = msg;
+    statusEl.className = "status" + (cls ? " " + cls : "");
+  }
+
+  function fitCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    if (canvas.width !== Math.round(w * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(240 * dpr);
+    }
+  }
+
+  function clearScope() {
+    fitCanvas();
+    g.fillStyle = css("--panel");
+    g.fillRect(0, 0, canvas.width, canvas.height);
+    g.strokeStyle = css("--panel-edge");
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(0, canvas.height / 2);
+    g.lineTo(canvas.width, canvas.height / 2);
+    g.stroke();
+  }
+
+  // Draw the recorded buffer as a min/max envelope: amber original, cyan mirror.
+  function drawBuffers() {
+    clearScope();
+    if (!origBuf) return;
+    const data = origBuf.getChannelData(0);
+    const W = canvas.width, H = canvas.height, mid = H / 2, amp = H * 0.42;
+    const step = Math.max(1, Math.floor(data.length / W));
+    const dpr = window.devicePixelRatio || 1;
+
+    const trace = (sign, color) => {
+      g.strokeStyle = color;
+      g.lineWidth = 1.2 * dpr;
+      g.globalAlpha = 0.9;
+      g.beginPath();
+      for (let x = 0; x < W; x++) {
+        let lo = 1, hi = -1;
+        const base = x * step;
+        for (let i = 0; i < step && base + i < data.length; i++) {
+          const v = data[base + i];
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+        g.moveTo(x, mid - sign * hi * amp);
+        g.lineTo(x, mid - sign * lo * amp + 0.5);
+      }
+      g.stroke();
+      g.globalAlpha = 1;
+    };
+    trace(1, css("--amber"));
+    trace(-1, css("--cyan"));
+  }
+
+  function drawLive() {
+    if (!liveAnalyser) return;
+    liveAnalyser.getFloatTimeDomainData(liveData);
+    clearScope();
+    const W = canvas.width, H = canvas.height, mid = H / 2, amp = H * 0.42;
+    const dpr = window.devicePixelRatio || 1;
+    const trace = (sign, color) => {
+      g.strokeStyle = color;
+      g.lineWidth = 1.4 * dpr;
+      g.beginPath();
+      for (let x = 0; x < W; x++) {
+        const v = liveData[Math.floor(x / W * liveData.length)];
+        const y = mid - sign * v * amp;
+        x === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+      }
+      g.stroke();
+    };
+    trace(1, css("--amber"));
+    trace(-1, css("--cyan"));
+    clock.textContent = ((performance.now() - recStart) / 1000).toFixed(1).padStart(4, "0") + " s";
+    rafId = requestAnimationFrame(drawLive);
+  }
+
+  function meterLoop() {
+    if (!analyser) return;
+    analyser.getFloatTimeDomainData(meterData);
+    let peak = 0;
+    for (let i = 0; i < meterData.length; i++) {
+      const a = Math.abs(meterData[i]);
+      if (a > peak) peak = a;
+    }
+    const silent = peak < 1e-6;
+    const db = silent ? -Infinity : 20 * Math.log10(peak);
+    dbOut.textContent = silent ? "−∞ dB" : db.toFixed(1) + " dB";
+    dbOut.classList.toggle("silent", silent);
+    barFill.classList.toggle("silent", silent);
+    const pct = silent ? 0 : Math.max(0, Math.min(100, (db + 60) / 60 * 100));
+    barFill.style.width = pct + "%";
+    if (activeSources.length) requestAnimationFrame(meterLoop);
+    else { barFill.style.width = "0%"; }
+  }
+
+  function invert(buf) {
+    const out = ctx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const src = buf.getChannelData(ch), dst = out.getChannelData(ch);
+      for (let i = 0; i < src.length; i++) dst[i] = -src[i];
+    }
+    return out;
+  }
+
+  function haveRecording() {
+    playOrig.disabled = playInv.disabled = playBoth.disabled = false;
+    clock.textContent = origBuf.duration.toFixed(1).padStart(4, "0") + " s";
+    clock.classList.remove("rec");
+    drawBuffers();
+  }
+
+  function stopPlayback() {
+    activeSources.forEach(s => { try { s.stop(); } catch (e) {} });
+    activeSources = [];
+    stopBtn.disabled = true;
+  }
+
+  function play(mode) {
+    ensureCtx();
+    stopPlayback();
+    const t0 = ctx.currentTime + 0.12;
+    const wanted = mode === "original" ? [origBuf]
+                 : mode === "inverted" ? [invBuf]
+                 : [origBuf, invBuf];
+    wanted.forEach(buf => {
+      const s = ctx.createBufferSource();
+      s.buffer = buf;
+      s.connect(masterGain);
+      s.onended = () => {
+        activeSources = activeSources.filter(x => x !== s);
+        if (!activeSources.length) {
+          stopBtn.disabled = true;
+          if (mode === "both") setStatus("Done. Peak output during playback: total silence.", "zero");
+        }
+      };
+      s.start(t0);
+      activeSources.push(s);
+    });
+    stopBtn.disabled = false;
+    if (mode === "both") setStatus("Playing original + inverted together. The sum of every sample is zero.", "zero");
+    else setStatus("Playing the " + mode + " recording — they sound identical on their own.");
+    requestAnimationFrame(meterLoop);
+  }
+
+  async function startRecording() {
+    ensureCtx();
+    try {
+      recStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+    } catch (e) {
+      setStatus("Microphone unavailable (" + e.name + "). Try the demo chord instead →", "err");
+      return;
+    }
+    stopPlayback();
+    recChunks = [];
+    recorder = new MediaRecorder(recStream);
+    recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+    recorder.onstop = async () => {
+      recStream.getTracks().forEach(t => t.stop());
+      liveAnalyser = null;
+      cancelAnimationFrame(rafId);
+      clearTimeout(recTimer);
+      recBtn.classList.remove("armed");
+      recBtn.textContent = "● record";
+      try {
+        const blob = new Blob(recChunks, { type: recorder.mimeType });
+        const raw = await blob.arrayBuffer();
+        origBuf = await ctx.decodeAudioData(raw);
+        invBuf = invert(origBuf);
+        haveRecording();
+        setStatus("Captured " + origBuf.duration.toFixed(1) + " s. Now compare: original, inverted, then both at once.");
+      } catch (e) {
+        setStatus("Could not decode the recording — try again.", "err");
+      }
+    };
+    const tap = ctx.createMediaStreamSource(recStream);
+    liveAnalyser = ctx.createAnalyser();
+    liveAnalyser.fftSize = 2048;
+    liveData = new Float32Array(liveAnalyser.fftSize);
+    tap.connect(liveAnalyser); // analysis only — not routed to output, so no feedback
+    recorder.start();
+    recStart = performance.now();
+    clock.classList.add("rec");
+    recBtn.classList.add("armed");
+    recBtn.textContent = "■ stop recording";
+    setStatus("Recording… speak, clap, whistle. Auto-stops at " + MAX_SECONDS + " s.");
+    playOrig.disabled = playInv.disabled = playBoth.disabled = true;
+    rafId = requestAnimationFrame(drawLive);
+    recTimer = setTimeout(() => { if (recorder.state === "recording") recorder.stop(); }, MAX_SECONDS * 1000);
+  }
+
+  function loadDemo() {
+    ensureCtx();
+    stopPlayback();
+    const sr = ctx.sampleRate, dur = 2.5, n = Math.floor(sr * dur);
+    const buf = ctx.createBuffer(1, n, sr);
+    const d = buf.getChannelData(0);
+    const notes = [220, 277.18, 329.63, 440]; // A major chord
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      const env = Math.min(1, t * 12) * Math.exp(-1.1 * t);
+      let v = 0;
+      for (const f of notes) v += Math.sin(2 * Math.PI * f * t) / notes.length;
+      d[i] = v * env * 0.8;
+    }
+    origBuf = buf;
+    invBuf = invert(buf);
+    haveRecording();
+    setStatus("Demo chord loaded (A major, 2.5 s). Try each button — then both at once.");
+  }
+
+  recBtn.addEventListener("click", () => {
+    if (recorder && recorder.state === "recording") recorder.stop();
+    else startRecording();
+  });
+  playOrig.addEventListener("click", () => play("original"));
+  playInv.addEventListener("click", () => play("inverted"));
+  playBoth.addEventListener("click", () => play("both"));
+  stopBtn.addEventListener("click", () => { stopPlayback(); setStatus("Stopped."); });
+  demoBtn.addEventListener("click", loadDemo);
+  window.addEventListener("resize", () => { origBuf ? drawBuffers() : clearScope(); });
+
+  clearScope();
+})();
+</script>
