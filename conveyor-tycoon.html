@@ -190,6 +190,13 @@
   .rloop { font-size:11px; color:#95a68f; font-style:italic; }
   .rkids { margin-left:6px; padding-left:10px; border-left:2px solid #3b4a3c; }
   .rforms { font-size:11.5px; color:#c6d3b6; font-family:ui-monospace, monospace; line-height:1.5; }
+
+  /* all-recipes flat list */
+  .amach { font-size:12px; font-weight:900; color:#9fd07a; text-transform:uppercase; letter-spacing:.1em; margin:16px 0 4px; }
+  .arow { display:flex; align-items:center; gap:7px; font-size:12.5px; color:#c6d3b6; padding:2.5px 0; border-bottom:1px solid rgba(59,74,60,.4); flex-wrap:wrap; }
+  .arow b { color:#e9eddc; font-weight:700; }
+  .sw { width:11px; height:11px; border-radius:3px; flex:none; border:1px solid rgba(0,0,0,.35); }
+  .aarr { color:#95a68f; font-weight:900; }
 </style>
 
 </head>
@@ -248,7 +255,20 @@
     <p>Every crafting chain, starting from what your farms and trees make. Each arrow shows the machine that does it and how much profit the step adds.</p>
     <div id="treeList"></div>
     <div class="modalBtns">
+      <button class="mbtn" id="allBtn">All recipes</button>
       <button class="mbtn" id="closeTree">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="allWrap" class="mwrap">
+  <div class="mbox">
+    <h1>&#128220; All Recipes</h1>
+    <p id="allCount"></p>
+    <div id="allList"></div>
+    <div class="modalBtns">
+      <button class="mbtn" id="copyAll">Copy all as text</button>
+      <button class="mbtn" id="closeAll">Close</button>
     </div>
   </div>
 </div>
@@ -273,7 +293,7 @@
     <h2>Logic &amp; power</h2>
     <ul>
       <li><b>Wire</b> carries power. <b>Lever</b>: click to switch on/off. <b>Clock</b>: its hand turns once every 10&nbsp;s and fires a 1&nbsp;s pulse each full turn. <b>XNOR Gate</b>: powers the wire in front when its two side tiles match (both powered or both unpowered).</li>
-      <li>The <b>Ore Mine</b> and <b>Enchanter</b> only run while powered — park a lever beside them, wire them to a detector, or pulse them with a clock.</li>
+      <li>The <b>Ore Mine</b> only runs while powered — park a lever beside it, wire it to a detector, or pulse it with a clock.</li>
     </ul>
     <h2>Base item prices (shaped pieces scale with their material)</h2><div id="recValues"></div>
     <div class="modalBtns">
@@ -538,7 +558,7 @@ const SHOP = [
   {t:'press',     n:'Press',           p:350, cat:'Machines',  d:'Stamps any material into Plate, Panel, Gear or Inlay form. Click to switch mode.'},
   {t:'refiner',   n:'Refiner',         p:350, cat:'Machines',  d:'Climbs the rock ladder: basalt→granite→diorite→andesite→marble→limestone→slate→quartz→prismarine→obsidian. Also sand→sandstone, clay→terracotta.'},
   {t:'crystallizer',n:'Crystallizer',  p:400, cat:'Machines',  d:'Grows dust into glittering crystals worth 4× the base material.'},
-  {t:'enchanter', n:'Enchanter',       p:600, cat:'Machines',  d:'NEEDS POWER — flip a Lever ON beside it (click the lever with the hand). Gilds ANY item to 5× its value: obsidian → $500, and even slabs, crystals and pies get the golden treatment.'},
+  {t:'enchanter', n:'Enchanter',       p:600, cat:'Machines',  d:'Gilds ANY item to 5× its value, no power needed: obsidian → $500, and even slabs, crystals and pies get the golden treatment.'},
   {t:'wire',      n:'Wire',            p:5,   cat:'Logic',     d:'Carries power along the ground from detectors, levers, clocks and gates to machines.'},
   {t:'lever',     n:'Lever',           p:30,  cat:'Logic',     d:'Click it with the hand to switch power on or off. Powers wires and machines beside it.'},
   {t:'xnor',      n:'XNOR Gate',       p:80,  cat:'Logic',     d:'Reads its two SIDE tiles: powers the wire in FRONT when both sides match (both on, or both off). R rotates it.'},
@@ -798,7 +818,7 @@ function update(dt){
     }
     else if (PROCESSOR.has(t.type)){
       if (t.inItem){
-        if (t.type !== 'enchanter' || isPowered(t)) t.inT -= dt; // the enchanter only runs powered
+        t.inT -= dt;
         if (t.inT <= 0){ t.outItem = processorResult(t); t.inItem = null; }
       }
       if (t.outItem){
@@ -1545,7 +1565,7 @@ function drawTileGraphic(c, t, ts, time, forIcon){
   }
   // "needs power" badge
   if (!forIcon &&
-      ((t.type === 'oremine' || t.type === 'enchanter') && !isPowered(t) ||
+      (t.type === 'oremine' && !isPowered(t) ||
        t.type === 'treecutter' && !cutterActive(t))){
     c.fillStyle = 'rgba(24,33,25,.8)';
     c.beginPath(); c.arc(ts*0.8, ts*0.2, ts*0.16, 0, 7); c.fill();
@@ -1916,7 +1936,7 @@ $('sellAll').onclick = () => {
 const treeWrap = $('treeWrap');
 const FLAT_MACHINES = [
   ['furnace','Furnace'], ['grinder','Grinder'], ['refiner','Refiner'],
-  ['juicer','Juicer'], ['crystallizer','Crystallizer'], ['enchanter','Enchanter ⚡'],
+  ['juicer','Juicer'], ['crystallizer','Crystallizer'], ['enchanter','Enchanter'],
 ];
 function edgesFrom(item){
   const out = [];
@@ -2008,6 +2028,90 @@ function buildTreeModal(){
 $('treeBtn').onclick = () => { if (!treeBuilt) buildTreeModal(); treeWrap.classList.add('open'); };
 $('closeTree').onclick = () => treeWrap.classList.remove('open');
 treeWrap.onclick = e => { if (e.target === treeWrap) treeWrap.classList.remove('open'); };
+
+/* ---- all recipes: every row of every machine, flat ---- */
+const allWrap = $('allWrap');
+const MACH_ORDER = ['furnace','grinder','refiner','juicer','crystallizer','sawmill','polisher','kiln','press','enchanter'];
+const MACH_NAMES = { furnace:'Furnace', grinder:'Item Grinder', refiner:'Refiner', juicer:'Juicer',
+  crystallizer:'Crystallizer', sawmill:'Item Cutter', polisher:'Polisher', kiln:'Brick Kiln',
+  press:'Press', enchanter:'Enchanter' };
+function allRecipes(){
+  const rows = [];
+  for (const mach of MACH_ORDER){
+    const r = RECIPES[mach];
+    if (MACHINE_MODES[mach]){
+      for (const md of MACHINE_MODES[mach])
+        for (const [from, to] of Object.entries(r[md]))
+          rows.push({ grp: MACH_NAMES[mach]+' — '+FORM_DEFS[md].n+' mode', from, to });
+    } else {
+      for (const [from, to] of Object.entries(r))
+        rows.push({ grp: MACH_NAMES[mach], from, to });
+    }
+  }
+  return rows;
+}
+let allBuilt = false;
+function buildAllList(){
+  const rows = allRecipes();
+  $('allCount').textContent = rows.length + ' recipes across ' + MACH_ORDER.length +
+    ' machines, covering ' + Object.keys(ITEMS).length + ' items. Profit chips show the value each step adds.';
+  const list = $('allList'); list.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  let lastGrp = '';
+  for (const r of rows){
+    if (r.grp !== lastGrp){
+      const h = document.createElement('div'); h.className = 'amach'; h.textContent = r.grp;
+      frag.appendChild(h); lastGrp = r.grp;
+    }
+    const a = ITEMS[r.from], b = ITEMS[r.to];
+    const row = document.createElement('div'); row.className = 'arow';
+    const s1 = document.createElement('span'); s1.className = 'sw'; s1.style.background = a.c;
+    const t1 = document.createElement('span'); t1.innerHTML = '<b>'+a.n+'</b> $'+a.v;
+    const ar = document.createElement('span'); ar.className = 'aarr'; ar.textContent = '→';
+    const s2 = document.createElement('span'); s2.className = 'sw'; s2.style.background = b.c;
+    const t2 = document.createElement('span'); t2.innerHTML = '<b>'+b.n+'</b> $'+b.v;
+    const gain = b.v - a.v;
+    const g = document.createElement('span'); g.className = 'rgain ' + (gain >= 0 ? 'pos' : 'neg');
+    g.textContent = (gain >= 0 ? '+$' : '−$') + Math.abs(gain);
+    row.append(s1, t1, ar, s2, t2, g);
+    frag.appendChild(row);
+  }
+  list.appendChild(frag);
+  allBuilt = true;
+}
+$('allBtn').onclick = () => {
+  treeWrap.classList.remove('open');
+  if (!allBuilt) buildAllList();
+  allWrap.classList.add('open');
+};
+$('closeAll').onclick = () => allWrap.classList.remove('open');
+allWrap.onclick = e => { if (e.target === allWrap) allWrap.classList.remove('open'); };
+$('copyAll').onclick = () => {
+  const rows = allRecipes();
+  const out = []; let lastGrp = '';
+  for (const r of rows){
+    if (r.grp !== lastGrp){ out.push('', '== ' + r.grp + ' =='); lastGrp = r.grp; }
+    out.push(ITEMS[r.from].n + ' ($' + ITEMS[r.from].v + ') -> ' + ITEMS[r.to].n + ' ($' + ITEMS[r.to].v + ')');
+  }
+  const text = 'BELTWORKS MEADOW — ALL ' + rows.length + ' RECIPES' + out.join('\n') + '\n';
+  const done = () => {
+    const btn = $('copyAll'), old = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+};
+function fallbackCopy(text, done){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch(e){}
+  document.body.removeChild(ta);
+}
 
 /* ================= INPUT ================= */
 let dragging = false, panMode = false, lastPX = 0, lastPY = 0, lastPlaceKey = null, movedDist = 0;
@@ -2128,6 +2232,7 @@ addEventListener('keydown', e => {
     $('modalWrap').classList.remove('open');
     invWrap.classList.remove('open');
     treeWrap.classList.remove('open');
+    allWrap.classList.remove('open');
   }
   if (e.key === 'PageUp') setLayer(curZ+1);
   if (e.key === 'PageDown') setLayer(curZ-1);
