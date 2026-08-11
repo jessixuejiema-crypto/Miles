@@ -87,6 +87,20 @@
     background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 6px;
     padding: 16px 18px; display: flex; align-items: center; gap: 18px;
   }
+  .offset {
+    background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 6px;
+    padding: 16px 18px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  .offset input[type="range"] {
+    flex: 1; min-width: 160px; accent-color: var(--cyan); cursor: pointer;
+  }
+  .offset input[type="range"]:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
+  .delay-val {
+    font-family: var(--mono); font-size: 15px; min-width: 8ch; text-align: right;
+    font-variant-numeric: tabular-nums; color: var(--cyan);
+  }
+  .delay-val.zeroed { color: var(--green); }
+  .offset .hint { width: 100%; font-family: var(--mono); font-size: 12px; color: var(--muted); }
   .meter-label { font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em;
     text-transform: uppercase; color: var(--muted); white-space: nowrap; }
   .bar { flex: 1; height: 10px; background: var(--ink); border-radius: 5px; overflow: hidden; }
@@ -145,6 +159,14 @@
     <button class="demo-link" id="demoBtn">no mic? load a demo chord</button>
   </div>
 
+  <div class="offset">
+    <span class="meter-label">inverted delay</span>
+    <input type="range" id="delaySlider" min="0" max="50" step="0.1" value="0"
+           aria-label="Delay applied to the inverted copy, in milliseconds">
+    <span class="delay-val zeroed" id="delayVal">0.0 ms</span>
+    <span class="hint">At 0 ms the waves cancel exactly. Nudge it and “both” stops being silent — the mirror arrives late, so the sum is no longer zero.</span>
+  </div>
+
   <div class="meter">
     <span class="meter-label">output level</span>
     <div class="bar"><i id="barFill"></i></div>
@@ -166,6 +188,10 @@
       <h2 class="g">3 · The zero</h2>
       <p>Play both at once and each sample adds to its own negative: x + (−x) = 0. The speaker cone never moves. This is the same trick noise-cancelling headphones pull off in real time.</p>
     </div>
+    <div>
+      <h2 class="c">4 · Break it with time</h2>
+      <p>Silence only works if the mirror is perfectly on time. Delay it even a few milliseconds and each sample meets the wrong partner — some frequencies cancel, others double. That hollow, phasey sound is called comb filtering.</p>
+    </div>
   </section>
 </div>
 
@@ -175,6 +201,7 @@
   const $ = id => document.getElementById(id);
   const recBtn = $("recBtn"), playOrig = $("playOrig"), playInv = $("playInv"),
         playBoth = $("playBoth"), stopBtn = $("stopBtn"), demoBtn = $("demoBtn"),
+        delaySlider = $("delaySlider"), delayVal = $("delayVal"),
         statusEl = $("status"), clock = $("clock"),
         barFill = $("barFill"), dbOut = $("dbOut"),
         canvas = $("scope"), g = canvas.getContext("2d");
@@ -328,11 +355,12 @@
   function play(mode) {
     ensureCtx();
     stopPlayback();
+    const delayMs = mode === "both" ? parseFloat(delaySlider.value) : 0;
     const t0 = ctx.currentTime + 0.12;
-    const wanted = mode === "original" ? [origBuf]
-                 : mode === "inverted" ? [invBuf]
-                 : [origBuf, invBuf];
-    wanted.forEach(buf => {
+    const wanted = mode === "original" ? [[origBuf, 0]]
+                 : mode === "inverted" ? [[invBuf, 0]]
+                 : [[origBuf, 0], [invBuf, delayMs / 1000]];
+    wanted.forEach(([buf, offset]) => {
       const s = ctx.createBufferSource();
       s.buffer = buf;
       s.connect(masterGain);
@@ -340,15 +368,26 @@
         activeSources = activeSources.filter(x => x !== s);
         if (!activeSources.length) {
           stopBtn.disabled = true;
-          if (mode === "both") setStatus("Done. Peak output during playback: total silence.", "zero");
+          if (mode === "both") {
+            setStatus(delayMs === 0
+              ? "Done. Peak output during playback: total silence."
+              : "Done. With a " + delayMs.toFixed(1) + " ms offset the cancellation was only partial.",
+              delayMs === 0 ? "zero" : "");
+          }
         }
       };
-      s.start(t0);
+      s.start(t0 + offset);
       activeSources.push(s);
     });
     stopBtn.disabled = false;
-    if (mode === "both") setStatus("Playing original + inverted together. The sum of every sample is zero.", "zero");
-    else setStatus("Playing the " + mode + " recording — they sound identical on their own.");
+    if (mode === "both") {
+      setStatus(delayMs === 0
+        ? "Playing original + inverted together. The sum of every sample is zero."
+        : "Playing both, but the inverted copy is " + delayMs.toFixed(1) + " ms late — the mirror no longer lines up, so sound leaks through.",
+        delayMs === 0 ? "zero" : "");
+    } else {
+      setStatus("Playing the " + mode + " recording — they sound identical on their own.");
+    }
     requestAnimationFrame(meterLoop);
   }
 
@@ -429,6 +468,11 @@
   playBoth.addEventListener("click", () => play("both"));
   stopBtn.addEventListener("click", () => { stopPlayback(); setStatus("Stopped."); });
   demoBtn.addEventListener("click", loadDemo);
+  delaySlider.addEventListener("input", () => {
+    const ms = parseFloat(delaySlider.value);
+    delayVal.textContent = ms.toFixed(1) + " ms";
+    delayVal.classList.toggle("zeroed", ms === 0);
+  });
   window.addEventListener("resize", () => { origBuf ? drawBuffers() : clearScope(); });
 
   clearScope();
