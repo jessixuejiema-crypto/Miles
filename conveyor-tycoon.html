@@ -188,7 +188,8 @@
   .rgain.pos { color:#9fe08a; background:rgba(125,255,110,.12); }
   .rgain.neg { color:#e0938a; background:rgba(224,110,98,.12); }
   .rloop { font-size:11px; color:#95a68f; font-style:italic; }
-  .rkids { margin-left:12px; padding-left:14px; border-left:2px solid #3b4a3c; }
+  .rkids { margin-left:6px; padding-left:10px; border-left:2px solid #3b4a3c; }
+  .rforms { font-size:11.5px; color:#c6d3b6; font-family:ui-monospace, monospace; line-height:1.5; }
 </style>
 
 </head>
@@ -268,8 +269,13 @@
     </ul>
     <h2>Furnace recipes</h2><div id="recFurnace"></div>
     <h2>Item Grinder recipes</h2><div id="recGrinder"></div>
-    <h2>Item Cutter recipes (click to switch mode)</h2><div id="recCutter"></div>
-    <h2>Item prices</h2><div id="recValues"></div>
+    <h2>Shaping machines (click one to switch its mode)</h2><div id="recCutter"></div>
+    <h2>Logic &amp; power</h2>
+    <ul>
+      <li><b>Wire</b> carries power. <b>Lever</b>: click to switch on/off. <b>Clock</b>: its hand turns once every 10&nbsp;s and fires a 1&nbsp;s pulse each full turn. <b>XNOR Gate</b>: powers the wire in front when its two side tiles match (both powered or both unpowered).</li>
+      <li>The <b>Ore Mine</b> and <b>Enchanter</b> only run while powered — park a lever beside them, wire them to a detector, or pulse them with a clock.</li>
+    </ul>
+    <h2>Base item prices (shaped pieces scale with their material)</h2><div id="recValues"></div>
     <div class="modalBtns">
       <button class="mbtn" id="closeModal">Back to building</button>
       <button class="mbtn danger" id="resetSave">Reset save</button>
@@ -312,6 +318,26 @@ const ITEMS = {
   basaltslab: {n:'Basalt Slab', v:20, c:'#4c4c58', c2:'#33333d', shape:'slab'},
   basaltstair:{n:'Basalt Stairs',v:24,c:'#4c4c58', c2:'#33333d', shape:'stair'},
   basaltfence:{n:'Basalt Fence',v:28, c:'#4c4c58', c2:'#33333d', shape:'fence'},
+  // new crops, ores & foods
+  cactus:     {n:'Cactus',      v:6,  c:'#4f9948', c2:'#356b30', shape:'rod'},
+  sugarcane:  {n:'Sugar Cane',  v:6,  c:'#9fce6f', c2:'#74a34a', shape:'wheat'},
+  pumpkin:    {n:'Pumpkin',     v:8,  c:'#e08a2c', c2:'#b0661a', shape:'rock'},
+  melon:      {n:'Melon',       v:7,  c:'#57a03a', c2:'#3c7527', shape:'block'},
+  berries:    {n:'Berries',     v:7,  c:'#c8385a', c2:'#93213d', shape:'pile'},
+  mushroom:   {n:'Mushroom',    v:9,  c:'#c05545', c2:'#8e3a2e', shape:'bread'},
+  ironore:    {n:'Iron Ore',    v:12, c:'#a89f96', c2:'#7d766f', shape:'rock'},
+  copperore:  {n:'Copper Ore',  v:10, c:'#a97f5e', c2:'#7d5c42', shape:'rock'},
+  goldore:    {n:'Gold Ore',    v:20, c:'#bfa25c', c2:'#8f7940', shape:'rock'},
+  sugar:      {n:'Sugar',       v:12, c:'#f2efe6', c2:'#c9c5b8', shape:'pile'},
+  pumpkinpie: {n:'Pumpkin Pie', v:30, c:'#d99a4e', c2:'#a87236', shape:'bread'},
+  mushroomstew:{n:'Mushroom Stew',v:28,c:'#a5623e', c2:'#7a4529', shape:'bread'},
+  jam:        {n:'Berry Jam',   v:22, c:'#a52a4d', c2:'#761b36', shape:'glass'},
+  berryjuice: {n:'Berry Juice', v:20, c:'#d84a6e', c2:'#a32f4e', shape:'glass'},
+  melonjuice: {n:'Melon Juice', v:18, c:'#7bc45e', c2:'#569140', shape:'glass'},
+  cactusjuice:{n:'Cactus Juice',v:16, c:'#6bb05e', c2:'#4a8340', shape:'glass'},
+  carrotjuice:{n:'Carrot Juice',v:15, c:'#e88b3a', c2:'#b56526', shape:'glass'},
+  canejuice:  {n:'Cane Juice',  v:14, c:'#b6d97e', c2:'#8aab57', shape:'glass'},
+  slush:      {n:'Ice Slush',   v:13, c:'#bfe8f5', c2:'#8fc0d1', shape:'glass'},
 };
 
 const RECIPES = {
@@ -326,7 +352,13 @@ const RECIPES = {
     fence: { oakwood:'woodfence', pinewood:'woodfence', baobabwood:'woodfence', stone:'stonefence', basalt:'basaltfence' },
   }
 };
-const SAW_MODES = ['slab','stair','fence'];
+const MACHINE_MODES = {
+  sawmill: ['slab','stair','fence','wall','pillar','rod'],
+  polisher:['polished','chiseled','carved','column'],
+  kiln:    ['bricks','tile','mosaic','arch'],
+  press:   ['plate','panel','gear','inlay'],
+};
+const SAW_MODES = MACHINE_MODES.sawmill;
 
 const TREES = {
   oak:    { grow:[5,8],   wood:'oakwood'    },
@@ -339,7 +371,125 @@ const FARM_PRODUCTS = {
   carrotfarm:{ item:'carrot',      rate:6.0 },
   treefarm:  { item:'oakwood',     rate:6.0 },
 };
-const PROC_TIME = { furnace:1.6, grinder:1.6, sawmill:1.8 };
+const PROC_TIME = { furnace:1.6, grinder:1.6, sawmill:1.8,
+  refiner:2.0, polisher:1.8, kiln:2.0, press:2.0, juicer:1.5, crystallizer:2.5, enchanter:3.0 };
+
+/* ============ EXPANSION: materials × forms = ~590 items ============ */
+function shade(hex, f){
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.round(((n>>16)&255)*f), gg = Math.round(((n>>8)&255)*f), b = Math.round((n&255)*f);
+  return '#' + ((1<<24)|(r<<16)|(gg<<8)|b).toString(16).slice(1);
+}
+// 25 buildable materials; 7 reuse existing item defs, 18 are new
+const NEW_MATS = {
+  granite:   {n:'Granite',    v:16,  c:'#a06b5c'},
+  diorite:   {n:'Diorite',    v:21,  c:'#d9d9d2'},
+  andesite:  {n:'Andesite',   v:27,  c:'#8f9590'},
+  marble:    {n:'Marble',     v:34,  c:'#eae7df'},
+  limestone: {n:'Limestone',  v:42,  c:'#d1c8a9'},
+  slate:     {n:'Slate',      v:52,  c:'#5b636f'},
+  quartz:    {n:'Quartz',     v:66,  c:'#f0eae2'},
+  prismarine:{n:'Prismarine', v:82,  c:'#5aa89a'},
+  obsidian:  {n:'Obsidian',   v:100, c:'#352b52'},
+  sandstone: {n:'Sandstone',  v:9,   c:'#dbc98e'},
+  terracotta:{n:'Terracotta', v:14,  c:'#b06a45'},
+  brick:     {n:'Brick',      v:12,  c:'#a5553f'},
+  ice:       {n:'Ice',        v:8,   c:'#aee0f2'},
+  clay:      {n:'Clay',       v:6,   c:'#9aa4b5'},
+  bamboo:    {n:'Bamboo',     v:5,   c:'#7fb069'},
+  iron:      {n:'Iron',       v:30,  c:'#cfd2d6'},
+  copper:    {n:'Copper',     v:22,  c:'#c87a4e'},
+  gold:      {n:'Gold',       v:45,  c:'#f0c04a'},
+};
+for (const [id, m] of Object.entries(NEW_MATS))
+  ITEMS[id] = { n:m.n, v:m.v, c:m.c, c2:shade(m.c, 0.68), shape:'block' };
+const MAT_IDS = ['cobblestone','stone','basalt','glass','oakwood','pinewood','baobabwood',
+  ...Object.keys(NEW_MATS)];
+const MAT_SET = new Set(MAT_IDS);
+// 21 forms per material (18 machine shapes + dust + crystal + gilded)
+const FORM_DEFS = {
+  slab:    {n:'Slab',    m:1.4, sh:'slab'},
+  stair:   {n:'Stairs',  m:1.6, sh:'stair'},
+  fence:   {n:'Fence',   m:1.8, sh:'fence'},
+  wall:    {n:'Wall',    m:1.7, sh:'block'},
+  pillar:  {n:'Pillar',  m:1.9, sh:'rod'},
+  rod:     {n:'Rod',     m:1.3, sh:'rod'},
+  polished:{n:'Polished',m:2.2, sh:'block', pre:1},
+  chiseled:{n:'Chiseled',m:2.6, sh:'block', pre:1},
+  carved:  {n:'Carved',  m:3.0, sh:'block', pre:1},
+  column:  {n:'Column',  m:2.4, sh:'rod'},
+  bricks:  {n:'Bricks',  m:2.0, sh:'brickshape'},
+  tile:    {n:'Tile',    m:2.3, sh:'slab'},
+  mosaic:  {n:'Mosaic',  m:2.8, sh:'block'},
+  arch:    {n:'Arch',    m:2.5, sh:'stair'},
+  plate:   {n:'Plate',   m:2.1, sh:'slab'},
+  panel:   {n:'Panel',   m:2.4, sh:'block'},
+  gear:    {n:'Gear',    m:2.7, sh:'gear'},
+  inlay:   {n:'Inlay',   m:3.2, sh:'block'},
+  dust:    {n:'Dust',    m:0.6, sh:'pile'},
+  crystal: {n:'Crystal', m:4.0, sh:'shard'},
+  gilded:  {n:'Gilded',  m:5.0, sh:'gilded', pre:1},
+};
+for (const mat of MAT_IDS){
+  const base = ITEMS[mat];
+  for (const [f, fd] of Object.entries(FORM_DEFS)){
+    const v = f === 'dust' ? Math.max(1, Math.round(base.v*fd.m))
+                           : Math.max(base.v+1, Math.round(base.v*fd.m));
+    ITEMS[mat+'_'+f] = {
+      n: fd.pre ? fd.n+' '+base.n : base.n+' '+fd.n,
+      v, c: base.c, c2: shade(base.c, 0.68), shape: fd.sh,
+    };
+  }
+}
+// shaping machines: every material, every mode
+for (const [mach, modes] of Object.entries(MACHINE_MODES)){
+  RECIPES[mach] = {};
+  for (const md of modes){
+    RECIPES[mach][md] = {};
+    for (const mat of MAT_IDS) RECIPES[mach][md][mat] = mat+'_'+md;
+  }
+}
+// grinder: legacy conversions stay; every other material grinds to its dust
+for (const mat of MAT_IDS) if (!RECIPES.grinder[mat]) RECIPES.grinder[mat] = mat+'_dust';
+Object.assign(RECIPES.grinder, { sugarcane:'sugar' });
+// furnace: ores, foods
+Object.assign(RECIPES.furnace, {
+  ironore:'iron', copperore:'copper', goldore:'gold', clay:'brick',
+  pumpkin:'pumpkinpie', mushroom:'mushroomstew', berries:'jam', bamboo:'charcoal',
+});
+// refiner: the rock ladder and kindred transformations
+RECIPES.refiner = {
+  basalt:'granite', granite:'diorite', diorite:'andesite', andesite:'marble',
+  marble:'limestone', limestone:'slate', slate:'quartz', quartz:'prismarine',
+  prismarine:'obsidian', sand:'sandstone', clay:'terracotta',
+};
+// juicer: fresh produce in, drinks out
+RECIPES.juicer = {
+  berries:'berryjuice', melon:'melonjuice', cactus:'cactusjuice',
+  carrot:'carrotjuice', sugarcane:'canejuice', ice:'slush',
+};
+// crystallizer: dust → crystal (legacy-grinder materials feed in directly)
+RECIPES.crystallizer = {};
+for (const mat of MAT_IDS){
+  RECIPES.crystallizer[mat+'_dust'] = mat+'_crystal';
+  if (RECIPES.grinder[mat] !== mat+'_dust') RECIPES.crystallizer[mat] = mat+'_crystal';
+}
+// enchanter (needs power): any material → gilded, worth 5×
+RECIPES.enchanter = {};
+for (const mat of MAT_IDS) RECIPES.enchanter[mat] = mat+'_gilded';
+// ten new farms
+Object.assign(FARM_PRODUCTS, {
+  claypit:     { item:'clay',      rate:4.0 },
+  icefarm:     { item:'ice',       rate:4.0 },
+  cactusfarm:  { item:'cactus',    rate:5.0 },
+  canefarm:    { item:'sugarcane', rate:4.0 },
+  berryfarm:   { item:'berries',   rate:5.0 },
+  pumpkinfarm: { item:'pumpkin',   rate:7.0 },
+  melonfarm:   { item:'melon',     rate:7.0 },
+  mushroomfarm:{ item:'mushroom',  rate:6.0 },
+  bamboofarm:  { item:'bamboo',    rate:3.0 },
+  oremine:     { cycle:['ironore','copperore','goldore'], rate:8.0, power:true },
+});
 
 const SHOP = [
   {t:'belt',      n:'Conveyor',        p:10,  cat:'Conveyors', d:'Carries items forward. Belts pointing into each other merge automatically. Drag to draw a path.'},
@@ -354,21 +504,41 @@ const SHOP = [
   {t:'pine',      n:'Pine Tree',       p:150, cat:'Nature',    d:'Grows in 10–12 s. Gives Pine Wood, worth more than oak.'},
   {t:'baobab',    n:'Baobab Tree',     p:250, cat:'Nature',    d:'Grows in 20–22 s. Gives chunky, valuable Baobab Wood.'},
   {t:'detector',  n:'Tree Detector',   p:40,  cat:'Nature',    d:'Lights up when a tree next to it is fully grown. Sends power through wires.'},
-  {t:'wire',      n:'Wire',            p:5,   cat:'Nature',    d:'Carries the detector signal along the ground to a Tree Cutter.'},
   {t:'treecutter',n:'Tree Cutter',     p:80,  cat:'Nature',    d:'When powered and next to a grown tree, chops it onto the belt it faces. The tree regrows.'},
   {t:'cobbfarm',  n:'Cobblestone Farm',p:100, cat:'Farms',     d:'Water meets lava, Minecraft style: makes a cobblestone every 3 s onto the belt it faces.'},
   {t:'wheatfarm', n:'Wheat Farm',      p:120, cat:'Farms',     d:'Grows a wheat every 5 s onto the belt it faces.'},
   {t:'carrotfarm',n:'Carrot Farm',     p:140, cat:'Farms',     d:'Grows a carrot every 6 s onto the belt it faces.'},
+  {t:'claypit',   n:'Clay Pit',        p:150, cat:'Farms',     d:'Squelchy mud pit: a clay every 4 s. Refine it into terracotta or fire it into brick.'},
+  {t:'icefarm',   n:'Ice Farm',        p:160, cat:'Farms',     d:'Frozen pond: an ice block every 4 s. Juice it into slush or shape it cold.'},
+  {t:'cactusfarm',n:'Cactus Farm',     p:170, cat:'Farms',     d:'Desert bed: a cactus every 5 s. Juices well.'},
+  {t:'canefarm',  n:'Sugarcane Farm',  p:180, cat:'Farms',     d:'Riverside canes every 4 s. Grind into sugar or juice it.'},
+  {t:'berryfarm', n:'Berry Farm',      p:190, cat:'Farms',     d:'Berry bushes every 5 s. Juice them or cook them into jam.'},
+  {t:'pumpkinfarm',n:'Pumpkin Patch',  p:200, cat:'Farms',     d:'A pumpkin every 7 s. Bakes into a valuable pie.'},
+  {t:'melonfarm', n:'Melon Patch',     p:200, cat:'Farms',     d:'A melon every 7 s. Juicy.'},
+  {t:'mushroomfarm',n:'Mushroom Cave', p:210, cat:'Farms',     d:'A shady grotto: a mushroom every 6 s. Cooks into stew.'},
+  {t:'bamboofarm',n:'Bamboo Grove',    p:220, cat:'Farms',     d:'Fast bamboo every 3 s — a cheap material you can shape 18 ways.'},
   {t:'treefarm',  n:'Tree Farm',       p:300, cat:'Farms',     d:'Grass block + oak + detector + cutter + wires in one tile. Oak wood every 6 s.'},
-  {t:'furnace',   n:'Furnace',         p:200, cat:'Machines',  d:'Smelts what rides in and sends it out the front: cobble→stone, stone→basalt, sand→glass, wood→charcoal…'},
-  {t:'grinder',   n:'Item Grinder',    p:200, cat:'Machines',  d:'Grinds items down: cobble→sand, wood→tanbark, stone→dirt, basalt→gravel→flint…'},
-  {t:'sawmill',   n:'Item Cutter',     p:250, cat:'Machines',  d:'Cuts wood, stone or basalt into slabs, stairs or fences. Click it with the hand to switch mode.'},
+  {t:'oremine',   n:'Ore Mine',        p:400, cat:'Farms',     d:'NEEDS POWER (lever, clock or detector signal beside it, or wired in). Digs iron, copper and gold ore in turn, every 8 s.'},
+  {t:'furnace',   n:'Furnace',         p:200, cat:'Machines',  d:'Smelts what rides in and sends it out the front: cobble→stone, ores→metal, sand→glass, wood→charcoal, pumpkin→pie…'},
+  {t:'grinder',   n:'Item Grinder',    p:200, cat:'Machines',  d:'Grinds items down: cobble→sand, wood→tanbark, cane→sugar — and any building material into its dust for the Crystallizer.'},
+  {t:'sawmill',   n:'Item Cutter',     p:250, cat:'Machines',  d:'Cuts any of the 25 materials into slabs, stairs, fences, walls, pillars or rods. Click it with the hand to switch mode.'},
+  {t:'juicer',    n:'Juicer',          p:250, cat:'Machines',  d:'Squeezes berries, melon, cactus, carrot, cane or ice into pricey drinks.'},
+  {t:'polisher',  n:'Polisher',        p:300, cat:'Machines',  d:'Buffs any material into Polished, Chiseled, Carved or Column form. Click to switch mode.'},
+  {t:'kiln',      n:'Brick Kiln',      p:300, cat:'Machines',  d:'Fires any material into Bricks, Tile, Mosaic or Arch form. Click to switch mode.'},
+  {t:'press',     n:'Press',           p:350, cat:'Machines',  d:'Stamps any material into Plate, Panel, Gear or Inlay form. Click to switch mode.'},
+  {t:'refiner',   n:'Refiner',         p:350, cat:'Machines',  d:'Climbs the rock ladder: basalt→granite→diorite→andesite→marble→limestone→slate→quartz→prismarine→obsidian. Also sand→sandstone, clay→terracotta.'},
+  {t:'crystallizer',n:'Crystallizer',  p:400, cat:'Machines',  d:'Grows dust into glittering crystals worth 4× the base material.'},
+  {t:'enchanter', n:'Enchanter',       p:600, cat:'Machines',  d:'NEEDS POWER. Gilds any raw material to 5× its value. Feed it obsidian for $500 a piece.'},
+  {t:'wire',      n:'Wire',            p:5,   cat:'Logic',     d:'Carries power along the ground from detectors, levers, clocks and gates to machines.'},
+  {t:'lever',     n:'Lever',           p:30,  cat:'Logic',     d:'Click it with the hand to switch power on or off. Powers wires and machines beside it.'},
+  {t:'xnor',      n:'XNOR Gate',       p:80,  cat:'Logic',     d:'Reads its two SIDE tiles: powers the wire in FRONT when both sides match (both on, or both off). R rotates it.'},
+  {t:'clock',     n:'Clock',           p:120, cat:'Logic',     d:'Its hand turns once every 10 s; each full turn fires a 1 s pulse of power into the wires beside it.'},
 ];
 const SHOP_BY_TYPE = {}; SHOP.forEach(s => SHOP_BY_TYPE[s.t] = s);
-const CATS = ['Conveyors','Nature','Farms','Machines'];
+const CATS = ['Conveyors','Nature','Farms','Machines','Logic'];
 
 const TRANSPORT = new Set(['belt','turnL','turnR','splitter','merger','lift','drop']);
-const PROCESSOR = new Set(['furnace','grinder','sawmill']);
+const PROCESSOR = new Set(['furnace','grinder','sawmill','refiner','polisher','kiln','press','juicer','crystallizer','enchanter']);
 const FARMS = new Set(Object.keys(FARM_PRODUCTS));
 const BELT_SPEED = 1.7, LIFT_SPEED = 1.1;
 const MAX_LAYER = 7; // layers 1..8
@@ -385,7 +555,8 @@ let rot = 0;
 let floaters = [];          // {x,y,z,txt,age,color}
 let simTime = 0;
 let powered = new Set();    // wire keys powered this tick
-let activeDet = new Set();  // detector keys active this tick
+let activeDet = new Set();  // detector keys active this tick (for the LED)
+let srcOn = new Set();      // all live power sources: detectors, levers on, clocks pulsing
 
 function rnd(a,b){ return a + Math.random()*(b-a); }
 function itemVal(t){ return ITEMS[t] ? ITEMS[t].v : 1; }
@@ -396,9 +567,13 @@ function makeTile(type, x, y, z, dir){
   if (FARMS.has(type)) t.timer = FARM_PRODUCTS[type].rate;
   if (PROCESSOR.has(type)) { t.inItem = null; t.inT = 0; t.outItem = null; }
   if (type === 'treecutter') t.outItem = null;
-  if (type === 'sawmill') t.mode = 0;
+  if (MACHINE_MODES[type]) t.mode = 0;
   if (type === 'splitter') t.flip = 0;
   if (type === 'cash') t.pulse = 0;
+  if (type === 'lever') t.on = false;
+  if (type === 'clock') t.phase = 0;
+  if (type === 'xnor') t.out = false;
+  if (type === 'oremine') t.oreIdx = 0;
   return t;
 }
 
@@ -424,6 +599,9 @@ function save(){
       if (t.timer !== undefined) o.tm = +t.timer.toFixed(2);
       if (t.mode !== undefined) o.m = t.mode;
       if (t.flip) o.f = 1;
+      if (t.on) o.lv = 1;
+      if (t.phase !== undefined) o.ph = +t.phase.toFixed(2);
+      if (t.oreIdx) o.ox = t.oreIdx;
       if (t.inItem) { o.ii = t.inItem; o.it = +t.inT.toFixed(2); }
       if (t.outItem) o.oi = t.outItem;
       if (t.items && t.items.length) o.cs = t.items.map(it => [it.type, +it.prog.toFixed(3)]);
@@ -444,6 +622,9 @@ function load(){
       if (o.tm !== undefined) t.timer = o.tm;
       if (o.m !== undefined) t.mode = o.m;
       if (o.f) t.flip = 1;
+      if (o.lv) t.on = true;
+      if (o.ph !== undefined) t.phase = o.ph;
+      if (o.ox) t.oreIdx = o.ox;
       if (o.ii) { t.inItem = o.ii; t.inT = o.it; }
       if (o.oi) t.outItem = o.oi;
       if (o.c) o.cs = [o.c]; // older saves stored a single item per tile
@@ -499,33 +680,54 @@ function neighborsKeys(t){
   return DIRS.map(d => K(t.x+d.x, t.y+d.y, t.z));
 }
 function computePower(){
-  powered = new Set(); activeDet = new Set();
-  const queue = [];
+  powered = new Set(); activeDet = new Set(); srcOn = new Set();
+  const seeds = [];
   for (const t of tiles.values()){
-    if (t.type !== 'detector') continue;
-    let on = false;
-    for (const nk of neighborsKeys(t)){
-      const n = tiles.get(nk);
-      if (n && TREES[n.type] && n.stage >= 1) { on = true; break; }
-    }
-    if (on){ activeDet.add(K(t.x,t.y,t.z)); queue.push(t); }
+    const key = K(t.x,t.y,t.z);
+    if (t.type === 'detector'){
+      for (const nk of neighborsKeys(t)){
+        const n = tiles.get(nk);
+        if (n && TREES[n.type] && n.stage >= 1){ activeDet.add(key); srcOn.add(key); seeds.push(t); break; }
+      }
+    } else if (t.type === 'lever' && t.on){ srcOn.add(key); seeds.push(t); }
+    else if (t.type === 'clock' && t.phase < 1.0){ srcOn.add(key); seeds.push(t); }
   }
-  while (queue.length){
-    const t = queue.pop();
-    for (const nk of neighborsKeys(t)){
-      const n = tiles.get(nk);
-      if (n && n.type === 'wire' && !powered.has(nk)){ powered.add(nk); queue.push(n); }
+  const flood = list => {
+    while (list.length){
+      const t = list.pop();
+      for (const nk of neighborsKeys(t)){
+        const n = tiles.get(nk);
+        if (n && n.type === 'wire' && !powered.has(nk)){ powered.add(nk); list.push(n); }
+      }
     }
+  };
+  flood(seeds);
+  // XNOR gates: read the two side tiles, drive the wire in front; a few passes so chains settle
+  for (let pass = 0; pass < 3; pass++){
+    let changed = false;
+    for (const t of tiles.values()){
+      if (t.type !== 'xnor') continue;
+      const at = d => { const v = DIRS[d]; return K(t.x+v.x, t.y+v.y, t.z); };
+      const hot = k => powered.has(k) || srcOn.has(k);
+      const out = hot(at(rotL(t.dir))) === hot(at(rotR(t.dir)));
+      t.out = out;
+      if (out){
+        const fk = at(t.dir), f = tiles.get(fk);
+        if (f && f.type === 'wire' && !powered.has(fk)){ powered.add(fk); flood([f]); changed = true; }
+      }
+    }
+    if (!changed) break;
   }
 }
-function cutterPowered(t){
+function isPowered(t){
   for (const nk of neighborsKeys(t)){
-    if (activeDet.has(nk) || powered.has(nk)) return true;
+    if (srcOn.has(nk) || powered.has(nk)) return true;
   }
   return false;
 }
 function processorResult(t){
-  if (t.type === 'sawmill') return RECIPES.sawmill[SAW_MODES[t.mode]][t.inItem] || t.inItem;
+  const modes = MACHINE_MODES[t.type];
+  if (modes) return RECIPES[t.type][modes[t.mode % modes.length]][t.inItem] || t.inItem;
   return RECIPES[t.type][t.inItem] || t.inItem;
 }
 
@@ -538,17 +740,25 @@ function update(dt){
       if (t.stage < 1) t.stage = Math.min(1, t.stage + dt/t.growTime);
     }
     else if (FARMS.has(t.type)){
+      const fp = FARM_PRODUCTS[t.type];
+      if (fp.power && !isPowered(t)) continue; // waits for a signal
       t.timer -= dt;
       if (t.timer <= 0){
-        if (deliver(destKeyOf(t, t.dir), FARM_PRODUCTS[t.type].item))
-          t.timer = FARM_PRODUCTS[t.type].rate;
+        const prod = fp.cycle ? fp.cycle[(t.oreIdx||0) % fp.cycle.length] : fp.item;
+        if (deliver(destKeyOf(t, t.dir), prod)){
+          t.timer = fp.rate;
+          if (fp.cycle) t.oreIdx = ((t.oreIdx||0)+1) % fp.cycle.length;
+        }
         else t.timer = 0; // waiting for space
       }
+    }
+    else if (t.type === 'clock'){
+      t.phase = (t.phase + dt) % 10;
     }
     else if (t.type === 'treecutter'){
       if (t.outItem){
         if (deliver(destKeyOf(t, t.dir), t.outItem)) t.outItem = null;
-      } else if (cutterPowered(t)){
+      } else if (isPowered(t)){
         for (const nk of neighborsKeys(t)){
           const n = tiles.get(nk);
           if (n && TREES[n.type] && n.stage >= 1){
@@ -563,7 +773,7 @@ function update(dt){
     }
     else if (PROCESSOR.has(t.type)){
       if (t.inItem){
-        t.inT -= dt;
+        if (t.type !== 'enchanter' || isPowered(t)) t.inT -= dt; // the enchanter only runs powered
         if (t.inT <= 0){ t.outItem = processorResult(t); t.inItem = null; }
       }
       if (t.outItem){
@@ -701,6 +911,37 @@ function drawItem(c, type, s){
     case 'bread':
       c.beginPath(); c.ellipse(0, 0, h*0.95, h*0.6, 0, 0, 7); c.fill(); c.stroke();
       break;
+    case 'rod':
+      rr(c, -h*0.28, -h, s*0.28, s, s*0.1); c.fill(); c.stroke();
+      break;
+    case 'gear': {
+      c.save();
+      c.fillStyle = it.c;
+      for (let i=0;i<8;i++){ c.rotate(Math.PI/4); c.fillRect(h*0.45, -s*0.09, h*0.5, s*0.18); }
+      c.beginPath(); c.arc(0,0, h*0.62, 0, 7); c.fill(); c.stroke();
+      c.fillStyle = it.c2;
+      c.beginPath(); c.arc(0,0, h*0.24, 0, 7); c.fill();
+      c.restore();
+      break;
+    }
+    case 'brickshape':
+      rr(c, -h, -h, s, s, s*0.12); c.fill(); c.stroke();
+      c.strokeStyle = it.c2; c.lineWidth = Math.max(1, s*0.06);
+      c.beginPath();
+      c.moveTo(-h, 0); c.lineTo(h, 0);
+      c.moveTo(0, -h); c.lineTo(0, -h*0.02);
+      c.moveTo(0, h*0.02); c.lineTo(0, h);
+      c.stroke();
+      break;
+    case 'gilded':
+      rr(c, -h*0.85, -h*0.85, s*0.85, s*0.85, s*0.14); c.fill();
+      c.strokeStyle = '#c68f1f'; c.lineWidth = Math.max(1.5, s*0.14); c.stroke();
+      c.strokeStyle = '#ffe89a'; c.lineWidth = Math.max(1, s*0.08);
+      c.beginPath();
+      c.moveTo(h*0.5, -h*0.85); c.lineTo(h*0.5, -h*0.35);
+      c.moveTo(h*0.25, -h*0.6); c.lineTo(h*0.75, -h*0.6);
+      c.stroke();
+      break;
     default:
       rr(c, -h, -h, s, s, s*0.14); c.fill(); c.stroke();
   }
@@ -708,6 +949,61 @@ function drawItem(c, type, s){
 }
 
 /* --- machine renderers, tile-local coords 0..ts --- */
+function drawFarmPlant(c, type, ts){
+  const u = ts*0.16;
+  switch (type){
+    case 'claypit':
+      c.fillStyle = '#9aa4b5';
+      c.beginPath(); c.ellipse(0, 0, u*0.9, u*0.6, 0, 0, 7); c.fill();
+      break;
+    case 'icefarm':
+      c.fillStyle = '#dff2fa'; c.strokeStyle = '#8fc0d1'; c.lineWidth = ts*0.02;
+      c.beginPath(); c.moveTo(0,-u); c.lineTo(u*0.7,0); c.lineTo(0,u); c.lineTo(-u*0.7,0); c.closePath();
+      c.fill(); c.stroke();
+      break;
+    case 'cactusfarm':
+      c.fillStyle = '#4f9948';
+      rr(c, -u*0.3, -u, u*0.6, u*2, u*0.3); c.fill();
+      rr(c, -u*0.9, -u*0.5, u*0.6, u*0.3, u*0.15); c.fill();
+      break;
+    case 'canefarm':
+      c.strokeStyle = '#9fce6f'; c.lineWidth = ts*0.035; c.lineCap='round';
+      for (let i=-1;i<=1;i++){ c.beginPath(); c.moveTo(i*u*0.4, u); c.lineTo(i*u*0.4 + u*0.15, -u); c.stroke(); }
+      break;
+    case 'berryfarm':
+      c.fillStyle = '#57a03a';
+      c.beginPath(); c.arc(0, 0, u*0.8, 0, 7); c.fill();
+      c.fillStyle = '#c8385a';
+      for (const [bx,by] of [[-0.35,-0.2],[0.3,0.05],[-0.05,0.4],[0.15,-0.4]]){
+        c.beginPath(); c.arc(u*bx, u*by, u*0.18, 0, 7); c.fill();
+      }
+      break;
+    case 'pumpkinfarm':
+      c.fillStyle = '#e08a2c';
+      c.beginPath(); c.ellipse(0, u*0.2, u*0.85, u*0.65, 0, 0, 7); c.fill();
+      c.strokeStyle = '#57a03a'; c.lineWidth = ts*0.03;
+      c.beginPath(); c.moveTo(0, -u*0.4); c.lineTo(0, -u*0.8); c.stroke();
+      break;
+    case 'melonfarm':
+      c.fillStyle = '#57a03a';
+      c.beginPath(); c.ellipse(0, u*0.1, u*0.8, u*0.65, 0, 0, 7); c.fill();
+      c.strokeStyle = '#3c7527'; c.lineWidth = ts*0.025;
+      for (let i=-1;i<=1;i++){ c.beginPath(); c.moveTo(i*u*0.4, -u*0.5); c.lineTo(i*u*0.4, u*0.7); c.stroke(); }
+      break;
+    case 'mushroomfarm':
+      c.fillStyle = '#e5dccb'; rr(c, -u*0.16, -u*0.1, u*0.32, u*0.8, u*0.1); c.fill();
+      c.fillStyle = '#c05545';
+      c.beginPath(); c.arc(0, -u*0.2, u*0.65, Math.PI, 0); c.closePath(); c.fill();
+      break;
+    case 'bamboofarm':
+      c.strokeStyle = '#7fb069'; c.lineWidth = ts*0.045; c.lineCap='round';
+      for (let i=-1;i<=1;i++){
+        c.beginPath(); c.moveTo(i*u*0.5, u); c.lineTo(i*u*0.5, -u); c.stroke();
+        c.beginPath(); c.moveTo(i*u*0.5 - u*0.12, 0); c.lineTo(i*u*0.5 + u*0.12, 0); c.stroke();
+      }
+      break;
+  }
+}
 function chevron(c, x, cy, w){
   c.beginPath();
   c.moveTo(x, cy - w); c.lineTo(x + w, cy); c.lineTo(x, cy + w);
@@ -993,16 +1289,208 @@ function drawTileGraphic(c, t, ts, time, forIcon){
       }
       c.beginPath(); c.arc(0,0, ts*0.1, 0, 7); c.fillStyle='#8b959e'; c.fill();
       c.restore();
-      if (!forIcon){
-        c.fillStyle = '#1f1608';
-        rr(c, ts*0.16, ts*0.7, ts*0.68, ts*0.2, ts*0.05); c.fill();
-        c.fillStyle = '#ffd77a';
-        c.font = '800 '+Math.round(ts*0.15)+'px ui-monospace, monospace';
-        c.textAlign = 'center'; c.textBaseline = 'middle';
-        c.fillText(SAW_MODES[t.mode].toUpperCase(), cx, ts*0.81);
-      }
       drawProcBar(c, t, ts, 'sawmill');
       drawOutArrow(c, t, ts); break;
+    }
+    case 'claypit': case 'icefarm': case 'cactusfarm': case 'canefarm': case 'berryfarm':
+    case 'pumpkinfarm': case 'melonfarm': case 'mushroomfarm': case 'bamboofarm': {
+      const looks = {
+        claypit:['#7b8494','#5a6270'], icefarm:['#cfeef8','#9fc9d8'], cactusfarm:['#d8c078','#b09a55'],
+        canefarm:['#5d7a3a','#425a26'], berryfarm:['#4f6b35','#374d22'], pumpkinfarm:['#6a5330','#4a3a1f'],
+        melonfarm:['#5c7a3f','#41582a'], mushroomfarm:['#4a4038','#332b24'], bamboofarm:['#6d8a4a','#4d6332'],
+      };
+      const look = looks[t.type];
+      rr(c, ts*0.05, ts*0.05, ts*0.9, ts*0.9, ts*0.1);
+      c.fillStyle = look[0]; c.fill();
+      c.strokeStyle = look[1]; c.lineWidth = ts*0.05; c.stroke();
+      const p = forIcon ? 1 : 1 - Math.max(0, t.timer)/FARM_PRODUCTS[t.type].rate;
+      const sc2 = 0.45 + 0.55*p;
+      for (const pos of [[0.3,0.36],[0.7,0.36],[0.3,0.72],[0.7,0.72]]){
+        c.save(); c.translate(ts*pos[0], ts*pos[1]); c.scale(sc2, sc2);
+        drawFarmPlant(c, t.type, ts);
+        c.restore();
+      }
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'oremine': {
+      rr(c, ts*0.05, ts*0.05, ts*0.9, ts*0.9, ts*0.1);
+      c.fillStyle = '#6b6560'; c.fill();
+      c.strokeStyle = '#403c38'; c.lineWidth = ts*0.05; c.stroke();
+      c.beginPath(); c.arc(cx, ts*0.66, ts*0.24, Math.PI, 0); c.closePath();
+      c.fillStyle = '#241f1c'; c.fill();
+      const oreCols = ['#cfd2d6','#c87a4e','#f0c04a'];
+      c.fillStyle = oreCols[(t.oreIdx||0) % 3];
+      for (const f of [[0.2,0.22],[0.5,0.14],[0.76,0.26],[0.26,0.46],[0.7,0.46]])
+        c.fillRect(ts*f[0], ts*f[1], ts*0.07, ts*0.07);
+      if (!forIcon){
+        const p = 1 - Math.max(0, t.timer)/FARM_PRODUCTS.oremine.rate;
+        c.fillStyle = 'rgba(24,33,25,.65)'; rr(c, ts*0.14, ts*0.8, ts*0.72, ts*0.09, ts*0.04); c.fill();
+        c.fillStyle = '#ffd54a'; rr(c, ts*0.14, ts*0.8, ts*0.72*p, ts*0.09, ts*0.04); c.fill();
+      }
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'refiner': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#4c4550'; c.fill();
+      c.strokeStyle = '#2c2830'; c.lineWidth = ts*0.05; c.stroke();
+      const gl = 0.5 + 0.5*Math.sin(time*4);
+      c.strokeStyle = 'rgba(255,140,46,'+(0.55+0.4*gl).toFixed(2)+')';
+      c.lineWidth = ts*0.09; c.lineCap='round';
+      c.beginPath(); c.moveTo(ts*0.2, ts*0.6); c.quadraticCurveTo(cx, ts*0.35, ts*0.8, ts*0.6); c.stroke();
+      c.fillStyle = '#8a8a8a'; rr(c, ts*0.3, ts*0.64, ts*0.4, ts*0.15, ts*0.04); c.fill();
+      c.fillStyle = '#5aa89a'; rr(c, ts*0.34, ts*0.52, ts*0.32, ts*0.13, ts*0.04); c.fill();
+      drawProcBar(c, t, ts, 'refiner');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'polisher': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#5a6b76'; c.fill();
+      c.strokeStyle = '#37444d'; c.lineWidth = ts*0.05; c.stroke();
+      const spin = t.inItem || forIcon ? time*8 : time*1.2;
+      c.save(); c.translate(cx, cy - ts*0.04); c.rotate(spin);
+      c.fillStyle = '#e8e2d5';
+      c.beginPath(); c.arc(0, 0, ts*0.24, 0, 7); c.fill();
+      c.strokeStyle = '#b8b0a0'; c.lineWidth = ts*0.03;
+      for (let i=0;i<4;i++){ c.rotate(Math.PI/2); c.beginPath(); c.moveTo(0,0); c.lineTo(ts*0.22,0); c.stroke(); }
+      c.restore();
+      c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = ts*0.035; c.lineCap='round';
+      c.beginPath(); c.moveTo(cx + ts*0.12, cy - ts*0.22); c.lineTo(cx + ts*0.22, cy - ts*0.32); c.stroke();
+      drawProcBar(c, t, ts, 'polisher');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'kiln': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#a5553f'; c.fill();
+      c.strokeStyle = '#6e3527'; c.lineWidth = ts*0.05; c.stroke();
+      c.strokeStyle = '#7d4030'; c.lineWidth = ts*0.03;
+      for (let i=1;i<4;i++){ c.beginPath(); c.moveTo(ts*0.08, ts*(0.08+i*0.21)); c.lineTo(ts*0.92, ts*(0.08+i*0.21)); c.stroke(); }
+      c.beginPath(); c.arc(cx, ts*0.78, ts*0.2, Math.PI, 0); c.closePath();
+      c.fillStyle = '#241f1c'; c.fill();
+      if (forIcon || t.inItem){
+        const fl = Math.sin(time*9)*ts*0.02;
+        c.fillStyle = '#ff8c2e';
+        c.beginPath(); c.moveTo(cx - ts*0.12, ts*0.78);
+        c.quadraticCurveTo(cx, ts*0.5 - fl, cx + ts*0.12, ts*0.78); c.closePath(); c.fill();
+      }
+      drawProcBar(c, t, ts, 'kiln');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'press': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#606a5a'; c.fill();
+      c.strokeStyle = '#3b4438'; c.lineWidth = ts*0.05; c.stroke();
+      const sq = (t.inItem || forIcon) ? Math.abs(Math.sin(time*6)) : 0.15;
+      c.fillStyle = '#3b4438';
+      rr(c, ts*0.24, ts*0.16, ts*0.52, ts*0.14 + sq*ts*0.16, ts*0.04); c.fill();
+      rr(c, ts*0.24, ts*0.7, ts*0.52, ts*0.14, ts*0.04); c.fill();
+      c.fillStyle = '#cfd2d6';
+      rr(c, ts*0.34, ts*0.5 + sq*ts*0.06, ts*0.32, ts*0.14, ts*0.03); c.fill();
+      drawProcBar(c, t, ts, 'press');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'juicer': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#7a5a72'; c.fill();
+      c.strokeStyle = '#4d3648'; c.lineWidth = ts*0.05; c.stroke();
+      c.fillStyle = 'rgba(194,230,236,.85)';
+      c.beginPath(); c.moveTo(ts*0.34, ts*0.3); c.lineTo(ts*0.4, ts*0.78);
+      c.lineTo(ts*0.6, ts*0.78); c.lineTo(ts*0.66, ts*0.3); c.closePath(); c.fill();
+      const lvl = t.inItem || forIcon ? 0.45 + 0.1*Math.sin(time*7) : 0.35;
+      c.fillStyle = '#d84a6e';
+      c.beginPath(); c.moveTo(ts*0.38, ts*(0.78-lvl*0.42)); c.lineTo(ts*0.41, ts*0.77);
+      c.lineTo(ts*0.59, ts*0.77); c.lineTo(ts*0.62, ts*(0.78-lvl*0.42)); c.closePath(); c.fill();
+      c.strokeStyle = '#f2c14e'; c.lineWidth = ts*0.05; c.lineCap='round';
+      c.beginPath(); c.moveTo(ts*0.58, ts*0.34); c.lineTo(ts*0.68, ts*0.16); c.stroke();
+      drawProcBar(c, t, ts, 'juicer');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'crystallizer': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#2e4a52'; c.fill();
+      c.strokeStyle = '#1b2e34'; c.lineWidth = ts*0.05; c.stroke();
+      const gl = 0.5 + 0.5*Math.sin(time*3);
+      c.fillStyle = 'rgba(122,222,205,'+(0.6+0.35*gl).toFixed(2)+')';
+      for (const s3 of [[0.32,0.74,0.3],[0.5,0.78,0.46],[0.68,0.74,0.26]]){
+        c.beginPath();
+        c.moveTo(ts*s3[0], ts*s3[1]);
+        c.lineTo(ts*(s3[0]+s3[2]*0.14), ts*(s3[1]-s3[2]));
+        c.lineTo(ts*(s3[0]+s3[2]*0.3), ts*s3[1]);
+        c.closePath(); c.fill();
+      }
+      drawProcBar(c, t, ts, 'crystallizer');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'enchanter': {
+      rr(c, ts*0.08, ts*0.08, ts*0.84, ts*0.84, ts*0.1);
+      c.fillStyle = '#3d2c55'; c.fill();
+      c.strokeStyle = '#241833'; c.lineWidth = ts*0.05; c.stroke();
+      const bob = Math.sin(time*2.5)*ts*0.04;
+      c.save(); c.translate(cx, cy + bob);
+      c.fillStyle = '#7a4db0';
+      rr(c, -ts*0.2, -ts*0.14, ts*0.4, ts*0.28, ts*0.04); c.fill();
+      c.strokeStyle = '#c9a0ff'; c.lineWidth = ts*0.03;
+      c.beginPath(); c.moveTo(0, -ts*0.14); c.lineTo(0, ts*0.14); c.stroke();
+      c.restore();
+      c.fillStyle = 'rgba(201,160,255,'+(0.4+0.5*Math.abs(Math.sin(time*4))).toFixed(2)+')';
+      for (const gp of [[0.26,0.3],[0.74,0.26],[0.68,0.66]]) c.fillRect(ts*gp[0], ts*gp[1], ts*0.05, ts*0.05);
+      drawProcBar(c, t, ts, 'enchanter');
+      drawOutArrow(c, t, ts); break;
+    }
+    case 'lever': {
+      rr(c, ts*0.2, ts*0.36, ts*0.6, ts*0.38, ts*0.08);
+      c.fillStyle = '#57524a'; c.fill();
+      c.strokeStyle = '#2e2b26'; c.lineWidth = ts*0.04; c.stroke();
+      const on = forIcon ? true : t.on;
+      if (on && !forIcon){
+        c.globalAlpha = .22; c.fillStyle = '#ffd54a';
+        c.beginPath(); c.arc(cx, cy, ts*0.42, 0, 7); c.fill(); c.globalAlpha = 1;
+      }
+      c.save(); c.translate(cx, ts*0.55); c.rotate(on ? 0.6 : -0.6);
+      c.strokeStyle = '#8a6a44'; c.lineWidth = ts*0.09; c.lineCap='round';
+      c.beginPath(); c.moveTo(0,0); c.lineTo(0, -ts*0.3); c.stroke();
+      c.fillStyle = on ? '#ffd54a' : '#b3443c';
+      c.beginPath(); c.arc(0, -ts*0.32, ts*0.09, 0, 7); c.fill();
+      c.restore();
+      break;
+    }
+    case 'clock': {
+      c.beginPath(); c.arc(cx, cy, ts*0.4, 0, 7);
+      c.fillStyle = '#e8e2d5'; c.fill();
+      c.strokeStyle = '#57524a'; c.lineWidth = ts*0.06; c.stroke();
+      c.strokeStyle = '#9a927f'; c.lineWidth = ts*0.03;
+      for (let i=0;i<12;i++){
+        const a2 = i*Math.PI/6;
+        c.beginPath();
+        c.moveTo(cx + Math.cos(a2)*ts*0.31, cy + Math.sin(a2)*ts*0.31);
+        c.lineTo(cx + Math.cos(a2)*ts*0.36, cy + Math.sin(a2)*ts*0.36);
+        c.stroke();
+      }
+      const a3 = (forIcon ? 0.25 : (t.phase||0)/10) * Math.PI*2 - Math.PI/2;
+      c.strokeStyle = '#b3443c'; c.lineWidth = ts*0.05; c.lineCap='round';
+      c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(a3)*ts*0.28, cy + Math.sin(a3)*ts*0.28); c.stroke();
+      c.fillStyle = '#57524a'; c.beginPath(); c.arc(cx, cy, ts*0.05, 0, 7); c.fill();
+      if (!forIcon && (t.phase||0) < 1.0){
+        c.globalAlpha = .45; c.strokeStyle = '#ffd54a'; c.lineWidth = ts*0.07;
+        c.beginPath(); c.arc(cx, cy, ts*0.46, 0, 7); c.stroke(); c.globalAlpha = 1;
+      }
+      break;
+    }
+    case 'xnor': {
+      rotSave();
+      rr(c, ts*0.12, ts*0.18, ts*0.76, ts*0.64, ts*0.1);
+      c.fillStyle = '#3a4437'; c.fill();
+      c.strokeStyle = '#222a20'; c.lineWidth = ts*0.05; c.stroke();
+      c.fillStyle = '#a4643c';
+      c.fillRect(cx - ts*0.06, ts*0.06, ts*0.12, ts*0.13);
+      c.fillRect(cx - ts*0.06, ts*0.81, ts*0.12, ts*0.13);
+      const on = forIcon ? true : t.out;
+      c.fillStyle = on ? '#ffd54a' : '#5a5148';
+      c.fillRect(ts*0.81, cy - ts*0.06, ts*0.13, ts*0.12);
+      c.fillStyle = '#cfe0b8';
+      c.font = '800 '+Math.round(ts*0.16)+'px ui-monospace, monospace';
+      c.textAlign='center'; c.textBaseline='middle';
+      c.fillText('XNOR', cx, cy);
+      c.restore(); break;
     }
     case 'cash': {
       const pu = forIcon ? 0 : t.pulse;
@@ -1019,6 +1507,25 @@ function drawTileGraphic(c, t, ts, time, forIcon){
       c.restore();
       break;
     }
+  }
+  // mode label for the shaping machines (cutter, polisher, kiln, press)
+  const mm = MACHINE_MODES[t.type];
+  if (mm && !forIcon){
+    c.fillStyle = 'rgba(20,14,6,.75)';
+    rr(c, ts*0.14, ts*0.72, ts*0.72, ts*0.2, ts*0.05); c.fill();
+    c.fillStyle = '#ffd77a';
+    c.font = '800 '+Math.round(ts*0.14)+'px ui-monospace, monospace';
+    c.textAlign='center'; c.textBaseline='middle';
+    c.fillText(FORM_DEFS[mm[t.mode % mm.length]].n.toUpperCase(), cx, ts*0.82);
+  }
+  // "needs power" badge
+  if (!forIcon && (t.type === 'oremine' || t.type === 'enchanter') && !isPowered(t)){
+    c.fillStyle = 'rgba(24,33,25,.8)';
+    c.beginPath(); c.arc(ts*0.8, ts*0.2, ts*0.16, 0, 7); c.fill();
+    c.fillStyle = '#ffd54a';
+    c.font = '900 '+Math.round(ts*0.22)+'px ui-rounded, system-ui, sans-serif';
+    c.textAlign='center'; c.textBaseline='middle';
+    c.fillText('⚡', ts*0.8, ts*0.21);
   }
 }
 function drawOutArrow(c, t, ts){
@@ -1299,20 +1806,19 @@ function recipeTable(map){
 $('recFurnace').innerHTML = recipeTable(RECIPES.furnace);
 $('recGrinder').innerHTML = recipeTable(RECIPES.grinder);
 {
-  let h = '<table><tr><th>In</th><th>Slab</th><th>Stairs</th><th>Fence</th></tr>';
-  for (const inp of ['oakwood','stone','basalt']){
-    h += '<tr><td>'+ITEMS[inp].n+'</td>';
-    for (const m of SAW_MODES){
-      const o = RECIPES.sawmill[m][inp];
-      h += '<td>'+ITEMS[o].n+' ($'+ITEMS[o].v+')</td>';
-    }
-    h += '</tr>';
+  const machNames = { sawmill:'Item Cutter', polisher:'Polisher', kiln:'Brick Kiln', press:'Press' };
+  let h = '<p>Any of the <b>'+MAT_IDS.length+' building materials</b> can be shaped. Each machine has modes — click it with the hand to cycle. Values scale with the material (× shown):</p>';
+  h += '<table><tr><th>Machine</th><th>Modes (value multiplier)</th></tr>';
+  for (const [mach, modes] of Object.entries(MACHINE_MODES)){
+    h += '<tr><td>'+machNames[mach]+'</td><td>'+modes.map(m => FORM_DEFS[m].n+' ×'+FORM_DEFS[m].m).join(' · ')+'</td></tr>';
   }
-  h += '</table><p style="margin-top:6px">Pine and baobab wood cut into the same wood pieces.</p>';
+  h += '<tr><td>Grinder → Crystallizer</td><td>Dust ×0.6 → Crystal ×4.0</td></tr>';
+  h += '<tr><td>Enchanter ⚡</td><td>Gilded ×5.0</td></tr>';
+  h += '</table><p style="margin-top:6px">That is '+Object.keys(ITEMS).length+' items in total — open the &#127795; Recipe Tree to browse every chain.</p>';
   $('recCutter').innerHTML = h;
 }
 {
-  const sorted = Object.entries(ITEMS).sort((a,b)=>a[1].v-b[1].v);
+  const sorted = Object.entries(ITEMS).filter(e => !e[0].includes('_')).sort((a,b)=>a[1].v-b[1].v);
   let h = '<table><tr>';
   sorted.forEach(([k,it],i) => {
     h += '<td>'+it.n+' <b style="color:#f2c14e">$'+it.v+'</b></td>';
@@ -1381,13 +1887,15 @@ $('sellAll').onclick = () => {
 
 /* ---- recipe tree ---- */
 const treeWrap = $('treeWrap');
+const FLAT_MACHINES = [
+  ['furnace','Furnace'], ['grinder','Grinder'], ['refiner','Refiner'],
+  ['juicer','Juicer'], ['crystallizer','Crystallizer'], ['enchanter','Enchanter ⚡'],
+];
 function edgesFrom(item){
   const out = [];
-  if (RECIPES.furnace[item]) out.push({ from:item, to:RECIPES.furnace[item], via:'furnace', lbl:'Furnace' });
-  if (RECIPES.grinder[item]) out.push({ from:item, to:RECIPES.grinder[item], via:'grinder', lbl:'Grinder' });
-  for (const m of SAW_MODES){
-    const to = RECIPES.sawmill[m][item];
-    if (to) out.push({ from:item, to, via:'sawmill', lbl:'Cutter·' + m });
+  for (const [m, lbl] of FLAT_MACHINES){
+    const to = RECIPES[m][item];
+    if (to) out.push({ from:item, to, via:m, lbl });
   }
   return out;
 }
@@ -1437,11 +1945,30 @@ function buildBranch(k, container, ancestors){
     }
     container.appendChild(wrap);
   }
+  // the four shaping machines: one compact line each instead of 18 child rows
+  if (MAT_SET.has(k)){
+    for (const [mach, lbl] of [['sawmill','Cutter'],['polisher','Polisher'],['kiln','Kiln'],['press','Press']]){
+      const row = document.createElement('div'); row.className = 'rnode';
+      row.appendChild(machineIconCanvas(mach));
+      const el = document.createElement('span'); el.className = 'redgeLbl';
+      el.textContent = lbl + ' →';
+      row.appendChild(el);
+      const txt = document.createElement('span'); txt.className = 'rforms';
+      txt.textContent = MACHINE_MODES[mach]
+        .map(md => FORM_DEFS[md].n + ' $' + ITEMS[RECIPES[mach][md][k]].v)
+        .join(' · ');
+      row.appendChild(txt);
+      container.appendChild(row);
+    }
+  }
 }
 let treeBuilt = false;
 function buildTreeModal(){
   const list = $('treeList'); list.innerHTML = '';
-  for (const r of ['cobblestone','oakwood','pinewood','baobabwood','wheat','carrot']){
+  const roots = ['cobblestone','oakwood','pinewood','baobabwood','wheat','carrot',
+    'clay','ice','cactus','sugarcane','berries','pumpkin','melon','mushroom','bamboo',
+    'ironore','copperore','goldore'];
+  for (const r of roots){
     const sec = document.createElement('div'); sec.className = 'rroot';
     sec.appendChild(recipeNode(r));
     const kids = document.createElement('div'); kids.className = 'rkids';
@@ -1497,9 +2024,13 @@ function erase(tx, ty){
 function handClick(tx, ty){
   const t = tiles.get(K(tx, ty, curZ));
   if (!t) return;
-  if (t.type === 'sawmill'){
-    t.mode = (t.mode+1) % SAW_MODES.length;
-    setInfo('Item Cutter now makes <b>'+SAW_MODES[t.mode].toUpperCase()+'S</b>.');
+  const modes = MACHINE_MODES[t.type];
+  if (modes){
+    t.mode = (t.mode+1) % modes.length;
+    setInfo('<b>'+SHOP_BY_TYPE[t.type].n+'</b> now makes <b>'+FORM_DEFS[modes[t.mode]].n.toUpperCase()+'</b> pieces.');
+  } else if (t.type === 'lever'){
+    t.on = !t.on;
+    setInfo('Lever switched <b>'+(t.on ? 'ON' : 'OFF')+'</b>.');
   } else if (TREES[t.type] && t.stage >= 1){
     const wood = TREES[t.type].wood, v = itemVal(wood);
     money += v; t.stage = 0; t.growTime = rnd(...TREES[t.type].grow);
