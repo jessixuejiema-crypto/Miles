@@ -96,8 +96,8 @@
   }
   .offset input[type="range"]:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
   .delay-val {
-    font-family: var(--mono); font-size: 15px; min-width: 8ch; text-align: right;
-    font-variant-numeric: tabular-nums; color: var(--cyan);
+    font-family: var(--mono); font-size: 15px; min-width: 15ch; text-align: right;
+    font-variant-numeric: tabular-nums; color: var(--cyan); white-space: nowrap;
   }
   .delay-val.zeroed { color: var(--green); }
   .offset .hint { width: 100%; font-family: var(--mono); font-size: 12px; color: var(--muted); }
@@ -161,10 +161,10 @@
 
   <div class="offset">
     <span class="meter-label">inverted delay</span>
-    <input type="range" id="delaySlider" min="0" max="50" step="0.1" value="0"
+    <input type="range" id="delaySlider" min="0" max="2" step="0.01" value="0"
            aria-label="Delay applied to the inverted copy, in milliseconds">
-    <span class="delay-val zeroed" id="delayVal">0.0 ms</span>
-    <span class="hint">At 0 ms the waves cancel exactly. Nudge it and “both” stops being silent — the mirror arrives late, so the sum is no longer zero.</span>
+    <span class="delay-val zeroed" id="delayVal">0.00 ms</span>
+    <span class="hint" id="delayHint">At 0 ms the waves cancel exactly. Even a tenth of a millisecond — a handful of samples — misaligns the mirror, and the highest frequencies leak through first.</span>
   </div>
 
   <div class="meter">
@@ -371,7 +371,7 @@
           if (mode === "both") {
             setStatus(delayMs === 0
               ? "Done. Peak output during playback: total silence."
-              : "Done. With a " + delayMs.toFixed(1) + " ms offset the cancellation was only partial.",
+              : "Done. With a " + delayMs.toFixed(2) + " ms offset the cancellation was only partial.",
               delayMs === 0 ? "zero" : "");
           }
         }
@@ -383,7 +383,7 @@
     if (mode === "both") {
       setStatus(delayMs === 0
         ? "Playing original + inverted together. The sum of every sample is zero."
-        : "Playing both, but the inverted copy is " + delayMs.toFixed(1) + " ms late — the mirror no longer lines up, so sound leaks through.",
+        : "Playing both, but the inverted copy is " + delayMs.toFixed(2) + " ms late — the mirror no longer lines up, so sound leaks through.",
         delayMs === 0 ? "zero" : "");
     } else {
       setStatus("Playing the " + mode + " recording — they sound identical on their own.");
@@ -470,8 +470,11 @@
   demoBtn.addEventListener("click", loadDemo);
   delaySlider.addEventListener("input", () => {
     const ms = parseFloat(delaySlider.value);
-    delayVal.textContent = ms.toFixed(1) + " ms";
     delayVal.classList.toggle("zeroed", ms === 0);
+    if (ms === 0) { delayVal.textContent = "0.00 ms"; return; }
+    const sr = ctx ? ctx.sampleRate : 48000;
+    const samples = ms / 1000 * sr;
+    delayVal.textContent = ms.toFixed(2) + " ms (≈" + Math.round(samples) + " smp)";
   });
   window.addEventListener("resize", () => { origBuf ? drawBuffers() : clearScope(); });
 
