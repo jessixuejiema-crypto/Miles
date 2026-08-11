@@ -474,9 +474,19 @@ for (const mat of MAT_IDS){
   RECIPES.crystallizer[mat+'_dust'] = mat+'_crystal';
   if (RECIPES.grinder[mat] !== mat+'_dust') RECIPES.crystallizer[mat] = mat+'_crystal';
 }
-// enchanter (needs power): any material → gilded, worth 5×
+// enchanter (needs power): gilds ANY item to 5× its value.
+// Materials already have their gilded form; every other item gets one generated,
+// so nothing ever passes through the enchanter unchanged.
 RECIPES.enchanter = {};
-for (const mat of MAT_IDS) RECIPES.enchanter[mat] = mat+'_gilded';
+for (const id of Object.keys(ITEMS)){
+  if (id.endsWith('_gilded')) continue;
+  const gid = id+'_gilded';
+  if (!ITEMS[gid]){
+    const b = ITEMS[id];
+    ITEMS[gid] = { n:'Gilded '+b.n, v:Math.max(b.v*5, b.v+4), c:b.c, c2:shade(b.c, 0.68), shape:'gilded' };
+  }
+  RECIPES.enchanter[id] = gid;
+}
 // ten new farms
 Object.assign(FARM_PRODUCTS, {
   claypit:     { item:'clay',      rate:4.0 },
@@ -528,7 +538,7 @@ const SHOP = [
   {t:'press',     n:'Press',           p:350, cat:'Machines',  d:'Stamps any material into Plate, Panel, Gear or Inlay form. Click to switch mode.'},
   {t:'refiner',   n:'Refiner',         p:350, cat:'Machines',  d:'Climbs the rock ladder: basalt→granite→diorite→andesite→marble→limestone→slate→quartz→prismarine→obsidian. Also sand→sandstone, clay→terracotta.'},
   {t:'crystallizer',n:'Crystallizer',  p:400, cat:'Machines',  d:'Grows dust into glittering crystals worth 4× the base material.'},
-  {t:'enchanter', n:'Enchanter',       p:600, cat:'Machines',  d:'NEEDS POWER. Gilds any raw material to 5× its value. Feed it obsidian for $500 a piece.'},
+  {t:'enchanter', n:'Enchanter',       p:600, cat:'Machines',  d:'NEEDS POWER — flip a Lever ON beside it (click the lever with the hand). Gilds ANY item to 5× its value: obsidian → $500, and even slabs, crystals and pies get the golden treatment.'},
   {t:'wire',      n:'Wire',            p:5,   cat:'Logic',     d:'Carries power along the ground from detectors, levers, clocks and gates to machines.'},
   {t:'lever',     n:'Lever',           p:30,  cat:'Logic',     d:'Click it with the hand to switch power on or off. Powers wires and machines beside it.'},
   {t:'xnor',      n:'XNOR Gate',       p:80,  cat:'Logic',     d:'Reads its two SIDE tiles: powers the wire in FRONT when both sides match (both on, or both off). R rotates it.'},
