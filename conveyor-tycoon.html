@@ -426,7 +426,7 @@ function save(){
       if (t.flip) o.f = 1;
       if (t.inItem) { o.ii = t.inItem; o.it = +t.inT.toFixed(2); }
       if (t.outItem) o.oi = t.outItem;
-      if (t.item) o.c = [t.item.type, +t.item.prog.toFixed(3)];
+      if (t.items && t.items.length) o.cs = t.items.map(it => [it.type, +it.prog.toFixed(3)]);
       arr.push(o);
     }
     localStorage.setItem(SAVE_KEY, JSON.stringify({ money, curZ, cam, inv, tiles:arr }));
@@ -446,7 +446,8 @@ function load(){
       if (o.f) t.flip = 1;
       if (o.ii) { t.inItem = o.ii; t.inT = o.it; }
       if (o.oi) t.outItem = o.oi;
-      if (o.c) t.item = { type:o.c[0], prog:o.c[1], moved:false };
+      if (o.c) o.cs = [o.c]; // older saves stored a single item per tile
+      if (o.cs) t.items = o.cs.map(a => ({ type:a[0], prog:a[1], moved:false, j:Math.random()*2-1 }));
       tiles.set(K(t.x,t.y,t.z), t);
     }
     money = d.money; curZ = d.curZ || 0; inv = d.inv || {};
@@ -474,8 +475,10 @@ function deliver(key, itemType){
   const d = tiles.get(key);
   if (!d) return false;
   if (TRANSPORT.has(d.type)){
-    if (d.item) return false;
-    d.item = { type:itemType, prog:0, moved:true };
+    // items may overlap freely so lines never slow down; cap only as a safety net
+    if (!d.items) d.items = [];
+    if (d.items.length >= 40) return false;
+    d.items.push({ type:itemType, prog:0, moved:true, j:Math.random()*2-1 });
     return true;
   }
   if (PROCESSOR.has(d.type)){
@@ -569,21 +572,23 @@ function update(dt){
     else if (t.type === 'cash' && t.pulse > 0) t.pulse = Math.max(0, t.pulse - dt*3);
   }
 
-  // belt movement
-  for (const t of tiles.values()) if (t.item) t.item.moved = false;
+  // belt movement — items overlap freely, so a full line never slows down
+  for (const t of tiles.values()) if (t.items) for (const it of t.items) it.moved = false;
   for (const t of tiles.values()){
-    if (!TRANSPORT.has(t.type) || !t.item || t.item.moved) continue;
-    const it = t.item;
+    if (!TRANSPORT.has(t.type) || !t.items || !t.items.length) continue;
     const spd = (t.type === 'lift' || t.type === 'drop') ? LIFT_SPEED : BELT_SPEED;
-    it.prog = Math.min(1, it.prog + spd*dt);
-    if (it.prog >= 1){
+    for (let i = t.items.length - 1; i >= 0; i--){
+      const it = t.items[i];
+      if (it.moved) continue;
+      it.prog = Math.min(1, it.prog + spd*dt);
+      if (it.prog < 1) continue;
       if (t.type === 'splitter'){
         const first = t.flip ? rotL(t.dir) : rotR(t.dir);
         const second = t.flip ? rotR(t.dir) : rotL(t.dir);
-        if (deliver(destKeyOf(t, first), it.type)){ t.item = null; t.flip ^= 1; }
-        else if (deliver(destKeyOf(t, second), it.type)){ t.item = null; }
+        if (deliver(destKeyOf(t, first), it.type)){ t.items.splice(i,1); t.flip ^= 1; }
+        else if (deliver(destKeyOf(t, second), it.type)){ t.items.splice(i,1); }
       } else {
-        if (deliver(destKeyOf(t), it.type)) t.item = null;
+        if (deliver(destKeyOf(t), it.type)) t.items.splice(i,1);
       }
     }
   }
@@ -1024,8 +1029,8 @@ function drawProcBar(c, t, ts, kind){
 }
 
 /* item world position on a transport tile (tile-local 0..1 offsets from center) */
-function itemOffset(t){
-  const p = t.item.prog;
+function itemOffset(t, it){
+  const p = it.prog;
   if (t.type === 'lift' || t.type === 'drop') return { x:0, y:0, lift:(t.type==='lift'? p : -p) };
   const od = outDir(t);
   if (t.type === 'turnL' || t.type === 'turnR'){
@@ -1056,14 +1061,20 @@ function renderLayer(z, alpha, time){
   }
   for (let ty=y0; ty<=y1; ty++) for (let tx=x0; tx<=x1; tx++){
     const t = tiles.get(K(tx,ty,z));
-    if (!t || !t.item) continue;
-    const off = itemOffset(t);
-    const sx = w2sX(tx + 0.5 + off.x), sy = w2sY(ty + 0.5 + off.y) - off.lift*ts*0.35;
-    const scale = 1 + off.lift*0.35;
-    g.save(); g.translate(sx, sy); g.scale(scale, scale);
-    if (off.lift){ g.globalAlpha = alpha; g.fillStyle='rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(0, off.lift*ts*0.35, ts*0.16, ts*0.07, 0, 0, 7); g.fill(); }
-    drawItem(g, t.item.type, ts*0.4);
-    g.restore();
+    if (!t || !t.items || !t.items.length) continue;
+    for (const it of t.items){
+      const off = itemOffset(t, it);
+      // small sideways jitter so overlapping items read as a pile, not one item
+      const v = DIRS[outDir(t)];
+      let jx = -v.y * it.j * 0.08, jy = v.x * it.j * 0.08;
+      if (t.type === 'lift' || t.type === 'drop'){ jx = it.j * 0.08; jy = 0; }
+      const sx = w2sX(tx + 0.5 + off.x + jx), sy = w2sY(ty + 0.5 + off.y + jy) - off.lift*ts*0.35;
+      const scale = 1 + off.lift*0.35;
+      g.save(); g.translate(sx, sy); g.scale(scale, scale);
+      if (off.lift){ g.globalAlpha = alpha; g.fillStyle='rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(0, off.lift*ts*0.35, ts*0.16, ts*0.07, 0, 0, 7); g.fill(); }
+      drawItem(g, it.type, ts*0.4);
+      g.restore();
+    }
   }
   g.restore();
 }
@@ -1420,7 +1431,7 @@ function erase(tx, ty){
   // the broom sweeps any items the tile was carrying into the inventory
   let swept = 0;
   const grab = it => { if (it){ inv[it] = (inv[it]||0) + 1; swept++; } };
-  grab(t.item && t.item.type);
+  if (t.items) for (const it of t.items) grab(it.type);
   grab(t.inItem);
   grab(t.outItem);
   if (TREES[t.type] && t.stage >= 1) grab(TREES[t.type].wood);
