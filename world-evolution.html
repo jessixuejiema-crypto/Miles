@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Deep Time</title>
+<style>
+  /* Committed single-theme design: a dark geological-survey console.
+     Every color is painted explicitly so the page holds on any host ground. */
+  :root {
+    --ground: #12151b;
+    --panel: #1b212b;
+    --panel-edge: #2a3340;
+    --text: #e9e2d0;
+    --muted: #8b93a0;
+    --magma: #f2a13d;
+    --magma-hot: #ff7b3d;
+    --sea-hint: #3a6ea5;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    padding: 10px 16px 8px;
+    border-bottom: 1px solid var(--panel-edge);
+    background: var(--panel);
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-family: Palatino, "Palatino Linotype", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.15rem;
+    letter-spacing: 0.04em;
+    color: var(--text);
+  }
+  header h1 span { color: var(--magma); }
+  .readout {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-left: auto;
+  }
+  .readout .label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+  }
+  #yearText {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 1.35rem;
+    color: var(--magma);
+    min-width: 11ch;
+    text-align: right;
+  }
+  #rateText {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  #stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    background: #0a0e14;
+  }
+  canvas#world {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  #hint {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(18, 21, 27, 0.82);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 14px 22px;
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--text);
+    pointer-events: none;
+    line-height: 1.6;
+    transition: opacity 0.5s;
+  }
+  #hint b { color: var(--magma); }
+  #hint.gone { opacity: 0; }
+
+  #legend {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    background: rgba(18, 21, 27, 0.85);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.68rem;
+    line-height: 1.9;
+    pointer-events: none;
+  }
+  #legend .row { display: flex; align-items: center; gap: 8px; }
+  #legend .swatch {
+    width: 11px; height: 11px;
+    border-radius: 2px;
+    flex: none;
+  }
+  #legend .count {
+    margin-left: auto;
+    padding-left: 14px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+
+  footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    background: var(--panel);
+    border-top: 1px solid var(--panel-edge);
+  }
+  .group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+  }
+  .group .glabel {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    padding: 0 6px;
+  }
+  button {
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--text);
+    background: #232b37;
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+  }
+  button:hover { background: #2c3644; }
+  button:focus-visible { outline: 2px solid var(--magma); outline-offset: 1px; }
+  button.on {
+    background: #3a4353;
+    border-color: var(--magma);
+    color: var(--magma);
+  }
+  button.max {
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+  button.max.on {
+    background: linear-gradient(180deg, #4a2d18, #3a2212);
+    border-color: var(--magma-hot);
+    color: var(--magma-hot);
+  }
+  .spacer { flex: 1; }
+
+  @media (max-width: 640px) {
+    #yearText { font-size: 1.05rem; }
+    #legend { font-size: 0.6rem; padding: 6px 9px; }
+    button { padding: 6px 9px; font-size: 0.72rem; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Deep <span>Time</span></h1>
+  <div class="readout">
+    <span class="label">World age</span>
+    <span id="yearText">0 years</span>
+    <span id="rateText"></span>
+  </div>
+</header>
+
+<div id="stage">
+  <canvas id="world"></canvas>
+  <div id="hint">Paint some <b>grass</b> onto the ocean to raise land,<br>then press <b>⚡ MAX SPEED</b> and watch 4,000,000 years pass every second.</div>
+  <div id="legend"></div>
+</div>
+
+<footer>
+  <div class="group">
+    <span class="glabel">Tool</span>
+    <button id="toolGrass" class="on">🌱 Grass</button>
+    <button id="toolOcean">🌊 Ocean</button>
+    <button id="brushBtn">Brush 3</button>
+  </div>
+  <div class="group">
+    <span class="glabel">Time</span>
+    <button id="pauseBtn" class="on">⏸ Pause</button>
+    <button id="speed1">▶ 100 k yr/s</button>
+    <button id="speed2">▶▶ 1 M yr/s</button>
+    <button id="speedMax" class="max">⚡ MAX 4 M yr/s</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="group">
+    <button id="randomBtn">🎲 Random world</button>
+    <button id="clearBtn">🧹 Clear</button>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+/* ---------------- world grid ---------------- */
+const W = 192, H = 112;          // simulation cells; x wraps like a globe
+const N = W * H;
+const OCEAN = 0, GRASS = 1, DESERT = 2, SAVANNA = 3, FOREST = 4,
+      JUNGLE = 5, TUNDRA = 6, MOUNTAIN = 7;
+
+const BIOMES = [
+  { id: GRASS,    name: 'Grassland', color: [106, 176, 76]  },
+  { id: FOREST,   name: 'Forest',    color: [55, 118, 66]   },
+  { id: JUNGLE,   name: 'Jungle',    color: [17, 130, 74]   },
+  { id: SAVANNA,  name: 'Savanna',   color: [181, 172, 82]  },
+  { id: DESERT,   name: 'Desert',    color: [226, 193, 110] },
+  { id: TUNDRA,   name: 'Tundra',    color: [214, 224, 228] },
+  { id: MOUNTAIN, name: 'Mountains', color: [138, 130, 118] },
+];
+const COLOR = [];
+COLOR[OCEAN] = [27, 66, 110];
+for (const b of BIOMES) COLOR[b.id] = b.color;
+const OCEAN_SHALLOW = [45, 100, 156];
+
+let terrain = new Uint8Array(N);
+let scratch = new Uint8Array(N);
+let coastDist = new Uint8Array(N);   // land cells: steps to nearest ocean
+let labels = new Int32Array(N);      // continent labels per geo step
+
+let simYears = 0;
+let lastGeoYear = 0;
+const GEO_INTERVAL = 250000;         // one geologic step per 250,000 years
+let speed = 0;                       // years per real second (0 = paused)
+let rngState = 12345;
+
+function rand() { // xorshift32, deterministic per world
+  rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5;
+  return (rngState >>> 0) / 4294967296;
+}
+function hash(x, y, s) {
+  let h = (x * 374761393 + y * 668265263 + s * 2246822519) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise(x, y, s) { // smooth value noise in [0,1]
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi, s), b = hash(xi + 1, yi, s),
+        c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+const wrapX = x => (x + W) % W;
+const idx = (x, y) => y * W + wrapX(x);
+
+function landNeighbors(x, y) {
+  let n = 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dx && !dy) continue;
+    const ny = y + dy;
+    if (ny < 0 || ny >= H) continue;
+    if (terrain[idx(x + dx, ny)] !== OCEAN) n++;
+  }
+  return n;
+}
+
+/* ---------------- tectonics ---------------- */
+// Continents are connected land components. Each drifts along a slowly
+// rotating vector field, occasionally rotates a little, rifts apart when
+// large, and welds into mountain ranges where two plates collide.
+
+const compCells = new Int32Array(N); // scratch for flood fill / component lists
+const queue = new Int32Array(N);
+
+function labelContinents() {
+  labels.fill(-1);
+  const comps = [];
+  for (let i = 0; i < N; i++) {
+    if (terrain[i] === OCEAN || labels[i] !== -1) continue;
+    const id = comps.length;
+    let head = 0, tail = 0, sx = 0, sy = 0;
+    queue[tail++] = i; labels[i] = id;
+    while (head < tail) {
+      const c = queue[head++];
+      const cx = c % W, cy = (c / W) | 0;
+      sx += cx; sy += cy;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const ny = cy + dy;
+        if (ny < 0 || ny >= H) continue;
+        const j = idx(cx + dx, ny);
+        if (terrain[j] !== OCEAN && labels[j] === -1) { labels[j] = id; queue[tail++] = j; }
+      }
+    }
+    // centroid is approximate for wrap-spanning continents; good enough to
+    // sample the drift field and pick rift lines.
+    comps.push({ id, size: tail, cx: sx / tail, cy: sy / tail });
+  }
+  return comps;
+}
+
+function geoStep() {
+  const T = simYears / 200e6; // drift field slowly re-arranges over ~200 M yr
+  const comps = labelContinents();
+
+  /* --- plate drift + occasional rotation --- */
+  scratch.fill(OCEAN);
+  const moves = comps.map(c => {
+    const ang = vnoise(c.cx * 0.015 + 31.7, c.cy * 0.015 + T * 0.6, 909) * Math.PI * 4;
+    const go = rand() < 0.45 + 0.4 * vnoise(c.cx * 0.03, c.cy * 0.03 + T, 313);
+    let dx = 0, dy = 0;
+    if (go) { dx = Math.round(Math.cos(ang)); dy = Math.round(Math.sin(ang)); }
+    // soft equatorward push so continents don't pile up at the poles
+    if (c.cy < 12) dy = Math.max(dy, rand() < 0.5 ? 1 : 0);
+    else if (c.cy > H - 13) dy = Math.min(dy, rand() < 0.5 ? -1 : 0);
+    let rot = 0;
+    if (rand() < 0.12) rot = (rand() - 0.5) * 0.12; // ± ~3.5°
+    return { dx, dy, rot };
+  });
+  for (let i = 0; i < N; i++) {
+    if (terrain[i] === OCEAN) continue;
+    const x = i % W, y = (i / W) | 0;
+    const c = comps[labels[i]], m = moves[c.id];
+    let nx = x + m.dx, ny = y + m.dy;
+    if (m.rot) {
+      const rx = x - c.cx, ry = y - c.cy;
+      const cos = Math.cos(m.rot), sin = Math.sin(m.rot);
+      nx = Math.round(c.cx + rx * cos - ry * sin) + m.dx;
+      ny = Math.round(c.cy + rx * sin + ry * cos) + m.dy;
+    }
+    if (ny < 0) ny = 0; if (ny >= H) ny = H - 1;
+    const j = idx(nx, ny);
+    if (scratch[j] === OCEAN) {
+      scratch[j] = terrain[i];
+    } else {
+      // collision: plates weld; crumple the crust into mountains
+      if (rand() < 0.55) scratch[j] = MOUNTAIN;
+      const k = idx(x, y);
+      if (scratch[k] === OCEAN) scratch[k] = terrain[i]; // conserve the crust
+    }
+  }
+  [terrain, scratch] = [scratch, terrain];
+
+  /* --- close pinholes left by rotation --- */
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = idx(x, y);
+    if (terrain[i] === OCEAN && landNeighbors(x, y) >= 6) scratch[i] = GRASS;
+    else scratch[i] = terrain[i];
+  }
+  [terrain, scratch] = [scratch, terrain];
+
+  /* --- coastlines morph: erosion vs. accretion --- */
+  let land = 0;
+  for (let i = 0; i < N; i++) if (terrain[i] !== OCEAN) land++;
+  const crowded = land > N * 0.42;         // keep oceans on the map
+  const sparse = land < N * 0.12;          // young worlds grow eagerly
+  const grow = crowded ? 0 : sparse ? 0.16 : 0.07;
+  scratch.set(terrain);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = idx(x, y);
+    const n = landNeighbors(x, y);
+    if (terrain[i] !== OCEAN) {
+      if (n === 0 && rand() < 0.25) scratch[i] = OCEAN;          // lone rocks wash away
+      else if (n <= 2 && rand() < (crowded ? 0.08 : 0.02)) scratch[i] = OCEAN;
+    } else if (n >= 4 && rand() < grow) {
+      scratch[i] = GRASS;                                        // coasts silt up
+    }
+  }
+  [terrain, scratch] = [scratch, terrain];
+
+  /* --- rifting: big continents crack apart --- */
+  for (const c of comps) {
+    if (c.size < 120 || rand() > 0.010 + c.size / 90000) continue;
+    const ang = rand() * Math.PI;
+    const nx = Math.cos(ang), nyv = Math.sin(ang);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = idx(x, y);
+      if (terrain[i] === OCEAN || labels[i] !== c.id) continue;
+      // signed distance to the rift line through the centroid, with a wobble
+      let ddx = x - c.cx;
+      if (ddx > W / 2) ddx -= W; if (ddx < -W / 2) ddx += W;
+      const d = ddx * nx + (y - c.cy) * nyv
+              + (vnoise(x * 0.09, y * 0.09, 555 + c.id) - 0.5) * 6;
+      if (Math.abs(d) < 1.1) terrain[i] = OCEAN;
+    }
+  }
+
+  /* --- hotspot volcanism: new islands are born --- */
+  if (rand() < (land < N * 0.02 ? 0.35 : 0.05)) {
+    const x = (rand() * W) | 0, y = 4 + ((rand() * (H - 8)) | 0);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (rand() < 0.7) terrain[idx(x + dx, y + dy)] ||= GRASS;
+    }
+  }
+
+  climateStep();
+}
+
+/* ---------------- climate & biomes ---------------- */
+function computeCoastDist() {
+  coastDist.fill(255);
+  let head = 0, tail = 0;
+  for (let i = 0; i < N; i++) {
+    if (terrain[i] === OCEAN) { coastDist[i] = 0; queue[tail++] = i; }
+  }
+  while (head < tail) {
+    const c = queue[head++];
+    const x = c % W, y = (c / W) | 0, d = coastDist[c];
+    if (d >= 30) continue;
+    for (let k = 0; k < 4; k++) {
+      const nx = k === 0 ? x + 1 : k === 1 ? x - 1 : x;
+      const ny = k === 2 ? y + 1 : k === 3 ? y - 1 : y;
+      if (ny < 0 || ny >= H) continue;
+      const j = idx(nx, ny);
+      if (coastDist[j] > d + 1) { coastDist[j] = d + 1; queue[tail++] = j; }
+    }
+  }
+}
+
+function climateStep() {
+  computeCoastDist();
+  const epoch = simYears / 60e6;                     // climate re-shuffles every ~60 M yr
+  const e0 = Math.floor(epoch), ef = epoch - e0;
+  const wobble = 0.14 * Math.sin(simYears / 130e6 * Math.PI * 2 + 1.3); // ice ages
+  const half = (H - 1) / 2;
+
+  for (let y = 0; y < H; y++) {
+    const lat = 1 - Math.abs(y - half) / half;       // 1 equator → 0 poles
+    for (let x = 0; x < W; x++) {
+      const i = idx(x, y);
+      const b = terrain[i];
+      if (b === OCEAN) continue;
+      if (b === MOUNTAIN) {                          // ranges erode back down
+        if (rand() < 0.015) terrain[i] = GRASS;
+        continue;
+      }
+      // temperature and moisture drift with the epochs
+      const tn = vnoise(x * 0.05, y * 0.05, 100 + e0) * (1 - ef)
+               + vnoise(x * 0.05, y * 0.05, 101 + e0) * ef;
+      const mnA = vnoise(x * 0.045 + 7, y * 0.045, 200 + e0);
+      const mnB = vnoise(x * 0.045 + 7, y * 0.045, 201 + e0);
+      const mn = mnA * (1 - ef) + mnB * ef;
+      const temp = lat + wobble + (tn - 0.5) * 0.22;
+      const moist = mn * 0.62 + Math.max(0, 1 - coastDist[i] / 13) * 0.5;
+
+      let want;
+      if (temp < 0.24) want = TUNDRA;
+      else if (moist < 0.30) want = DESERT;
+      else if (temp > 0.72 && moist > 0.56) want = JUNGLE;
+      else if (temp > 0.62 && moist < 0.48) want = SAVANNA;
+      else if (moist > 0.58) want = FOREST;
+      else want = GRASS;
+
+      // gradual, patchy transitions rather than instant repaints
+      if (want !== b && rand() < 0.3) terrain[i] = want;
+    }
+  }
+}
+
+/* ---------------- rendering ---------------- */
+const canvas = document.getElementById('world');
+const ctx = canvas.getContext('2d');
+const off = document.createElement('canvas');
+off.width = W; off.height = H;
+const offCtx = off.getContext('2d');
+const img = offCtx.createImageData(W, H);
+
+function render() {
+  const d = img.data;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = idx(x, y);
+    const b = terrain[i];
+    let c;
+    if (b === OCEAN) {
+      c = landNeighbors(x, y) > 0 ? OCEAN_SHALLOW : COLOR[OCEAN];
+    } else {
+      c = COLOR[b];
+    }
+    const j = hash(x, y, 7) * 22 - 11;   // per-cell texture jitter
+    const p = i * 4;
+    d[p]     = Math.max(0, Math.min(255, c[0] + j));
+    d[p + 1] = Math.max(0, Math.min(255, c[1] + j));
+    d[p + 2] = Math.max(0, Math.min(255, c[2] + j));
+    d[p + 3] = 255;
+  }
+  offCtx.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+}
+
+function fitCanvas() {
+  const stage = document.getElementById('stage');
+  const s = Math.max(1, Math.min(stage.clientWidth / W, stage.clientHeight / H));
+  canvas.width = Math.floor(W * s); canvas.height = Math.floor(H * s);
+  canvas.style.width = canvas.width + 'px';
+  canvas.style.height = canvas.height + 'px';
+  render();
+}
+window.addEventListener('resize', fitCanvas);
+
+/* ---------------- legend & readout ---------------- */
+const legendEl = document.getElementById('legend');
+function updateLegend() {
+  const counts = new Array(8).fill(0);
+  for (let i = 0; i < N; i++) counts[terrain[i]]++;
+  let html = '';
+  for (const b of BIOMES) {
+    if (!counts[b.id]) continue;
+    html += `<div class="row"><span class="swatch" style="background:rgb(${b.color})"></span>` +
+            `${b.name}<span class="count">${counts[b.id]}</span></div>`;
+  }
+  legendEl.innerHTML = html || '<div class="row" style="color:#8b93a0">Open ocean</div>';
+}
+
+const yearEl = document.getElementById('yearText');
+const rateEl = document.getElementById('rateText');
+function formatYears(y) {
+  if (y < 1e6) return Math.floor(y).toLocaleString('en-US') + ' years';
+  if (y < 1e9) return (y / 1e6).toFixed(2) + ' million years';
+  return (y / 1e9).toFixed(3) + ' billion years';
+}
+
+/* ---------------- painting ---------------- */
+let tool = GRASS;
+let brush = 3;
+let painting = false;
+
+function paintAt(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const x = Math.floor((clientX - r.left) / r.width * W);
+  const y = Math.floor((clientY - r.top) / r.height * H);
+  const rad = brush - 1;
+  for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
+    if (dx * dx + dy * dy > rad * rad + rad * 0.5) continue;
+    const ny = y + dy;
+    if (ny < 0 || ny >= H) continue;
+    terrain[idx(x + dx, ny)] = tool;
+  }
+  document.getElementById('hint').classList.add('gone');
+  render();
+}
+canvas.addEventListener('pointerdown', e => {
+  painting = true;
+  canvas.setPointerCapture(e.pointerId);
+  paintAt(e.clientX, e.clientY);
+});
+canvas.addEventListener('pointermove', e => { if (painting) paintAt(e.clientX, e.clientY); });
+canvas.addEventListener('pointerup', () => { painting = false; updateLegend(); });
+
+/* ---------------- controls ---------------- */
+const speedButtons = [
+  ['pauseBtn', 0],
+  ['speed1', 100_000],
+  ['speed2', 1_000_000],
+  ['speedMax', 4_000_000],
+];
+for (const [bid, s] of speedButtons) {
+  document.getElementById(bid).addEventListener('click', () => setSpeed(s));
+}
+function setSpeed(s) {
+  speed = s;
+  for (const [bid, bs] of speedButtons) {
+    document.getElementById(bid).classList.toggle('on', bs === s);
+  }
+  rateEl.textContent = s ? '+' + s.toLocaleString('en-US') + ' yr/s' : '· paused ·';
+  document.getElementById('hint').classList.add('gone');
+}
+
+const toolGrass = document.getElementById('toolGrass');
+const toolOcean = document.getElementById('toolOcean');
+toolGrass.addEventListener('click', () => {
+  tool = GRASS;
+  toolGrass.classList.add('on'); toolOcean.classList.remove('on');
+});
+toolOcean.addEventListener('click', () => {
+  tool = OCEAN;
+  toolOcean.classList.add('on'); toolGrass.classList.remove('on');
+});
+const brushBtn = document.getElementById('brushBtn');
+brushBtn.addEventListener('click', () => {
+  brush = brush >= 6 ? 1 : brush + 1;
+  brushBtn.textContent = 'Brush ' + brush;
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  terrain.fill(OCEAN);
+  simYears = 0; lastGeoYear = 0;
+  yearEl.textContent = formatYears(0);
+  setSpeed(0);
+  render(); updateLegend();
+});
+document.getElementById('randomBtn').addEventListener('click', () => {
+  const s = (Math.random() * 1e9) | 0;
+  rngState = s || 1;
+  terrain.fill(OCEAN);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const n = vnoise(x * 0.045, y * 0.045, s) * 0.7 + vnoise(x * 0.11, y * 0.11, s + 1) * 0.3;
+    if (n > 0.585) terrain[idx(x, y)] = GRASS;
+  }
+  simYears = 0; lastGeoYear = 0;
+  climateStep();
+  document.getElementById('hint').classList.add('gone');
+  render(); updateLegend();
+});
+
+/* ---------------- main loop ---------------- */
+let lastTime = performance.now();
+let legendTimer = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - lastTime) / 1000);
+  lastTime = now;
+
+  if (speed > 0) {
+    simYears += speed * dt;
+    let steps = 0;
+    while (simYears - lastGeoYear >= GEO_INTERVAL && steps < 24) {
+      lastGeoYear += GEO_INTERVAL;
+      geoStep();
+      steps++;
+    }
+    if (simYears - lastGeoYear >= GEO_INTERVAL) lastGeoYear = simYears; // don't spiral on slow devices
+    if (steps > 0) render();
+    yearEl.textContent = formatYears(simYears);
+    legendTimer += dt;
+    if (legendTimer > 0.5) { legendTimer = 0; updateLegend(); }
+  }
+  requestAnimationFrame(frame);
+}
+
+fitCanvas();
+updateLegend();
+setSpeed(0);
+yearEl.textContent = formatYears(0);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
