@@ -291,7 +291,7 @@ let lastGeoYear = 0;
 const GEO_INTERVAL = 250000;         // one geologic step per 250,000 years
 let speed = 0;                       // years per real second (0 = paused)
 let rngState = 12345;
-let lastRiftYear = 0, lastBreakYear = 0, lastWarYear = 0;
+let lastRiftYear = 0, lastBreakYear = 0, lastWarYear = 0, lastMergeYear = 0;
 
 function rand() { // xorshift32, deterministic per world
   rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5;
@@ -353,10 +353,67 @@ function nameAt(x, y) {
   }
   return best && bs < 28 ? best.name : 'a nameless land';
 }
+// a landmass big enough holds several continents at once: carve it into
+// regions around deterministic farthest-point seeds so names stay put
+function regionUnits(comps) {
+  const units = [];
+  for (const c of comps) {
+    const k = Math.min(5, Math.floor(c.size / 1400) + 1);
+    if (k === 1) { units.push({ cx: c.cx, cy: c.cy, size: c.size }); continue; }
+    const cells = [];
+    for (let i = 0; i < N; i++) {
+      if (terrain[i] !== OCEAN && labels[i] === c.id) cells.push(i);
+    }
+    const stride = Math.max(1, (cells.length / 260) | 0);
+    const sample = [];
+    for (let s = 0; s < cells.length; s += stride) sample.push(cells[s]);
+    // first seed: the sampled cell nearest the centroid (deterministic),
+    // then farthest-point picks — regions barely move between steps
+    let seed0 = sample[0], bd0 = 1e9;
+    for (const i of sample) {
+      const d = contDist(i % W, (i / W) | 0, c.cx, c.cy);
+      if (d < bd0) { bd0 = d; seed0 = i; }
+    }
+    const seeds = [seed0];
+    while (seeds.length < k) {
+      let best = sample[0], bd = -1;
+      for (const i of sample) {
+        let md = 1e9;
+        for (const sd of seeds) md = Math.min(md, contDist(i % W, (i / W) | 0, sd % W, (sd / W) | 0));
+        if (md > bd) { bd = md; best = i; }
+      }
+      seeds.push(best);
+    }
+    const agg = seeds.map(() => ({ sx: 0, sy: 0, n: 0 }));
+    for (const i of sample) {
+      const x = i % W, y = (i / W) | 0;
+      let bi = 0, bd = 1e9;
+      for (let s2 = 0; s2 < seeds.length; s2++) {
+        const d = contDist(x, y, seeds[s2] % W, (seeds[s2] / W) | 0);
+        if (d < bd) { bd = d; bi = s2; }
+      }
+      let ddx = x - seeds[bi] % W;
+      if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
+      agg[bi].sx += ddx; agg[bi].sy += y; agg[bi].n++;
+    }
+    for (let s2 = 0; s2 < seeds.length; s2++) {
+      const a = agg[s2];
+      if (!a.n) continue;
+      units.push({
+        cx: ((seeds[s2] % W) + a.sx / a.n + W) % W,
+        cy: a.sy / a.n,
+        size: Math.round(c.size * a.n / sample.length),
+      });
+    }
+  }
+  return units;
+}
+
 // re-match names to continents by nearest previous centroid; splits mint new
 // names, and a sizable name that vanishes into a neighbor logs a merger
 function renameContinents() {
-  const comps = labelContinents().filter(c => c.size >= 15).sort((a, b) => b.size - a.size);
+  const comps = regionUnits(labelContinents().filter(c => c.size >= 15))
+    .sort((a, b) => b.size - a.size);
   const claimed = new Set(), next = [];
   for (const c of comps) {
     // the largest old continent within reach keeps its name through mergers,
@@ -373,13 +430,18 @@ function renameContinents() {
     next.push({ name: best ? best.name : makeName(), cx: c.cx, cy: c.cy, size: c.size });
   }
   for (const o of namedConts) {
-    if (claimed.has(o) || o.size < 70) continue;
+    // only announce substantial mergers, and not more than one per while —
+    // region bookkeeping churn is not news
+    if (claimed.has(o) || o.size < 300 || simYears - lastMergeYear < 12e6) continue;
     let best = null, bd = 1e9;
     for (const n2 of next) {
       const d = contDist(o.cx, o.cy, n2.cx, n2.cy) - 0.5 * Math.sqrt(n2.size);
-      if (d < bd && n2.size > 70 && n2.name !== o.name) { bd = d; best = n2; }
+      if (d < bd && n2.size > 300 && n2.name !== o.name) { bd = d; best = n2; }
     }
-    if (best && bd < 20) addEvent('🤝 ' + o.name + ' merged into ' + best.name);
+    if (best && bd < 12) {
+      addEvent('🤝 ' + o.name + ' merged into ' + best.name);
+      lastMergeYear = simYears;
+    }
   }
   namedConts = next;
 }
@@ -412,13 +474,15 @@ function labelContinents() {
   for (let i = 0; i < N; i++) {
     if (terrain[i] === OCEAN || labels[i] !== -1) continue;
     const id = comps.length;
-    let head = 0, tail = 0, sSin = 0, sCos = 0, sy = 0;
+    let head = 0, tail = 0, sSin = 0, sCos = 0, sy = 0, minY = H, maxY = 0;
     queue[tail++] = i; labels[i] = id;
     while (head < tail) {
       const c = queue[head++];
       const cx = c % W, cy = (c / W) | 0;
       const a = cx * 2 * Math.PI / W;      // circular mean handles the wrap seam
       sSin += Math.sin(a); sCos += Math.cos(a); sy += cy;
+      if (cy < minY) minY = cy;
+      if (cy > maxY) maxY = cy;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         if (!dx && !dy) continue;
         const ny = cy + dy;
@@ -429,7 +493,7 @@ function labelContinents() {
     }
     let cxm = Math.atan2(sSin, sCos) / (2 * Math.PI) * W;
     if (cxm < 0) cxm += W;
-    comps.push({ id, size: tail, cx: cxm, cy: sy / tail });
+    comps.push({ id, size: tail, cx: cxm, cy: sy / tail, minY, maxY });
   }
   return comps;
 }
@@ -441,17 +505,21 @@ function geoStep() {
   /* --- plate drift + occasional rotation --- */
   scratch.fill(OCEAN);
   const moves = comps.map(c => {
-    const ang = vnoise(c.cx * 0.015 + 31.7, c.cy * 0.015 + T * 0.6, 909) * Math.PI * 4;
+    const ang = vnoise(c.cx * 0.035 + 31.7, c.cy * 0.035 + T * 0.9, 909) * Math.PI * 4;
     const go = rand() < 0.45 + 0.4 * vnoise(c.cx * 0.03, c.cy * 0.03 + T, 313);
     let dx = 0, dy = 0;
     if (go) { dx = Math.round(Math.cos(ang)); dy = Math.round(Math.sin(ang)); }
-    // soft equatorward push so continents don't pile up at the poles
-    if (c.cy < 12) dy = Math.max(dy, rand() < 0.5 ? 1 : 0);
-    else if (c.cy > H - 13) dy = Math.min(dy, rand() < 0.5 ? -1 : 0);
+    // firm equatorward push — no continents parked on the poles: a plate
+    // whose edge touches the polar band is marched straight back
+    if (c.minY < 6) dy = 1;
+    else if (c.maxY > H - 7) dy = -1;
+    else if (c.cy < 16) dy = rand() < 0.75 ? 1 : Math.max(dy, 0);
+    else if (c.cy > H - 17) dy = rand() < 0.75 ? -1 : Math.min(dy, 0);
     let rot = 0;
     if (rand() < 0.12) rot = (rand() - 0.5) * 0.12; // ± ~3.5°
     return { dx, dy, rot };
   });
+  compCells.fill(-1);                      // which plate wrote each cell
   for (let i = 0; i < N; i++) {
     if (terrain[i] === OCEAN) continue;
     const x = i % W, y = (i / W) | 0;
@@ -467,11 +535,13 @@ function geoStep() {
     const j = idx(nx, ny);
     if (scratch[j] === OCEAN) {
       scratch[j] = terrain[i];
+      compCells[j] = c.id;
     } else {
-      // collision: plates weld; crumple the crust into mountains
-      if (rand() < 0.55) scratch[j] = MOUNTAIN;
+      // collision between DIFFERENT plates welds and crumples into mountains;
+      // a plate folding onto itself (rotation, polar clamp) never does
+      if (compCells[j] !== c.id && rand() < 0.35) scratch[j] = MOUNTAIN;
       const k = idx(x, y);
-      if (scratch[k] === OCEAN) scratch[k] = terrain[i]; // conserve the crust
+      if (scratch[k] === OCEAN) { scratch[k] = terrain[i]; compCells[k] = c.id; }
     }
   }
   [terrain, scratch] = [scratch, terrain];
@@ -491,18 +561,26 @@ function geoStep() {
   const sparse = land < N * 0.12;          // young worlds grow eagerly
   const room = Math.max(0, Math.min(1, 1 - (land / N - 0.26) / 0.12)); // growth fades as oceans fill
   const comps2 = labelContinents();        // fresh labels after the drift
-  // each continent carries a slowly wandering stretch axis and a growth mood,
-  // so circles pull into ovals while some landmasses expand and others shrink
+  // every continent sculpts itself toward a superellipse whose exponent,
+  // aspect, and tilt wander through the ages: circle → oval → squircle →
+  // square and back, while its growth mood swells or shrinks the target
   for (const c of comps2) {
-    c.axis = Math.PI * vnoise(c.cx * 0.013 + 5, c.cy * 0.013 + T * 0.8, 424);
-    c.stretch = 0.4 + 0.6 * vnoise(c.cx * 0.02, c.cy * 0.02 + T, 425);
     c.mood = vnoise(c.cx * 0.017 + 9, c.cy * 0.017 + T * 1.4, 426) - 0.5;
+    const axis = Math.PI * vnoise(c.cx * 0.013 + 5, c.cy * 0.013 + T * 0.8, 424);
+    const sp = vnoise(c.cx * 0.01 + 3, c.cy * 0.01 + T * 1.9, 427);
+    c.p = 2 + 6 * sp * sp;                 // 2 = round … 8 = square-cornered
+    c.aspect = 0.65 + 0.7 * vnoise(c.cx * 0.02, c.cy * 0.02 + T, 425);
+    const g = 0.785 + 0.215 * (1 - 2 / c.p);   // superellipse area factor
+    c.b = Math.sqrt(Math.max(9, c.size * (1 + c.mood * 0.35)) / (4 * g * c.aspect));
+    c.a = c.aspect * c.b;
+    c.cos = Math.cos(axis); c.sin = Math.sin(axis);
   }
-  const dirAlign = (c, x, y) => {
+  const shapeS = (c, x, y) => {           // <1 inside the target shape, >1 outside
     let ddx = x - c.cx;
     if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
-    const a = Math.atan2(y - c.cy, ddx);
-    return Math.abs(Math.cos(a - c.axis)); // 1 along the axis, 0 across it
+    const dyv = y - c.cy;
+    const u = ddx * c.cos + dyv * c.sin, v = -ddx * c.sin + dyv * c.cos;
+    return Math.pow(Math.abs(u / c.a), c.p) + Math.pow(Math.abs(v / c.b), c.p);
   };
   scratch.set(terrain);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -519,23 +597,28 @@ function geoStep() {
       } else if (n === 0 || !c || c.size < 9) { // scraps and shoals dissolve away
         if (rand() < 0.3) scratch[i] = OCEAN;
       } else if (n <= 4) {
-        const al = dirAlign(c, x, y);
-        const p = 0.015 + 0.05 * (1 - al) * c.stretch
-                + Math.max(0, -c.mood) * 0.10 + (crowded ? 0.10 : 0);
+        const s = shapeS(c, x, y);
+        let p = s > 1.15 ? 0.24 : s > 0.95 ? 0.03 : 0.012;  // trim what juts past the shape
+        p += (crowded ? 0.10 : 0) + Math.max(0, -c.mood) * 0.06;
+        if (y < 3 || y >= H - 3) p += 0.15;  // polar seas gnaw the ice line
         if (rand() < p) scratch[i] = OCEAN;
       }
     } else if (n >= 3 && !crowded) {
-      let c = null;                        // which continent is this shore of?
-      outer: for (let dy2 = -1; dy2 <= 1; dy2++) for (let dx2 = -1; dx2 <= 1; dx2++) {
+      let c = null, cid = -1, bridge = false; // which continent is this shore of?
+      for (let dy2 = -1; dy2 <= 1; dy2++) for (let dx2 = -1; dx2 <= 1; dx2++) {
         const ny2 = y + dy2;
         if (ny2 < 0 || ny2 >= H) continue;
         const j = idx(x + dx2, ny2);
-        if (terrain[j] !== OCEAN && labels[j] >= 0) { c = comps2[labels[j]]; break outer; }
+        if (terrain[j] !== OCEAN && labels[j] >= 0) {
+          if (cid === -1) { cid = labels[j]; c = comps2[cid]; }
+          else if (labels[j] !== cid) bridge = true;  // two continents — never silt them together
+        }
       }
-      if (c && c.size >= 9 && riftCool[i] === 0) { // real landmasses grow — no new specks
-        const al = dirAlign(c, x, y);
-        const p = (0.02 + 0.09 * al * c.stretch + Math.max(0, c.mood) * 0.12
-                + Math.min(0.05, c.size / 8000) + (sparse ? 0.08 : 0)) * room;
+      if (c && !bridge && c.size >= 9 && riftCool[i] === 0 && y >= 3 && y < H - 3) {
+        const s = shapeS(c, x, y);
+        const p = ((s < 0.85 ? 0.22 : s < 1.05 ? 0.06 : 0.008)  // fill in toward the shape
+                + Math.max(0, c.mood) * 0.08 + Math.min(0.04, c.size / 10000)
+                + (sparse ? 0.08 : 0)) * room;
         if (rand() < p) scratch[i] = GRASS;
       }
     }
@@ -543,9 +626,9 @@ function geoStep() {
   [terrain, scratch] = [scratch, terrain];
 
   /* --- rifting: big continents crack apart (rarely, and for good) --- */
-  if (simYears - lastRiftYear > 18e6) {
+  if (simYears - lastRiftYear > 9e6) {
     for (const c of comps2) {
-      if (c.size < 150 || rand() > 0.004 + c.size / 160000) continue;
+      if (c.size < 110 || rand() > 0.009 + c.size / 110000) continue;
       const ang = rand() * Math.PI;
       const nx = Math.cos(ang), nyv = Math.sin(ang);
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -565,10 +648,10 @@ function geoStep() {
   }
 
   /* --- breakup: an overgrown continent shatters into 2–10 shards --- */
-  if (simYears - lastBreakYear > 14e6) {
+  if (simYears - lastBreakYear > 9e6) {
     for (const c of comps2) {
       const crowdedBig = land > N * 0.40 && c.size > land * 0.30;
-      if (!(crowdedBig || c.size > N * 0.20) || rand() > 0.06) continue;
+      if (!(crowdedBig || c.size > N * 0.15) || rand() > 0.09) continue;
       const cells = [];
       for (let i = 0; i < N; i++) {
         if (terrain[i] !== OCEAN && labels[i] === c.id) cells.push(i);
@@ -654,7 +737,7 @@ function climateStep() {
       const b = terrain[i];
       if (b === OCEAN) continue;
       if (b === MOUNTAIN) {                          // ranges erode back down
-        if (rand() < 0.015) terrain[i] = GRASS;
+        if (rand() < 0.035) terrain[i] = GRASS;
         continue;
       }
       if (b === SCORCHED) {                          // war scars slowly regrow
@@ -827,7 +910,7 @@ brushBtn.addEventListener('click', () => {
 
 function resetWorldState() {
   simYears = 0; lastGeoYear = 0;
-  lastRiftYear = 0; lastBreakYear = 0; lastWarYear = 0;
+  lastRiftYear = 0; lastBreakYear = 0; lastWarYear = 0; lastMergeYear = 0;
   riftCool.fill(0);
   namedConts = [];
   events = []; renderEvents();
