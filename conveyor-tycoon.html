@@ -309,7 +309,8 @@
     <h2>Shaping machines (click one to switch its mode)</h2><div id="recCutter"></div>
     <h2>Logic &amp; power</h2>
     <ul>
-      <li><b>Wire</b> carries power. <b>Lever</b>: click to switch on/off. <b>Clock</b>: its hand turns once every 10&nbsp;s and fires a 1&nbsp;s pulse each full turn. <b>XNOR Gate</b>: powers the wire in front when its two side tiles match (both powered or both unpowered).</li>
+      <li><b>Wire</b> carries power. <b>Lever</b>: click to switch on/off. <b>Clock</b>: its hand turns once every 10&nbsp;s and fires a 1&nbsp;s pulse each full turn.</li>
+      <li><b>Gates</b> read their two SIDE tiles (the NOT gate reads the tile BEHIND instead) and light the wire at their FRONT — the little gold arrow shows which way the front is, and the pip glows when it's on. <b>AND</b>: both sides on. <b>OR</b>: any side on. <b>XOR</b>: sides different. <b>XNOR</b>: sides matching. <b>NAND</b>: not both. <b>NOR</b>: all quiet. <b>NOT</b>: the opposite of behind. Click any placed gate with the hand and the info bar explains it and shows whether it's ON right now.</li>
       <li>The <b>Ore Mine</b> only runs while powered — park a lever beside it, wire it to a detector, or pulse it with a clock.</li>
     </ul>
     <h2>Base item prices (shaped pieces scale with their material)</h2><div id="recValues"></div>
@@ -396,6 +397,18 @@ const MACHINE_MODES = {
   press:   ['plate','panel','gear','inlay'],
 };
 const SAW_MODES = MACHINE_MODES.sawmill;
+
+// logic gates: two-input gates read their SIDE tiles, NOT reads the tile BEHIND;
+// all of them light up the wire at their FRONT when their rule says ON
+const GATE_DEFS = {
+  and: { lbl:'AND',  c:'#57a03a', fn:(a,b)=>a&&b },
+  or:  { lbl:'OR',   c:'#3a6fb0', fn:(a,b)=>a||b },
+  xor: { lbl:'XOR',  c:'#2fa39a', fn:(a,b)=>a!==b },
+  nand:{ lbl:'NAND', c:'#b07f10', fn:(a,b)=>!(a&&b) },
+  nor: { lbl:'NOR',  c:'#b3443c', fn:(a,b)=>!(a||b) },
+  xnor:{ lbl:'XNOR', c:'#7a4db0', fn:(a,b)=>a===b },
+  not: { lbl:'NOT',  c:'#d3641e', one:true, fn:a=>!a },
+};
 
 const TREES = {
   oak:    { grow:[5,8],   wood:'oakwood'    },
@@ -577,8 +590,14 @@ const SHOP = [
   {t:'crystallizer',n:'Crystallizer',  p:400, cat:'Machines',  d:'Grows dust into glittering crystals worth 4× the base material.'},
   {t:'enchanter', n:'Enchanter',       p:600, cat:'Machines',  d:'Gilds ANY item to 5× its value, no power needed: obsidian → $500, and even slabs, crystals and pies get the golden treatment.'},
   {t:'wire',      n:'Wire',            p:5,   cat:'Logic',     d:'Carries power along the ground from detectors, levers, clocks and gates to machines.'},
-  {t:'lever',     n:'Lever',           p:30,  cat:'Logic',     d:'Click it with the hand to switch power on or off. Powers wires and machines beside it.'},
-  {t:'xnor',      n:'XNOR Gate',       p:80,  cat:'Logic',     d:'Reads its two SIDE tiles: powers the wire in FRONT when both sides match (both on, or both off). R rotates it.'},
+  {t:'lever',     n:'Lever',           p:30,  cat:'Logic',     d:'Click it with the hand to switch power ON or OFF. The knob turns gold when it\'s on. Powers wires and machines beside it.'},
+  {t:'not',       n:'NOT Gate',        p:50,  cat:'Logic',     d:'The opposite bot! It reads the tile BEHIND it. Power behind → front turns OFF. No power behind → front turns ON. Put a wire in front to carry it. (on→off · off→ON)'},
+  {t:'and',       n:'AND Gate',        p:60,  cat:'Logic',     d:'It reads its two SIDE tiles. The front turns ON only when BOTH sides have power — one is not enough! (off+off→off · on+off→off · on+on→ON)'},
+  {t:'or',        n:'OR Gate',         p:60,  cat:'Logic',     d:'It reads its two SIDE tiles. The front turns ON when ANY side has power — one is enough! (off+off→off · on+off→ON · on+on→ON)'},
+  {t:'xor',       n:'XOR Gate',        p:70,  cat:'Logic',     d:'It likes DIFFERENT. Front is ON only when its two sides are not the same — exactly one side powered. (off+off→off · on+off→ON · on+on→off)'},
+  {t:'nand',      n:'NAND Gate',       p:70,  cat:'Logic',     d:'Backwards AND. Front is ON all the time, unless BOTH sides get power — then it goes off. (off+off→ON · on+off→ON · on+on→off)'},
+  {t:'nor',       n:'NOR Gate',        p:70,  cat:'Logic',     d:'It likes quiet. Front is ON only when NEITHER side has power. Any power switches it off. (off+off→ON · on+off→off · on+on→off)'},
+  {t:'xnor',      n:'XNOR Gate',       p:80,  cat:'Logic',     d:'It likes MATCHING. Front is ON when its two sides are the same — both on, or both off. (off+off→ON · on+off→off · on+on→ON)'},
   {t:'clock',     n:'Clock',           p:120, cat:'Logic',     d:'Its hand turns once every 10 s; each full turn fires a 1 s pulse of power into the wires beside it.'},
 ];
 const SHOP_BY_TYPE = {}; SHOP.forEach(s => SHOP_BY_TYPE[s.t] = s);
@@ -621,7 +640,7 @@ function makeTile(type, x, y, z, dir){
   if (type === 'cash') t.pulse = 0;
   if (type === 'lever') t.on = false;
   if (type === 'clock') t.phase = 0;
-  if (type === 'xnor') t.out = false;
+  if (GATE_DEFS[type]) t.out = false;
   if (type === 'oremine') t.oreIdx = 0;
   if (type === 'spawner'){ t.item = 'stone'; t.rate = 5; t.timer = 1; } // recipe-maker source crate
   return t;
@@ -762,14 +781,18 @@ function computePower(){
     }
   };
   flood(seeds);
-  // XNOR gates: read the two side tiles, drive the wire in front; a few passes so chains settle
-  for (let pass = 0; pass < 3; pass++){
+  // logic gates: read side tiles (or the tile behind, for NOT), drive the wire
+  // in front; a few passes so gate chains settle
+  for (let pass = 0; pass < 4; pass++){
     let changed = false;
     for (const t of tiles.values()){
-      if (t.type !== 'xnor') continue;
+      const gd = GATE_DEFS[t.type];
+      if (!gd) continue;
       const at = d => { const v = DIRS[d]; return K(t.x+v.x, t.y+v.y, t.z); };
       const hot = k => powered.has(k) || srcOn.has(k);
-      const out = hot(at(rotL(t.dir))) === hot(at(rotR(t.dir)));
+      const out = gd.one
+        ? gd.fn(hot(at((t.dir+2)%4)))
+        : gd.fn(hot(at(rotL(t.dir))), hot(at(rotR(t.dir))));
       t.out = out;
       if (out){
         const fk = at(t.dir), f = tiles.get(fk);
@@ -1572,22 +1595,33 @@ function drawTileGraphic(c, t, ts, time, forIcon){
       }
       break;
     }
-    case 'xnor': {
+    case 'and': case 'or': case 'xor': case 'nand': case 'nor': case 'xnor': case 'not': {
+      const gd = GATE_DEFS[t.type];
       rotSave();
       rr(c, ts*0.12, ts*0.18, ts*0.76, ts*0.64, ts*0.1);
       c.fillStyle = '#3a4437'; c.fill();
-      c.strokeStyle = '#222a20'; c.lineWidth = ts*0.05; c.stroke();
+      c.strokeStyle = gd.c; c.lineWidth = ts*0.05; c.stroke();
       c.fillStyle = '#a4643c';
-      c.fillRect(cx - ts*0.06, ts*0.06, ts*0.12, ts*0.13);
-      c.fillRect(cx - ts*0.06, ts*0.81, ts*0.12, ts*0.13);
+      if (gd.one){
+        c.fillRect(ts*0.06, cy - ts*0.06, ts*0.13, ts*0.12); // single input from behind
+      } else {
+        c.fillRect(cx - ts*0.06, ts*0.06, ts*0.12, ts*0.13); // the two side inputs
+        c.fillRect(cx - ts*0.06, ts*0.81, ts*0.12, ts*0.13);
+      }
       const on = forIcon ? true : t.out;
       c.fillStyle = on ? '#ffd54a' : '#5a5148';
       c.fillRect(ts*0.81, cy - ts*0.06, ts*0.13, ts*0.12);
+      if (on && !forIcon){
+        c.globalAlpha = .3; c.fillStyle = '#ffd54a';
+        c.beginPath(); c.arc(ts*0.87, cy, ts*0.14, 0, 7); c.fill(); c.globalAlpha = 1;
+      }
       c.fillStyle = '#cfe0b8';
-      c.font = '800 '+Math.round(ts*0.16)+'px ui-monospace, monospace';
+      c.font = '800 '+Math.round(gd.lbl.length > 3 ? ts*0.15 : ts*0.19)+'px ui-monospace, monospace';
       c.textAlign='center'; c.textBaseline='middle';
-      c.fillText('XNOR', cx, cy);
-      c.restore(); break;
+      c.fillText(gd.lbl, cx, cy);
+      c.restore();
+      drawOutArrow(c, t, ts);
+      break;
     }
     case 'cash': {
       const pu = forIcon ? 0 : t.pulse;
@@ -2258,6 +2292,9 @@ function handClick(tx, ty){
   } else if (t.type === 'lever'){
     t.on = !t.on;
     setInfo('Lever switched <b>'+(t.on ? 'ON' : 'OFF')+'</b>.');
+  } else if (GATE_DEFS[t.type]){
+    const s = SHOP_BY_TYPE[t.type];
+    setInfo('<b>'+s.n+'</b> — '+s.d+' Right now its front is <b>'+(t.out ? 'ON &#9889;' : 'OFF')+'</b>.');
   } else if (TREES[t.type] && t.stage >= 1){
     const wood = TREES[t.type].wood, v = itemVal(wood);
     money += v; t.stage = 0; t.growTime = rnd(...TREES[t.type].grow);
