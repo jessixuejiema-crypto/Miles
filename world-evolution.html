@@ -378,27 +378,59 @@ function geoStep() {
   }
   [terrain, scratch] = [scratch, terrain];
 
-  /* --- coastlines morph: erosion vs. accretion --- */
+  /* --- coastlines flex: continents stretch, swell, and waste away --- */
   let land = 0;
   for (let i = 0; i < N; i++) if (terrain[i] !== OCEAN) land++;
-  const crowded = land > N * 0.42;         // keep oceans on the map
+  const crowded = land > N * 0.45;         // keep oceans on the map
   const sparse = land < N * 0.12;          // young worlds grow eagerly
-  const grow = crowded ? 0 : sparse ? 0.16 : 0.07;
+  const comps2 = labelContinents();        // fresh labels after the drift
+  // each continent carries a slowly wandering stretch axis and a growth mood,
+  // so circles pull into ovals while some landmasses expand and others shrink
+  for (const c of comps2) {
+    c.axis = Math.PI * vnoise(c.cx * 0.013 + 5, c.cy * 0.013 + T * 0.8, 424);
+    c.stretch = 0.4 + 0.6 * vnoise(c.cx * 0.02, c.cy * 0.02 + T, 425);
+    c.mood = vnoise(c.cx * 0.017 + 9, c.cy * 0.017 + T * 1.4, 426) - 0.5;
+  }
+  const dirAlign = (c, x, y) => {
+    let ddx = x - c.cx;
+    if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
+    const a = Math.atan2(y - c.cy, ddx);
+    return Math.abs(Math.cos(a - c.axis)); // 1 along the axis, 0 across it
+  };
   scratch.set(terrain);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
     const n = landNeighbors(x, y);
     if (terrain[i] !== OCEAN) {
-      if (n === 0 && rand() < 0.25) scratch[i] = OCEAN;          // lone rocks wash away
-      else if (n <= 2 && rand() < (crowded ? 0.08 : 0.02)) scratch[i] = OCEAN;
-    } else if (n >= 4 && rand() < grow) {
-      scratch[i] = GRASS;                                        // coasts silt up
+      const c = comps2[labels[i]];
+      if (n === 0 || !c || c.size < 9) {   // scraps and shoals dissolve away
+        if (rand() < 0.3) scratch[i] = OCEAN;
+      } else if (n <= 4) {
+        const al = dirAlign(c, x, y);
+        const p = 0.015 + 0.05 * (1 - al) * c.stretch
+                + Math.max(0, -c.mood) * 0.10 + (crowded ? 0.05 : 0);
+        if (rand() < p) scratch[i] = OCEAN;
+      }
+    } else if (n >= 3 && !crowded) {
+      let c = null;                        // which continent is this shore of?
+      outer: for (let dy2 = -1; dy2 <= 1; dy2++) for (let dx2 = -1; dx2 <= 1; dx2++) {
+        const ny2 = y + dy2;
+        if (ny2 < 0 || ny2 >= H) continue;
+        const j = idx(x + dx2, ny2);
+        if (terrain[j] !== OCEAN && labels[j] >= 0) { c = comps2[labels[j]]; break outer; }
+      }
+      if (c && c.size >= 9) {              // only real landmasses grow — no new specks
+        const al = dirAlign(c, x, y);
+        const p = 0.02 + 0.09 * al * c.stretch + Math.max(0, c.mood) * 0.12
+                + Math.min(0.05, c.size / 8000) + (sparse ? 0.08 : 0);
+        if (rand() < p) scratch[i] = GRASS;
+      }
     }
   }
   [terrain, scratch] = [scratch, terrain];
 
   /* --- rifting: big continents crack apart --- */
-  for (const c of comps) {
+  for (const c of comps2) {
     if (c.size < 120 || rand() > 0.010 + c.size / 90000) continue;
     const ang = rand() * Math.PI;
     const nx = Math.cos(ang), nyv = Math.sin(ang);
@@ -411,14 +443,6 @@ function geoStep() {
       const d = ddx * nx + (y - c.cy) * nyv
               + (vnoise(x * 0.09, y * 0.09, 555 + c.id) - 0.5) * 6;
       if (Math.abs(d) < 1.1) terrain[i] = OCEAN;
-    }
-  }
-
-  /* --- hotspot volcanism: new islands are born --- */
-  if (rand() < (land < N * 0.02 ? 0.35 : 0.05)) {
-    const x = (rand() * W) | 0, y = 4 + ((rand() * (H - 8)) | 0);
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (rand() < 0.7) terrain[idx(x + dx, y + dy)] ||= GRASS;
     }
   }
 
