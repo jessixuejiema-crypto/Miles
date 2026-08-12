@@ -285,6 +285,7 @@ let coastDist = new Uint8Array(N);   // land cells: steps to nearest ocean
 let labels = new Int32Array(N);      // continent labels per geo step
 
 let riftCool = new Uint8Array(N);    // freshly torn ocean resists healing shut
+const unitGrid = new Int16Array(N).fill(-1); // which named continent owns each cell
 
 let simYears = 0;
 let lastGeoYear = 0;
@@ -329,14 +330,30 @@ const NAME_A = ['Gon', 'Pan', 'Lau', 'Ava', 'Bal', 'Zea', 'Kar', 'Mor', 'Tel',
 const NAME_B = ['da', 'ra', 'ti', 'lo', 've', 'na', 'mi', 'sa', 'ga', 'the', 'ru', 'no'];
 const NAME_C = ['nia', 'dia', 'land', 'gard', 'thos', 'mar', 'ria', 'tica', 'via',
                 'dor', 'stan', 'heim', 'ora'];
-let namedConts = [];   // {name, cx, cy, size} — persists so names follow the drift
+let namedConts = [];   // {name, cx, cy, size, color} — persists so names follow the drift
+let ghostNames = [];   // recently lost names linger a while and can come back
+
+function strHash(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function nameColor(name) {           // stable saturated hue per continent name
+  const hue = strHash(name) % 360, s = 0.72, l = 0.55;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => {
+    const k = (n + hue / 30) % 12;
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+  };
+  return [f(0), f(8), f(4)];
+}
 
 function makeName() {
   for (let t = 0; t < 12; t++) {
     let n = NAME_A[(rand() * NAME_A.length) | 0];
     if (rand() < 0.6) n += NAME_B[(rand() * NAME_B.length) | 0];
     n += NAME_C[(rand() * NAME_C.length) | 0];
-    if (!namedConts.some(c => c.name === n)) return n;
+    if (!namedConts.some(c => c.name === n) && !ghostNames.some(c => c.name === n)) return n;
   }
   return 'Terra ' + ((rand() * 90 + 10) | 0);
 }
@@ -358,8 +375,11 @@ function nameAt(x, y) {
 function regionUnits(comps) {
   const units = [];
   for (const c of comps) {
-    const k = Math.min(5, Math.floor(c.size / 1400) + 1);
-    if (k === 1) { units.push({ cx: c.cx, cy: c.cy, size: c.size }); continue; }
+    const k = c.size < 1200 ? 1 : Math.min(5, 2 + Math.floor((c.size - 1200) / 1600));
+    if (k === 1) {
+      units.push({ cx: c.cx, cy: c.cy, size: c.size, cid: c.id, sx: c.cx, sy: c.cy });
+      continue;
+    }
     const cells = [];
     for (let i = 0; i < N; i++) {
       if (terrain[i] !== OCEAN && labels[i] === c.id) cells.push(i);
@@ -403,6 +423,7 @@ function regionUnits(comps) {
         cx: ((seeds[s2] % W) + a.sx / a.n + W) % W,
         cy: a.sy / a.n,
         size: Math.round(c.size * a.n / sample.length),
+        cid: c.id, sx: seeds[s2] % W, sy: (seeds[s2] / W) | 0,
       });
     }
   }
@@ -412,22 +433,55 @@ function regionUnits(comps) {
 // re-match names to continents by nearest previous centroid; splits mint new
 // names, and a sizable name that vanishes into a neighbor logs a merger
 function renameContinents() {
-  const comps = regionUnits(labelContinents().filter(c => c.size >= 15))
+  const comps = regionUnits(labelContinents().filter(c => c.size >= 50))
     .sort((a, b) => b.size - a.size);
   const claimed = new Set(), next = [];
+  const candidates = namedConts.concat(ghostNames);
   for (const c of comps) {
-    // the largest old continent within reach keeps its name through mergers,
-    // and the reach grows with continent size so identity survives big drifts
-    let best = null, bs = -1;
-    for (const o of namedConts) {
+    // names are sticky: a generous match radius that grows with size, a score
+    // that favors big established names, and lost names haunting the area
+    // come back before any new name is coined — so renames stay rare
+    let best = null, bs = 1e9;
+    for (const o of candidates) {
       if (claimed.has(o)) continue;
       const d = contDist(c.cx, c.cy, o.cx, o.cy);
-      if (d < 26 + 0.55 * Math.sqrt(Math.max(c.size, o.size)) && o.size > bs) {
-        bs = o.size; best = o;
+      if (d < 34 + 0.8 * Math.sqrt(Math.max(c.size, o.size))) {
+        const score = d - 0.4 * Math.sqrt(o.size);
+        if (score < bs) { bs = score; best = o; }
       }
     }
     if (best) claimed.add(best);
-    next.push({ name: best ? best.name : makeName(), cx: c.cx, cy: c.cy, size: c.size });
+    const nm = best ? best.name : makeName();
+    next.push({ name: nm, cx: c.cx, cy: c.cy, size: c.size, color: nameColor(nm) });
+  }
+  // unmatched names above a real size become ghosts for ~10 M years
+  const nextGhosts = [];
+  for (const o of namedConts) {
+    if (!claimed.has(o) && o.size >= 150) nextGhosts.push({ ...o, ttl: 120 });
+  }
+  for (const g of ghostNames) {
+    if (!claimed.has(g) && --g.ttl > 0) nextGhosts.push(g);
+  }
+  ghostNames = nextGhosts;
+  // paint per-cell ownership so coasts and region borders can wear their color
+  const byComp = new Map();
+  comps.forEach((u, ui) => {
+    if (!byComp.has(u.cid)) byComp.set(u.cid, []);
+    byComp.get(u.cid).push(ui);
+  });
+  unitGrid.fill(-1);
+  for (let i = 0; i < N; i++) {
+    if (terrain[i] === OCEAN) continue;
+    const us = byComp.get(labels[i]);
+    if (!us) continue;
+    if (us.length === 1) { unitGrid[i] = us[0]; continue; }
+    const x = i % W, y = (i / W) | 0;
+    let bi = us[0], bd = 1e9;
+    for (const ui of us) {
+      const d = contDist(x, y, comps[ui].sx, comps[ui].sy);
+      if (d < bd) { bd = d; bi = ui; }
+    }
+    unitGrid[i] = bi;
   }
   for (const o of namedConts) {
     // only announce substantial mergers, and not more than one per while —
@@ -505,8 +559,11 @@ function geoStep() {
   /* --- plate drift + occasional rotation --- */
   scratch.fill(OCEAN);
   const moves = comps.map(c => {
-    const ang = vnoise(c.cx * 0.035 + 31.7, c.cy * 0.035 + T * 0.9, 909) * Math.PI * 4;
-    const go = rand() < 0.45 + 0.4 * vnoise(c.cx * 0.03, c.cy * 0.03 + T, 313);
+    // each continent holds a steady heading tied to its name, wandering only
+    // over tens of millions of years — a smooth glide, not a jitter
+    const nh = strHash(nameAt(c.cx, c.cy));
+    const ang = vnoise(T * 2.2, (nh % 997) * 0.37, 911) * Math.PI * 4;
+    const go = rand() < 0.25;
     let dx = 0, dy = 0;
     if (go) { dx = Math.round(Math.cos(ang)); dy = Math.round(Math.sin(ang)); }
     // firm equatorward push — no continents parked on the poles: a plate
@@ -516,7 +573,7 @@ function geoStep() {
     else if (c.cy < 16) dy = rand() < 0.75 ? 1 : Math.max(dy, 0);
     else if (c.cy > H - 17) dy = rand() < 0.75 ? -1 : Math.min(dy, 0);
     let rot = 0;
-    if (rand() < 0.12) rot = (rand() - 0.5) * 0.12; // ± ~3.5°
+    if (rand() < 0.05) rot = (rand() - 0.5) * 0.12; // ± ~3.5°, rarely
     return { dx, dy, rot };
   });
   compCells.fill(-1);                      // which plate wrote each cell
@@ -626,7 +683,7 @@ function geoStep() {
   [terrain, scratch] = [scratch, terrain];
 
   /* --- rifting: big continents crack apart (rarely, and for good) --- */
-  if (simYears - lastRiftYear > 9e6) {
+  if (simYears - lastRiftYear > 15e6) {
     for (const c of comps2) {
       if (c.size < 110 || rand() > 0.009 + c.size / 110000) continue;
       const ang = rand() * Math.PI;
@@ -648,7 +705,7 @@ function geoStep() {
   }
 
   /* --- breakup: an overgrown continent shatters into 2–10 shards --- */
-  if (simYears - lastBreakYear > 9e6) {
+  if (simYears - lastBreakYear > 18e6) {
     for (const c of comps2) {
       const crowdedBig = land > N * 0.40 && c.size > land * 0.30;
       if (!(crowdedBig || c.size > N * 0.15) || rand() > 0.09) continue;
@@ -780,17 +837,31 @@ function render() {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
     const b = terrain[i];
-    let c;
+    let c, mix = 0, tint = null;
     if (b === OCEAN) {
       c = landNeighbors(x, y) > 0 ? OCEAN_SHALLOW : COLOR[OCEAN];
     } else {
       c = COLOR[b];
+      const u = unitGrid[i];
+      if (u >= 0 && namedConts[u]) {
+        // outline: coasts and internal region borders wear the continent color
+        for (let k = 0; k < 4; k++) {
+          const nx = k === 0 ? x + 1 : k === 1 ? x - 1 : x;
+          const ny = k === 2 ? y + 1 : k === 3 ? y - 1 : y;
+          if (ny < 0 || ny >= H) continue;
+          const jj = idx(nx, ny);
+          if (terrain[jj] === OCEAN) { mix = 0.8; break; }
+          if (unitGrid[jj] !== u && unitGrid[jj] >= 0) mix = 0.55;
+        }
+        if (mix) tint = namedConts[u].color;
+      }
     }
     const j = hash(x, y, 7) * 22 - 11;   // per-cell texture jitter
     const p = i * 4;
-    d[p]     = Math.max(0, Math.min(255, c[0] + j));
-    d[p + 1] = Math.max(0, Math.min(255, c[1] + j));
-    d[p + 2] = Math.max(0, Math.min(255, c[2] + j));
+    for (let ch = 0; ch < 3; ch++) {
+      const v = tint ? c[ch] * (1 - mix) + tint[ch] * mix : c[ch];
+      d[p + ch] = Math.max(0, Math.min(255, v + j));
+    }
     d[p + 3] = 255;
   }
   offCtx.putImageData(img, 0, 0);
@@ -805,10 +876,11 @@ function render() {
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 3;
   ctx.strokeStyle = 'rgba(10, 14, 20, 0.75)';
-  ctx.fillStyle = '#f3ead6';
   for (const c of namedConts) {
     if (c.size < 45) continue;
     const px = (c.cx + 0.5) * sc, py = (c.cy + 0.5) * sc;
+    const [r, g, bl] = c.color;                  // label in the continent color
+    ctx.fillStyle = `rgb(${Math.min(255, r + 80)},${Math.min(255, g + 80)},${Math.min(255, bl + 80)})`;
     ctx.strokeText(c.name, px, py);
     ctx.fillText(c.name, px, py);
   }
@@ -871,7 +943,11 @@ canvas.addEventListener('pointerdown', e => {
   paintAt(e.clientX, e.clientY);
 });
 canvas.addEventListener('pointermove', e => { if (painting) paintAt(e.clientX, e.clientY); });
-canvas.addEventListener('pointerup', () => { painting = false; updateLegend(); });
+canvas.addEventListener('pointerup', () => {
+  painting = false;
+  renameContinents();       // fresh paint gets outlined and named right away
+  render(); updateLegend();
+});
 
 /* ---------------- controls ---------------- */
 const speedButtons = [
@@ -912,7 +988,9 @@ function resetWorldState() {
   simYears = 0; lastGeoYear = 0;
   lastRiftYear = 0; lastBreakYear = 0; lastWarYear = 0; lastMergeYear = 0;
   riftCool.fill(0);
+  unitGrid.fill(-1);
   namedConts = [];
+  ghostNames = [];
   events = []; renderEvents();
   yearEl.textContent = formatYears(0);
 }
