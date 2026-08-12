@@ -262,7 +262,7 @@
 const W = 192, H = 112;          // simulation cells; x wraps like a globe
 const N = W * H;
 const OCEAN = 0, GRASS = 1, DESERT = 2, SAVANNA = 3, FOREST = 4,
-      JUNGLE = 5, TUNDRA = 6, MOUNTAIN = 7, SCORCHED = 8;
+      JUNGLE = 5, TUNDRA = 6, MOUNTAIN = 7, SCORCHED = 8, FLOODED = 9;
 
 const BIOMES = [
   { id: GRASS,    name: 'Grassland', color: [106, 176, 76]  },
@@ -273,6 +273,7 @@ const BIOMES = [
   { id: TUNDRA,   name: 'Tundra',    color: [214, 224, 228] },
   { id: MOUNTAIN, name: 'Mountains', color: [138, 130, 118] },
   { id: SCORCHED, name: 'Scorched',  color: [66, 56, 47]    },
+  { id: FLOODED,  name: 'Flooded',   color: [72, 106, 148]  },
 ];
 const COLOR = [];
 COLOR[OCEAN] = [27, 66, 110];
@@ -293,6 +294,11 @@ const GEO_INTERVAL = 250000;         // one geologic step per 250,000 years
 let speed = 0;                       // years per real second (0 = paused)
 let rngState = 12345;
 let lastRiftYear = 0, lastBreakYear = 0, lastWarYear = 0, lastMergeYear = 0;
+let lastDisasterYear = 0;
+let disasters = [];   // travelling storms: {type, name?, x, y, vx, vy, turn, ttl, r}
+const STORM_NAMES = ['Ada', 'Bo', 'Cleo', 'Dax', 'Edna', 'Fio', 'Gus', 'Hana',
+                     'Iggy', 'Juno', 'Kai', 'Lola', 'Mo', 'Nia', 'Otto', 'Pia',
+                     'Rex', 'Sky', 'Tia', 'Uma'];
 
 function rand() { // xorshift32, deterministic per world
   rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5;
@@ -375,7 +381,7 @@ function nameAt(x, y) {
 function regionUnits(comps) {
   const units = [];
   for (const c of comps) {
-    const k = c.size < 1200 ? 1 : Math.min(5, 2 + Math.floor((c.size - 1200) / 1600));
+    const k = c.size < 1600 ? 1 : Math.min(3, 2 + Math.floor((c.size - 1600) / 2200));
     if (k === 1) {
       units.push({ cx: c.cx, cy: c.cy, size: c.size, cid: c.id, sx: c.cx, sy: c.cy });
       continue;
@@ -387,20 +393,29 @@ function regionUnits(comps) {
     const stride = Math.max(1, (cells.length / 260) | 0);
     const sample = [];
     for (let s = 0; s < cells.length; s += stride) sample.push(cells[s]);
-    // first seed: the sampled cell nearest the centroid (deterministic),
-    // then farthest-point picks — regions barely move between steps
-    let seed0 = sample[0], bd0 = 1e9;
-    for (const i of sample) {
-      const d = contDist(i % W, (i / W) | 0, c.cx, c.cy);
-      if (d < bd0) { bd0 = d; seed0 = i; }
-    }
-    const seeds = [seed0];
-    while (seeds.length < k) {
-      let best = sample[0], bd = -1;
+    // warm start: reuse the named continents already living on this landmass
+    // as seeds, so regions stay planted instead of hopping around each step
+    const reach = 30 + 0.8 * Math.sqrt(c.size);
+    const seeds = namedConts
+      .filter(o => contDist(o.cx, o.cy, c.cx, c.cy) < reach)
+      .sort((a, b) => b.size - a.size)
+      .slice(0, k)
+      .map(o => ({ x: o.cx, y: o.cy }));
+    if (!seeds.length) {
+      let s0 = sample[0], bd0 = 1e9;
       for (const i of sample) {
+        const d = contDist(i % W, (i / W) | 0, c.cx, c.cy);
+        if (d < bd0) { bd0 = d; s0 = i; }
+      }
+      seeds.push({ x: s0 % W, y: (s0 / W) | 0 });
+    }
+    while (seeds.length < k) {           // top up with farthest-point picks
+      let best = null, bd = -1;
+      for (const i of sample) {
+        const x = i % W, y = (i / W) | 0;
         let md = 1e9;
-        for (const sd of seeds) md = Math.min(md, contDist(i % W, (i / W) | 0, sd % W, (sd / W) | 0));
-        if (md > bd) { bd = md; best = i; }
+        for (const sd of seeds) md = Math.min(md, contDist(x, y, sd.x, sd.y));
+        if (md > bd) { bd = md; best = { x, y }; }
       }
       seeds.push(best);
     }
@@ -409,10 +424,10 @@ function regionUnits(comps) {
       const x = i % W, y = (i / W) | 0;
       let bi = 0, bd = 1e9;
       for (let s2 = 0; s2 < seeds.length; s2++) {
-        const d = contDist(x, y, seeds[s2] % W, (seeds[s2] / W) | 0);
+        const d = contDist(x, y, seeds[s2].x, seeds[s2].y);
         if (d < bd) { bd = d; bi = s2; }
       }
-      let ddx = x - seeds[bi] % W;
+      let ddx = x - seeds[bi].x;
       if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
       agg[bi].sx += ddx; agg[bi].sy += y; agg[bi].n++;
     }
@@ -420,10 +435,10 @@ function regionUnits(comps) {
       const a = agg[s2];
       if (!a.n) continue;
       units.push({
-        cx: ((seeds[s2] % W) + a.sx / a.n + W) % W,
+        cx: (seeds[s2].x + a.sx / a.n + W) % W,
         cy: a.sy / a.n,
         size: Math.round(c.size * a.n / sample.length),
-        cid: c.id, sx: seeds[s2] % W, sy: (seeds[s2] / W) | 0,
+        cid: c.id, sx: seeds[s2].x, sy: seeds[s2].y,
       });
     }
   }
@@ -566,6 +581,22 @@ function geoStep() {
     const go = rand() < 0.25;
     let dx = 0, dy = 0;
     if (go) { dx = Math.round(Math.cos(ang)); dy = Math.round(Math.sin(ang)); }
+    // continents keep their distance: steer away from a close neighbor so
+    // islands spread across the ocean instead of clumping
+    if (c.size >= 50) {
+      let near = null, nd = 1e9;
+      for (const o of comps) {
+        if (o === c || o.size < 50) continue;
+        const d = contDist(c.cx, c.cy, o.cx, o.cy);
+        if (d < nd) { nd = d; near = o; }
+      }
+      if (near && nd < 46 && rand() < 0.55) {
+        let ddx = c.cx - near.cx;
+        if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
+        const away = Math.atan2(c.cy - near.cy, ddx);
+        dx = Math.round(Math.cos(away)); dy = Math.round(Math.sin(away));
+      }
+    }
     // firm equatorward push — no continents parked on the poles: a plate
     // whose edge touches the polar band is marched straight back
     if (c.minY < 6) dy = 1;
@@ -754,9 +785,107 @@ function geoStep() {
     }
   }
 
+  /* --- natural disasters: storms, tsunamis, floods --- */
+  if (simYears - lastDisasterYear > 6e6 && land > 300 && rand() < 0.05) {
+    const roll = rand();
+    if (roll < 0.30) spawnHurricane();
+    else if (roll < 0.50) spawnTornado();
+    else if (roll < 0.75) tsunami();
+    else flood();
+    lastDisasterYear = simYears;
+  }
+  stepDisasters();
+
   for (let i = 0; i < N; i++) if (riftCool[i] > 0) riftCool[i]--;
   renameContinents();
   climateStep();
+}
+
+/* ---------------- disasters ---------------- */
+function randLandCell() {
+  for (let t = 0; t < 80; t++) {
+    const i = (rand() * N) | 0;
+    if (terrain[i] !== OCEAN) return i;
+  }
+  return -1;
+}
+function spawnHurricane() {
+  const i = randLandCell();
+  if (i < 0) return;
+  const lx = i % W, ly = (i / W) | 0;
+  const a = rand() * Math.PI * 2;                 // form offshore, head for land
+  const x = (lx + Math.cos(a) * 10 + W) % W;
+  const y = Math.max(4, Math.min(H - 5, ly + Math.sin(a) * 10));
+  let ddx = lx - x;
+  if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
+  const heading = Math.atan2(ly - y, ddx);
+  const name = STORM_NAMES[(rand() * STORM_NAMES.length) | 0];
+  disasters.push({ type: 'hurricane', name, x, y,
+                   vx: Math.cos(heading), vy: Math.sin(heading),
+                   turn: (rand() - 0.5) * 0.18, ttl: 26, r: 4 });
+  addEvent('🌀 Hurricane ' + name + ' forms off ' + nameAt(lx, ly));
+}
+function spawnTornado() {
+  const i = randLandCell();
+  if (i < 0) return;
+  const x = i % W, y = (i / W) | 0;
+  const a = rand() * Math.PI * 2;
+  disasters.push({ type: 'tornado', x, y,
+                   vx: Math.cos(a) * 0.8, vy: Math.sin(a) * 0.8,
+                   turn: (rand() - 0.5) * 0.5, ttl: 14, r: 1.6 });
+  addEvent('🌪 A tornado tears across ' + nameAt(x, y));
+}
+function tsunami() {
+  const i = randLandCell();
+  if (i < 0) return;
+  const cx = i % W, cy = (i / W) | 0;
+  for (let dy = -10; dy <= 10; dy++) for (let dx = -10; dx <= 10; dx++) {
+    const ny = cy + dy;
+    if (ny < 0 || ny >= H || Math.hypot(dx, dy) > 10) continue;
+    const j = idx(cx + dx, ny);
+    if (terrain[j] !== OCEAN && terrain[j] !== MOUNTAIN &&
+        coastDist[j] <= 3 && rand() < 0.8) terrain[j] = FLOODED;
+  }
+  addEvent('🌊 A tsunami floods the shores of ' + nameAt(cx, cy));
+}
+function flood() {
+  const i = randLandCell();
+  if (i < 0) return;
+  const cx = i % W, cy = (i / W) | 0;
+  for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
+    const ny = cy + dy;
+    const d = Math.hypot(dx, dy);
+    if (ny < 0 || ny >= H || d > 7) continue;
+    const j = idx(cx + dx, ny);
+    if (terrain[j] !== OCEAN && terrain[j] !== MOUNTAIN &&
+        rand() < 0.55 * (1 - d / 8)) terrain[j] = FLOODED;
+  }
+  addEvent('💧 A great flood swamps ' + nameAt(cx, cy));
+}
+function stepDisasters() {
+  for (const s of disasters) {
+    const R = Math.ceil(s.r), sx = Math.round(s.x), sy = Math.round(s.y);
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      const ny = sy + dy;
+      if (ny < 0 || ny >= H || dx * dx + dy * dy > s.r * s.r) continue;
+      const j = idx(sx + dx, ny);
+      const b = terrain[j];
+      if (b === OCEAN || b === MOUNTAIN || b === SCORCHED || b === FLOODED) continue;
+      if (s.type === 'hurricane') {
+        if ((b === JUNGLE || b === FOREST) && rand() < 0.4) terrain[j] = GRASS;
+        else if (coastDist[j] <= 2 && rand() < 0.3) terrain[j] = FLOODED;
+      } else if (rand() < 0.55) {
+        terrain[j] = GRASS;                       // the tornado strips the land bare
+      }
+    }
+    const cos = Math.cos(s.turn), sin = Math.sin(s.turn); // storms curve as they go
+    const nvx = s.vx * cos - s.vy * sin, nvy = s.vx * sin + s.vy * cos;
+    s.vx = nvx; s.vy = nvy;
+    s.x = (s.x + s.vx + W) % W;
+    s.y = Math.max(2, Math.min(H - 3, s.y + s.vy));
+    s.ttl--;
+  }
+  disasters = disasters.filter(s => s.ttl > 0);
 }
 
 /* ---------------- climate & biomes ---------------- */
@@ -799,6 +928,10 @@ function climateStep() {
       }
       if (b === SCORCHED) {                          // war scars slowly regrow
         if (rand() < 0.04) terrain[i] = GRASS;
+        continue;
+      }
+      if (b === FLOODED) {                           // floodwaters recede
+        if (rand() < 0.07) terrain[i] = GRASS;
         continue;
       }
       // temperature and moisture drift with the epochs
@@ -883,6 +1016,10 @@ function render() {
     ctx.fillStyle = `rgb(${Math.min(255, r + 80)},${Math.min(255, g + 80)},${Math.min(255, bl + 80)})`;
     ctx.strokeText(c.name, px, py);
     ctx.fillText(c.name, px, py);
+  }
+  for (const s of disasters) {                       // storms spin over the map
+    ctx.font = Math.round(s.type === 'hurricane' ? sc * 7 : sc * 4.5) + 'px system-ui';
+    ctx.fillText(s.type === 'hurricane' ? '🌀' : '🌪', (s.x + 0.5) * sc, (s.y + 0.5) * sc);
   }
 }
 
@@ -987,6 +1124,8 @@ brushBtn.addEventListener('click', () => {
 function resetWorldState() {
   simYears = 0; lastGeoYear = 0;
   lastRiftYear = 0; lastBreakYear = 0; lastWarYear = 0; lastMergeYear = 0;
+  lastDisasterYear = 0;
+  disasters = [];
   riftCool.fill(0);
   unitGrid.fill(-1);
   namedConts = [];
