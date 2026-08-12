@@ -295,7 +295,6 @@ let speed = 0;                       // years per real second (0 = paused)
 let rngState = 12345;
 let lastRiftYear = 0, lastBreakYear = 0, lastWarYear = 0, lastMergeYear = 0;
 let lastDisasterYear = 0;
-let disasters = [];   // travelling storms: {type, name?, x, y, vx, vy, turn, ttl, r}
 const STORM_NAMES = ['Ada', 'Bo', 'Cleo', 'Dax', 'Edna', 'Fio', 'Gus', 'Hana',
                      'Iggy', 'Juno', 'Kai', 'Lola', 'Mo', 'Nia', 'Otto', 'Pia',
                      'Rex', 'Sky', 'Tia', 'Uma'];
@@ -794,7 +793,6 @@ function geoStep() {
     else flood();
     lastDisasterYear = simYears;
   }
-  stepDisasters();
 
   for (let i = 0; i < N; i++) if (riftCool[i] > 0) riftCool[i]--;
   renameContinents();
@@ -810,30 +808,54 @@ function randLandCell() {
   return -1;
 }
 function spawnHurricane() {
+  // a storm lasts days, not epochs: the whole curved track lands in one step
+  // and only the aftermath — stripped forests, drowned coasts — remains
   const i = randLandCell();
   if (i < 0) return;
   const lx = i % W, ly = (i / W) | 0;
-  const a = rand() * Math.PI * 2;                 // form offshore, head for land
-  const x = (lx + Math.cos(a) * 10 + W) % W;
-  const y = Math.max(4, Math.min(H - 5, ly + Math.sin(a) * 10));
+  const a = rand() * Math.PI * 2;                 // forms offshore, heads for land
+  let x = (lx + Math.cos(a) * 10 + W) % W;
+  let y = Math.max(4, Math.min(H - 5, ly + Math.sin(a) * 10));
   let ddx = lx - x;
   if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
-  const heading = Math.atan2(ly - y, ddx);
-  const name = STORM_NAMES[(rand() * STORM_NAMES.length) | 0];
-  disasters.push({ type: 'hurricane', name, x, y,
-                   vx: Math.cos(heading), vy: Math.sin(heading),
-                   turn: (rand() - 0.5) * 0.18, ttl: 26, r: 4 });
-  addEvent('🌀 Hurricane ' + name + ' forms off ' + nameAt(lx, ly));
+  let hd = Math.atan2(ly - y, ddx);
+  const turn = (rand() - 0.5) * 0.18;
+  for (let t = 0; t < 26; t++) {
+    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+      const ny = Math.round(y) + dy;
+      if (ny < 0 || ny >= H || dx * dx + dy * dy > 16) continue;
+      const j = idx(Math.round(x) + dx, ny);
+      const b = terrain[j];
+      if ((b === JUNGLE || b === FOREST) && rand() < 0.35) terrain[j] = GRASS;
+      else if (b !== OCEAN && b !== MOUNTAIN && b !== SCORCHED && b !== FLOODED &&
+               coastDist[j] <= 2 && rand() < 0.25) terrain[j] = FLOODED;
+    }
+    hd += turn;
+    x = (x + Math.cos(hd) + W) % W;
+    y = Math.max(2, Math.min(H - 3, y + Math.sin(hd)));
+  }
+  addEvent('🌀 Hurricane ' + STORM_NAMES[(rand() * STORM_NAMES.length) | 0] +
+           ' batters ' + nameAt(lx, ly));
 }
 function spawnTornado() {
   const i = randLandCell();
   if (i < 0) return;
-  const x = i % W, y = (i / W) | 0;
-  const a = rand() * Math.PI * 2;
-  disasters.push({ type: 'tornado', x, y,
-                   vx: Math.cos(a) * 0.8, vy: Math.sin(a) * 0.8,
-                   turn: (rand() - 0.5) * 0.5, ttl: 14, r: 1.6 });
-  addEvent('🌪 A tornado tears across ' + nameAt(x, y));
+  let x = i % W, y = (i / W) | 0;
+  let hd = rand() * Math.PI * 2;
+  for (let t = 0; t < 14; t++) {                   // a thin wandering scar, all at once
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const ny = Math.round(y) + dy;
+      if (ny < 0 || ny >= H) continue;
+      const j = idx(Math.round(x) + dx, ny);
+      const b = terrain[j];
+      if (b !== OCEAN && b !== MOUNTAIN && b !== SCORCHED && b !== FLOODED &&
+          rand() < 0.6) terrain[j] = GRASS;
+    }
+    hd += (rand() - 0.5) * 0.9;
+    x = (x + Math.cos(hd) + W) % W;
+    y = Math.max(2, Math.min(H - 3, y + Math.sin(hd)));
+  }
+  addEvent('🌪 A tornado tears across ' + nameAt(i % W, (i / W) | 0));
 }
 function tsunami() {
   const i = randLandCell();
@@ -862,32 +884,6 @@ function flood() {
   }
   addEvent('💧 A great flood swamps ' + nameAt(cx, cy));
 }
-function stepDisasters() {
-  for (const s of disasters) {
-    const R = Math.ceil(s.r), sx = Math.round(s.x), sy = Math.round(s.y);
-    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
-      const ny = sy + dy;
-      if (ny < 0 || ny >= H || dx * dx + dy * dy > s.r * s.r) continue;
-      const j = idx(sx + dx, ny);
-      const b = terrain[j];
-      if (b === OCEAN || b === MOUNTAIN || b === SCORCHED || b === FLOODED) continue;
-      if (s.type === 'hurricane') {
-        if ((b === JUNGLE || b === FOREST) && rand() < 0.4) terrain[j] = GRASS;
-        else if (coastDist[j] <= 2 && rand() < 0.3) terrain[j] = FLOODED;
-      } else if (rand() < 0.55) {
-        terrain[j] = GRASS;                       // the tornado strips the land bare
-      }
-    }
-    const cos = Math.cos(s.turn), sin = Math.sin(s.turn); // storms curve as they go
-    const nvx = s.vx * cos - s.vy * sin, nvy = s.vx * sin + s.vy * cos;
-    s.vx = nvx; s.vy = nvy;
-    s.x = (s.x + s.vx + W) % W;
-    s.y = Math.max(2, Math.min(H - 3, s.y + s.vy));
-    s.ttl--;
-  }
-  disasters = disasters.filter(s => s.ttl > 0);
-}
-
 /* ---------------- climate & biomes ---------------- */
 function computeCoastDist() {
   coastDist.fill(255);
@@ -1017,10 +1013,6 @@ function render() {
     ctx.strokeText(c.name, px, py);
     ctx.fillText(c.name, px, py);
   }
-  for (const s of disasters) {                       // storms spin over the map
-    ctx.font = Math.round(s.type === 'hurricane' ? sc * 7 : sc * 4.5) + 'px system-ui';
-    ctx.fillText(s.type === 'hurricane' ? '🌀' : '🌪', (s.x + 0.5) * sc, (s.y + 0.5) * sc);
-  }
 }
 
 function fitCanvas() {
@@ -1125,7 +1117,6 @@ function resetWorldState() {
   simYears = 0; lastGeoYear = 0;
   lastRiftYear = 0; lastBreakYear = 0; lastWarYear = 0; lastMergeYear = 0;
   lastDisasterYear = 0;
-  disasters = [];
   riftCool.fill(0);
   unitGrid.fill(-1);
   namedConts = [];
