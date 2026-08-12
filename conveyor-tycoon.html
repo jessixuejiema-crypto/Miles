@@ -191,6 +191,17 @@
   .rkids { margin-left:6px; padding-left:10px; border-left:2px solid #3b4a3c; }
   .rforms { font-size:11.5px; color:#c6d3b6; font-family:ui-monospace, monospace; line-height:1.5; }
 
+  /* recipe maker banner */
+  #demoBar {
+    top: 64px; left: 50%; transform: translateX(-50%);
+    display: none; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+    background: #3d2c55; border: 2px solid #7a4db0; border-radius: 12px;
+    padding: 8px 14px; z-index: 20; max-width: 92vw;
+    font-weight: 800; font-size: 13px; color: #e3d5ff;
+    box-shadow: 0 6px 20px rgba(0,0,0,.45);
+  }
+  #demoBar .mbtn { padding: 5px 12px; font-size: 12.5px; }
+
   /* all-recipes flat list */
   .amach { font-size:12px; font-weight:900; color:#9fd07a; text-transform:uppercase; letter-spacing:.1em; margin:16px 0 4px; }
   .arow { display:flex; align-items:center; gap:7px; font-size:12.5px; color:#c6d3b6; padding:2.5px 0; border-bottom:1px solid rgba(59,74,60,.4); flex-wrap:wrap; }
@@ -231,6 +242,12 @@
 </div>
 
 <div class="hud" id="infoLine">Press the <b>$ coin</b> to open the shop. Drag with the hand to look around.</div>
+
+<div class="hud" id="demoBar">
+  <span>&#128220; RECIPE MAKER &mdash; every row makes one recipe (preview: sales here don't earn money)</span>
+  <button class="mbtn" id="listBtn">Show as list</button>
+  <button class="mbtn" id="exitDemo">Back to my factory</button>
+</div>
 
 <div class="hud" id="shop">
   <div id="shopTabs"></div>
@@ -584,6 +601,8 @@ let tool = 'hand';          // 'hand' | 'erase' | machine type
 let rot = 0;
 let floaters = [];          // {x,y,z,txt,age,color}
 let simTime = 0;
+let demoMode = false;       // true while viewing the auto-built Recipe Maker world
+let stash = null;           // the real factory, kept safe while demoMode is on
 let powered = new Set();    // wire keys powered this tick
 let activeDet = new Set();  // detector keys active this tick (for the LED)
 let srcOn = new Set();      // all live power sources: detectors, levers on, clocks pulsing
@@ -604,6 +623,7 @@ function makeTile(type, x, y, z, dir){
   if (type === 'clock') t.phase = 0;
   if (type === 'xnor') t.out = false;
   if (type === 'oremine') t.oreIdx = 0;
+  if (type === 'spawner'){ t.item = 'stone'; t.rate = 5; t.timer = 1; } // recipe-maker source crate
   return t;
 }
 
@@ -622,8 +642,12 @@ function starterWorld(){
 const SAVE_KEY = 'beltworksMeadow.v1';
 function save(){
   try {
+    // in Recipe Maker mode the real factory sits in the stash — always save THAT
+    const saveTiles = demoMode ? stash.tiles : tiles;
+    const saveCam = demoMode ? stash.cam : cam;
+    const saveZ = demoMode ? stash.curZ : curZ;
     const arr = [];
-    for (const t of tiles.values()){
+    for (const t of saveTiles.values()){
       const o = { t:t.type, x:t.x, y:t.y, z:t.z, d:t.dir };
       if (t.stage !== undefined) { o.s = +t.stage.toFixed(3); o.g = +t.growTime.toFixed(2); }
       if (t.timer !== undefined) o.tm = +t.timer.toFixed(2);
@@ -637,7 +661,7 @@ function save(){
       if (t.items && t.items.length) o.cs = t.items.map(it => [it.type, +it.prog.toFixed(3)]);
       arr.push(o);
     }
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ money, curZ, cam, inv, tiles:arr }));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ money, curZ:saveZ, cam:saveCam, inv, tiles:arr }));
   } catch(e){}
 }
 function load(){
@@ -700,8 +724,14 @@ function deliver(key, itemType){
   }
   if (d.type === 'cash'){
     const v = itemVal(itemType);
-    money += v; d.pulse = 1;
-    floaters.push({ x:d.x+0.5, y:d.y, z:d.z, txt:'+$'+v, age:0, color:'#f2c14e' });
+    d.pulse = 1;
+    if (demoMode){
+      floaters.push({ x:d.x+0.5, y:d.y, z:d.z, txt:'+$'+v+' demo', age:0, color:'#95a68f' });
+    } else {
+      money += v;
+      floaters.push({ x:d.x+0.5, y:d.y, z:d.z, txt:'+$'+v, age:0, color:'#f2c14e' });
+    }
+    if (floaters.length > 80) floaters.splice(0, floaters.length - 80);
     return true;
   }
   return false;
@@ -796,6 +826,15 @@ function update(dt){
     }
     else if (t.type === 'clock'){
       t.phase = (t.phase + dt) % 10;
+    }
+    else if (t.type === 'spawner'){
+      t.timer -= dt;
+      if (t.timer <= 0){
+        const dk = destKeyOf(t, t.dir), ahead = tiles.get(dk);
+        // gentle pacing: only dispense when its belt is nearly clear
+        if (ahead && (!ahead.items || ahead.items.length < 2) && deliver(dk, t.item)) t.timer = t.rate;
+        else t.timer = 0;
+      }
     }
     else if (t.type === 'treecutter'){
       if (t.outItem){
@@ -1481,6 +1520,19 @@ function drawTileGraphic(c, t, ts, time, forIcon){
       drawProcBar(c, t, ts, 'enchanter');
       drawOutArrow(c, t, ts); break;
     }
+    case 'spawner': {
+      rr(c, ts*0.1, ts*0.1, ts*0.8, ts*0.8, ts*0.12);
+      c.fillStyle = '#8a6a44'; c.fill();
+      c.strokeStyle = '#57401f'; c.lineWidth = ts*0.05; c.stroke();
+      c.strokeStyle = '#6e522f'; c.lineWidth = ts*0.03;
+      c.beginPath(); c.moveTo(ts*0.1, ts*0.28); c.lineTo(ts*0.9, ts*0.28); c.stroke();
+      c.beginPath(); c.moveTo(ts*0.1, ts*0.72); c.lineTo(ts*0.9, ts*0.72); c.stroke();
+      c.save(); c.translate(cx, cy);
+      drawItem(c, t.item, ts*0.42);
+      c.restore();
+      drawOutArrow(c, t, ts);
+      break;
+    }
     case 'lever': {
       rr(c, ts*0.2, ts*0.36, ts*0.6, ts*0.38, ts*0.08);
       c.fillStyle = '#57524a'; c.fill();
@@ -2040,16 +2092,62 @@ function allRecipes(){
   for (const mach of MACH_ORDER){
     const r = RECIPES[mach];
     if (MACHINE_MODES[mach]){
-      for (const md of MACHINE_MODES[mach])
+      MACHINE_MODES[mach].forEach((md, mi) => {
         for (const [from, to] of Object.entries(r[md]))
-          rows.push({ grp: MACH_NAMES[mach]+' — '+FORM_DEFS[md].n+' mode', from, to });
+          rows.push({ grp: MACH_NAMES[mach]+' — '+FORM_DEFS[md].n+' mode', mach, modeIdx: mi, from, to });
+      });
     } else {
       for (const [from, to] of Object.entries(r))
-        rows.push({ grp: MACH_NAMES[mach], from, to });
+        rows.push({ grp: MACH_NAMES[mach], mach, from, to });
     }
   }
   return rows;
 }
+
+/* ---- Recipe Maker: the map becomes one working production row per recipe ---- */
+function buildRecipeWorld(){
+  const w = new Map();
+  const put = t => { w.set(K(t.x,t.y,t.z), t); return t; };
+  const rows = allRecipes();
+  rows.forEach((r, i) => {
+    const y = i;
+    const sp = put(makeTile('spawner', 0, y, 0, 0));
+    sp.item = r.from; sp.rate = 5; sp.timer = Math.random()*5;
+    put(makeTile('belt', 1, y, 0, 0));
+    const m = put(makeTile(r.mach, 2, y, 0, 0));
+    if (r.modeIdx !== undefined) m.mode = r.modeIdx;
+    put(makeTile('belt', 3, y, 0, 0));
+    put(makeTile('belt', 4, y, 0, 0));
+    // shared trunk: rows merge northward, with a cash block every 30 rows
+    put(y % 30 === 0 ? makeTile('cash', 5, y, 0, 0) : makeTile('belt', 5, y, 0, 3));
+  });
+  return w;
+}
+function enterRecipeMaker(){
+  if (demoMode) return;
+  stash = { tiles, cam: { ...cam }, curZ };
+  demoMode = true;
+  tiles = buildRecipeWorld();
+  curZ = 0; setLayer(0);
+  cam = { x: 3, y: 4, zoom: 1 };
+  treeWrap.classList.remove('open');
+  allWrap.classList.remove('open');
+  $('demoBar').style.display = 'flex';
+  setTool('hand');
+  setInfo('Every row: source crate &rarr; machine &rarr; belts merging into a cash block. Scroll down — there are ' +
+    allRecipes().length + ' rows! Press <b>Back to my factory</b> when done.');
+}
+function exitRecipeMaker(){
+  if (!demoMode) return;
+  demoMode = false;
+  tiles = stash.tiles; cam = stash.cam; curZ = stash.curZ;
+  stash = null;
+  setLayer(curZ);
+  $('demoBar').style.display = 'none';
+  setInfo('Back at your factory — everything just as you left it.');
+}
+$('exitDemo').onclick = exitRecipeMaker;
+$('listBtn').onclick = () => { if (!allBuilt) buildAllList(); allWrap.classList.add('open'); };
 let allBuilt = false;
 function buildAllList(){
   const rows = allRecipes();
@@ -2079,11 +2177,7 @@ function buildAllList(){
   list.appendChild(frag);
   allBuilt = true;
 }
-$('allBtn').onclick = () => {
-  treeWrap.classList.remove('open');
-  if (!allBuilt) buildAllList();
-  allWrap.classList.add('open');
-};
+$('allBtn').onclick = enterRecipeMaker;
 $('closeAll').onclick = () => allWrap.classList.remove('open');
 allWrap.onclick = e => { if (e.target === allWrap) allWrap.classList.remove('open'); };
 $('copyAll').onclick = () => {
@@ -2118,6 +2212,7 @@ let dragging = false, panMode = false, lastPX = 0, lastPY = 0, lastPlaceKey = nu
 function tileAt(px, py){ return { x: Math.floor(s2wX(px)), y: Math.floor(s2wY(py)) }; }
 
 function tryPlace(tx, ty, dir){
+  if (demoMode){ setInfo('This is the Recipe Maker preview — press <b>Back to my factory</b> to build.'); return; }
   const key = K(tx, ty, curZ);
   if (tiles.has(key)) return;
   const s = SHOP_BY_TYPE[tool]; if (!s) return;
@@ -2132,6 +2227,7 @@ function tryPlace(tx, ty, dir){
   lastPlaceKey = key;
 }
 function erase(tx, ty){
+  if (demoMode){ setInfo('This is the Recipe Maker preview — press <b>Back to my factory</b> to build.'); return; }
   const key = K(tx, ty, curZ);
   const t = tiles.get(key);
   if (!t) return;
