@@ -68,17 +68,23 @@
     font-weight:800; letter-spacing:.06em; font-size:14px; color:#cfe0b8;
   }
 
-  /* info line */
+  /* info card — sits right beside the backpack & tree buttons so it's always seen */
   #infoLine {
-    left:50%; transform:translateX(-50%);
-    bottom:150px;
-    background:rgba(24,33,25,.88); border:1px solid #3b4a3c;
-    border-radius:10px; padding:6px 14px;
-    font-size:13px; color:#c6d3b6; pointer-events:none;
-    max-width:min(92vw, 640px); text-align:center;
-    transition: bottom .25s;
+    top:162px; right:132px;
+    background:rgba(24,33,25,.94); border:2px solid #5a7050;
+    border-radius:12px; padding:10px 14px;
+    font-size:13px; line-height:1.5; color:#c6d3b6; pointer-events:none;
+    max-width:min(340px, calc(100vw - 150px));
+    max-height:45vh; overflow-y:auto;
+    text-align:left;
+    box-shadow:0 4px 14px rgba(0,0,0,.4);
   }
-  #infoLine.low { bottom:16px; }
+  #infoLine.flash { animation: infoPop .45s ease; }
+  @keyframes infoPop {
+    0% { transform:scale(.93); box-shadow:0 0 0 4px rgba(242,193,78,.85); }
+    100% { transform:scale(1); box-shadow:0 4px 14px rgba(0,0,0,.4); }
+  }
+  @media (prefers-reduced-motion: reduce) { #infoLine.flash { animation:none; } }
 
   /* shop drawer */
   #shop {
@@ -1853,7 +1859,12 @@ function fmt(n){
   if (n >= 1e4) return (n/1e3).toFixed(1)+'k';
   return String(n);
 }
-function setInfo(html){ infoEl.innerHTML = html; }
+function setInfo(html){
+  infoEl.innerHTML = html;
+  infoEl.classList.remove('flash');
+  void infoEl.offsetWidth; // restart the pop animation so new info catches the eye
+  infoEl.classList.add('flash');
+}
 
 function buildTabs(){
   tabsEl.innerHTML = '';
@@ -1908,7 +1919,6 @@ function setTool(t){
 }
 moneyBtn.onclick = () => {
   shopEl.classList.toggle('open');
-  infoEl.classList.toggle('low', !shopEl.classList.contains('open'));
 };
 $('handBtn').onclick = () => setTool('hand');
 $('eraseBtn').onclick = () => setTool('erase');
@@ -2375,7 +2385,6 @@ addEventListener('keydown', e => {
 if (!load()) starterWorld();
 buildTabs(); buildCards(); setLayer(curZ);
 if (tiles.size <= 5) shopEl.classList.add('open');
-else infoEl.classList.add('low');
 
 let lastT = performance.now(), acc = 0, lastInvCt = -1;
 function frame(now){
