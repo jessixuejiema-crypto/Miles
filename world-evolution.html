@@ -293,8 +293,11 @@ let lastGeoYear = 0;
 const GEO_INTERVAL = 250000;         // one geologic step per 250,000 years
 let speed = 0;                       // years per real second (0 = paused)
 let rngState = 12345;
-let lastRiftYear = 0, lastBreakYear = 0, lastWarYear = 0, lastMergeYear = 0;
+let lastQuakeYear = 0, lastWarYear = 0, lastMergeYear = 0;
 let lastDisasterYear = 0;
+let splitTally = 0, mergeTally = 0;  // long-run balance: 51% splits, 49% merges
+let prevCompCount = -1;              // island count last step, for the tallies
+let spreadZone = null;               // fresh rift: seafloor spreading pushes the sides apart
 const STORM_NAMES = ['Ada', 'Bo', 'Cleo', 'Dax', 'Edna', 'Fio', 'Gus', 'Hana',
                      'Iggy', 'Juno', 'Kai', 'Lola', 'Mo', 'Nia', 'Otto', 'Pia',
                      'Rex', 'Sky', 'Tia', 'Uma'];
@@ -446,9 +449,18 @@ function regionUnits(comps) {
 
 // re-match names to continents by nearest previous centroid; splits mint new
 // names, and a sizable name that vanishes into a neighbor logs a merger
-function renameContinents() {
-  const comps = regionUnits(labelContinents().filter(c => c.size >= 50))
-    .sort((a, b) => b.size - a.size);
+function renameContinents(tally) {
+  const rawAll = labelContinents();
+  if (tally) {
+    // splits tally when the island count rises (quake, snapped neck, erosion);
+    // merges tally below, only when a named continent is truly absorbed —
+    // an island merely shrinking away is neither
+    const n = rawAll.reduce((a, c) => a + (c.size >= 30 ? 1 : 0), 0);
+    if (prevCompCount >= 0 && n > prevCompCount) splitTally += n - prevCompCount;
+    prevCompCount = n;
+  }
+  const raw = rawAll.filter(c => c.size >= 50);
+  const comps = regionUnits(raw).sort((a, b) => b.size - a.size);
   const claimed = new Set(), next = [];
   const candidates = namedConts.concat(ghostNames);
   for (const c of comps) {
@@ -498,17 +510,20 @@ function renameContinents() {
     unitGrid[i] = bi;
   }
   for (const o of namedConts) {
-    // only announce substantial mergers, and not more than one per while —
-    // region bookkeeping churn is not news
-    if (claimed.has(o) || o.size < 300 || simYears - lastMergeYear < 12e6) continue;
+    if (claimed.has(o) || o.size < 300) continue;
     let best = null, bd = 1e9;
     for (const n2 of next) {
       const d = contDist(o.cx, o.cy, n2.cx, n2.cy) - 0.5 * Math.sqrt(n2.size);
       if (d < bd && n2.size > 300 && n2.name !== o.name) { bd = d; best = n2; }
     }
     if (best && bd < 12) {
-      addEvent('🤝 ' + o.name + ' merged into ' + best.name);
-      lastMergeYear = simYears;
+      mergeTally++;                          // a real absorption feeds the balance
+      // announce substantial mergers, and not more than one per while —
+      // region bookkeeping churn is not news
+      if (simYears - lastMergeYear > 12e6) {
+        addEvent('🤝 ' + o.name + ' merged into ' + best.name);
+        lastMergeYear = simYears;
+      }
     }
   }
   namedConts = next;
@@ -572,27 +587,42 @@ function geoStep() {
 
   /* --- plate drift + occasional rotation --- */
   scratch.fill(OCEAN);
+  // while merges run ahead of their 49% share, plates grazing each other
+  // resist welding; the bias switches off as soon as the balance is met
+  const shareNow = (splitTally + mergeTally) >= 6
+    ? splitTally / (splitTally + mergeTally) : 0.5;
+  const resistWeld = shareNow < 0.49;
   const moves = comps.map(c => {
-    // each continent holds a steady heading tied to its name, wandering only
-    // over tens of millions of years — a smooth glide, not a jitter
-    const nh = strHash(nameAt(c.cx, c.cy));
-    const ang = vnoise(T * 2.2, (nh % 997) * 0.37, 911) * Math.PI * 4;
+    // continents ride the ocean currents: banded east-west flows with slow
+    // swirls, so islands follow the water wherever it carries them
+    const band = Math.sin((c.cy / H) * Math.PI * 3 + T * 0.7);
+    const swirl = (vnoise(c.cx * 0.02, c.cy * 0.02 + T * 1.3, 505) - 0.5) * 1.6;
+    const ang = (band > 0 ? 0 : Math.PI) + swirl;
     const go = rand() < 0.25;
     let dx = 0, dy = 0;
     if (go) { dx = Math.round(Math.cos(ang)); dy = Math.round(Math.sin(ang)); }
-    // continents keep their distance: steer away from a close neighbor so
-    // islands spread across the ocean instead of clumping
-    if (c.size >= 50) {
+    if (resistWeld && c.size >= 50 && rand() < 0.35) {
       let near = null, nd = 1e9;
       for (const o of comps) {
         if (o === c || o.size < 50) continue;
         const d = contDist(c.cx, c.cy, o.cx, o.cy);
         if (d < nd) { nd = d; near = o; }
       }
-      if (near && nd < 46 && rand() < 0.55) {
+      if (near && nd < 30) {
         let ddx = c.cx - near.cx;
         if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
         const away = Math.atan2(c.cy - near.cy, ddx);
+        dx = Math.round(Math.cos(away)); dy = Math.round(Math.sin(away));
+      }
+    }
+    // a young rift spreads: for a few million years after a quake split, the
+    // new seafloor pushes both sides away from the rupture
+    if (spreadZone && simYears < spreadZone.until) {
+      const d = contDist(c.cx, c.cy, spreadZone.x, spreadZone.y);
+      if (d < 34 && rand() < 0.6) {
+        let ddx = c.cx - spreadZone.x;
+        if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
+        const away = Math.atan2(c.cy - spreadZone.y, ddx);
         dx = Math.round(Math.cos(away)); dy = Math.round(Math.sin(away));
       }
     }
@@ -669,6 +699,18 @@ function geoStep() {
     const u = ddx * c.cos + dyv * c.sin, v = -ddx * c.sin + dyv * c.cos;
     return Math.pow(Math.abs(u / c.a), c.p) + Math.pow(Math.abs(v / c.b), c.p);
   };
+  // buried fault lines: thin bands of weakness that migrate over hundreds of
+  // millions of years — land there erodes faster and resists filling in, so
+  // genuine weak spots develop for earthquakes to exploit
+  const fT = simYears / 500e6;
+  const fA = Math.PI * vnoise(fT * 0.6 + 2.1, 7.3, 708);   // fault orientation
+  const fCos = Math.cos(fA), fSin = Math.sin(fA);
+  const faultScore = (x, y) => {           // parallel wobbly bands crossing the map
+    const s = (x * fCos + y * fSin) * 0.055
+            + (vnoise(x * 0.03, y * 0.03 + fT, 707) - 0.5) * 1.4;
+    return Math.abs(s - Math.floor(s) - 0.5);
+  };
+  const isFault = (x, y) => faultScore(x, y) < 0.06;
   scratch.set(terrain);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
@@ -687,6 +729,7 @@ function geoStep() {
         const s = shapeS(c, x, y);
         let p = s > 1.15 ? 0.24 : s > 0.95 ? 0.03 : 0.012;  // trim what juts past the shape
         p += (crowded ? 0.10 : 0) + Math.max(0, -c.mood) * 0.06;
+        if (isFault(x, y)) p += 0.08;        // coasts crumble along fault lines
         if (y < 3 || y >= H - 3) p += 0.15;  // polar seas gnaw the ice line
         if (rand() < p) scratch[i] = OCEAN;
       }
@@ -703,61 +746,131 @@ function geoStep() {
       }
       if (c && !bridge && c.size >= 9 && riftCool[i] === 0 && y >= 3 && y < H - 3) {
         const s = shapeS(c, x, y);
-        const p = ((s < 0.85 ? 0.22 : s < 1.05 ? 0.06 : 0.008)  // fill in toward the shape
+        let p = ((s < 0.85 ? 0.22 : s < 1.05 ? 0.06 : 0.008)  // fill in toward the shape
                 + Math.max(0, c.mood) * 0.08 + Math.min(0.04, c.size / 10000)
                 + (sparse ? 0.08 : 0)) * room;
+        if (isFault(x, y)) p *= 0.12;        // the sea holds its ground over faults
         if (rand() < p) scratch[i] = GRASS;
       }
     }
   }
   [terrain, scratch] = [scratch, terrain];
 
-  /* --- rifting: big continents crack apart (rarely, and for good) --- */
-  if (simYears - lastRiftYear > 15e6) {
-    for (const c of comps2) {
-      if (c.size < 110 || rand() > 0.009 + c.size / 110000) continue;
-      const ang = rand() * Math.PI;
-      const nx = Math.cos(ang), nyv = Math.sin(ang);
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-        const i = idx(x, y);
-        if (terrain[i] === OCEAN || labels[i] !== c.id) continue;
-        // signed distance to the rift line through the centroid, with a wobble
-        let ddx = x - c.cx;
-        if (ddx > W / 2) ddx -= W; if (ddx < -W / 2) ddx += W;
-        const d = ddx * nx + (y - c.cy) * nyv
-                + (vnoise(x * 0.09, y * 0.09, 555 + c.id) - 0.5) * 6;
-        if (Math.abs(d) < 2.0) { terrain[i] = OCEAN; riftCool[i] = 150; }
-      }
-      addEvent('⛰ ' + nameAt(c.cx, c.cy) + ' rifts apart');
-      lastRiftYear = simYears;
-      break;                                 // at most one rift per step
-    }
-  }
-
-  /* --- breakup: an overgrown continent shatters into 2–10 shards --- */
-  if (simYears - lastBreakYear > 18e6) {
-    for (const c of comps2) {
-      const crowdedBig = land > N * 0.40 && c.size > land * 0.30;
-      if (!(crowdedBig || c.size > N * 0.15) || rand() > 0.09) continue;
-      const cells = [];
-      for (let i = 0; i < N; i++) {
-        if (terrain[i] !== OCEAN && labels[i] === c.id) cells.push(i);
-      }
-      const k = 2 + ((rand() * 9) | 0);       // 2–10 pieces
-      const seeds = [];
-      for (let s = 0; s < k; s++) seeds.push(cells[(rand() * cells.length) | 0]);
-      for (const i of cells) {                // sink the fault lines between shards
-        const x = i % W, y = (i / W) | 0;
-        let d1 = 1e9, d2 = 1e9;
-        for (const sIdx of seeds) {
-          const d = contDist(x, y, sIdx % W, (sIdx / W) | 0);
-          if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+  /* --- earthquakes: cracks form only along genuinely weak, thin necks.
+         A running tally keeps the long-run balance near 51% splits / 49%
+         merges — quakes hold off while splits are ahead and strike more
+         eagerly while merges dominate. --- */
+  const tect = splitTally + mergeTally;
+  const splitShare = tect ? splitTally / tect : 0.5;
+  const quakeChance = splitShare < 0.45 ? 0.12 : 0.08;
+  const quakeGap = splitShare < 0.45 ? 4e6 : 6e6;
+  if (simYears - lastQuakeYear > quakeGap && (splitShare <= 0.51 || tect < 4) &&
+      rand() < quakeChance) {
+    const DIRS = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    const span = (x, y, ddx, ddy) => {       // land run through (x,y) along a direction
+      let w = 1;
+      for (const s of [1, -1]) {
+        let px = x, py = y;
+        while (w < 26) {
+          px = wrapX(px + ddx * s); py += ddy * s;
+          if (py < 0 || py >= H || terrain[idx(px, py)] === OCEAN) break;
+          w++;
         }
-        if (d2 - d1 < 1.8) { terrain[i] = OCEAN; riftCool[i] = 150; }
       }
-      addEvent('💥 ' + nameAt(c.cx, c.cy) + ' shatters into ' + k + ' pieces');
-      lastBreakYear = simYears;
-      break;
+      return w;
+    };
+    const findWeak = () => {
+      let weak = null;
+      for (let t = 0; t < 90; t++) {         // hunt for the weakest spot
+        const i = (rand() * N) | 0;
+        if (terrain[i] === OCEAN) continue;
+        const x = i % W, y = (i / W) | 0;
+        for (const [ddx, ddy] of DIRS) {
+          const width = span(x, y, ddx, ddy);
+          if (width > 9 || (weak && width >= weak.width)) continue;
+          if (span(x, y, -ddy, ddx) < width + 4) continue; // a neck, not a speck
+          weak = { x, y, ddx, ddy, width };
+        }
+      }
+      return weak;
+    };
+    const carve = weak => {
+      for (const s of [1, -1]) {             // the fault tears through to open sea
+        let px = s === 1 ? weak.x : wrapX(weak.x - weak.ddx);
+        let py = s === 1 ? weak.y : weak.y - weak.ddy;
+        for (let stp = 0; stp < 14; stp++) {
+          if (py < 0 || py >= H) break;
+          const j = idx(px, py);
+          if (terrain[j] === OCEAN) break;
+          terrain[j] = OCEAN; riftCool[j] = 150;
+          if (weak.ddx && weak.ddy) {        // widen diagonal faults so they truly part
+            const j2 = idx(px + weak.ddx, py);
+            if (terrain[j2] !== OCEAN) { terrain[j2] = OCEAN; riftCool[j2] = 150; }
+          }
+          px = wrapX(px + weak.ddx * s); py += weak.ddy * s;
+        }
+      }
+    };
+    // a quake and its aftershocks: crack weak necks first, and if none gives
+    // way, rupture along a buried fault line instead
+    const countComps = () => labelContinents().filter(cc => cc.size >= 30).length;
+    const before = countComps();
+    let site = null, separated = false;
+    for (let attempt = 0; attempt < 2 && !separated; attempt++) {
+      const weak = findWeak();
+      if (!weak) break;
+      carve(weak);
+      site = weak;
+      separated = countComps() > before;
+    }
+    for (let fa = 0; fa < 2 && !separated; fa++) {
+      let epi = -1;
+      for (let t = 0; t < 120 && epi < 0; t++) {
+        const i = (rand() * N) | 0;
+        if (terrain[i] !== OCEAN && isFault(i % W, (i / W) | 0)) epi = i;
+      }
+      if (epi >= 0) {
+        // trace the fault contour from the epicenter out to sea in both
+        // directions, then sink the whole rupture at once
+        const path = [epi], visited = new Set([epi]);
+        for (let leg = 0; leg < 2; leg++) {
+          let x = epi % W, y = (epi / W) | 0;
+          for (let stp = 0; stp < 55; stp++) {
+            let bx = -1, by = 0, bsc = 1e9;
+            for (let dy2 = -1; dy2 <= 1; dy2++) for (let dx2 = -1; dx2 <= 1; dx2++) {
+              if (!dx2 && !dy2) continue;
+              const nx = wrapX(x + dx2), ny = y + dy2;
+              if (ny < 0 || ny >= H) continue;
+              const key = ny * W + nx;
+              if (visited.has(key) || terrain[key] === OCEAN) continue;
+              const sc = faultScore(nx, ny) + (isFault(nx, ny) ? 0 : 0.3);
+              if (sc < bsc) { bsc = sc; bx = nx; by = ny; }
+            }
+            if (bx < 0) break;               // boxed in — this leg is done
+            visited.add(by * W + bx);
+            path.push(by * W + bx);
+            x = bx; y = by;
+            if (stp > 3 && landNeighbors(x, y) < 8) break; // reached a coast
+          }
+        }
+        for (const j of path) {              // a wide rupture that truly parts the land
+          const jx = j % W, jy = (j / W) | 0;
+          for (const [ox, oy] of [[0, 0], [1, 0], [0, 1]]) {
+            if (jy + oy >= H) continue;
+            const j2 = idx(jx + ox, jy + oy);
+            if (terrain[j2] !== OCEAN) { terrain[j2] = OCEAN; riftCool[j2] = 150; }
+          }
+        }
+        site = { x: epi % W, y: (epi / W) | 0 };
+        separated = countComps() > before;
+      }
+    }
+    if (site) {
+      addEvent(separated
+        ? '🌋 An earthquake cracks ' + nameAt(site.x, site.y) + ' apart'
+        : '🌋 An earthquake shakes ' + nameAt(site.x, site.y));
+      lastQuakeYear = simYears;
+      if (separated) spreadZone = { x: site.x, y: site.y, until: simYears + 20e6 };
     }
   }
 
@@ -795,7 +908,7 @@ function geoStep() {
   }
 
   for (let i = 0; i < N; i++) if (riftCool[i] > 0) riftCool[i]--;
-  renameContinents();
+  renameContinents(true);
   climateStep();
 }
 
@@ -1115,8 +1228,9 @@ brushBtn.addEventListener('click', () => {
 
 function resetWorldState() {
   simYears = 0; lastGeoYear = 0;
-  lastRiftYear = 0; lastBreakYear = 0; lastWarYear = 0; lastMergeYear = 0;
+  lastQuakeYear = 0; lastWarYear = 0; lastMergeYear = 0;
   lastDisasterYear = 0;
+  splitTally = 0; mergeTally = 0; prevCompCount = -1; spreadZone = null;
   riftCool.fill(0);
   unitGrid.fill(-1);
   namedConts = [];
