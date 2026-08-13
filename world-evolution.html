@@ -133,6 +133,28 @@
     color: var(--muted);
   }
 
+  /* fullscreen: the map alone, nothing interrupting the view */
+  #stage:fullscreen { background: #0a0e14; }
+  #stage.fakefull { position: fixed; inset: 0; z-index: 50; background: #0a0e14; }
+  #stage:fullscreen #legend, #stage:fullscreen #events, #stage:fullscreen #hint,
+  #stage.fakefull #legend, #stage.fakefull #events, #stage.fakefull #hint { display: none; }
+  #fsHint {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(18, 21, 27, 0.85);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.75rem;
+    color: var(--text);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  #fsHint.show { opacity: 1; }
+
   #events {
     position: absolute;
     left: 10px;
@@ -229,9 +251,10 @@
 
 <div id="stage">
   <canvas id="world"></canvas>
-  <div id="hint">Paint some <b>grass</b> onto the ocean to raise land,<br>then press <b>⚡ MAX SPEED</b> and watch 4,000,000 years pass every second.</div>
+  <div id="hint">Paint some <b>grass</b> onto the ocean to raise land,<br>then press <b>⏩ Timelapse</b> and watch 40,000,000 years pass every second.</div>
   <div id="legend"></div>
   <div id="events"></div>
+  <div id="fsHint">swipe down from the top — or press Esc — to leave fullscreen</div>
 </div>
 
 <footer>
@@ -246,10 +269,12 @@
     <button id="pauseBtn" class="on">⏸ Pause</button>
     <button id="speed1">▶ 100 k yr/s</button>
     <button id="speed2">▶▶ 1 M yr/s</button>
-    <button id="speedMax" class="max">⚡ MAX 4 M yr/s</button>
+    <button id="speed3">⏩ Timelapse 40 M yr/s</button>
+    <button id="speedMax" class="max">⚡ MAX 1 B yr/s</button>
   </div>
   <div class="spacer"></div>
   <div class="group">
+    <button id="fsBtn">⛶ Fullscreen</button>
     <button id="randomBtn">🎲 Random world</button>
     <button id="clearBtn">🧹 Clear</button>
   </div>
@@ -1304,7 +1329,8 @@ const speedButtons = [
   ['pauseBtn', 0],
   ['speed1', 100_000],
   ['speed2', 1_000_000],
-  ['speedMax', 4_000_000],
+  ['speed3', 40_000_000],
+  ['speedMax', 1_000_000_000],
 ];
 for (const [bid, s] of speedButtons) {
   document.getElementById(bid).addEventListener('click', () => setSpeed(s));
@@ -1348,6 +1374,51 @@ function resetWorldState() {
   events = []; renderEvents();
   yearEl.textContent = formatYears(0);
 }
+/* ---------------- fullscreen ---------------- */
+const stage = document.getElementById('stage');
+const fsHint = document.getElementById('fsHint');
+let fsHintTimer = 0;
+const inFullscreen = () =>
+  document.fullscreenElement === stage || stage.classList.contains('fakefull');
+function enterFull() {
+  if (stage.requestFullscreen) {
+    stage.requestFullscreen().catch(() => stage.classList.add('fakefull'));
+  } else {
+    stage.classList.add('fakefull');       // iPhone Safari has no fullscreen API
+  }
+  setTimeout(fitCanvas, 80);
+  fsHint.classList.add('show');
+  clearTimeout(fsHintTimer);
+  fsHintTimer = setTimeout(() => fsHint.classList.remove('show'), 3000);
+}
+function exitFull() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  stage.classList.remove('fakefull');
+  fsHint.classList.remove('show');
+  setTimeout(fitCanvas, 80);
+}
+document.getElementById('fsBtn').addEventListener('click', () => {
+  inFullscreen() ? exitFull() : enterFull();
+});
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) fsHint.classList.remove('show');
+  setTimeout(fitCanvas, 80);
+});
+// swipe down from the top edge to leave fullscreen
+let swipeStart = null;
+stage.addEventListener('pointerdown', e => {
+  if (!inFullscreen()) return;
+  const r = stage.getBoundingClientRect();
+  if (e.clientY - r.top < r.height * 0.22) swipeStart = e.clientY;
+});
+stage.addEventListener('pointermove', e => {
+  if (swipeStart !== null && e.clientY - swipeStart > 110) {
+    swipeStart = null;
+    exitFull();
+  }
+});
+stage.addEventListener('pointerup', () => { swipeStart = null; });
+
 document.getElementById('clearBtn').addEventListener('click', () => {
   terrain.fill(OCEAN);
   resetWorldState();
@@ -1378,13 +1449,16 @@ function frame(now) {
 
   if (speed > 0) {
     simYears += speed * dt;
+    // at extreme speeds each geologic step covers more years, so the frame
+    // rate stays smooth no matter how fast time flies
+    const interval = Math.max(GEO_INTERVAL, speed / 40);
     let steps = 0;
-    while (simYears - lastGeoYear >= GEO_INTERVAL && steps < 24) {
-      lastGeoYear += GEO_INTERVAL;
+    while (simYears - lastGeoYear >= interval && steps < 24) {
+      lastGeoYear += interval;
       geoStep();
       steps++;
     }
-    if (simYears - lastGeoYear >= GEO_INTERVAL) lastGeoYear = simYears; // don't spiral on slow devices
+    if (simYears - lastGeoYear >= interval) lastGeoYear = simYears; // don't spiral on slow devices
     if (steps > 0) render();
     yearEl.textContent = formatYears(simYears);
     legendTimer += dt;
