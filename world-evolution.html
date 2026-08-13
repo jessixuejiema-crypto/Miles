@@ -691,13 +691,20 @@ function geoStep() {
     c.b = Math.sqrt(Math.max(9, c.size * (1 + c.mood * 0.35)) / (4 * g * c.aspect));
     c.a = c.aspect * c.b;
     c.cos = Math.cos(axis); c.sin = Math.sin(axis);
+    c.lump = 0.22 + 0.4 * vnoise(c.cx * 0.03 + 1, c.cy * 0.03 + T, 814);
   }
   const shapeS = (c, x, y) => {           // <1 inside the target shape, >1 outside
     let ddx = x - c.cx;
     if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
     const dyv = y - c.cy;
     const u = ddx * c.cos + dyv * c.sin, v = -ddx * c.sin + dyv * c.cos;
-    return Math.pow(Math.abs(u / c.a), c.p) + Math.pow(Math.abs(v / c.b), c.p);
+    const s = Math.pow(Math.abs(u / c.a), c.p) + Math.pow(Math.abs(v / c.b), c.p);
+    // a lumpy rim: the target radius swells and dips around the compass, so
+    // coasts grow peninsulas and bays instead of settling into a clean oval
+    const th = Math.atan2(v, u);
+    const L = 1 + c.lump * (vnoise(Math.cos(th) * 1.6 + 3.3 + T * 0.9,
+                                   Math.sin(th) * 1.6 + c.cx * 0.07, 813) - 0.5) * 2;
+    return s / Math.pow(Math.max(0.35, L), c.p);
   };
   // buried fault lines: thin bands of weakness that migrate over hundreds of
   // millions of years — land there erodes faster and resists filling in, so
@@ -727,7 +734,7 @@ function geoStep() {
         if (rand() < 0.3) scratch[i] = OCEAN;
       } else if (n <= 4) {
         const s = shapeS(c, x, y);
-        let p = s > 1.15 ? 0.24 : s > 0.95 ? 0.03 : 0.012;  // trim what juts past the shape
+        let p = s > 1.2 ? 0.17 : s > 0.95 ? 0.03 : 0.012;   // trim what juts past the shape
         p += (crowded ? 0.10 : 0) + Math.max(0, -c.mood) * 0.06;
         if (isFault(x, y)) p += 0.08;        // coasts crumble along fault lines
         if (y < 3 || y >= H - 3) p += 0.15;  // polar seas gnaw the ice line
@@ -746,7 +753,7 @@ function geoStep() {
       }
       if (c && !bridge && c.size >= 9 && riftCool[i] === 0 && y >= 3 && y < H - 3) {
         const s = shapeS(c, x, y);
-        let p = ((s < 0.85 ? 0.22 : s < 1.05 ? 0.06 : 0.008)  // fill in toward the shape
+        let p = ((s < 0.8 ? 0.16 : s < 1.05 ? 0.05 : 0.008)   // fill in toward the shape
                 + Math.max(0, c.mood) * 0.08 + Math.min(0.04, c.size / 10000)
                 + (sparse ? 0.08 : 0)) * room;
         if (isFault(x, y)) p *= 0.12;        // the sea holds its ground over faults
