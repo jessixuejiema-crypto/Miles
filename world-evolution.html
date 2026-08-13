@@ -289,6 +289,7 @@ let riftCool = new Uint8Array(N);    // freshly torn ocean resists healing shut
 const unitGrid = new Int16Array(N).fill(-1); // which named continent owns each cell
 const seaMask = new Uint8Array(N);   // 1 = open sea; other water is a lake
 const seaSeen = new Uint8Array(N);
+const lakeClass = new Uint8Array(N); // 0 none · 1 pond · 2 growing lake · 3 inland sea
 let lastLakeYear = 0;
 
 let simYears = 0;
@@ -584,11 +585,13 @@ function labelContinents() {
   return comps;
 }
 
-// water disconnected from the largest ocean is a lake or inland sea
+// water disconnected from the largest ocean is a lake or inland sea; each
+// body is classified by size so ponds drain and lakes grow into seas
 function computeSea() {
   seaSeen.fill(0);
   seaMask.fill(0);
-  let bestStart = -1, bestSize = 0;
+  lakeClass.fill(0);
+  const bodies = [];
   for (let i = 0; i < N; i++) {
     if (terrain[i] !== OCEAN || seaSeen[i]) continue;
     let head = 0, tail = 0;
@@ -604,20 +607,28 @@ function computeSea() {
         if (terrain[j] === OCEAN && !seaSeen[j]) { seaSeen[j] = 1; queue[tail++] = j; }
       }
     }
-    if (tail > bestSize) { bestSize = tail; bestStart = i; }
+    bodies.push({ start: i, size: tail });
   }
-  if (bestStart < 0) return;
-  let head = 0, tail = 0;
-  queue[tail++] = bestStart; seaMask[bestStart] = 1;
-  while (head < tail) {
-    const c = queue[head++];
-    const x = c % W, y = (c / W) | 0;
-    for (let k = 0; k < 4; k++) {
-      const nx = k === 0 ? x + 1 : k === 1 ? x - 1 : x;
-      const ny = k === 2 ? y + 1 : k === 3 ? y - 1 : y;
-      if (ny < 0 || ny >= H) continue;
-      const j = idx(nx, ny);
-      if (terrain[j] === OCEAN && !seaMask[j]) { seaMask[j] = 1; queue[tail++] = j; }
+  if (!bodies.length) return;
+  let big = bodies[0];
+  for (const b of bodies) if (b.size > big.size) big = b;
+  for (const b of bodies) {
+    const cls = b === big ? 0 : b.size < 8 ? 1 : b.size < 120 ? 2 : 3;
+    let head = 0, tail = 0;
+    queue[tail++] = b.start;
+    if (b === big) seaMask[b.start] = 1; else lakeClass[b.start] = cls;
+    while (head < tail) {
+      const c = queue[head++];
+      const x = c % W, y = (c / W) | 0;
+      for (let k = 0; k < 4; k++) {
+        const nx = k === 0 ? x + 1 : k === 1 ? x - 1 : x;
+        const ny = k === 2 ? y + 1 : k === 3 ? y - 1 : y;
+        if (ny < 0 || ny >= H) continue;
+        const j = idx(nx, ny);
+        if (terrain[j] !== OCEAN || seaMask[j] || lakeClass[j]) continue;
+        if (b === big) seaMask[j] = 1; else lakeClass[j] = cls;
+        queue[tail++] = j;
+      }
     }
   }
 }
@@ -776,6 +787,11 @@ function geoStep() {
         scratch[i] = OCEAN; riftCool[i] = 40;
       } else if (n === 0 || !c || c.size < 9) { // scraps and shoals dissolve away
         if (rand() < 0.3) scratch[i] = OCEAN;
+      } else if (lakeClass[idx(x + 1, y)] === 2 || lakeClass[idx(x - 1, y)] === 2 ||
+                 (y > 0 && lakeClass[idx(x, y - 1)] === 2) ||
+                 (y < H - 1 && lakeClass[idx(x, y + 1)] === 2)) {
+        // a growing lake carves into its shores until it becomes a real sea
+        if (rand() < 0.05) scratch[i] = OCEAN;
       } else if (n <= 4) {
         const s = shapeS(c, x, y);
         let p = s > 1.2 ? 0.17 : s > 0.95 ? 0.03 : 0.012;   // trim what juts past the shape
@@ -785,9 +801,12 @@ function geoStep() {
         if (rand() < p) scratch[i] = OCEAN;
       }
     } else if (!seaMask[i]) {
-      // a lake or inland sea: coastal silting never touches it — it only
-      // very slowly ages away, cell by cell, over geologic time
-      if (riftCool[i] === 0 && rand() < 0.0025) scratch[i] = GRASS;
+      if (lakeClass[i] === 1) {
+        // ponds don't last: they drain away almost at once
+        if (riftCool[i] === 0 && rand() < 0.35) scratch[i] = GRASS;
+      } else if (riftCool[i] === 0 && rand() < 0.0015) {
+        scratch[i] = GRASS;    // real lakes and seas age away only over eons
+      }
     } else if (n >= 3 && !crowded) {
       let c = null, cid = -1, bridge = false; // which continent is this shore of?
       for (let dy2 = -1; dy2 <= 1; dy2++) for (let dx2 = -1; dx2 <= 1; dx2++) {
@@ -958,14 +977,14 @@ function geoStep() {
       const i = (rand() * N) | 0;
       if (terrain[i] === OCEAN || coastDist[i] < 6) continue;
       const cx = i % W, cy = (i / W) | 0;
-      const r = 1.5 + rand() * 3.5;        // a small lake … an inland sea
-      for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) {
+      const r = 2.5 + rand() * 4;          // a solid lake … a broad inland sea
+      for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
         const ny = cy + dy;
         if (ny < 0 || ny >= H || Math.hypot(dx, dy) > r) continue;
         const j = idx(cx + dx, ny);
-        if (terrain[j] !== OCEAN && rand() < 0.85) { terrain[j] = OCEAN; riftCool[j] = 60; }
+        if (terrain[j] !== OCEAN && rand() < 0.9) { terrain[j] = OCEAN; riftCool[j] = 60; }
       }
-      addEvent(r > 3.2
+      addEvent(r > 4.5
         ? '🏞 An inland sea opens in the heart of ' + nameAt(cx, cy)
         : '🏞 A lake forms on ' + nameAt(cx, cy));
       lastLakeYear = simYears;
@@ -1117,8 +1136,19 @@ function climateStep() {
       }
       if (b === FLOODED) {                           // floodwaters mostly recede…
         if (rand() < 0.07) terrain[i] = GRASS;
-        // …but a deep inland basin sometimes never drains, and a lake is born
-        else if (coastDist[i] >= 5 && rand() < 0.012) terrain[i] = OCEAN;
+        // …but the heart of a deep inland basin sometimes never drains —
+        // only contiguous water forms this way, never lone ponds
+        else if (coastDist[i] >= 5 && rand() < 0.02) {
+          let wet = 0;
+          for (let k = 0; k < 4; k++) {
+            const nx = k === 0 ? x + 1 : k === 1 ? x - 1 : x;
+            const ny = k === 2 ? y + 1 : k === 3 ? y - 1 : y;
+            if (ny < 0 || ny >= H) continue;
+            const bb = terrain[idx(nx, ny)];
+            if (bb === OCEAN || bb === FLOODED) wet++;
+          }
+          if (wet >= 3) terrain[i] = OCEAN;
+        }
         continue;
       }
       // temperature and moisture drift with the epochs
@@ -1310,6 +1340,7 @@ function resetWorldState() {
   lastDisasterYear = 0; lastLakeYear = 0;
   splitTally = 0; mergeTally = 0; prevCompCount = -1; spreadZone = null;
   seaMask.fill(0);
+  lakeClass.fill(0);
   riftCool.fill(0);
   unitGrid.fill(-1);
   namedConts = [];
