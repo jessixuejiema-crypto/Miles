@@ -324,7 +324,7 @@ let speed = 0;                       // years per real second (0 = paused)
 let rngState = 12345;
 let lastQuakeYear = 0, lastWarYear = 0, lastMergeYear = 0;
 let lastDisasterYear = 0;
-let splitTally = 0, mergeTally = 0;  // long-run balance: 51% splits, 49% merges
+let splitTally = 0, mergeTally = 0;  // long-run balance: 60% splits, 40% merges
 let prevCompCount = -1;              // island count last step, for the tallies
 let spreadZone = null;               // fresh rift: seafloor spreading pushes the sides apart
 const STORM_NAMES = ['Ada', 'Bo', 'Cleo', 'Dax', 'Edna', 'Fio', 'Gus', 'Hana',
@@ -479,15 +479,10 @@ function regionUnits(comps) {
 // re-match names to continents by nearest previous centroid; splits mint new
 // names, and a sizable name that vanishes into a neighbor logs a merger
 function renameContinents(tally) {
+  // the 60/40 ledger tracks the big visible events only: earthquake splits
+  // (counted at the quake) against named-continent absorptions (counted
+  // below) — small-scale churn stays out of the ratio
   const rawAll = labelContinents();
-  if (tally) {
-    // splits tally when the island count rises (quake, snapped neck, erosion);
-    // merges tally below, only when a named continent is truly absorbed —
-    // an island merely shrinking away is neither
-    const n = rawAll.reduce((a, c) => a + (c.size >= 30 ? 1 : 0), 0);
-    if (prevCompCount >= 0 && n > prevCompCount) splitTally += n - prevCompCount;
-    prevCompCount = n;
-  }
   const raw = rawAll.filter(c => c.size >= 50);
   const comps = regionUnits(raw).sort((a, b) => b.size - a.size);
   const claimed = new Set(), next = [];
@@ -664,11 +659,13 @@ function geoStep() {
 
   /* --- plate drift + occasional rotation --- */
   scratch.fill(OCEAN);
-  // while merges run ahead of their 49% share, plates grazing each other
-  // resist welding; the bias switches off as soon as the balance is met
+  // the 60/40 governor steers both ways: while merges run ahead of their 40%
+  // share, grazing plates resist welding; while splits run ahead of their
+  // 60%, nearby plates drift toward each other until merges catch up
   const shareNow = (splitTally + mergeTally) >= 6
-    ? splitTally / (splitTally + mergeTally) : 0.5;
-  const resistWeld = shareNow < 0.49;
+    ? splitTally / (splitTally + mergeTally) : 0.6;
+  const resistWeld = shareNow < 0.58;
+  const seekWeld = shareNow > 0.62;
   const moves = comps.map(c => {
     // continents ride the ocean currents: banded east-west flows with slow
     // swirls, so islands follow the water wherever it carries them
@@ -678,18 +675,18 @@ function geoStep() {
     const go = rand() < 0.25;
     let dx = 0, dy = 0;
     if (go) { dx = Math.round(Math.cos(ang)); dy = Math.round(Math.sin(ang)); }
-    if (resistWeld && c.size >= 50 && rand() < 0.35) {
+    if ((resistWeld || seekWeld) && c.size >= 50 && rand() < (seekWeld ? 0.6 : 0.35)) {
       let near = null, nd = 1e9;
       for (const o of comps) {
         if (o === c || o.size < 50) continue;
         const d = contDist(c.cx, c.cy, o.cx, o.cy);
         if (d < nd) { nd = d; near = o; }
       }
-      if (near && nd < 30) {
+      if (near && nd < (resistWeld ? 30 : 96)) {
         let ddx = c.cx - near.cx;
         if (ddx > W / 2) ddx -= W; else if (ddx < -W / 2) ddx += W;
-        const away = Math.atan2(c.cy - near.cy, ddx);
-        dx = Math.round(Math.cos(away)); dy = Math.round(Math.sin(away));
+        const toward = Math.atan2(c.cy - near.cy, ddx) + (resistWeld ? 0 : Math.PI);
+        dx = Math.round(Math.cos(toward)); dy = Math.round(Math.sin(toward));
       }
     }
     // a young rift spreads: for a few million years after a quake split, the
@@ -808,7 +805,7 @@ function geoStep() {
       const lL = terrain[idx(x - 1, y)] !== OCEAN, lR = terrain[idx(x + 1, y)] !== OCEAN;
       const lU = y > 0 && terrain[idx(x, y - 1)] !== OCEAN;
       const lD = y < H - 1 && terrain[idx(x, y + 1)] !== OCEAN;
-      if (((lL && lR && !lU && !lD) || (lU && lD && !lL && !lR)) && rand() < 0.5) {
+      if (((lL && lR && !lU && !lD) || (lU && lD && !lL && !lR)) && !seekWeld && rand() < 0.5) {
         scratch[i] = OCEAN; riftCool[i] = 40;
       } else if (n === 0 || !c || c.size < 9) { // scraps and shoals dissolve away
         if (rand() < 0.3) scratch[i] = OCEAN;
@@ -821,7 +818,7 @@ function geoStep() {
         const s = shapeS(c, x, y);
         let p = s > 1.2 ? 0.17 : s > 0.95 ? 0.03 : 0.012;   // trim what juts past the shape
         p += (crowded ? 0.10 : 0) + Math.max(0, -c.mood) * 0.06;
-        if (isFault(x, y)) p += 0.08;        // coasts crumble along fault lines
+        if (isFault(x, y) && !seekWeld) p += 0.08; // coasts crumble along fault lines
         if (y < 3 || y >= H - 3) p += 0.15;  // polar seas gnaw the ice line
         if (rand() < p) scratch[i] = OCEAN;
       }
@@ -840,10 +837,12 @@ function geoStep() {
         const j = idx(x + dx2, ny2);
         if (terrain[j] !== OCEAN && labels[j] >= 0) {
           if (cid === -1) { cid = labels[j]; c = comps2[cid]; }
-          else if (labels[j] !== cid) bridge = true;  // two continents — never silt them together
+          else if (labels[j] !== cid) bridge = true;  // two continents — no silt bridges…
         }
       }
-      if (c && !bridge && c.size >= 9 && riftCool[i] === 0 && y >= 3 && y < H - 3) {
+      // …unless splits are running ahead of the 60/40 balance, when land
+      // bridges are welcome to knit neighbors back together
+      if (c && (!bridge || seekWeld) && c.size >= 9 && riftCool[i] === 0 && y >= 3 && y < H - 3) {
         const s = shapeS(c, x, y);
         let p = ((s < 0.8 ? 0.16 : s < 1.05 ? 0.05 : 0.008)   // fill in toward the shape
                 + Math.max(0, c.mood) * 0.08 + Math.min(0.04, c.size / 10000)
@@ -856,14 +855,14 @@ function geoStep() {
   [terrain, scratch] = [scratch, terrain];
 
   /* --- earthquakes: cracks form only along genuinely weak, thin necks.
-         A running tally keeps the long-run balance near 51% splits / 49%
+         A running tally keeps the long-run balance near 60% splits / 40%
          merges — quakes hold off while splits are ahead and strike more
          eagerly while merges dominate. --- */
   const tect = splitTally + mergeTally;
-  const splitShare = tect ? splitTally / tect : 0.5;
-  const quakeChance = splitShare < 0.45 ? 0.12 : 0.08;
-  const quakeGap = splitShare < 0.45 ? 4e6 : 6e6;
-  if (simYears - lastQuakeYear > quakeGap && (splitShare <= 0.51 || tect < 4) &&
+  const splitShare = tect ? splitTally / tect : 0.6;
+  const quakeChance = splitShare < 0.55 ? 0.14 : 0.08;
+  const quakeGap = splitShare < 0.55 ? 4e6 : 6e6;
+  if (simYears - lastQuakeYear > quakeGap && (splitShare <= 0.60 || tect < 4) &&
       rand() < quakeChance) {
     const DIRS = [[1, 0], [0, 1], [1, 1], [1, -1]];
     const span = (x, y, ddx, ddy) => {       // land run through (x,y) along a direction
@@ -969,7 +968,10 @@ function geoStep() {
         ? '🌋 An earthquake cracks ' + nameAt(site.x, site.y) + ' apart'
         : '🌋 An earthquake shakes ' + nameAt(site.x, site.y));
       lastQuakeYear = simYears;
-      if (separated) spreadZone = { x: site.x, y: site.y, until: simYears + 20e6 };
+      if (separated) {
+        splitTally++;
+        spreadZone = { x: site.x, y: site.y, until: simYears + 20e6 };
+      }
     }
   }
 
