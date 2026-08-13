@@ -287,6 +287,9 @@ let labels = new Int32Array(N);      // continent labels per geo step
 
 let riftCool = new Uint8Array(N);    // freshly torn ocean resists healing shut
 const unitGrid = new Int16Array(N).fill(-1); // which named continent owns each cell
+const seaMask = new Uint8Array(N);   // 1 = open sea; other water is a lake
+const seaSeen = new Uint8Array(N);
+let lastLakeYear = 0;
 
 let simYears = 0;
 let lastGeoYear = 0;
@@ -581,6 +584,44 @@ function labelContinents() {
   return comps;
 }
 
+// water disconnected from the largest ocean is a lake or inland sea
+function computeSea() {
+  seaSeen.fill(0);
+  seaMask.fill(0);
+  let bestStart = -1, bestSize = 0;
+  for (let i = 0; i < N; i++) {
+    if (terrain[i] !== OCEAN || seaSeen[i]) continue;
+    let head = 0, tail = 0;
+    queue[tail++] = i; seaSeen[i] = 1;
+    while (head < tail) {
+      const c = queue[head++];
+      const x = c % W, y = (c / W) | 0;
+      for (let k = 0; k < 4; k++) {
+        const nx = k === 0 ? x + 1 : k === 1 ? x - 1 : x;
+        const ny = k === 2 ? y + 1 : k === 3 ? y - 1 : y;
+        if (ny < 0 || ny >= H) continue;
+        const j = idx(nx, ny);
+        if (terrain[j] === OCEAN && !seaSeen[j]) { seaSeen[j] = 1; queue[tail++] = j; }
+      }
+    }
+    if (tail > bestSize) { bestSize = tail; bestStart = i; }
+  }
+  if (bestStart < 0) return;
+  let head = 0, tail = 0;
+  queue[tail++] = bestStart; seaMask[bestStart] = 1;
+  while (head < tail) {
+    const c = queue[head++];
+    const x = c % W, y = (c / W) | 0;
+    for (let k = 0; k < 4; k++) {
+      const nx = k === 0 ? x + 1 : k === 1 ? x - 1 : x;
+      const ny = k === 2 ? y + 1 : k === 3 ? y - 1 : y;
+      if (ny < 0 || ny >= H) continue;
+      const j = idx(nx, ny);
+      if (terrain[j] === OCEAN && !seaMask[j]) { seaMask[j] = 1; queue[tail++] = j; }
+    }
+  }
+}
+
 function geoStep() {
   const T = simYears / 200e6; // drift field slowly re-arranges over ~200 M yr
   const comps = labelContinents();
@@ -663,13 +704,16 @@ function geoStep() {
   }
   [terrain, scratch] = [scratch, terrain];
 
-  /* --- close pinholes left by rotation --- */
+  /* --- close pinholes left by rotation (lakes are not pinholes) --- */
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
-    if (terrain[i] === OCEAN && riftCool[i] === 0 && landNeighbors(x, y) >= 6) scratch[i] = GRASS;
+    const n = terrain[i] === OCEAN ? landNeighbors(x, y) : 0;
+    if (terrain[i] === OCEAN && riftCool[i] === 0 &&
+        (n >= 8 || (n >= 6 && seaMask[i]))) scratch[i] = GRASS;
     else scratch[i] = terrain[i];
   }
   [terrain, scratch] = [scratch, terrain];
+  computeSea();                            // refresh which water is sea vs. lake
 
   /* --- coastlines flex: continents stretch, swell, and waste away --- */
   let land = 0;
@@ -740,6 +784,10 @@ function geoStep() {
         if (y < 3 || y >= H - 3) p += 0.15;  // polar seas gnaw the ice line
         if (rand() < p) scratch[i] = OCEAN;
       }
+    } else if (!seaMask[i]) {
+      // a lake or inland sea: coastal silting never touches it — it only
+      // very slowly ages away, cell by cell, over geologic time
+      if (riftCool[i] === 0 && rand() < 0.0025) scratch[i] = GRASS;
     } else if (n >= 3 && !crowded) {
       let c = null, cid = -1, bridge = false; // which continent is this shore of?
       for (let dy2 = -1; dy2 <= 1; dy2++) for (let dx2 = -1; dx2 <= 1; dx2++) {
@@ -904,6 +952,27 @@ function geoStep() {
     }
   }
 
+  /* --- subsidence: deep inland ground gives way and water gathers --- */
+  if (simYears - lastLakeYear > 15e6 && rand() < 0.04) {
+    for (let t = 0; t < 60; t++) {
+      const i = (rand() * N) | 0;
+      if (terrain[i] === OCEAN || coastDist[i] < 6) continue;
+      const cx = i % W, cy = (i / W) | 0;
+      const r = 1.5 + rand() * 3.5;        // a small lake … an inland sea
+      for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) {
+        const ny = cy + dy;
+        if (ny < 0 || ny >= H || Math.hypot(dx, dy) > r) continue;
+        const j = idx(cx + dx, ny);
+        if (terrain[j] !== OCEAN && rand() < 0.85) { terrain[j] = OCEAN; riftCool[j] = 60; }
+      }
+      addEvent(r > 3.2
+        ? '🏞 An inland sea opens in the heart of ' + nameAt(cx, cy)
+        : '🏞 A lake forms on ' + nameAt(cx, cy));
+      lastLakeYear = simYears;
+      break;
+    }
+  }
+
   /* --- natural disasters: storms, tsunamis, floods --- */
   if (simYears - lastDisasterYear > 6e6 && land > 300 && rand() < 0.05) {
     const roll = rand();
@@ -1046,8 +1115,10 @@ function climateStep() {
         if (rand() < 0.04) terrain[i] = GRASS;
         continue;
       }
-      if (b === FLOODED) {                           // floodwaters recede
+      if (b === FLOODED) {                           // floodwaters mostly recede…
         if (rand() < 0.07) terrain[i] = GRASS;
+        // …but a deep inland basin sometimes never drains, and a lake is born
+        else if (coastDist[i] >= 5 && rand() < 0.012) terrain[i] = OCEAN;
         continue;
       }
       // temperature and moisture drift with the epochs
@@ -1236,8 +1307,9 @@ brushBtn.addEventListener('click', () => {
 function resetWorldState() {
   simYears = 0; lastGeoYear = 0;
   lastQuakeYear = 0; lastWarYear = 0; lastMergeYear = 0;
-  lastDisasterYear = 0;
+  lastDisasterYear = 0; lastLakeYear = 0;
   splitTally = 0; mergeTally = 0; prevCompCount = -1; spreadZone = null;
+  seaMask.fill(0);
   riftCool.fill(0);
   unitGrid.fill(-1);
   namedConts = [];
