@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marble Factory Tycoon</title>
+<style>
+  :root {
+    --bg: #14161d;
+    --panel: #1d212c;
+    --panel2: #232836;
+    --border: #323a4d;
+    --text: #e8ebf4;
+    --muted: #8d95ab;
+    --accent: #4caf6d;
+    --accent-hi: #63d189;
+    --gold: #e8b23c;
+    --danger: #d05555;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  #topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  #topbar h1 { font-size: 16px; letter-spacing: 1px; margin-right: 4px; white-space: nowrap; }
+  #money {
+    font-size: 22px; font-weight: 700; color: var(--gold);
+    background: var(--panel2); border: 1px solid var(--border);
+    padding: 4px 14px; border-radius: 8px; min-width: 120px; text-align: center;
+  }
+  button {
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    color: var(--text); background: var(--panel2);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 12px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.25); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  #randomBtn {
+    background: linear-gradient(180deg, #d9534f, #b03a37);
+    border-color: #e08a88; font-size: 15px; padding: 9px 18px;
+  }
+  #stats { color: var(--muted); font-size: 12px; margin-left: auto; text-align: right; line-height: 1.4; }
+  #main { flex: 1; display: flex; min-height: 0; }
+  #game { flex: 1; min-width: 0; display: block; background: var(--bg); cursor: grab; touch-action: none; }
+  #game.dragging { cursor: grabbing; }
+  #sidebar {
+    width: 320px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  #tabs { display: flex; border-bottom: 1px solid var(--border); }
+  #tabs button {
+    flex: 1; border: none; border-radius: 0; background: none;
+    padding: 10px 0; color: var(--muted); border-bottom: 2px solid transparent;
+  }
+  #tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tabpane { flex: 1; overflow-y: auto; padding: 8px; display: none; }
+  .tabpane.active { display: block; }
+  .shop-item, .own-item {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 8px; margin-bottom: 6px;
+  }
+  .swatch {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid rgba(255,255,255,0.35);
+    box-shadow: inset -4px -4px 6px rgba(0,0,0,0.35);
+  }
+  .swatch.rainbow { background: conic-gradient(red, orange, yellow, lime, cyan, blue, magenta, red); }
+  .swatch.luck { border-radius: 6px; display:flex; align-items:center; justify-content:center; font-size:15px; }
+  .item-info { flex: 1; min-width: 0; }
+  .item-name { font-size: 13px; font-weight: 700; }
+  .item-sub { font-size: 11px; color: var(--muted); }
+  .buy-btn, .up-btn { flex-shrink: 0; font-size: 11px; padding: 6px 8px; min-width: 76px; }
+  .buy-btn { background: #2c5e3c; border-color: #3f7c53; }
+  .up-btn { background: #55482a; border-color: #7d6b3f; }
+  #toasts {
+    position: fixed; left: 50%; top: 64px; transform: translateX(-50%);
+    display: flex; flex-direction: column; gap: 6px; z-index: 20; pointer-events: none;
+  }
+  .toast {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 16px; font-size: 13px; font-weight: 600;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    animation: toastin 0.2s ease-out, toastout 0.4s ease-in 2.6s forwards;
+  }
+  @keyframes toastin { from { opacity: 0; transform: translateY(-8px); } }
+  @keyframes toastout { to { opacity: 0; transform: translateY(-8px); } }
+  @media (max-width: 700px) {
+    #sidebar { width: 200px; }
+    #topbar h1 { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <h1>🏭 MARBLE FACTORY TYCOON</h1>
+  <div id="money">$0</div>
+  <button id="randomBtn">🎲 ADD RANDOM MARBLE SLIDE</button>
+  <button id="fitBtn">🔍 Fit View</button>
+  <button id="resetBtn" title="Wipe save">♻ Reset</button>
+  <div id="stats"></div>
+</div>
+<div id="main">
+  <canvas id="game"></canvas>
+  <div id="sidebar">
+    <div id="tabs">
+      <button id="tab-shop" class="active">Shop</button>
+      <button id="tab-own">My Droppers</button>
+    </div>
+    <div id="shop" class="tabpane active"></div>
+    <div id="own" class="tabpane"></div>
+  </div>
+</div>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+/* ============================= CATALOG ============================= */
+// [name, color, cost, dropSeconds, moneyPerMarble]
+const BASE_SLIDES = [
+  ["Red",      "#e03535", 0,       1,   2],
+  ["Green",    "#2fa84f", 10,      2,   4],
+  ["Blue",     "#2f62e0", 50,      4,   6],
+  ["Yellow",   "#e8d227", 100,     8,   10],
+  ["Orange",   "#f08326", 300,     20,  15],
+  ["White",    "#f2f2f2", 500,     30,  30],
+  ["Gray",     "#8a8f96", 1000,    40,  60],
+  ["Black",    "#26262c", 1500,    50,  100],
+  ["Rainbow",  "rainbow", 2000,    100, 150],
+  ["Bronze",   "#b0703c", 4000,    200, 200],
+  ["Silver",   "#c8ccd4", 6000,    300, 400],
+  ["Gold",     "#e6b422", 8000,    400, 800],
+  ["Platinum", "#dbe5ee", 10000,   500, 1000000],
+];
+// 100 extra generated colors past Platinum
+const EXTRA_COLORS = [
+  ["Navy","#16308c"],["Purple","#8125c6"],["Magenta","#e023b0"],["Pink","#ff6fb0"],
+  ["Aqua","#23d5d5"],["Teal","#128c7e"],["Cyan","#1fd0f0"],["Lime","#9ef01a"],
+  ["Maroon","#7b1d2e"],["Olive","#7a7d1f"],["Indigo","#3f2bd8"],["Violet","#9a4dff"],
+  ["Turquoise","#2dd4bf"],["Coral","#ff7f50"],["Salmon","#fa8072"],["Crimson","#dc143c"],
+  ["Scarlet","#ff2400"],["Ruby","#d1104d"],["Emerald","#10c469"],["Jade","#00a86b"],
+  ["Sapphire","#0f52ba"],["Amethyst","#9966cc"],["Topaz","#ffc87c"],["Opal","#a8c3bc"],
+  ["Pearl","#eae0c8"],["Ivory","#fffff0"],["Cream","#fffdd0"],["Beige","#f5f5dc"],
+  ["Tan","#d2b48c"],["Khaki","#c3b091"],["Chocolate","#7b3f00"],["Coffee","#6f4e37"],
+  ["Caramel","#af6f2e"],["Amber","#ffbf00"],["Honey","#eb9605"],["Mustard","#e1ad01"],
+  ["Lemon","#fff44f"],["Banana","#ffe135"],["Peach","#ffcba4"],["Apricot","#fbceb1"],
+  ["Tangerine","#f28500"],["Rust","#b7410e"],["Brick","#cb4154"],["Mahogany","#c04000"],
+  ["Burgundy","#800020"],["Wine","#722f37"],["Plum","#8e4585"],["Lavender","#b57edc"],
+  ["Lilac","#c8a2c8"],["Orchid","#da70d6"],["Fuchsia","#ff00ff"],["Rose","#ff007f"],
+  ["Blush","#f9a8c9"],["Bubblegum","#ffc1cc"],["Cherry","#de3163"],["Strawberry","#fc5a8d"],
+  ["Raspberry","#e30b5c"],["Watermelon","#fc6c85"],["Mint","#98ff98"],["Seafoam","#93e9be"],
+  ["Forest","#228b22"],["Pine","#01796f"],["Moss","#8a9a5b"],["Fern","#4f7942"],
+  ["Sage","#9caf88"],["Chartreuse","#7fff00"],["Neon","#39ff14"],["Sky","#87ceeb"],
+  ["Azure","#007fff"],["Cerulean","#2a52be"],["Cobalt","#0047ab"],["Denim","#1560bd"],
+  ["Steel","#71797e"],["Slate","#708090"],["Storm","#4f666a"],["Charcoal","#36454f"],
+  ["Onyx","#353839"],["Obsidian","#1f2233"],["Midnight","#191970"],["Galaxy","#3b2d6e"],
+  ["Nebula","#b46ff0"],["Cosmic","#8458ff"],["Aurora","#7cf7c4"],["Prism","#d6a2e8"],
+  ["Hologram","#b8f2ff"],["Chrome","#dbe4eb"],["Titanium","#878681"],["Diamond","#b9f2ff"],
+  ["Crystal","#a7d8de"],["Glacier","#78b1bf"],["Arctic","#e0f7fa"],["Blizzard","#f0f8ff"],
+  ["Lava","#cf1020"],["Magma","#ff4500"],["Inferno","#ff6600"],["Ember","#f05e1b"],
+  ["Phoenix","#ff9a00"],["Dragon","#c92a2a"],["Void","#0b0b14"],["Quantum","#00ffc8"],
+];
+// Luck droppers: gambling galton machines. [name, color, cost, dropSeconds, baseMoney, rows]
+const LUCK_DROPPERS = [
+  ["Lucky Wood",   "#a07040", 200,     5,  5,     4],
+  ["Lucky Copper", "#c96f33", 2000,    8,  40,    5],
+  ["Lucky Ruby",   "#d1104d", 20000,   12, 300,   6],
+  ["Lucky Star",   "#f2d13c", 200000,  15, 2500,  7],
+  ["Lucky Cosmic", "#8458ff", 2000000, 20, 20000, 8],
+];
+
+const CATALOG = [];
+BASE_SLIDES.forEach((s, i) => CATALOG.push({
+  id: "s" + i, kind: "slide", name: s[0], color: s[1], cost: s[2], drop: s[3], value: s[4],
+}));
+EXTRA_COLORS.forEach((c, i) => {
+  const n = i + 1;
+  const evPerSec = 2500 * Math.pow(1.32, n);           // Platinum is $2000/s; these escalate past it
+  const drop = Math.round(20 + ((n * 37) % 280));       // varied drop times, 20s-300s
+  CATALOG.push({
+    id: "x" + i, kind: "slide", name: c[0], color: c[1],
+    cost: Math.round(12000 * Math.pow(1.38, n)),
+    drop: drop,
+    value: Math.max(1, Math.round(evPerSec * drop)),
+  });
+});
+LUCK_DROPPERS.forEach((l, i) => CATALOG.push({
+  id: "l" + i, kind: "luck", name: l[0], color: l[1], cost: l[2], drop: l[3], base: l[4], rows: l[5],
+}));
+const CAT_BY_ID = {};
+CATALOG.forEach(c => CAT_BY_ID[c.id] = c);
+
+/* ============================= LAYOUT ============================= */
+const COLS = 8;
+const CELLW = 220, CELLH = 470;
+const CELL_GAP_X = 24, ROW_GAP = 120;
+const MAINX = 46;            // x of the big vertical tube everything connects to
+const FIRST_CELL_X = 170;
+const FIRST_ROW_Y = 50;
+
+function cellRect(idx) {
+  const col = idx % COLS, row = Math.floor(idx / COLS);
+  return {
+    x: FIRST_CELL_X + col * (CELLW + CELL_GAP_X),
+    y: FIRST_ROW_Y + row * (CELLH + ROW_GAP),
+    row, col,
+  };
+}
+function collectorY(row) { return FIRST_ROW_Y + row * (CELLH + ROW_GAP) + CELLH + 52; }
+function numRows() { return Math.max(1, Math.ceil(droppers.length / COLS)); }
+function cashY() { return collectorY(numRows() - 1) + 100; }
+
+/* ============================= STATE ============================= */
+let money = 0;
+let totalEarned = 0;
+let droppers = [];   // owned droppers
+let marbles = [];
+let effects = [];
+let cashFlash = 0;
+let nextUid = 1;
+const cam = { x: 0, y: 0, z: 1 };
+const MARBLE_CAP = 800;
+
+/* ============================= HELPERS ============================= */
+const SUFFIX = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc"];
+function fmt(n) {
+  if (n < 1000) return "$" + Math.floor(n);
+  let tier = Math.floor(Math.log10(Math.abs(n)) / 3);
+  tier = Math.min(tier, SUFFIX.length - 1);
+  const v = n / Math.pow(10, tier * 3);
+  return "$" + (v >= 100 ? Math.floor(v) : v.toFixed(1).replace(/\.0$/, "")) + SUFFIX[tier];
+}
+function fmtTime(s) { return s >= 10 ? Math.round(s) + "s" : (Math.round(s * 100) / 100) + "s"; }
+function shade(hex, amt) {
+  if (hex === "rainbow") return hex;
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) + amt, g = ((n >> 8) & 255) + amt, b = (n & 255) + amt;
+  r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
+  return "rgb(" + r + "," + g + "," + b + ")";
+}
+function toast(msg) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  document.getElementById("toasts").appendChild(el);
+  setTimeout(() => el.remove(), 3100);
+}
+
+/* ============================= RANDOM SLOPE GENERATOR =============================
+   Generates a random zig-zag of 3D-looking ramps for a slide. Everything is drawn
+   flat (no depth sorting), so ramps freely overlap each other and the neighbors. */
+function genSlopePath(idx) {
+  const cell = cellRect(idx);
+  const cx = cell.x + CELLW / 2;
+  const bottomY = cell.y + CELLH - 26;
+  const pts = [[cx, cell.y + 62]];   // spout of the dropper box
+  let x = cx, y = cell.y + 84;
+  pts.push([x, y]);
+  let dir = Math.random() < 0.5 ? 1 : -1;
+  while (y < bottomY - 70) {
+    const run = 55 + Math.random() * 115;
+    const drop = 34 + Math.random() * 52;
+    let nx = x + dir * run;
+    nx = Math.max(cell.x - 46, Math.min(cell.x + CELLW + 46, nx)); // may poke out & overlap neighbors
+    const ny = Math.min(y + drop, bottomY - 40);
+    pts.push([nx, ny]);
+    x = nx; y = ny;
+    dir *= -1;
+  }
+  pts.push([cx, bottomY]); // funnel ramp back to center, into the chute
+  return pts;
+}
+
+/* ============================= DROPPERS ============================= */
+function upgradeCost(d) {
+  const base = Math.max(5, d.cat.cost * 0.6);
+  return Math.ceil(base * Math.pow(1.7, d.level));
+}
+function addDropper(cat) {
+  const idx = droppers.length;
+  const d = {
+    uid: nextUid++,
+    catId: cat.id,
+    cat: cat,
+    kind: cat.kind,
+    level: 0,
+    drop: cat.drop,
+    timer: cat.drop * (0.3 + Math.random() * 0.7),
+    idx: idx,
+  };
+  if (cat.kind === "slide") {
+    d.value = cat.value;
+    d.pts = genSlopePath(idx);
+  } else {
+    d.base = cat.base;
+    d.rows = cat.rows;
+  }
+  droppers.push(d);
+  rebuildOwnList();
+  save();
+  return d;
+}
+function doUpgrade(d) {
+  const cost = upgradeCost(d);
+  if (money < cost) return false;
+  money -= cost;
+  d.level++;
+  d.drop = Math.max(0.15, d.drop * 0.75);   // drop time decreases by 1/4 every upgrade
+  if (d.kind === "slide") {
+    d.value = Math.ceil(d.value * 1.6);
+  } else {
+    d.base = Math.ceil(d.base * 1.6);
+    if (d.level % 2 === 0) d.rows = Math.min(9, d.rows + 1); // rarer top prizes
+  }
+  rebuildOwnList();
+  save();
+  return true;
+}
+function buyCat(cat) {
+  if (money < cat.cost) return false;
+  money -= cat.cost;
+  addDropper(cat);
+  toast((cat.cost === 0 ? "Free! " : "") + "Added a " + cat.name + (cat.kind === "luck" ? " luck dropper!" : " marble slide!"));
+  return true;
+}
+function buyRandom() {
+  const pool = CATALOG.filter(c => c.cost <= money);
+  const cat = pool[Math.floor(Math.random() * pool.length)];
+  buyCat(cat);
+}
+
+/* ============================= MARBLES ============================= */
+function tubeTail(idx) {
+  const cell = cellRect(idx);
+  const cx = cell.x + CELLW / 2;
+  const colY = collectorY(cell.row);
+  return [[cx, colY], [MAINX, colY], [MAINX, cashY() + 26]];
+}
+function spawnSlideMarble(d) {
+  if (marbles.length >= MARBLE_CAP) return;
+  const slide = d.pts;
+  const pts = slide.concat(tubeTail(d.idx));
+  marbles.push({
+    pts, i: 0, t: 0,
+    tubeIdx: slide.length,
+    speed: 150,
+    value: d.value,
+    color: d.cat.color,
+    uid: nextUid++,
+    glow: false,
+  });
+}
+function spawnLuckMarble(d) {
+  if (marbles.length >= MARBLE_CAP) return;
+  const cell = cellRect(d.idx);
+  const cx = cell.x + CELLW / 2;
+  const topY = cell.y + 84;
+  const pegDX = 13, pegDY = 30;
+  let rights = 0, ox = 0;
+  const pts = [[cx, cell.y + 62], [cx, topY]];
+  for (let r = 0; r < d.rows; r++) {
+    const right = Math.random() < 0.5;
+    if (right) rights++;
+    ox += right ? pegDX : -pegDX;
+    pts.push([cx + ox, topY + (r + 1) * pegDY]);
+  }
+  const slotY = topY + d.rows * pegDY + 46;
+  pts.push([cx + ox, slotY]);
+  pts.push([cx, cell.y + CELLH - 26]);   // out of the machine, into the chute
+  const value = d.base * Math.pow(2, rights);
+  const jackpot = rights === d.rows;
+  marbles.push({
+    pts: pts.concat(tubeTail(d.idx)),
+    i: 0, t: 0,
+    tubeIdx: pts.length,
+    speed: 140,
+    value,
+    color: jackpot ? "#ffd94a" : d.cat.color,
+    uid: nextUid++,
+    glow: jackpot,
+  });
+  if (jackpot) toast("🎰 JACKPOT! " + d.cat.name + " rolled all-rights: " + fmt(value) + "!");
+}
+function deliverMarble(m) {
+  money += m.value;
+  totalEarned += m.value;
+  cashFlash = 1;
+  if (effects.length < 60) {
+    effects.push({ x: MAINX + 20 + Math.random() * 40, y: cashY() + 10, text: "+" + fmt(m.value), age: 0, big: m.glow });
+  }
+}
+function advanceMarble(m, dt) {
+  let dist = m.speed * dt * (m.i >= m.tubeIdx ? 2.8 : 1);
+  while (dist > 0) {
+    const a = m.pts[m.i], b = m.pts[m.i + 1];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.max(1, Math.hypot(dx, dy));
+    // steeper = faster (only on the slide part)
+    const slope = m.i >= m.tubeIdx ? 1 : (0.55 + 1.9 * Math.max(0, dy) / len);
+    const remain = (1 - m.t) * len;
+    const step = dist * slope;
+    if (step < remain) { m.t += step / len; return true; }
+    dist -= remain / slope;
+    m.t = 0; m.i++;
+    if (m.i >= m.pts.length - 1) { deliverMarble(m); return false; }
+  }
+  return true;
+}
+function marblePos(m) {
+  const a = m.pts[m.i], b = m.pts[m.i + 1];
+  return [a[0] + (b[0] - a[0]) * m.t, a[1] + (b[1] - a[1]) * m.t];
+}
+
+/* ============================= SAVE / LOAD ============================= */
+const SAVE_KEY = "marbleFactoryTycoonV1";
+function save() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      money, totalEarned,
+      drops: droppers.map(d => ({
+        c: d.catId, l: d.level, dr: d.drop,
+        v: d.value, b: d.base, r: d.rows, p: d.pts,
+      })),
+    }));
+  } catch (e) { /* storage unavailable */ }
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    money = s.money || 0;
+    totalEarned = s.totalEarned || 0;
+    droppers = [];
+    (s.drops || []).forEach((sd, i) => {
+      const cat = CAT_BY_ID[sd.c];
+      if (!cat) return;
+      const d = {
+        uid: nextUid++, catId: cat.id, cat, kind: cat.kind,
+        level: sd.l || 0, drop: sd.dr || cat.drop,
+        timer: Math.random() * (sd.dr || cat.drop), idx: droppers.length,
+      };
+      if (cat.kind === "slide") {
+        d.value = sd.v || cat.value;
+        d.pts = (sd.p && sd.p.length > 2) ? sd.p : genSlopePath(d.idx);
+      } else {
+        d.base = sd.b || cat.base;
+        d.rows = sd.r || cat.rows;
+      }
+      droppers.push(d);
+    });
+    return droppers.length > 0;
+  } catch (e) { return false; }
+}
+setInterval(save, 5000);
+
+/* ============================= CANVAS / CAMERA ============================= */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+let dpr = 1;
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+}
+window.addEventListener("resize", resize);
+
+function worldBounds() {
+  const rows = numRows();
+  const colsUsed = Math.min(COLS, Math.max(1, droppers.length));
+  return {
+    x0: 0, y0: 0,
+    x1: FIRST_CELL_X + colsUsed * (CELLW + CELL_GAP_X) + 40,
+    y1: cashY() + 140,
+  };
+}
+function fitView() {
+  const b = worldBounds();
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const z = Math.min(1.4, Math.min(w / (b.x1 - b.x0), h / (b.y1 - b.y0)) * 0.95);
+  cam.z = Math.max(0.08, z);
+  cam.x = (w - (b.x0 + b.x1) * cam.z) / 2;
+  cam.y = (h - (b.y0 + b.y1) * cam.z) / 2;
+}
+document.getElementById("fitBtn").onclick = fitView;
+
+let dragging = false, dragMoved = 0, lastPX = 0, lastPY = 0;
+canvas.addEventListener("pointerdown", e => {
+  dragging = true; dragMoved = 0;
+  lastPX = e.clientX; lastPY = e.clientY;
+  canvas.classList.add("dragging");
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastPX, dy = e.clientY - lastPY;
+  dragMoved += Math.abs(dx) + Math.abs(dy);
+  cam.x += dx; cam.y += dy;
+  lastPX = e.clientX; lastPY = e.clientY;
+});
+canvas.addEventListener("pointerup", e => {
+  dragging = false;
+  canvas.classList.remove("dragging");
+  if (dragMoved < 6) handleClick(e);
+});
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const nz = Math.max(0.06, Math.min(3, cam.z * factor));
+  cam.x = mx - (mx - cam.x) * (nz / cam.z);
+  cam.y = my - (my - cam.y) * (nz / cam.z);
+  cam.z = nz;
+}, { passive: false });
+
+function screenToWorld(sx, sy) {
+  return [(sx - cam.x) / cam.z, (sy - cam.y) / cam.z];
+}
+function handleClick(e) {
+  const rect = canvas.getBoundingClientRect();
+  const [wx, wy] = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+  for (const d of droppers) {
+    const r = d.btnRect;
+    if (r && wx >= r.x && wx <= r.x + r.w && wy >= r.y && wy <= r.y + r.h) {
+      if (!doUpgrade(d)) toast("Not enough money to upgrade " + d.cat.name + " (" + fmt(upgradeCost(d)) + ")");
+      return;
+    }
+  }
+}
+
+/* ============================= DRAWING ============================= */
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function segColor(cat, i, time) {
+  if (cat.color === "rainbow") return "hsl(" + ((time * 60 + i * 45) % 360) + ",85%,55%)";
+  return cat.color;
+}
+function drawRamp(x1, y1, x2, y2, color) {
+  // Flat pseudo-3D ramp: a top face pushed back-right, plus a front face.
+  const DX = 12, DY = 7, TH = 10;
+  ctx.fillStyle = shade0(color, 40);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.lineTo(x2 + DX, y2 - DY); ctx.lineTo(x1 + DX, y1 - DY);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.lineTo(x2, y2 + TH); ctx.lineTo(x1, y1 + TH);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = shade0(color, -45);
+  ctx.beginPath();
+  ctx.moveTo(x2, y2); ctx.lineTo(x2 + DX, y2 - DY);
+  ctx.lineTo(x2 + DX, y2 - DY + TH); ctx.lineTo(x2, y2 + TH);
+  ctx.closePath(); ctx.fill();
+}
+function shade0(color, amt) {
+  if (color.startsWith("hsl")) return color;
+  if (color[0] === "#") return shade(color, amt);
+  return color;
+}
+function drawTubes(time) {
+  const rows = numRows();
+  const cy = cashY();
+  ctx.lineCap = "round";
+  // collector tubes per row (part of the one big tube network)
+  for (let r = 0; r < rows; r++) {
+    const y = collectorY(r);
+    const used = Math.min(COLS, droppers.length - r * COLS);
+    const endX = FIRST_CELL_X + (used - 0.5) * (CELLW + CELL_GAP_X);
+    ctx.strokeStyle = "rgba(120,150,200,0.24)";
+    ctx.lineWidth = 26;
+    ctx.beginPath(); ctx.moveTo(MAINX, y); ctx.lineTo(endX, y); ctx.stroke();
+    ctx.strokeStyle = "rgba(190,215,255,0.35)";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(MAINX, y - 10); ctx.lineTo(endX, y - 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(MAINX, y + 10); ctx.lineTo(endX, y + 10); ctx.stroke();
+  }
+  // THE BIG TUBE: everything connects into this one
+  ctx.strokeStyle = "rgba(120,150,200,0.3)";
+  ctx.lineWidth = 40;
+  ctx.beginPath(); ctx.moveTo(MAINX, 26); ctx.lineTo(MAINX, cy + 4); ctx.stroke();
+  ctx.strokeStyle = "rgba(190,215,255,0.4)";
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(MAINX - 17, 26); ctx.lineTo(MAINX - 17, cy + 4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(MAINX + 17, 26); ctx.lineTo(MAINX + 17, cy + 4); ctx.stroke();
+  // THE CASH BLOCK: just white, no icons
+  const flash = cashFlash;
+  ctx.save();
+  if (flash > 0) {
+    ctx.shadowColor = "rgba(255,255,255," + (0.8 * flash) + ")";
+    ctx.shadowBlur = 30 * flash;
+  }
+  ctx.fillStyle = "#ffffff";
+  rr(MAINX - 52, cy + 6, 104, 62, 8);
+  ctx.fill();
+  ctx.restore();
+}
+function drawDropper(d, time) {
+  const cell = cellRect(d.idx);
+  const cx = cell.x + CELLW / 2;
+  const cat = d.cat;
+
+  // name + level label
+  ctx.fillStyle = "#e8ebf4";
+  ctx.font = "bold 15px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(cat.name + "  Lv." + (d.level + 1), cx, cell.y + 14);
+
+  // dropper box
+  const boxCol = cat.color === "rainbow" ? "hsl(" + ((time * 90) % 360) + ",85%,55%)" : cat.color;
+  ctx.fillStyle = shade0(boxCol, -25);
+  rr(cx - 34, cell.y + 22, 68, 38, 6); ctx.fill();
+  ctx.fillStyle = boxCol;
+  rr(cx - 30, cell.y + 26, 60, 26, 5); ctx.fill();
+  ctx.fillStyle = shade0(boxCol, -60);
+  ctx.fillRect(cx - 7, cell.y + 58, 14, 8); // spout
+
+  if (d.kind === "slide") {
+    // the random flat-3D overlapping slopes
+    for (let i = 1; i < d.pts.length - 1; i++) {
+      const a = d.pts[i], b = d.pts[i + 1];
+      drawRamp(a[0], a[1], b[0], b[1], segColor(cat, i, time));
+    }
+    ctx.fillStyle = "#a8b2c8";
+    ctx.font = "11px sans-serif";
+    ctx.fillText(fmt(d.value) + " / marble · every " + fmtTime(d.drop), cx, cell.y + CELLH - 6);
+  } else {
+    drawGalton(d, cell, cx, time);
+  }
+
+  // chute from cell into the collector tube
+  const colY = collectorY(cell.row);
+  ctx.strokeStyle = "rgba(120,150,200,0.22)";
+  ctx.lineWidth = 14;
+  ctx.beginPath(); ctx.moveTo(cx, cell.y + CELLH - 24); ctx.lineTo(cx, colY); ctx.stroke();
+
+  // UPGRADE button (on the dropper itself)
+  const cost = upgradeCost(d);
+  const bw = 158, bh = 26;
+  const bx = cx - bw / 2, by = cell.y + CELLH + 12;
+  d.btnRect = { x: bx, y: by, w: bw, h: bh };
+  const can = money >= cost;
+  ctx.fillStyle = can ? "#3d7a4e" : "#3a3f4e";
+  rr(bx, by, bw, bh, 7); ctx.fill();
+  ctx.strokeStyle = can ? "#63d189" : "#565e73";
+  ctx.lineWidth = 1.5;
+  rr(bx, by, bw, bh, 7); ctx.stroke();
+  ctx.fillStyle = can ? "#eafff0" : "#8d95ab";
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillText("⬆ UPGRADE " + fmt(cost), cx, by + 17);
+}
+function drawGalton(d, cell, cx, time) {
+  const topY = cell.y + 84;
+  const pegDX = 13, pegDY = 30;
+  const machH = d.rows * pegDY + 66;
+  const machW = Math.max(150, d.rows * pegDX * 2 + 60);
+  // machine body
+  ctx.fillStyle = "rgba(40,46,64,0.85)";
+  rr(cx - machW / 2, topY - 14, machW, machH, 10); ctx.fill();
+  ctx.strokeStyle = shade0(d.cat.color, 30);
+  ctx.lineWidth = 2.5;
+  rr(cx - machW / 2, topY - 14, machW, machH, 10); ctx.stroke();
+  // the dots the marbles bounce through
+  ctx.fillStyle = "#b9c3da";
+  for (let r = 0; r < d.rows; r++) {
+    const y = topY + (r + 0.55) * pegDY;
+    for (let p = 0; p <= r; p++) {
+      const x = cx + (p - r / 2) * pegDX * 2;
+      ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // slots + multipliers: each step right is twice as rare, twice the money
+  const slotY = topY + d.rows * pegDY + 20;
+  ctx.font = "9px sans-serif";
+  for (let k = 0; k <= d.rows; k++) {
+    const x = cx + (k - d.rows / 2) * pegDX * 2;
+    const hot = k / d.rows;
+    ctx.fillStyle = "hsl(" + (50 - hot * 0) + "," + Math.round(30 + hot * 65) + "%," + Math.round(35 + hot * 25) + "%)";
+    ctx.fillRect(x - pegDX + 2, slotY, pegDX * 2 - 4, 16);
+    ctx.fillStyle = k === d.rows ? "#1c1c1c" : "#dfe5f2";
+    ctx.fillText("×" + Math.pow(2, k), x, slotY + 12);
+  }
+  ctx.fillStyle = "#a8b2c8";
+  ctx.font = "11px sans-serif";
+  ctx.fillText("base " + fmt(d.base) + " · top prize " + fmt(d.base * Math.pow(2, d.rows)) + " (1 in " + Math.pow(2, d.rows) + ")", cx, cell.y + CELLH - 6);
+}
+function drawMarble(m, time) {
+  const [x, y] = marblePos(m);
+  const col = m.color === "rainbow"
+    ? "hsl(" + ((time * 140 + m.uid * 47) % 360) + ",90%,55%)"
+    : m.color;
+  if (m.glow) {
+    ctx.shadowColor = "#ffd94a";
+    ctx.shadowBlur = 14;
+  }
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(x, y - 6, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(0,0,0,0.4)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.beginPath(); ctx.arc(x - 2, y - 8.5, 2, 0, Math.PI * 2); ctx.fill();
+}
+function drawEffects(dt) {
+  ctx.textAlign = "center";
+  for (let i = effects.length - 1; i >= 0; i--) {
+    const e = effects[i];
+    e.age += dt;
+    if (e.age > 1.2) { effects.splice(i, 1); continue; }
+    ctx.globalAlpha = Math.max(0, 1 - e.age / 1.2);
+    ctx.fillStyle = e.big ? "#ffd94a" : "#8ef0a8";
+    ctx.font = (e.big ? "bold 18px" : "bold 13px") + " sans-serif";
+    ctx.fillText(e.text, e.x, e.y - e.age * 42);
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ============================= SIDEBAR UI ============================= */
+const shopPane = document.getElementById("shop");
+const ownPane = document.getElementById("own");
+const shopButtons = [];
+function buildShop() {
+  CATALOG.forEach(cat => {
+    const row = document.createElement("div");
+    row.className = "shop-item";
+    const sw = document.createElement("div");
+    sw.className = "swatch" + (cat.color === "rainbow" ? " rainbow" : "") + (cat.kind === "luck" ? " luck" : "");
+    if (cat.color !== "rainbow") sw.style.background = cat.color;
+    if (cat.kind === "luck") sw.textContent = "🎰";
+    const info = document.createElement("div");
+    info.className = "item-info";
+    const nm = document.createElement("div");
+    nm.className = "item-name";
+    nm.textContent = cat.name;
+    const sub = document.createElement("div");
+    sub.className = "item-sub";
+    sub.textContent = cat.kind === "slide"
+      ? fmt(cat.value) + "/marble · every " + fmtTime(cat.drop)
+      : "gamble ×1–×" + Math.pow(2, cat.rows) + " of " + fmt(cat.base) + " · every " + fmtTime(cat.drop);
+    info.appendChild(nm); info.appendChild(sub);
+    const btn = document.createElement("button");
+    btn.className = "buy-btn";
+    btn.textContent = cat.cost === 0 ? "FREE" : fmt(cat.cost);
+    btn.onclick = () => { if (!buyCat(cat)) toast("Not enough money!"); };
+    row.appendChild(sw); row.appendChild(info); row.appendChild(btn);
+    shopPane.appendChild(row);
+    shopButtons.push({ btn, cat });
+  });
+}
+const ownButtons = [];
+function rebuildOwnList() {
+  ownPane.innerHTML = "";
+  ownButtons.length = 0;
+  if (droppers.length === 0) {
+    ownPane.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:10px;">No droppers yet — press the big red button to get your free Red slide!</div>';
+    return;
+  }
+  droppers.forEach(d => {
+    const row = document.createElement("div");
+    row.className = "own-item";
+    const sw = document.createElement("div");
+    sw.className = "swatch" + (d.cat.color === "rainbow" ? " rainbow" : "") + (d.kind === "luck" ? " luck" : "");
+    if (d.cat.color !== "rainbow") sw.style.background = d.cat.color;
+    if (d.kind === "luck") sw.textContent = "🎰";
+    const info = document.createElement("div");
+    info.className = "item-info";
+    const nm = document.createElement("div");
+    nm.className = "item-name";
+    nm.textContent = d.cat.name + " Lv." + (d.level + 1);
+    const sub = document.createElement("div");
+    sub.className = "item-sub";
+    sub.textContent = d.kind === "slide"
+      ? fmt(d.value) + "/marble · every " + fmtTime(d.drop)
+      : "base " + fmt(d.base) + " · " + d.rows + " rows · every " + fmtTime(d.drop);
+    info.appendChild(nm); info.appendChild(sub);
+    const btn = document.createElement("button");
+    btn.className = "up-btn";
+    btn.textContent = "⬆ " + fmt(upgradeCost(d));
+    btn.onclick = () => { if (!doUpgrade(d)) toast("Not enough money!"); };
+    row.appendChild(sw); row.appendChild(info); row.appendChild(btn);
+    ownPane.appendChild(row);
+    ownButtons.push({ btn, d });
+  });
+}
+function refreshAfford() {
+  shopButtons.forEach(({ btn, cat }) => { btn.disabled = money < cat.cost; });
+  ownButtons.forEach(({ btn, d }) => {
+    btn.disabled = money < upgradeCost(d);
+    btn.textContent = "⬆ " + fmt(upgradeCost(d));
+  });
+}
+setInterval(refreshAfford, 300);
+
+document.getElementById("tab-shop").onclick = () => setTab("shop");
+document.getElementById("tab-own").onclick = () => setTab("own");
+function setTab(name) {
+  document.getElementById("tab-shop").classList.toggle("active", name === "shop");
+  document.getElementById("tab-own").classList.toggle("active", name === "own");
+  shopPane.classList.toggle("active", name === "shop");
+  ownPane.classList.toggle("active", name === "own");
+}
+
+document.getElementById("randomBtn").onclick = () => {
+  const hadRows = numRows();
+  buyRandom();
+  if (numRows() > hadRows || droppers.length === 1) fitView();
+};
+document.getElementById("resetBtn").onclick = () => {
+  if (!confirm("Reset ALL progress? This wipes your factory and money.")) return;
+  localStorage.removeItem(SAVE_KEY);
+  money = 0; totalEarned = 0; droppers = []; marbles = []; effects = [];
+  rebuildOwnList();
+  fitView();
+};
+
+/* ============================= MAIN LOOP ============================= */
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+  const time = now / 1000;
+
+  // spawn marbles
+  for (const d of droppers) {
+    d.timer += dt;
+    while (d.timer >= d.drop) {
+      d.timer -= d.drop;
+      if (d.kind === "slide") spawnSlideMarble(d);
+      else spawnLuckMarble(d);
+    }
+  }
+  // move marbles
+  for (let i = marbles.length - 1; i >= 0; i--) {
+    if (!advanceMarble(marbles[i], dt)) marbles.splice(i, 1);
+  }
+  cashFlash = Math.max(0, cashFlash - dt * 3);
+
+  // render
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  ctx.setTransform(dpr * cam.z, 0, 0, dpr * cam.z, dpr * cam.x, dpr * cam.y);
+
+  // floor grid
+  const b = worldBounds();
+  ctx.strokeStyle = "rgba(255,255,255,0.04)";
+  ctx.lineWidth = 1;
+  for (let gx = 0; gx < b.x1; gx += 80) {
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, b.y1); ctx.stroke();
+  }
+  for (let gy = 0; gy < b.y1; gy += 80) {
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(b.x1, gy); ctx.stroke();
+  }
+
+  drawTubes(time);
+  for (const d of droppers) drawDropper(d, time);
+  for (const m of marbles) drawMarble(m, time);
+  drawEffects(dt);
+
+  // HUD
+  document.getElementById("money").textContent = fmt(money);
+  document.getElementById("stats").innerHTML =
+    "Droppers: " + droppers.length + " · Marbles: " + marbles.length +
+    "<br>Total earned: " + fmt(totalEarned);
+
+  requestAnimationFrame(frame);
+}
+
+/* ============================= START ============================= */
+buildShop();
+if (!load()) {
+  toast("Welcome! Press the big red button — your first Red slide is FREE.");
+}
+rebuildOwnList();
+resize();
+fitView();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
