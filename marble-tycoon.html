@@ -171,13 +171,14 @@ const EXTRA_COLORS = [
   ["Lava","#cf1020"],["Magma","#ff4500"],["Inferno","#ff6600"],["Ember","#f05e1b"],
   ["Phoenix","#ff9a00"],["Dragon","#c92a2a"],["Void","#0b0b14"],["Quantum","#00ffc8"],
 ];
-// Luck droppers: gambling galton machines. [name, color, cost, dropSeconds, baseMoney, rows]
+// Luck droppers: gambling galton machines, all drop 1 marble every 2 seconds.
+// [name, color, cost, dropSeconds, baseMoney, rows]
 const LUCK_DROPPERS = [
-  ["Lucky Wood",   "#a07040", 200,     5,  5,     4],
-  ["Lucky Copper", "#c96f33", 2000,    8,  40,    5],
-  ["Lucky Ruby",   "#d1104d", 20000,   12, 300,   6],
-  ["Lucky Star",   "#f2d13c", 200000,  15, 2500,  7],
-  ["Lucky Cosmic", "#8458ff", 2000000, 20, 20000, 8],
+  ["Lucky Wood",   "#a07040", 200,     2, 5,     4],
+  ["Lucky Copper", "#c96f33", 2000,    2, 40,    5],
+  ["Lucky Ruby",   "#d1104d", 20000,   2, 300,   6],
+  ["Lucky Star",   "#f2d13c", 200000,  2, 2500,  7],
+  ["Lucky Cosmic", "#8458ff", 2000000, 2, 20000, 8],
 ];
 
 const CATALOG = [];
@@ -457,6 +458,10 @@ function load() {
       } else {
         d.base = sd.b || cat.base;
         d.rows = sd.r || cat.rows;
+        // luck droppers always follow the catalog rate (plus upgrade speedups),
+        // so old saves pick up rate changes
+        d.drop = Math.max(0.15, cat.drop * Math.pow(0.75, d.level));
+        d.timer = Math.random() * d.drop;
       }
       droppers.push(d);
     });
