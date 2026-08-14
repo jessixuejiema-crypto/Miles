@@ -379,8 +379,12 @@ function spawnLuckMarble(d) {
   const slotY = topY + d.rows * pegDY + 46;
   pts.push([cx + ox, slotY]);
   pts.push([cx, cell.y + CELLH - 26]);   // out of the machine, into the chute
-  const value = d.base * Math.pow(2, rights);
-  const jackpot = rights === d.rows;
+  // Middle slot pays x1; every step toward either edge is rarer and pays more.
+  // The outermost slots are the rarest and pay the max.
+  const edge = Math.floor(Math.abs(2 * rights - d.rows) / 2); // distance from the middle
+  const maxEdge = Math.floor(d.rows / 2);
+  const value = d.base * Math.pow(4, edge);
+  const jackpot = edge === maxEdge;
   marbles.push({
     pts: pts.concat(tubeTail(d.idx)),
     i: 0, t: 0,
@@ -391,7 +395,7 @@ function spawnLuckMarble(d) {
     uid: nextUid++,
     glow: jackpot,
   });
-  if (jackpot) toast("🎰 JACKPOT! " + d.cat.name + " rolled all-rights: " + fmt(value) + "!");
+  if (jackpot) toast("🎰 JACKPOT! " + d.cat.name + " rolled all the way to the edge: " + fmt(value) + "!");
 }
 function deliverMarble(m) {
   money += m.value;
@@ -694,20 +698,22 @@ function drawGalton(d, cell, cx, time) {
       ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2); ctx.fill();
     }
   }
-  // slots + multipliers: each step right is twice as rare, twice the money
+  // slots + multipliers: middle is x1, each step toward an edge is rarer & richer
   const slotY = topY + d.rows * pegDY + 20;
+  const maxEdge = Math.floor(d.rows / 2);
   ctx.font = "9px sans-serif";
   for (let k = 0; k <= d.rows; k++) {
     const x = cx + (k - d.rows / 2) * pegDX * 2;
-    const hot = k / d.rows;
-    ctx.fillStyle = "hsl(" + (50 - hot * 0) + "," + Math.round(30 + hot * 65) + "%," + Math.round(35 + hot * 25) + "%)";
+    const e = Math.floor(Math.abs(2 * k - d.rows) / 2);
+    const hot = maxEdge ? e / maxEdge : 0;
+    ctx.fillStyle = "hsl(50," + Math.round(30 + hot * 65) + "%," + Math.round(35 + hot * 25) + "%)";
     ctx.fillRect(x - pegDX + 2, slotY, pegDX * 2 - 4, 16);
-    ctx.fillStyle = k === d.rows ? "#1c1c1c" : "#dfe5f2";
-    ctx.fillText("×" + Math.pow(2, k), x, slotY + 12);
+    ctx.fillStyle = e === maxEdge ? "#1c1c1c" : "#dfe5f2";
+    ctx.fillText("×" + Math.pow(4, e), x, slotY + 12);
   }
   ctx.fillStyle = "#a8b2c8";
   ctx.font = "11px sans-serif";
-  ctx.fillText("base " + fmt(d.base) + " · top prize " + fmt(d.base * Math.pow(2, d.rows)) + " (1 in " + Math.pow(2, d.rows) + ")", cx, cell.y + CELLH - 6);
+  ctx.fillText("base " + fmt(d.base) + " · top prize " + fmt(d.base * Math.pow(4, maxEdge)) + " (1 in " + Math.pow(2, d.rows - 1) + ")", cx, cell.y + CELLH - 6);
 }
 function drawMarble(m, time) {
   const [x, y] = marblePos(m);
@@ -762,7 +768,7 @@ function buildShop() {
     sub.className = "item-sub";
     sub.textContent = cat.kind === "slide"
       ? fmt(cat.value) + "/marble · every " + fmtTime(cat.drop)
-      : "gamble ×1–×" + Math.pow(2, cat.rows) + " of " + fmt(cat.base) + " · every " + fmtTime(cat.drop);
+      : "gamble ×1–×" + Math.pow(4, Math.floor(cat.rows / 2)) + " of " + fmt(cat.base) + " · every " + fmtTime(cat.drop);
     info.appendChild(nm); info.appendChild(sub);
     const btn = document.createElement("button");
     btn.className = "buy-btn";
