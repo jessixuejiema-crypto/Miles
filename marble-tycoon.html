@@ -328,15 +328,22 @@ function doUpgrade(d) {
   save();
   return true;
 }
+function catCost(cat) {
+  // only your very first Red slide is free — after that Red costs $1
+  if (cat.id === "s0") return droppers.some(d => d.catId === "s0") ? 1 : 0;
+  return cat.cost;
+}
 function buyCat(cat) {
-  if (money < cat.cost) return false;
-  money -= cat.cost;
+  const cost = catCost(cat);
+  if (money < cost) return false;
+  money -= cost;
   addDropper(cat);
-  toast((cat.cost === 0 ? "Free! " : "") + "Added a " + cat.name + (cat.kind === "luck" ? " luck dropper!" : " marble slide!"));
+  toast((cost === 0 ? "Free! " : "") + "Added a " + cat.name + (cat.kind === "luck" ? " luck dropper!" : " marble slide!"));
   return true;
 }
 function buyRandom() {
-  const pool = CATALOG.filter(c => c.cost <= money);
+  const pool = CATALOG.filter(c => catCost(c) <= money);
+  if (pool.length === 0) { toast("Not enough money!"); return; }
   const cat = pool[Math.floor(Math.random() * pool.length)];
   buyCat(cat);
 }
@@ -355,7 +362,7 @@ function spawnSlideMarble(d) {
   marbles.push({
     pts, i: 0, t: 0,
     tubeIdx: slide.length,
-    speed: 150,
+    v: 40, cd: 0,
     value: d.value,
     color: d.cat.color,
     uid: nextUid++,
@@ -389,7 +396,7 @@ function spawnLuckMarble(d) {
     pts: pts.concat(tubeTail(d.idx)),
     i: 0, t: 0,
     tubeIdx: pts.length,
-    speed: 140,
+    v: 40, cd: 0,
     value,
     color: jackpot ? "#ffd94a" : d.cat.color,
     uid: nextUid++,
@@ -405,22 +412,89 @@ function deliverMarble(m) {
     effects.push({ x: MAINX + 20 + Math.random() * 40, y: cashY() + 10, text: "+" + fmt(m.value), age: 0, big: m.glow });
   }
 }
+// marble physics: gravity accelerates them down slopes, friction drags them back
+const GRAV = 480, FRICTION = 0.45, MAX_V = 950, TUBE_V = 330, MIN_V = 22;
 function advanceMarble(m, dt) {
-  let dist = m.speed * dt * (m.i >= m.tubeIdx ? 2.8 : 1);
+  const a = m.pts[m.i], b = m.pts[m.i + 1];
+  const len = Math.max(1, Math.hypot(b[0] - a[0], b[1] - a[1]));
+  const downhill = Math.max(0, (b[1] - a[1]) / len);
+  if (m.i >= m.tubeIdx) {
+    // the big tube sucks marbles along at a steady pace
+    m.v += (TUBE_V - m.v) * Math.min(1, dt * 3);
+  } else {
+    m.v += (GRAV * downhill - FRICTION * m.v) * dt;
+    if (m.v < MIN_V) m.v = MIN_V;   // rolling nudge so nothing stalls on flat runs
+    if (m.v > MAX_V) m.v = MAX_V;
+  }
+  let dist = m.v * dt;
   while (dist > 0) {
-    const a = m.pts[m.i], b = m.pts[m.i + 1];
-    const dx = b[0] - a[0], dy = b[1] - a[1];
-    const len = Math.max(1, Math.hypot(dx, dy));
-    // steeper = faster (only on the slide part)
-    const slope = m.i >= m.tubeIdx ? 1 : (0.55 + 1.9 * Math.max(0, dy) / len);
-    const remain = (1 - m.t) * len;
-    const step = dist * slope;
-    if (step < remain) { m.t += step / len; return true; }
-    dist -= remain / slope;
+    const p = m.pts[m.i], q = m.pts[m.i + 1];
+    const slen = Math.max(1, Math.hypot(q[0] - p[0], q[1] - p[1]));
+    const remain = (1 - m.t) * slen;
+    if (dist < remain) { m.t += dist / slen; return true; }
+    dist -= remain;
     m.t = 0; m.i++;
     if (m.i >= m.pts.length - 1) { deliverMarble(m); return false; }
   }
   return true;
+}
+// move a marble along its path without delivering (used to separate after a bump)
+function pathNudge(m, dist) {
+  if (dist >= 0) {
+    while (dist > 0) {
+      const p = m.pts[m.i], q = m.pts[m.i + 1];
+      const slen = Math.max(1, Math.hypot(q[0] - p[0], q[1] - p[1]));
+      const remain = (1 - m.t) * slen;
+      if (dist < remain) { m.t += dist / slen; return; }
+      if (m.i >= m.pts.length - 2) { m.t = 0.999; return; }
+      dist -= remain; m.t = 0; m.i++;
+    }
+  } else {
+    dist = -dist;
+    while (dist > 0) {
+      const p = m.pts[m.i], q = m.pts[m.i + 1];
+      const slen = Math.max(1, Math.hypot(q[0] - p[0], q[1] - p[1]));
+      const done = m.t * slen;
+      if (dist < done) { m.t -= dist / slen; return; }
+      if (m.i === 0) { m.t = 0; return; }
+      dist -= done; m.i--; m.t = 1;
+    }
+  }
+}
+// marbles bump into each other: equal-mass elastic-ish collision when they touch
+function bumpMarbles(dt) {
+  for (const m of marbles) {
+    if (m.cd > 0) m.cd -= dt;
+    const p = marblePos(m);
+    m._px = p[0]; m._py = p[1];
+  }
+  if (marbles.length < 2) return;
+  const CELL = 24, R2 = 13 * 13;
+  const grid = new Map();
+  for (const m of marbles) {
+    const key = Math.floor(m._px / CELL) + "," + Math.floor(m._py / CELL);
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(m);
+  }
+  for (const m of marbles) {
+    const gx = Math.floor(m._px / CELL), gy = Math.floor(m._py / CELL);
+    for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+      const list = grid.get((gx + ox) + "," + (gy + oy));
+      if (!list) continue;
+      for (const o of list) {
+        if (o.uid <= m.uid || m.cd > 0 || o.cd > 0) continue;
+        const dx = o._px - m._px, dy = o._py - m._py;
+        if (dx * dx + dy * dy >= R2) continue;
+        // swap speeds (with a little energy lost to the clack)
+        const vm = m.v;
+        m.v = Math.max(MIN_V, o.v * 0.85);
+        o.v = Math.max(MIN_V, vm * 0.85);
+        m.cd = o.cd = 0.12;
+        pathNudge(m, -3);
+        pathNudge(o, 3);
+      }
+    }
+  }
 }
 function marblePos(m) {
   const a = m.pts[m.i], b = m.pts[m.i + 1];
@@ -772,7 +846,7 @@ function buildShop() {
     info.appendChild(nm); info.appendChild(sub);
     const btn = document.createElement("button");
     btn.className = "buy-btn";
-    btn.textContent = cat.cost === 0 ? "FREE" : fmt(cat.cost);
+    btn.textContent = catCost(cat) === 0 ? "FREE" : fmt(catCost(cat));
     btn.onclick = () => { if (!buyCat(cat)) toast("Not enough money!"); };
     row.appendChild(sw); row.appendChild(info); row.appendChild(btn);
     shopPane.appendChild(row);
@@ -815,7 +889,11 @@ function rebuildOwnList() {
   });
 }
 function refreshAfford() {
-  shopButtons.forEach(({ btn, cat }) => { btn.disabled = money < cat.cost; });
+  shopButtons.forEach(({ btn, cat }) => {
+    const cost = catCost(cat);
+    btn.disabled = money < cost;
+    btn.textContent = cost === 0 ? "FREE" : fmt(cost);
+  });
   ownButtons.forEach(({ btn, d }) => {
     btn.disabled = money < upgradeCost(d);
     btn.textContent = "⬆ " + fmt(upgradeCost(d));
@@ -861,10 +939,11 @@ function frame(now) {
       else spawnLuckMarble(d);
     }
   }
-  // move marbles
+  // move marbles, then let them bump into each other
   for (let i = marbles.length - 1; i >= 0; i--) {
     if (!advanceMarble(marbles[i], dt)) marbles.splice(i, 1);
   }
+  bumpMarbles(dt);
   cashFlash = Math.max(0, cashFlash - dt * 3);
 
   // render
