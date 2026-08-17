@@ -316,6 +316,40 @@
     font-size: 12px;
     color: var(--muted);
   }
+
+  .speed-panel { padding-bottom: 10px; }
+  .speed-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .speed-val {
+    font: 700 26px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: -0.02em;
+    flex: 1 1 auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .speed-row .chip {
+    font: 700 15px/1 ui-monospace, Menlo, monospace;
+    width: 34px;
+    justify-content: center;
+    padding: 8px 0;
+  }
+  .ticks {
+    display: flex;
+    justify-content: space-between;
+    font: 10.5px/1 ui-monospace, Menlo, monospace;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+  .shapes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-bottom: 4px;
+  }
+  .shapes .chip { font-size: 12px; padding: 7px 10px; }
   .note b { color: var(--text); }
 
   .banner {
@@ -344,7 +378,7 @@
     </div>
     <div>
       <h1>Beltworks Meadow</h1>
-      <p class="sub">Frictionless billiard fields — every roll finds the gate eventually.</p>
+      <p class="sub">Frictionless billiards in curved, bent and pillared halls — every roll finds the gate.</p>
     </div>
     <div class="spacer"></div>
     <span class="seed" id="seedTag">Meadow #0000</span>
@@ -358,10 +392,10 @@
         <canvas id="cv"></canvas>
       </div>
       <p class="hint">
-        <span>Click the meadow to aim a ball there.</span>
+        <span>Click the floor to aim a ball there.</span>
         <span><kbd>Space</kbd> roll</span>
         <span><kbd>A</kbd> all at once</span>
-        <span><kbd>M</kbd> new meadow</span>
+        <span><kbd>M</kbd> new map</span>
         <span><kbd>C</kbd> clear</span>
       </p>
     </section>
@@ -372,7 +406,7 @@
         <div class="btns">
           <button class="primary" id="rollBtn"><span class="ico">🎲</span> Roll a random ball <span class="sh">Space</span></button>
           <button class="go" id="allBtn"><span class="ico">🌐</span> All at once <span class="sh">A</span></button>
-          <button id="newBtn"><span class="ico">🍃</span> New random meadow <span class="sh">M</span></button>
+          <button id="newBtn"><span class="ico">🍃</span> New random map <span class="sh">M</span></button>
           <button id="clearBtn"><span class="ico">🧹</span> Clear the field <span class="sh">C</span></button>
         </div>
         <div class="toggles">
@@ -382,8 +416,31 @@
         </div>
       </div>
 
+      <div class="panel speed-panel">
+        <h2>Simulation speed</h2>
+        <div class="speed-row">
+          <span class="speed-val" id="speedV">2×</span>
+          <button class="chip" id="slowBtn" title="Slower">−</button>
+          <button class="chip" id="fastBtn" title="Faster">+</button>
+        </div>
+        <input type="range" id="speedR" min="1" max="64" step="1" value="8" aria-label="Simulation speed">
+        <div class="ticks"><span>¼×</span><span>2×</span><span>8×</span><span>16×</span></div>
+      </div>
+
       <div class="panel">
-        <h2>Meadow</h2>
+        <h2>The structure</h2>
+        <div class="shapes" id="shapes">
+          <button class="chip" data-shape="random" aria-pressed="true">🎲 Surprise</button>
+          <button class="chip" data-shape="ellipse" aria-pressed="false">◯ Ellipse</button>
+          <button class="chip" data-shape="stadium" aria-pressed="false">⬭ Stadium</button>
+          <button class="chip" data-shape="round" aria-pressed="false">▢ Roundhouse</button>
+          <button class="chip" data-shape="hex" aria-pressed="false">⬡ Hex foundry</button>
+          <button class="chip" data-shape="ell" aria-pressed="false">⌐ Ell works</button>
+        </div>
+        <div class="field">
+          <label for="structR">Pillars &amp; baffles <b id="structV">Light</b></label>
+          <input type="range" id="structR" min="0" max="3" step="1" value="1">
+        </div>
         <div class="field">
           <label for="sizeR">Map size <b id="sizeV">Medium</b></label>
           <input type="range" id="sizeR" min="0" max="5" step="1" value="2">
@@ -393,12 +450,8 @@
           <input type="range" id="gateR" min="0" max="4" step="1" value="2">
         </div>
         <div class="field">
-          <label for="speedR">Sim speed <b id="speedV">3.0×</b></label>
-          <input type="range" id="speedR" min="1" max="120" step="1" value="12">
-        </div>
-        <div class="field">
-          <label for="countR">Balls in “all at once” <b id="countV">1440</b></label>
-          <input type="range" id="countR" min="60" max="4000" step="20" value="1440">
+          <label for="countR">Balls in “all at once” <b id="countV">1200</b></label>
+          <input type="range" id="countR" min="60" max="3000" step="20" value="1200">
         </div>
       </div>
 
@@ -414,9 +467,7 @@
         </div>
         <div class="bar"><i id="bar"></i></div>
         <div class="banner" id="banner"></div>
-        <p class="note">No friction, perfect bounces. In an empty rectangle every direction with an
-        irrational slope sweeps the whole meadow, so <b>every ball reaches the gate sooner or later</b> —
-        “all at once” just shows all of them doing it together.</p>
+        <p class="note" id="note"></p>
       </div>
     </aside>
   </div>
@@ -439,28 +490,36 @@
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const TAU = Math.PI * 2;
 
-  // Exact reflection of a 1-D coordinate inside [0, L] (triangle wave).
-  function fold(u, L) {
-    const p = 2 * L;
-    let m = u - p * Math.floor(u / p);
-    return m <= L ? m : p - m;
+  // squared distance from a point to a segment
+  function segDist(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const l2 = dx * dx + dy * dy;
+    let t = 0;
+    if (l2 > 1e-12) t = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1);
+    return Math.hypot(px - ax - t * dx, py - ay - t * dy);
   }
-  // How many walls a coordinate has crossed after travelling to `u`.
-  function foldCount(u, L) {
-    return Math.abs(Math.floor(u / L));
+  // is `ang` inside the CCW sweep a0 -> a1
+  function inArc(ang, a0, a1) {
+    let s = ang - a0; s -= TAU * Math.floor(s / TAU);
+    let e = a1 - a0; e -= TAU * Math.floor(e / TAU);
+    if (e < 1e-9) e = TAU;
+    return s <= e + 1e-9;
   }
 
   /* -------------------------------------------------------------- palette */
 
   const PAL = {
     light: {
+      outside: '#c9bfa4', outside2: '#b6a988', hatch: 'rgba(92,70,40,0.07)',
       grassA: '#8cbb6e', grassB: '#5f9a55', grassC: '#4c8447',
       mow: 'rgba(255,255,255,0.055)',
       dapple: 'rgba(255,247,196,0.16)',
       flower: ['#fdf6df', '#f6d365', '#e8899a', '#cfe4f7', '#f2b705'],
       tuft: 'rgba(38,66,36,0.22)',
-      railA: '#d8b45e', railB: '#a3712f', railEdge: '#6f4a20',
-      rivet: '#f7e6b4', tread: 'rgba(70,45,18,0.35)',
+      wallA: '#d8b45e', wallB: '#a3712f', wallEdge: '#6f4a20',
+      rivet: '#f7e6b4',
+      pillar: '#c79a45', pillarDark: '#8a6224',
+      baffle: '#a9743f', baffleDark: '#6d461f',
       gear: '#b98a3c', gearDark: '#7d5a23',
       padWood: '#a9743f', padWoodDark: '#7d5228',
       gateGlow: 'rgba(255,214,102,0.95)',
@@ -470,17 +529,19 @@
       ribbon: 'rgba(255,252,236,0.55)',
       ribbonHit: 'rgba(255,206,84,0.6)',
       trail: 'rgba(255,255,255,0.55)',
-      trailHit: 'rgba(255,205,90,0.6)',
-      label: 'rgba(28,40,26,0.75)'
+      trailHit: 'rgba(255,205,90,0.6)'
     },
     dark: {
+      outside: '#1b2419', outside2: '#141c13', hatch: 'rgba(255,255,255,0.028)',
       grassA: '#3f6b41', grassB: '#2c5033', grassC: '#22402a',
       mow: 'rgba(255,255,255,0.035)',
       dapple: 'rgba(190,230,150,0.09)',
       flower: ['#f0e7c4', '#e2b13c', '#d3798c', '#a8c9e8', '#f2b705'],
       tuft: 'rgba(190,225,180,0.14)',
-      railA: '#9d7c36', railB: '#6b4a1f', railEdge: '#3c2a12',
-      rivet: '#e0c481', tread: 'rgba(20,14,4,0.42)',
+      wallA: '#9d7c36', wallB: '#6b4a1f', wallEdge: '#3c2a12',
+      rivet: '#e0c481',
+      pillar: '#93712d', pillarDark: '#5c4519',
+      baffle: '#7b5330', baffleDark: '#4a3018',
       gear: '#8a6a2c', gearDark: '#54401a',
       padWood: '#7b5330', padWoodDark: '#553722',
       gateGlow: 'rgba(255,205,90,0.9)',
@@ -490,8 +551,7 @@
       ribbon: 'rgba(245,240,215,0.5)',
       ribbonHit: 'rgba(255,209,102,0.55)',
       trail: 'rgba(235,245,225,0.4)',
-      trailHit: 'rgba(255,205,90,0.5)',
-      label: 'rgba(226,238,220,0.8)'
+      trailHit: 'rgba(255,205,90,0.5)'
     }
   };
   function isDark() {
@@ -507,23 +567,20 @@
   const cv = document.getElementById('cv');
   const ctx = cv.getContext('2d');
   const holder = document.getElementById('holder');
-
   const bgCv = document.createElement('canvas');
   const bgCtx = bgCv.getContext('2d');
   const trCv = document.createElement('canvas');
   const trCtx = trCv.getContext('2d');
-
   const el = id => document.getElementById(id);
-  const seedTag = el('seedTag');
 
-  /* ---------------------------------------------------------------- state */
+  /* ---------------------------------------------------------------- setup */
 
   const SIZES = [
-    { name: 'Tiny',   w: 460,  h: 320 },
-    { name: 'Small',  w: 640,  h: 420 },
-    { name: 'Medium', w: 840,  h: 540 },
-    { name: 'Large',  w: 1040, h: 660 },
-    { name: 'Huge',   w: 1280, h: 780 },
+    { name: 'Tiny',   w: 470,  h: 330 },
+    { name: 'Small',  w: 650,  h: 430 },
+    { name: 'Medium', w: 860,  h: 545 },
+    { name: 'Large',  w: 1060, h: 670 },
+    { name: 'Huge',   w: 1290, h: 790 },
     { name: 'Vast',   w: 1560, h: 930 }
   ];
   const GATES = [
@@ -533,232 +590,626 @@
     { name: 'Wide',    k: 1.35 },
     { name: 'Barn',    k: 1.8 }
   ];
+  const STRUCT = ['Bare', 'Light', 'Busy', 'Dense'];
+  const SHAPE_POOL = ['ellipse', 'stadium', 'round', 'hex', 'ell'];
 
   const opts = {
+    shape: 'random',
     size: 2,
     gate: 2,
-    speed: 3.0,        // multiplier
-    count: 1440,
+    struct: 1,
+    speed: 2,
+    count: 1200,
     trails: true,
     ribbon: true,
     paused: false
   };
 
-  let map = null;      // current meadow
-  let balls = [];      // {dx,dy,hit,hitAt,x,y,px,py,hue}
+  let map = null;
+  let balls = [];
   let mode = 'single';
-  let simT = 0;        // seconds of simulated time since the current set launched
-  let hitCount = 0;
-  let firstHit = null, lastHit = null;
-  let scale = 1, dpr = 1;
-  let gearRot = 0;
-  const bursts = [];   // {x,y,t}
+  let simT = 0, hitCount = 0, firstHit = null, lastHit = null;
+  let scale = 1, dpr = 1, gearRot = 0;
+  const bursts = [];
 
-  /* ------------------------------------------------------------ map build */
+  /* ============================================================= GEOMETRY =
+     Surfaces the ball can hit. Everything is solved analytically: the ball
+     flies in a straight line until the first surface it meets, reflects, and
+     carries on, so curved walls are exact rather than stepped.
+       k=0 seg   finite straight wall, inward normal n
+       k=1 arcIn ball runs inside a circle (round caps, corners)
+       k=2 ellIn ball runs inside an ellipse
+       k=3 circ  free-standing round pillar (also a bare corner post, R=0)
+       k=4 caps  free-standing straight baffle with rounded ends
+  ========================================================================= */
+
+  function seg(ax, ay, bx, by, nx, ny) {
+    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
+    return { k: 0, ax, ay, bx, by, nx, ny, ex: dx / len, ey: dy / len, len };
+  }
+  const arcIn = (cx, cy, R, a0, a1) => ({ k: 1, cx, cy, R, a0, a1, full: a1 - a0 >= TAU - 1e-9 });
+  const ellIn = (cx, cy, a, b) => ({ k: 2, cx, cy, a, b });
+  const circ = (cx, cy, R) => ({ k: 3, cx, cy, R });
+  function caps(ax, ay, bx, by, R) {
+    const dx = bx - ax, dy = by - ay;
+    return { k: 4, ax, ay, bx, by, R, dx, dy, dd: dx * dx + dy * dy };
+  }
+
+  // shared result slot — the collision loop runs hot, so it allocates nothing
+  const HIT = { t: 0, nx: 0, ny: 0, push: 0 };
+
+  function nearestImpact(px, py, vx, vy, maxT, r) {
+    let bt = maxT, bnx = 0, bny = 0, bpush = 0, found = false;
+    const S = map.surfaces;
+    for (let i = 0; i < S.length; i++) {
+      const s = S[i];
+      let t = -1, nx = 0, ny = 0;
+
+      if (s.k === 0) {
+        const d = s.nx * vx + s.ny * vy;
+        if (d >= -1e-12) continue;                       // moving away from it
+        const gap = s.nx * (px - s.ax) + s.ny * (py - s.ay) - r;
+        t = gap / -d;
+        if (t < 0) t = 0;
+        if (t >= bt) continue;
+        const qx = px + vx * t - s.ax, qy = py + vy * t - s.ay;
+        const u = qx * s.ex + qy * s.ey;
+        if (u < -r || u > s.len + r) continue;           // past the wall's end
+        nx = s.nx; ny = s.ny;
+
+      } else if (s.k === 1) {
+        const R = s.R - r;
+        const dx = px - s.cx, dy = py - s.cy;
+        const b = dx * vx + dy * vy;
+        const disc = b * b - (dx * dx + dy * dy - R * R);
+        if (disc < 0) continue;
+        t = -b + Math.sqrt(disc);
+        if (t < 0 || t >= bt) continue;
+        const qx = px + vx * t - s.cx, qy = py + vy * t - s.cy;
+        if (!s.full && !inArc(Math.atan2(qy, qx), s.a0, s.a1)) continue;
+        nx = -qx / R; ny = -qy / R;
+
+      } else if (s.k === 2) {
+        const A = s.a - r, B = s.b - r;
+        const dx = px - s.cx, dy = py - s.cy;
+        const qa = (vx * vx) / (A * A) + (vy * vy) / (B * B);
+        const qb = 2 * (dx * vx / (A * A) + dy * vy / (B * B));
+        const qc = (dx * dx) / (A * A) + (dy * dy) / (B * B) - 1;
+        const disc = qb * qb - 4 * qa * qc;
+        if (disc < 0) continue;
+        t = (-qb + Math.sqrt(disc)) / (2 * qa);
+        if (t < 0 || t >= bt) continue;
+        const qx = dx + vx * t, qy = dy + vy * t;
+        let gx = qx / (A * A), gy = qy / (B * B);
+        const gl = Math.hypot(gx, gy) || 1;
+        nx = -gx / gl; ny = -gy / gl;
+
+      } else if (s.k === 3) {
+        const R = s.R + r;
+        const dx = px - s.cx, dy = py - s.cy;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < R * R) {              // float noise put it inside: eject fully
+          const dl = Math.sqrt(d2), depth = R - dl + EPS;
+          if (bt > 0 || depth > bpush) {   // resolve the deepest overlap first
+            bt = 0; bpush = depth; found = true;
+            if (dl > 1e-6) { bnx = dx / dl; bny = dy / dl; }
+            else { bnx = 1; bny = 0; }      // dead centre: any way out will do
+          }
+          continue;
+        }
+        const b = dx * vx + dy * vy;
+        if (b > 0) continue;                              // heading away
+        const disc = b * b - (d2 - R * R);
+        if (disc < 0) continue;
+        t = -b - Math.sqrt(disc);
+        if (t < 0 || t >= bt) continue;
+        const qx = px + vx * t - s.cx, qy = py + vy * t - s.cy;
+        nx = qx / R; ny = qy / R;
+
+      } else {
+        const R = s.R + r;
+        const mx = px - s.ax, my = py - s.ay;
+        {                              // already overlapping the bar: eject
+          const u = clamp((mx * s.dx + my * s.dy) / s.dd, 0, 1);
+          const ex = px - (s.ax + s.dx * u), ey = py - (s.ay + s.dy * u);
+          const dl = Math.hypot(ex, ey);
+          if (dl < R) {
+            const depth = R - dl + EPS;
+            if (bt > 0 || depth > bpush) {
+              bt = 0; bpush = depth; found = true;
+              if (dl > 1e-6) { bnx = ex / dl; bny = ey / dl; }
+              else { bnx = -s.dy / Math.sqrt(s.dd); bny = s.dx / Math.sqrt(s.dd); }
+            }
+            continue;
+          }
+        }
+        const md = mx * s.dx + my * s.dy;
+        const nd = vx * s.dx + vy * s.dy;
+        const A2 = s.dd - nd * nd;
+        let best = -1, bx2 = 0, by2 = 0;
+        if (Math.abs(A2) > 1e-9) {
+          const C2 = s.dd * (mx * mx + my * my) - md * md - R * R * s.dd;
+          const B2 = s.dd * (mx * vx + my * vy) - nd * md;
+          const disc = B2 * B2 - A2 * C2;
+          if (disc >= 0) {
+            const tt = (-B2 - Math.sqrt(disc)) / A2;
+            if (tt >= 0 && tt < bt) {
+              const u = md + tt * nd;
+              if (u >= 0 && u <= s.dd) {
+                const f = u / s.dd;
+                const cx2 = s.ax + s.dx * f, cy2 = s.ay + s.dy * f;
+                const qx = px + vx * tt, qy = py + vy * tt;
+                best = tt; bx2 = (qx - cx2) / R; by2 = (qy - cy2) / R;
+              }
+            }
+          }
+        }
+        for (let e = 0; e < 2; e++) {                     // the rounded ends
+          const cx2 = e ? s.bx : s.ax, cy2 = e ? s.by : s.ay;
+          const dx = px - cx2, dy = py - cy2;
+          const b = dx * vx + dy * vy;
+          if (b > 0 && dx * dx + dy * dy > R * R) continue;
+          const disc = b * b - (dx * dx + dy * dy - R * R);
+          if (disc < 0) continue;
+          const tt = -b - Math.sqrt(disc);
+          if (tt < 0 || tt >= bt || (best >= 0 && tt >= best)) continue;
+          best = tt; bx2 = (px + vx * tt - cx2) / R; by2 = (py + vy * tt - cy2) / R;
+        }
+        if (best < 0) continue;
+        t = best; nx = bx2; ny = by2;
+      }
+
+      bt = t; bnx = nx; bny = ny; bpush = EPS; found = true;
+    }
+    if (!found) return false;
+    HIT.t = bt; HIT.nx = bnx; HIT.ny = bny; HIT.push = bpush;
+    return true;
+  }
+
+  // unsigned distance from a point to the nearest surface — used when placing
+  // the pad, the gate and the structure so nothing is born touching a wall
+  function clearanceAt(x, y) {
+    let best = Infinity;
+    for (const s of map.surfaces) {
+      let d;
+      if (s.k === 0) d = segDist(x, y, s.ax, s.ay, s.bx, s.by);
+      else if (s.k === 1) d = Math.abs(s.R - Math.hypot(x - s.cx, y - s.cy));
+      else if (s.k === 2) {
+        const f = Math.hypot((x - s.cx) / s.a, (y - s.cy) / s.b);
+        d = (1 - f) * Math.min(s.a, s.b);
+      }
+      else if (s.k === 3) d = Math.hypot(x - s.cx, y - s.cy) - s.R;
+      else d = segDist(x, y, s.ax, s.ay, s.bx, s.by) - s.R;
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  /* =============================================================== ARENAS = */
+
+  function polyInside(pts, x, y) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  // any simple polygon: walls plus a corner post at each reflex vertex, which
+  // is exactly the shape a ball of finite size can reach
+  function polygonArena(pts) {
+    let area2 = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length];
+      area2 += x1 * y2 - x2 * y1;
+    }
+    const ccw = area2 > 0;
+    const surfaces = [];
+    for (let i = 0; i < pts.length; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length];
+      const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1;
+      const nx = ccw ? -dy / L : dy / L;
+      const ny = ccw ? dx / L : -dx / L;
+      surfaces.push(seg(ax, ay, bx, by, nx, ny));
+    }
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[(i - 1 + pts.length) % pts.length], c = pts[i], n = pts[(i + 1) % pts.length];
+      const cross = (c[0] - p[0]) * (n[1] - c[1]) - (c[1] - p[1]) * (n[0] - c[0]);
+      if ((ccw && cross < 0) || (!ccw && cross > 0)) surfaces.push(circ(c[0], c[1], 0));
+    }
+    return {
+      surfaces,
+      inside: (x, y) => polyInside(pts, x, y),
+      outline: p => {
+        p.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) p.lineTo(pts[i][0], pts[i][1]);
+        p.closePath();
+      }
+    };
+  }
+
+  function buildShell(kind, rnd, W, H, rail) {
+    if (kind === 'ellipse') {
+      const a = W / 2 - rail, b = H / 2 - rail, cx = W / 2, cy = H / 2;
+      return {
+        name: 'Whispering Ellipse',
+        surfaces: [ellIn(cx, cy, a, b)],
+        inside: (x, y) => ((x - cx) / a) ** 2 + ((y - cy) / b) ** 2 <= 1,
+        outline: p => p.ellipse(cx, cy, a, b, 0, 0, TAU),
+        ellipse: { cx, cy, a, b }
+      };
+    }
+    if (kind === 'stadium') {
+      const R = H / 2 - rail, xl = rail + R, xr = W - rail - R, cy = H / 2;
+      return {
+        name: 'Beltworks Stadium',
+        surfaces: [
+          seg(xl, rail, xr, rail, 0, 1),
+          seg(xr, H - rail, xl, H - rail, 0, -1),
+          arcIn(xr, cy, R, -Math.PI / 2, Math.PI / 2),
+          arcIn(xl, cy, R, Math.PI / 2, Math.PI * 1.5)
+        ],
+        inside: (x, y) => Math.hypot(x - clamp(x, xl, xr), y - cy) <= R,
+        outline: p => {
+          p.moveTo(xl, rail); p.lineTo(xr, rail);
+          p.arc(xr, cy, R, -Math.PI / 2, Math.PI / 2);
+          p.lineTo(xl, H - rail);
+          p.arc(xl, cy, R, Math.PI / 2, Math.PI * 1.5);
+          p.closePath();
+        }
+      };
+    }
+    if (kind === 'round') {
+      const rc = Math.min(W, H) * (0.16 + rnd() * 0.14);
+      const x0 = rail, y0 = rail, x1 = W - rail, y1 = H - rail;
+      const P = Math.PI;
+      return {
+        name: 'The Roundhouse',
+        surfaces: [
+          seg(x0 + rc, y0, x1 - rc, y0, 0, 1),
+          seg(x1, y0 + rc, x1, y1 - rc, -1, 0),
+          seg(x1 - rc, y1, x0 + rc, y1, 0, -1),
+          seg(x0, y1 - rc, x0, y0 + rc, 1, 0),
+          arcIn(x1 - rc, y0 + rc, rc, -P / 2, 0),
+          arcIn(x1 - rc, y1 - rc, rc, 0, P / 2),
+          arcIn(x0 + rc, y1 - rc, rc, P / 2, P),
+          arcIn(x0 + rc, y0 + rc, rc, P, P * 1.5)
+        ],
+        inside: (x, y) => {
+          const qx = clamp(x, x0 + rc, x1 - rc), qy = clamp(y, y0 + rc, y1 - rc);
+          return Math.hypot(x - qx, y - qy) <= rc + 1e-9 &&
+                 x >= x0 - 1e-9 && x <= x1 + 1e-9 && y >= y0 - 1e-9 && y <= y1 + 1e-9;
+        },
+        outline: p => {
+          p.moveTo(x0 + rc, y0); p.lineTo(x1 - rc, y0);
+          p.arc(x1 - rc, y0 + rc, rc, -P / 2, 0);
+          p.lineTo(x1, y1 - rc);
+          p.arc(x1 - rc, y1 - rc, rc, 0, P / 2);
+          p.lineTo(x0 + rc, y1);
+          p.arc(x0 + rc, y1 - rc, rc, P / 2, P);
+          p.lineTo(x0, y0 + rc);
+          p.arc(x0 + rc, y0 + rc, rc, P, P * 1.5);
+          p.closePath();
+        }
+      };
+    }
+    if (kind === 'hex') {
+      const n = rnd() < 0.5 ? 6 : 8;
+      const cx = W / 2, cy = H / 2;
+      const ax = W / 2 - rail, ay = H / 2 - rail;
+      const spin = rnd() * TAU;
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const a = spin + i * TAU / n;
+        pts.push([cx + Math.cos(a) * ax, cy + Math.sin(a) * ay]);
+      }
+      const arena = polygonArena(pts);
+      arena.name = n === 6 ? 'Hex Foundry' : 'Octagon Foundry';
+      return arena;
+    }
+    // 'ell' — two wings around a corner post
+    const x0 = rail, y0 = rail, x1 = W - rail, y1 = H - rail;
+    const bx = x0 + (x1 - x0) * (0.38 + rnd() * 0.2);
+    const by = y0 + (y1 - y0) * (0.38 + rnd() * 0.2);
+    const flip = rnd() < 0.5;
+    const pts = flip
+      ? [[x0, y0], [x1, y0], [x1, by], [bx, by], [bx, y1], [x0, y1]]
+      : [[x0, y0], [bx, y0], [bx, by], [x1, by], [x1, y1], [x0, y1]];
+    const arena = polygonArena(pts);
+    arena.name = 'Ell Works';
+    return arena;
+  }
+
+  /* ------------------------------------------------------------ structure */
+
+  function addStructure(shell, rnd, W, H, ballR, level) {
+    const obstacles = [];
+    if (!level) return obstacles;
+    const wantPillars = 1 + Math.floor(rnd() * 2) + level;
+    const wantBaffles = level >= 2 ? level : (rnd() < 0.7 ? 1 : 0);
+    const room = Math.min(W, H);
+    const gap = Math.max(ballR * 7, room * 0.09);   // never seal a pocket shut
+
+    const ok = (x, y, pad) => {
+      if (!shell.inside(x, y)) return false;
+      if (clearanceAt(x, y) < pad + gap) return false;
+      for (const o of obstacles) {
+        const d = o.k === 3 ? Math.hypot(x - o.cx, y - o.cy) - o.R
+                            : segDist(x, y, o.ax, o.ay, o.bx, o.by) - o.R;
+        if (d < pad + gap) return false;
+      }
+      return true;
+    };
+
+    for (let i = 0; i < wantPillars; i++) {
+      const R = room * (0.035 + rnd() * 0.05);
+      for (let tries = 0; tries < 140; tries++) {
+        const x = rnd() * W, y = rnd() * H;
+        if (!ok(x, y, R)) continue;
+        const p = circ(x, y, R);
+        p.style = rnd() < 0.5 ? 'gear' : 'stone';
+        obstacles.push(p);
+        map.surfaces.push(p);
+        break;
+      }
+    }
+
+    for (let i = 0; i < wantBaffles; i++) {
+      for (let tries = 0; tries < 140; tries++) {
+        const R = Math.max(ballR * 0.9, room * 0.016);
+        const x = rnd() * W, y = rnd() * H;
+        const legs = rnd() < 0.45 ? 2 : 1;              // 2 legs = a bent wall
+        let a = rnd() * TAU;
+        const pts = [[x, y]];
+        let good = ok(x, y, R);
+        for (let g = 0; g < legs && good; g++) {
+          const L = room * (0.13 + rnd() * 0.17);
+          if (g) a += (rnd() < 0.5 ? -1 : 1) * (0.5 + rnd() * 0.8);
+          const nx = pts[g][0] + Math.cos(a) * L, ny = pts[g][1] + Math.sin(a) * L;
+          // Sample the whole leg, both ends included, so a baffle can never end
+          // up crossing a wall or overlapping a pillar. Two overlapping
+          // obstacles would leave a ball nowhere legal to be.
+          for (let s = 0; s <= 1.0001 && good; s += 0.1) {
+            good = ok(pts[g][0] + (nx - pts[g][0]) * s, pts[g][1] + (ny - pts[g][1]) * s, R);
+          }
+          pts.push([nx, ny]);
+        }
+        if (!good) continue;
+        for (let g = 0; g < pts.length - 1; g++) {
+          const c = caps(pts[g][0], pts[g][1], pts[g + 1][0], pts[g + 1][1], R);
+          c.style = 'baffle';
+          obstacles.push(c);
+          map.surfaces.push(c);
+        }
+        break;
+      }
+    }
+    return obstacles;
+  }
+
+  /* ------------------------------------------------------------- the map  */
+
+  function noteFor(kind, hasStuff, pure) {
+    if (kind === 'ellipse' && pure) {
+      return 'An ellipse reflects every path that leaves one focus straight onto the other — and each of ' +
+             'those paths is exactly the same length. <b>Every ball lands on the gate together, after one bounce.</b>';
+    }
+    if (kind === 'ellipse') {
+      return 'The ellipse always runs bare — one pillar in the way and a wall-skimming path would circle ' +
+             'forever without ever seeing the gate. Pillars and baffles are waiting on the other shapes.';
+    }
+    if (kind === 'stadium') {
+      return 'A stadium is the classic chaotic billiard: the round ends defocus every beam, so paths spread ' +
+             'over the whole floor and <b>every direction reaches the gate sooner or later</b>.';
+    }
+    const base = kind === 'hex' ? 'Bevelled walls keep folding a straight run into new angles, so it never settles into a loop'
+      : kind === 'ell' ? 'Two wings and a corner post keep turning a straight run back on itself'
+      : 'Straight runs bent into round corners keep a path from ever repeating';
+    return base + (hasStuff ? ', and the pillars scatter it further' : '') +
+           '. A path with an irrational slope sweeps the whole floor, so <b>every direction reaches the gate eventually</b>.';
+  }
 
   function makeMap() {
     const seed = (Math.random() * 0xffffffff) >>> 0;
     const rnd = mulberry32(seed);
+    const kind = opts.shape === 'random' ? SHAPE_POOL[Math.floor(rnd() * SHAPE_POOL.length)] : opts.shape;
     const base = SIZES[opts.size];
+    const W = Math.round(base.w * (0.88 + rnd() * 0.26));
+    const H = Math.round(base.h * (0.88 + rnd() * 0.26));
+    const rail = Math.round(clamp(Math.min(W, H) / 40, 10, 22));
+    const ballR = clamp(Math.min(W, H) / 78, 4.5, 9.5);
+    const gateR = clamp(Math.min(W, H) / 22, 13, 32) * GATES[opts.gate].k;
 
-    // random aspect jitter, kept sane
-    const jw = 0.86 + rnd() * 0.3;
-    const jh = 0.86 + rnd() * 0.3;
-    const w = Math.round(base.w * jw);
-    const h = Math.round(base.h * jh);
-
-    const rail = Math.round(clamp(Math.min(w, h) / 42, 10, 20));
-    const ballR = clamp(Math.min(w, h) / 74, 4.5, 10);
-    const gateR = clamp(Math.min(w, h) / 21, 14, 34) * GATES[opts.gate].k;
-
-    const pad = rail + gateR + 6;
-    let sx, sy, ex, ey, tries = 0;
-    do {
-      sx = pad + rnd() * (w - 2 * pad);
-      sy = pad + rnd() * (h - 2 * pad);
-      ex = pad + rnd() * (w - 2 * pad);
-      ey = pad + rnd() * (h - 2 * pad);
-      tries++;
-    } while (Math.hypot(ex - sx, ey - sy) < Math.min(w, h) * 0.42 && tries < 400);
-
-    // decorations
-    const flowers = [];
-    const nF = Math.round(w * h / 2600);
-    for (let i = 0; i < nF; i++) {
-      flowers.push({
-        x: rail + rnd() * (w - 2 * rail),
-        y: rail + rnd() * (h - 2 * rail),
-        r: 1.4 + rnd() * 2.3,
-        c: Math.floor(rnd() * 5),
-        stem: rnd() < 0.55 ? 3 + rnd() * 5 : 0
-      });
-    }
-    const tufts = [];
-    const nT = Math.round(w * h / 1500);
-    for (let i = 0; i < nT; i++) {
-      tufts.push({
-        x: rail + rnd() * (w - 2 * rail),
-        y: rail + rnd() * (h - 2 * rail),
-        s: 3 + rnd() * 6,
-        a: -0.7 + rnd() * 1.4
-      });
-    }
-    const dapples = [];
-    for (let i = 0; i < 14; i++) {
-      dapples.push({ x: rnd() * w, y: rnd() * h, r: 60 + rnd() * Math.min(w, h) * 0.45 });
-    }
-
-    const label = seed.toString(16).toUpperCase().slice(0, 4).padStart(4, '0');
-
-    return {
-      seed, label, w, h, rail, ballR, gateR,
-      start: { x: sx, y: sy },
-      end: { x: ex, y: ey },
-      flowers, tufts, dapples,
-      // inner box the *centre* of a ball is confined to
-      ix: rail + ballR, iy: rail + ballR,
-      iw: w - 2 * (rail + ballR), ih: h - 2 * (rail + ballR)
+    const shell = buildShell(kind, rnd, W, H, rail);
+    map = {
+      seed, kind, W, H, rail, ballR, gateR,
+      label: seed.toString(16).toUpperCase().slice(0, 4).padStart(4, '0'),
+      name: shell.name,
+      surfaces: shell.surfaces.slice(),
+      inside: shell.inside,
+      outline: shell.outline,
+      obstacles: []
     };
+    // The ellipse is left bare on purpose: its guarantee comes from the focus
+    // reflection, and a single pillar in the way destroys it — a ball skimming
+    // the wall would then circle forever on a caustic and never see the gate.
+    map.obstacles = addStructure(shell, rnd, W, H, ballR, kind === 'ellipse' ? 0 : opts.struct);
+
+    // pad and gate
+    const need = gateR + ballR + Math.max(8, rail * 0.5);
+    let start = null, end = null;
+    if (shell.ellipse) {
+      // the two foci of the ellipse the ball's *centre* actually runs in
+      const { cx, cy } = shell.ellipse;
+      const A = shell.ellipse.a - ballR, B = shell.ellipse.b - ballR;
+      const c = Math.sqrt(Math.abs(A * A - B * B));
+      if (A >= B) { start = { x: cx - c, y: cy }; end = { x: cx + c, y: cy }; }
+      else { start = { x: cx, y: cy - c }; end = { x: cx, y: cy + c }; }
+      if (clearanceAt(start.x, start.y) < need || clearanceAt(end.x, end.y) < need) { start = end = null; }
+    }
+    // Never fall back to "the middle" — in a busy hall the middle can be inside
+    // a pillar, and a ball born inside a pillar has nowhere to bounce to.
+    const roomiest = () => {
+      let best = null, bc = -Infinity;
+      for (let gy = 1; gy < 26; gy++) {
+        for (let gx = 1; gx < 34; gx++) {
+          const x = W * gx / 34, y = H * gy / 26;
+          if (!map.inside(x, y)) continue;
+          const c = clearanceAt(x, y);
+          if (c > bc) { bc = c; best = { x, y }; }
+        }
+      }
+      return best;
+    };
+    const pick = () => {
+      for (const relax of [1, 0.75, 0.5, 0.35]) {
+        for (let i = 0; i < 500; i++) {
+          const x = rnd() * W, y = rnd() * H;
+          if (map.inside(x, y) && clearanceAt(x, y) >= need * relax) return { x, y };
+        }
+      }
+      return roomiest() || { x: W / 2, y: H / 2 };
+    };
+    if (!start) {
+      start = pick();
+      for (let i = 0; i < 900; i++) {
+        end = pick();
+        if (Math.hypot(end.x - start.x, end.y - start.y) > Math.min(W, H) * 0.4) break;
+      }
+    }
+    map.start = start;
+    map.end = end;
+    // in a tight hall, narrow the gate rather than let it sink into a wall
+    map.gateR = Math.min(gateR, Math.max(ballR * 1.6, clearanceAt(end.x, end.y) - ballR - 2));
+    map.pure = kind === 'ellipse' && map.obstacles.length === 0 && !!shell.ellipse;
+    map.note = noteFor(kind, map.obstacles.length > 0, map.pure);
+
+    // decoration, scattered only where the floor actually is
+    map.flowers = []; map.tufts = []; map.dapples = [];
+    const nF = Math.round(W * H / 2600), nT = Math.round(W * H / 1500);
+    for (let i = 0; i < nF * 3 && map.flowers.length < nF; i++) {
+      const x = rnd() * W, y = rnd() * H;
+      if (!map.inside(x, y) || clearanceAt(x, y) < 3) continue;
+      map.flowers.push({ x, y, r: 1.4 + rnd() * 2.3, c: Math.floor(rnd() * 5), stem: rnd() < 0.55 ? 3 + rnd() * 5 : 0 });
+    }
+    for (let i = 0; i < nT * 3 && map.tufts.length < nT; i++) {
+      const x = rnd() * W, y = rnd() * H;
+      if (!map.inside(x, y) || clearanceAt(x, y) < 2) continue;
+      map.tufts.push({ x, y, s: 3 + rnd() * 6, a: -0.7 + rnd() * 1.4 });
+    }
+    for (let i = 0; i < 14; i++) map.dapples.push({ x: rnd() * W, y: rnd() * H, r: 60 + rnd() * Math.min(W, H) * 0.45 });
+
+    return map;
   }
 
-  function newMeadow() {
-    map = makeMap();
-    seedTag.textContent = 'Meadow #' + map.label;
+  function newMap() {
+    makeMap();
+    el('seedTag').textContent = map.name + ' #' + map.label;
+    el('note').innerHTML = map.note;
     resize();
     clearBalls();
   }
 
-  /* ------------------------------------------------------------- geometry */
+  /* ============================================================ SIMULATION */
 
-  function posOf(b, dist) {
-    return {
-      x: map.ix + fold(b.u0 + b.dx * dist, map.iw),
-      y: map.iy + fold(b.v0 + b.dy * dist, map.ih)
-    };
-  }
+  function speedPx() { return Math.min(map.W, map.H) * 1.5 * opts.speed; }
 
   function makeBall(angle) {
-    const b = {
+    return {
       dx: Math.cos(angle), dy: Math.sin(angle), angle,
-      u0: map.start.x - map.ix,
-      v0: map.start.y - map.iy,
-      t0: simT,                 // its own launch moment, so a late roll starts at the pad
-      hit: false, hitAt: 0,
       x: map.start.x, y: map.start.y,
-      px: map.start.x, py: map.start.y
+      lx: map.start.x, ly: map.start.y,      // start of the current straight leg
+      gx: map.start.x, gy: map.start.y,      // last position known to be inside
+      t0: simT, bounces: 0, hit: false, hitAt: 0
     };
-    return b;
   }
 
-  function clearBalls() {
-    balls = [];
-    simT = 0; hitCount = 0; firstHit = null; lastHit = null;
-    bursts.length = 0;
-    clearTrails();
-    el('banner').classList.remove('on');
-    updateReadout();
-  }
-
-  function rollOne(angle) {
-    if (mode === 'all') { balls = []; simT = 0; hitCount = 0; firstHit = lastHit = null; clearTrails(); }
-    mode = 'single';
-    if (balls.length >= 24) balls.shift();
-    balls.push(makeBall(angle === undefined ? Math.random() * TAU : angle));
-    el('banner').classList.remove('on');
-    updateReadout();
-  }
-
-  function rollAll() {
-    mode = 'all';
-    balls = [];
-    simT = 0; hitCount = 0; firstHit = lastHit = null;
-    bursts.length = 0;
-    clearTrails();
-    const n = opts.count;
-    // Every direction, evenly spaced. The tiny irrational offset keeps the fan
-    // off the exactly-rational angles that would run in closed loops forever.
-    const off = Math.random() * TAU;
-    for (let i = 0; i < n; i++) {
-      balls.push(makeBall(off + i * TAU / n + (Math.PI - 3) * 1e-4));
-    }
-    el('banner').classList.remove('on');
-    updateReadout();
-  }
-
-  /* ------------------------------------------------------------ simulation */
-
+  const EPS = 0.01;
   const trailSegs = [];
 
-  function speedPx() {
-    return Math.min(map.w, map.h) * 1.55 * opts.speed;
+  function advance(b, dist, gx, gy, hitR2, wantTrail) {
+    // a ball skimming a curved wall really does bounce hundreds of times per
+    // frame (a whispering-gallery orbit), so the guard has to be generous or
+    // those balls get quietly throttled and fall behind the rest
+    let left = dist, guard = 0;
+    while (left > 1e-9 && guard++ < 600) {
+      const met = nearestImpact(b.x, b.y, b.dx, b.dy, left, map.ballR);
+      const t = met ? HIT.t : left;
+      const nx2 = b.x + b.dx * t, ny2 = b.y + b.dy * t;
+
+      if (!b.hit) {                      // exact: the leg is a straight segment
+        const abx = nx2 - b.x, aby = ny2 - b.y;
+        const l2 = abx * abx + aby * aby;
+        let u = 0;
+        if (l2 > 1e-12) u = clamp(((gx - b.x) * abx + (gy - b.y) * aby) / l2, 0, 1);
+        const ddx = b.x + u * abx - gx, ddy = b.y + u * aby - gy;
+        if (ddx * ddx + ddy * ddy <= hitR2) {
+          const age = simT - b.t0;
+          b.hit = true; b.hitAt = age;
+          hitCount++;
+          if (firstHit === null || age < firstHit) firstHit = age;
+          if (lastHit === null || age > lastHit) lastHit = age;
+          if (balls.length <= 24) bursts.push({ x: gx, y: gy, t: 0 });
+        }
+      }
+      if (wantTrail) trailSegs.push(b.x, b.y, nx2, ny2, b.hit ? 1 : 0);
+
+      b.x = nx2; b.y = ny2;
+      if (!met) break;
+      const dot = b.dx * HIT.nx + b.dy * HIT.ny;
+      if (dot < 0) {                       // otherwise it is already leaving
+        b.dx -= 2 * dot * HIT.nx;
+        b.dy -= 2 * dot * HIT.ny;
+        // Surface normals are only unit to within rounding, so a reflection
+        // nudges the speed a hair each time. Over the hundreds of thousands of
+        // bounces a wall-skimming ball racks up that compounds until the ball
+        // is moving at nonsense speeds, so pin the direction back to unit here.
+        const inv = 1 / Math.hypot(b.dx, b.dy);
+        b.dx *= inv; b.dy *= inv;
+        b.bounces++;
+      }
+      b.x += HIT.nx * HIT.push; b.y += HIT.ny * HIT.push;
+      b.lx = b.x; b.ly = b.y;
+      left -= t;
+    }
+    // float error can only ever nudge a ball a hair past a wall; if it does,
+    // put it back where it was last legal rather than let it escape the works
+    if (map.inside(b.x, b.y)) { b.gx = b.x; b.gy = b.y; }
+    else {
+      b.x = b.gx; b.y = b.gy;
+      b.dx = -b.dx; b.dy = -b.dy;
+      b.lx = b.x; b.ly = b.y;
+    }
   }
 
   function step(dt) {
     if (!balls.length) return;
-    const v = speedPx();
-    const hitR = map.gateR + map.ballR;
-    const hitR2 = hitR * hitR;
-    const ex = map.end.x, ey = map.end.y;
-
-    const dist = v * dt;
-    const maxStep = clamp(hitR * 0.6, 4, 26);
-    const subs = clamp(Math.ceil(dist / maxStep), 1, balls.length > 900 ? 64 : 160);
-
-    const fineTrails = opts.trails && balls.length <= 64;
+    const dist = speedPx() * dt;
+    const hitR = map.gateR + map.ballR, hitR2 = hitR * hitR;
+    const gx = map.end.x, gy = map.end.y;
+    const wantTrail = opts.trails && balls.length <= 96;
     trailSegs.length = 0;
+    simT += dt;
 
-    for (let s = 0; s < subs; s++) {
-      simT += dt / subs;
-      for (let i = 0; i < balls.length; i++) {
-        const b = balls[i];
-        const travelled = v * (simT - b.t0);
-        const ox = b.x, oy = b.y;
-        const nx = map.ix + fold(b.u0 + b.dx * travelled, map.iw);
-        const ny = map.iy + fold(b.v0 + b.dy * travelled, map.ih);
-        if (fineTrails) trailSegs.push(ox, oy, nx, ny, b.hit ? 1 : 0);
-        b.x = nx; b.y = ny;
-        if (!b.hit) {
-          // measure the gate against the whole step, not just its endpoint, so
-          // a fast ball can never skip straight over the gate between samples
-          const abx = nx - ox, aby = ny - oy;
-          const len2 = abx * abx + aby * aby;
-          let t = 0;
-          if (len2 > 1e-9) t = clamp(((ex - ox) * abx + (ey - oy) * aby) / len2, 0, 1);
-          const ddx = ox + t * abx - ex, ddy = oy + t * aby - ey;
-          if (ddx * ddx + ddy * ddy <= hitR2) {
-            const age = simT - b.t0;
-            b.hit = true;
-            b.hitAt = age;
-            hitCount++;
-            if (firstHit === null || age < firstHit) firstHit = age;
-            if (lastHit === null || age > lastHit) lastHit = age;
-            if (balls.length <= 24) bursts.push({ x: nx, y: ny, t: 0 });
-          }
-        }
-      }
-    }
+    for (let i = 0; i < balls.length; i++) advance(balls[i], dist, gx, gy, hitR2, wantTrail);
 
     if (opts.trails) {
       if (balls.length > 120) {
-        // Big fans would fog the meadow if every path stayed forever, so the
-        // trail layer ages out and the swarm draws comet tails instead.
         trCtx.setTransform(1, 0, 0, 1, 0, 0);
         trCtx.globalCompositeOperation = 'destination-out';
         trCtx.fillStyle = 'rgba(0,0,0,0.06)';
         trCtx.fillRect(0, 0, trCv.width, trCv.height);
         trCtx.globalCompositeOperation = 'source-over';
       }
-      if (fineTrails) strokeTrails(trailSegs, 1);
+      if (wantTrail) strokeTrails(trailSegs, 1);
       else {
         const segs = [];
-        for (let i = 0; i < balls.length; i++) {
-          const b = balls[i];
-          segs.push(b.px, b.py, b.x, b.y, b.hit ? 1 : 0);
-        }
-        strokeTrails(segs, 0.5);
+        for (const b of balls) segs.push(b.lx, b.ly, b.x, b.y, b.hit ? 1 : 0);
+        strokeTrails(segs, 0.5);   // last straight leg only — never cuts a corner
       }
     }
-    for (let i = 0; i < balls.length; i++) { balls[i].px = balls[i].x; balls[i].py = balls[i].y; }
+    for (const b of balls) { b.lx = b.x; b.ly = b.y; }
 
     for (let i = bursts.length - 1; i >= 0; i--) {
       bursts[i].t += dt;
@@ -766,7 +1217,32 @@
     }
   }
 
-  /* -------------------------------------------------------------- drawing */
+  /* ------------------------------------------------------------ ball sets */
+
+  function clearBalls() {
+    balls = []; simT = 0; hitCount = 0; firstHit = null; lastHit = null;
+    bursts.length = 0;
+    clearTrails();
+    el('banner').classList.remove('on');
+    updateReadout();
+  }
+  function rollOne(angle) {
+    if (mode === 'all') clearBalls();
+    mode = 'single';
+    if (balls.length >= 24) balls.shift();
+    balls.push(makeBall(angle === undefined ? Math.random() * TAU : angle));
+    el('banner').classList.remove('on');
+    updateReadout();
+  }
+  function rollAll() {
+    mode = 'all';
+    clearBalls();
+    const n = opts.count, off = Math.random() * TAU;
+    for (let i = 0; i < n; i++) balls.push(makeBall(off + i * TAU / n));
+    updateReadout();
+  }
+
+  /* =============================================================== DRAWING */
 
   function clearTrails() {
     trCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -778,20 +1254,14 @@
     const p = pal();
     trCtx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
     trCtx.lineCap = 'round';
-    trCtx.lineWidth = balls.length > 200 ? 0.7 : (balls.length > 24 ? 1 : 1.6);
+    trCtx.lineWidth = balls.length > 200 ? 0.7 : balls.length > 24 ? 1 : 1.6;
     const strength = balls.length > 400 ? 0.5 : balls.length > 64 ? 0.3 : 0.45;
-
     for (let pass = 0; pass < 2; pass++) {
       trCtx.beginPath();
       let any = false;
       for (let i = 0; i < segs.length; i += 5) {
         if ((segs[i + 4] === 1) !== (pass === 1)) continue;
-        // A step that jumps across most of the field means the fold wrapped a
-        // wall between samples on a coarse frame — skip it rather than draw a
-        // chord straight through the meadow.
-        const ax = segs[i], ay = segs[i + 1], bx = segs[i + 2], by = segs[i + 3];
-        if (Math.abs(bx - ax) > map.iw * 0.6 || Math.abs(by - ay) > map.ih * 0.6) continue;
-        trCtx.moveTo(ax, ay); trCtx.lineTo(bx, by);
+        trCtx.moveTo(segs[i], segs[i + 1]); trCtx.lineTo(segs[i + 2], segs[i + 3]);
         any = true;
       }
       if (!any) continue;
@@ -800,6 +1270,12 @@
       trCtx.stroke();
     }
     trCtx.globalAlpha = 1;
+  }
+
+  function outlinePath() {
+    const p = new Path2D();
+    map.outline(p);
+    return p;
   }
 
   function gearPath(c, x, y, r, teeth, rot) {
@@ -818,56 +1294,124 @@
     c.closePath();
   }
 
+  // rivets follow whatever the wall actually is, straight or curved
+  function wallStuds(c, p) {
+    const step = map.rail * 2.4;
+    c.fillStyle = p.rivet;
+    const dot = (x, y) => { c.beginPath(); c.arc(x, y, Math.max(1.3, map.rail * 0.11), 0, TAU); c.fill(); };
+    for (const s of map.surfaces) {
+      if (s.k === 0) {
+        const n = Math.max(1, Math.floor(s.len / step));
+        for (let i = 0; i <= n; i++) {
+          const f = i / n;
+          dot(s.ax + (s.bx - s.ax) * f + s.nx * -map.rail * 0.5,
+              s.ay + (s.by - s.ay) * f + s.ny * -map.rail * 0.5);
+        }
+      } else if (s.k === 1) {
+        const sweep = s.full ? TAU : ((s.a1 - s.a0) % TAU + TAU) % TAU || TAU;
+        const n = Math.max(2, Math.round(sweep * s.R / step));
+        for (let i = 0; i <= n; i++) {
+          const a = s.a0 + sweep * i / n;
+          dot(s.cx + Math.cos(a) * (s.R + map.rail * 0.5), s.cy + Math.sin(a) * (s.R + map.rail * 0.5));
+        }
+      } else if (s.k === 2) {
+        const n = 54;
+        for (let i = 0; i < n; i++) {
+          const a = i * TAU / n;
+          dot(s.cx + Math.cos(a) * (s.a + map.rail * 0.5), s.cy + Math.sin(a) * (s.b + map.rail * 0.5));
+        }
+      }
+    }
+  }
+
+  function drawObstacles(c) {
+    const p = pal();
+    for (const o of map.obstacles) {
+      if (o.k === 3) {
+        c.fillStyle = 'rgba(0,0,0,0.22)';
+        c.beginPath(); c.ellipse(o.cx, o.cy + o.R * 0.22, o.R * 1.02, o.R * 0.92, 0, 0, TAU); c.fill();
+        if (o.style === 'gear') {
+          c.fillStyle = p.pillar;
+          gearPath(c, o.cx, o.cy, o.R, 10, gearRot * 0.7);
+          c.fill();
+          c.strokeStyle = p.pillarDark; c.lineWidth = 1.6; c.stroke();
+          c.fillStyle = p.rivet;
+          c.beginPath(); c.arc(o.cx, o.cy, o.R * 0.22, 0, TAU); c.fill();
+        } else {
+          const g = c.createRadialGradient(o.cx - o.R * 0.35, o.cy - o.R * 0.4, o.R * 0.1, o.cx, o.cy, o.R);
+          g.addColorStop(0, p.pillar); g.addColorStop(1, p.pillarDark);
+          c.fillStyle = g;
+          c.beginPath(); c.arc(o.cx, o.cy, o.R, 0, TAU); c.fill();
+          c.strokeStyle = p.pillarDark; c.lineWidth = 2; c.stroke();
+          c.strokeStyle = 'rgba(255,240,200,0.35)'; c.lineWidth = 1.2;
+          c.beginPath(); c.arc(o.cx, o.cy, o.R * 0.6, 0, TAU); c.stroke();
+        }
+      } else {
+        c.lineCap = 'round';
+        c.strokeStyle = 'rgba(0,0,0,0.22)';
+        c.lineWidth = o.R * 2;
+        c.beginPath(); c.moveTo(o.ax, o.ay + o.R * 0.35); c.lineTo(o.bx, o.by + o.R * 0.35); c.stroke();
+        c.strokeStyle = p.baffle;
+        c.beginPath(); c.moveTo(o.ax, o.ay); c.lineTo(o.bx, o.by); c.stroke();
+        c.strokeStyle = p.baffleDark; c.lineWidth = o.R * 2 - 2.5;
+        c.beginPath(); c.moveTo(o.ax, o.ay); c.lineTo(o.bx, o.by); c.stroke();
+        c.strokeStyle = p.baffle; c.lineWidth = o.R * 1.1;
+        c.beginPath(); c.moveTo(o.ax, o.ay); c.lineTo(o.bx, o.by); c.stroke();
+        // end studs
+        c.fillStyle = p.rivet;
+        for (const [x, y] of [[o.ax, o.ay], [o.bx, o.by]]) {
+          c.beginPath(); c.arc(x, y, Math.max(1.4, o.R * 0.34), 0, TAU); c.fill();
+        }
+      }
+    }
+  }
+
   function buildBackground() {
     const p = pal();
     const c = bgCtx;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, bgCv.width, bgCv.height);
     c.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
-    const W = map.w, H = map.h, rail = map.rail;
+    const W = map.W, H = map.H;
+    const path = outlinePath();
 
-    // grass
+    // ground the structure stands on
+    const og = c.createLinearGradient(0, 0, W, H);
+    og.addColorStop(0, p.outside); og.addColorStop(1, p.outside2);
+    c.fillStyle = og;
+    c.fillRect(0, 0, W, H);
+    c.strokeStyle = p.hatch;                 // scored foundation the works sit on
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let x = -H; x < W + H; x += 15) { c.moveTo(x, 0); c.lineTo(x + H, H); }
+    c.stroke();
+
+    // the meadow floor, clipped to the arena
+    c.save();
+    c.clip(path);
     const g = c.createLinearGradient(0, 0, W * 0.35, H);
-    g.addColorStop(0, p.grassA);
-    g.addColorStop(0.55, p.grassB);
-    g.addColorStop(1, p.grassC);
+    g.addColorStop(0, p.grassA); g.addColorStop(0.55, p.grassB); g.addColorStop(1, p.grassC);
     c.fillStyle = g;
     c.fillRect(0, 0, W, H);
-
-    // mown stripes
     c.fillStyle = p.mow;
     for (let y = 0; y < H; y += 46) c.fillRect(0, y, W, 23);
-
-    // sun dapples
     for (const d of map.dapples) {
       const rg = c.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r);
-      rg.addColorStop(0, p.dapple);
-      rg.addColorStop(1, 'rgba(0,0,0,0)');
+      rg.addColorStop(0, p.dapple); rg.addColorStop(1, 'rgba(0,0,0,0)');
       c.fillStyle = rg;
       c.beginPath(); c.arc(d.x, d.y, d.r, 0, TAU); c.fill();
     }
-
-    // grass tufts
-    c.strokeStyle = p.tuft;
-    c.lineWidth = 1.1;
-    c.lineCap = 'round';
+    c.strokeStyle = p.tuft; c.lineWidth = 1.1; c.lineCap = 'round';
     c.beginPath();
     for (const t of map.tufts) {
-      c.moveTo(t.x, t.y);
-      c.lineTo(t.x + Math.sin(t.a) * t.s * 0.5, t.y - t.s);
-      c.moveTo(t.x, t.y);
-      c.lineTo(t.x + Math.sin(t.a + 1.1) * t.s * 0.6, t.y - t.s * 0.7);
+      c.moveTo(t.x, t.y); c.lineTo(t.x + Math.sin(t.a) * t.s * 0.5, t.y - t.s);
+      c.moveTo(t.x, t.y); c.lineTo(t.x + Math.sin(t.a + 1.1) * t.s * 0.6, t.y - t.s * 0.7);
     }
     c.stroke();
-
-    // wildflowers
     for (const f of map.flowers) {
       if (f.stem) {
-        c.strokeStyle = p.tuft;
-        c.lineWidth = 1;
-        c.beginPath();
-        c.moveTo(f.x, f.y + f.stem); c.lineTo(f.x, f.y);
-        c.stroke();
+        c.strokeStyle = p.tuft; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(f.x, f.y + f.stem); c.lineTo(f.x, f.y); c.stroke();
       }
       c.fillStyle = p.flower[f.c];
       c.beginPath(); c.arc(f.x, f.y, f.r, 0, TAU); c.fill();
@@ -876,53 +1420,33 @@
         c.beginPath(); c.arc(f.x, f.y, f.r * 0.32, 0, TAU); c.fill();
       }
     }
+    // inner shading so the floor sits down inside the walls
+    c.strokeStyle = 'rgba(30,22,8,0.22)';
+    c.lineWidth = map.rail * 0.7;
+    c.stroke(path);
+    c.restore();
 
-    // ---- the beltworks rail that rings the meadow
-    const rg = c.createLinearGradient(0, 0, 0, rail);
-    rg.addColorStop(0, p.railA);
-    rg.addColorStop(1, p.railB);
-    c.fillStyle = rg;
-    c.fillRect(0, 0, W, rail);
-    c.fillRect(0, H - rail, W, rail);
-    const rg2 = c.createLinearGradient(0, 0, rail, 0);
-    rg2.addColorStop(0, p.railA);
-    rg2.addColorStop(1, p.railB);
-    c.fillStyle = rg2;
-    c.fillRect(0, 0, rail, H);
-    c.fillRect(W - rail, 0, rail, H);
+    // the wall itself: drawn only outside the play surface, so the ball never
+    // visually overlaps the wall it is bouncing off
+    c.save();
+    const outer = new Path2D();
+    outer.rect(-W, -H, W * 3, H * 3);
+    map.outline(outer);
+    c.clip(outer, 'evenodd');
+    c.lineWidth = map.rail * 2;
+    c.strokeStyle = p.wallB;
+    c.stroke(path);
+    c.lineWidth = map.rail * 1.15;
+    c.strokeStyle = p.wallA;
+    c.stroke(path);
+    wallStuds(c, p);
+    c.restore();
 
-    // belt tread chevrons
-    c.strokeStyle = p.tread;
-    c.lineWidth = Math.max(1.5, rail * 0.13);
-    c.beginPath();
-    const gap = rail * 1.5;
-    for (let x = 0; x < W; x += gap) {
-      c.moveTo(x, rail * 0.18); c.lineTo(x + rail * 0.42, rail * 0.5); c.lineTo(x, rail * 0.82);
-      c.moveTo(x, H - rail * 0.82); c.lineTo(x + rail * 0.42, H - rail * 0.5); c.lineTo(x, H - rail * 0.18);
-    }
-    for (let y = 0; y < H; y += gap) {
-      c.moveTo(rail * 0.18, y); c.lineTo(rail * 0.5, y + rail * 0.42); c.lineTo(rail * 0.82, y);
-      c.moveTo(W - rail * 0.82, y); c.lineTo(W - rail * 0.5, y + rail * 0.42); c.lineTo(W - rail * 0.18, y);
-    }
-    c.stroke();
+    c.lineWidth = 2.5;
+    c.strokeStyle = p.wallEdge;
+    c.stroke(path);
 
-    // inner + outer edging
-    c.strokeStyle = p.railEdge;
-    c.lineWidth = 2;
-    c.strokeRect(rail - 1, rail - 1, W - 2 * rail + 2, H - 2 * rail + 2);
-    c.strokeRect(1, 1, W - 2, H - 2);
-
-    // rivets
-    c.fillStyle = p.rivet;
-    const rr = Math.max(1.3, rail * 0.11);
-    for (let x = rail; x < W - rail; x += rail * 2.2) {
-      c.beginPath(); c.arc(x, rail * 0.5, rr, 0, TAU); c.fill();
-      c.beginPath(); c.arc(x, H - rail * 0.5, rr, 0, TAU); c.fill();
-    }
-    for (let y = rail; y < H - rail; y += rail * 2.2) {
-      c.beginPath(); c.arc(rail * 0.5, y, rr, 0, TAU); c.fill();
-      c.beginPath(); c.arc(W - rail * 0.5, y, rr, 0, TAU); c.fill();
-    }
+    drawObstacles(c);
   }
 
   function drawStartPad(c) {
@@ -934,13 +1458,11 @@
     c.fillStyle = 'rgba(0,0,0,0.18)';
     c.beginPath(); c.ellipse(0, r * 0.28, r * 1.02, r * 0.9, 0, 0, TAU); c.fill();
     const g = c.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
-    g.addColorStop(0, p.padWood);
-    g.addColorStop(1, p.padWoodDark);
+    g.addColorStop(0, p.padWood); g.addColorStop(1, p.padWoodDark);
     c.fillStyle = g;
     c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill();
-    c.strokeStyle = p.railEdge; c.lineWidth = 2;
+    c.strokeStyle = p.wallEdge; c.lineWidth = 2;
     c.beginPath(); c.arc(0, 0, r, 0, TAU); c.stroke();
-    // outward chevrons: a launcher
     c.strokeStyle = 'rgba(255,240,200,0.65)';
     c.lineWidth = Math.max(1.4, r * 0.1);
     for (let i = 0; i < 8; i++) {
@@ -963,41 +1485,32 @@
     const pulse = 0.75 + 0.25 * Math.sin(time * 2.4);
     c.save();
     c.translate(x, y);
-
     const g = c.createRadialGradient(0, 0, R * 0.15, 0, 0, R * 2.1);
     g.addColorStop(0, p.gateGlow);
     g.addColorStop(0.42, 'rgba(255,206,102,0.28)');
     g.addColorStop(1, 'rgba(255,206,102,0)');
-    c.globalAlpha = pulse;
-    c.fillStyle = g;
+    c.globalAlpha = pulse; c.fillStyle = g;
     c.beginPath(); c.arc(0, 0, R * 2.1, 0, TAU); c.fill();
     c.globalAlpha = 1;
-
-    // brass gear ring
     c.fillStyle = p.gear;
     gearPath(c, 0, 0, R * 1.28, 12, -gearRot * 0.8);
     c.fill();
     c.strokeStyle = p.gearDark; c.lineWidth = 1.6; c.stroke();
-
     c.fillStyle = 'rgba(255,247,220,0.92)';
     c.beginPath(); c.arc(0, 0, R * 0.92, 0, TAU); c.fill();
     c.strokeStyle = p.gateRing; c.lineWidth = Math.max(2.5, R * 0.14);
     c.beginPath(); c.arc(0, 0, R * 0.92, 0, TAU); c.stroke();
-
-    // spinning hazard-stripe hub
     c.save();
     c.rotate(gearRot * 1.6);
     c.fillStyle = p.gateRing;
     for (let i = 0; i < 6; i++) {
-      c.beginPath();
-      c.moveTo(0, 0);
+      c.beginPath(); c.moveTo(0, 0);
       c.arc(0, 0, R * 0.62, i * TAU / 6, i * TAU / 6 + TAU / 12);
       c.closePath(); c.fill();
     }
     c.restore();
     c.fillStyle = '#3a2a12';
     c.beginPath(); c.arc(0, 0, R * 0.2, 0, TAU); c.fill();
-
     c.restore();
   }
 
@@ -1007,19 +1520,16 @@
     const n = balls.length;
 
     if (opts.ribbon && n >= 40 && mode === 'all') {
-      // Position is continuous in launch angle, so neighbouring balls sit on one
-      // curve — join them and the fan reads as a single folded line. Once two
-      // neighbours drift apart the curve is no longer resolved at this sampling,
-      // so the join is dropped rather than faked with a chord across the field.
-      const maxJoin = Math.max(map.iw, map.ih) * 0.06;
+      // position is continuous in launch angle, so neighbours lie on one curve;
+      // the join is dropped once two neighbours are too far apart to resolve it
+      const maxJoin = Math.max(map.W, map.H) * 0.06;
       c.lineWidth = Math.max(0.8, r * 0.5);
       c.lineJoin = 'round';
       for (let pass = 0; pass < 2; pass++) {
         c.beginPath();
         let drawing = false;
         for (let i = 0; i <= n; i++) {
-          const b = balls[i % n];
-          const prev = balls[(i - 1 + n) % n];
+          const b = balls[i % n], prev = balls[(i - 1 + n) % n];
           if (b.hit !== (pass === 1)) { drawing = false; continue; }
           const far = Math.abs(b.x - prev.x) > maxJoin || Math.abs(b.y - prev.y) > maxJoin;
           if (!drawing || far) { c.moveTo(b.x, b.y); drawing = true; }
@@ -1031,7 +1541,6 @@
     }
 
     if (n > 320) {
-      // fast path: tiny squares, two batched fills
       const s = clamp(r * (n > 1600 ? 0.42 : n > 800 ? 0.55 : 0.72), 1.3, 4.4);
       for (let pass = 0; pass < 2; pass++) {
         c.fillStyle = pass === 1 ? p.ballHit : p.ball;
@@ -1045,14 +1554,10 @@
       }
       return;
     }
-
     for (let i = 0; i < n; i++) {
       const b = balls[i];
-      c.beginPath();
-      c.arc(b.x, b.y + r * 0.32, r * 0.95, 0, TAU);
-      c.fillStyle = 'rgba(0,0,0,0.2)';
-      c.fill();
-
+      c.beginPath(); c.arc(b.x, b.y + r * 0.32, r * 0.95, 0, TAU);
+      c.fillStyle = 'rgba(0,0,0,0.2)'; c.fill();
       const g = c.createRadialGradient(b.x - r * 0.35, b.y - r * 0.4, r * 0.12, b.x, b.y, r);
       if (b.hit) { g.addColorStop(0, '#fff3cd'); g.addColorStop(1, p.ballHit); }
       else { g.addColorStop(0, '#ffffff'); g.addColorStop(1, p.ball); }
@@ -1067,31 +1572,11 @@
   function drawBursts(c) {
     for (const b of bursts) {
       const k = b.t / 0.75;
-      const R = map.gateR * (0.6 + k * 2.2);
       c.globalAlpha = (1 - k) * 0.8;
       c.strokeStyle = pal().gateRing;
       c.lineWidth = 3 * (1 - k) + 0.6;
-      c.beginPath(); c.arc(b.x, b.y, R, 0, TAU); c.stroke();
+      c.beginPath(); c.arc(b.x, b.y, map.gateR * (0.6 + k * 2.2), 0, TAU); c.stroke();
       c.globalAlpha = 1;
-    }
-  }
-
-  function drawCornerGears(c) {
-    const p = pal();
-    const r = map.rail * 1.5;
-    const spots = [
-      [map.rail * 0.9, map.rail * 0.9, 1],
-      [map.w - map.rail * 0.9, map.rail * 0.9, -1],
-      [map.rail * 0.9, map.h - map.rail * 0.9, -1],
-      [map.w - map.rail * 0.9, map.h - map.rail * 0.9, 1]
-    ];
-    for (const [x, y, dir] of spots) {
-      c.fillStyle = p.gear;
-      gearPath(c, x, y, r, 9, gearRot * dir);
-      c.fill();
-      c.strokeStyle = p.gearDark; c.lineWidth = 1.4; c.stroke();
-      c.fillStyle = p.rivet;
-      c.beginPath(); c.arc(x, y, r * 0.26, 0, TAU); c.fill();
     }
   }
 
@@ -1100,39 +1585,35 @@
     ctx.clearRect(0, 0, cv.width, cv.height);
     ctx.drawImage(bgCv, 0, 0);
     if (opts.trails) ctx.drawImage(trCv, 0, 0);
-
     ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
-    drawCornerGears(ctx);
     drawStartPad(ctx);
     drawGate(ctx, time);
     drawBalls(ctx);
-    // keep the gate readable even under a few thousand balls
     ctx.strokeStyle = pal().gateRing;
     ctx.lineWidth = Math.max(2, map.gateR * 0.16);
     ctx.beginPath(); ctx.arc(map.end.x, map.end.y, map.gateR * 0.92, 0, TAU); ctx.stroke();
     drawBursts(ctx);
   }
 
-  /* --------------------------------------------------------------- layout */
+  /* ---------------------------------------------------------------- layout */
 
   function resize() {
     if (!map) return;
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     const cssW = Math.max(240, holder.clientWidth || 640);
-    scale = cssW / map.w;
-    const cssH = map.h * scale;
-
+    scale = cssW / map.W;
+    const cssH = map.H * scale;
     for (const cc of [cv, bgCv, trCv]) {
       cc.width = Math.round(cssW * dpr);
       cc.height = Math.round(cssH * dpr);
     }
     cv.style.height = cssH + 'px';
-    holder.style.aspectRatio = map.w + ' / ' + map.h;
+    holder.style.aspectRatio = map.W + ' / ' + map.H;
     buildBackground();
     clearTrails();
   }
 
-  /* -------------------------------------------------------------- readout */
+  /* --------------------------------------------------------------- readout */
 
   const fmt = t => t < 10 ? t.toFixed(2) + 's' : t < 100 ? t.toFixed(1) + 's' : Math.round(t) + 's';
 
@@ -1143,14 +1624,7 @@
     el('sHit').textContent = n ? hitCount.toLocaleString() + (mode === 'all' ? ' / ' + n.toLocaleString() : '') : '0';
     el('sFirst').textContent = firstHit === null ? '—' : fmt(firstHit);
     el('sLast').textContent = lastHit === null ? '—' : fmt(lastHit);
-
-    const last = balls[balls.length - 1];
-    if (last && map) {
-      const d = speedPx() * (simT - last.t0);
-      const bx = foldCount(last.u0 + last.dx * d, map.iw);
-      const by = foldCount(last.v0 + last.dy * d, map.ih);
-      el('sBounce').textContent = (bx + by).toLocaleString();
-    } else el('sBounce').textContent = '0';
+    el('sBounce').textContent = n ? balls[n - 1].bounces.toLocaleString() : '0';
 
     const pct = n ? hitCount / n : 0;
     el('bar').style.width = (pct * 100).toFixed(2) + '%';
@@ -1161,22 +1635,19 @@
       banner.classList.add('on');
       banner.textContent = n === 1
         ? '⭐ The ball found the gate after ' + fmt(lastHit) + '.'
-        : '⭐ All ' + n.toLocaleString() + ' directions reached the gate — the last one took ' + fmt(lastHit) + '.';
+        : map.pure
+          ? '⭐ All ' + n.toLocaleString() + ' directions landed on the gate together, after one bounce and ' + fmt(lastHit) + '.'
+          : '⭐ All ' + n.toLocaleString() + ' directions reached the gate — the last took ' + fmt(lastHit) + '.';
     } else if (n > 20 && pct >= 0.985) {
-      // The long tail is real maths, not a stall: a handful of directions run
-      // very nearly closed loops and take far longer than the rest.
       banner.classList.add('on');
       banner.textContent = '⏳ ' + left.toLocaleString() + ' straggler' + (left === 1 ? '' : 's') +
-        ' still bouncing. They do arrive — raise the sim speed or widen the gate to watch them home.';
-    } else if (!n) {
-      banner.classList.remove('on');
-    }
+        ' still bouncing. They do arrive — raise the simulation speed or widen the gate to watch them home.';
+    } else if (!n) banner.classList.remove('on');
   }
 
-  /* ----------------------------------------------------------------- loop */
+  /* ------------------------------------------------------------------ loop */
 
-  let prev = performance.now();
-  let acc = 0;
+  let prev = performance.now(), acc = 0;
   function frame(now) {
     const dt = Math.min(0.05, (now - prev) / 1000);
     prev = now;
@@ -1188,48 +1659,61 @@
     requestAnimationFrame(frame);
   }
 
-  /* ------------------------------------------------------------- controls */
+  /* -------------------------------------------------------------- controls */
 
   el('rollBtn').onclick = () => rollOne();
   el('allBtn').onclick = () => rollAll();
-  el('newBtn').onclick = () => newMeadow();
+  el('newBtn').onclick = () => newMap();
   el('clearBtn').onclick = () => { mode = 'single'; clearBalls(); };
 
   function chip(id, key, after) {
     const b = el(id);
+    b.setAttribute('aria-pressed', String(opts[key]));
     b.onclick = () => {
       opts[key] = !opts[key];
       b.setAttribute('aria-pressed', String(opts[key]));
       if (after) after();
     };
-    b.setAttribute('aria-pressed', String(opts[key]));
   }
   chip('trailChip', 'trails', clearTrails);
   chip('ribbonChip', 'ribbon');
   chip('pauseChip', 'paused');
 
+  const speedR = el('speedR');
+  function showSpeed() {
+    opts.speed = +speedR.value / 4;
+    el('speedV').textContent = (opts.speed < 1 ? opts.speed.toFixed(2).replace(/0$/, '') : String(opts.speed)) + '×';
+  }
+  speedR.oninput = showSpeed;
+  el('slowBtn').onclick = () => { speedR.value = Math.max(1, +speedR.value - 1); showSpeed(); };
+  el('fastBtn').onclick = () => { speedR.value = Math.min(64, +speedR.value + 1); showSpeed(); };
+
+  el('shapes').addEventListener('click', ev => {
+    const b = ev.target.closest('.chip');
+    if (!b) return;
+    opts.shape = b.dataset.shape;
+    for (const c of el('shapes').children) c.setAttribute('aria-pressed', String(c === b));
+    newMap();
+  });
+  el('structR').oninput = e => {
+    opts.struct = +e.target.value;
+    el('structV').textContent = STRUCT[opts.struct];
+    newMap();
+  };
   el('sizeR').oninput = e => {
     opts.size = +e.target.value;
     el('sizeV').textContent = SIZES[opts.size].name;
-    newMeadow();
+    newMap();
   };
   el('gateR').oninput = e => {
     opts.gate = +e.target.value;
     el('gateV').textContent = GATES[opts.gate].name;
-    if (map) {
-      map.gateR = clamp(Math.min(map.w, map.h) / 21, 14, 34) * GATES[opts.gate].k;
-      clearBalls();
-    }
-  };
-  el('speedR').oninput = e => {
-    opts.speed = +e.target.value / 4;
-    el('speedV').textContent = opts.speed.toFixed(2).replace(/\.?0+$/, '') + '×';
+    newMap();
   };
   el('countR').oninput = e => {
     opts.count = +e.target.value;
     el('countV').textContent = opts.count.toLocaleString();
   };
-
   el('themeBtn').onclick = () => {
     const next = isDark() ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
@@ -1240,11 +1724,10 @@
 
   cv.addEventListener('pointerdown', ev => {
     const r = cv.getBoundingClientRect();
-    const x = (ev.clientX - r.left) / r.width * map.w;
-    const y = (ev.clientY - r.top) / r.height * map.h;
+    const x = (ev.clientX - r.left) / r.width * map.W;
+    const y = (ev.clientY - r.top) / r.height * map.H;
     const a = Math.atan2(y - map.start.y, x - map.start.x);
-    if (!isFinite(a)) return;
-    rollOne(a);
+    if (isFinite(a)) rollOne(a);
   });
 
   window.addEventListener('keydown', ev => {
@@ -1252,7 +1735,7 @@
     const k = ev.key.toLowerCase();
     if (k === ' ' || k === 'spacebar') { ev.preventDefault(); rollOne(); }
     else if (k === 'a') rollAll();
-    else if (k === 'm') newMeadow();
+    else if (k === 'm') newMap();
     else if (k === 'c') { mode = 'single'; clearBalls(); }
     else if (k === 'p') el('pauseChip').click();
   });
@@ -1267,11 +1750,12 @@
 
   el('sizeV').textContent = SIZES[opts.size].name;
   el('gateV').textContent = GATES[opts.gate].name;
-  el('speedV').textContent = opts.speed + '×';
+  el('structV').textContent = STRUCT[opts.struct];
   el('countV').textContent = opts.count.toLocaleString();
   el('themeBtn').setAttribute('aria-pressed', String(isDark()));
+  showSpeed();
 
-  newMeadow();
+  newMap();
   rollOne();
   requestAnimationFrame(frame);
 })();
