@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Magnet Field</title>
+<style>
+  :root {
+    --bg: #0b0d14;
+    --panel: rgba(20, 24, 36, 0.92);
+    --panel-solid: #141824;
+    --border: #2b3348;
+    --text: #e6ecff;
+    --muted: #8d99bd;
+    --accent: #5aa9ff;
+    --accent-warm: #ff6b7a;
+    --shadow: rgba(0, 0, 0, 0.55);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #stage {
+    position: fixed;
+    inset: 0;
+    touch-action: none;
+    display: block;
+  }
+  #ui {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    width: 268px;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    background: var(--panel);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px var(--shadow);
+    padding: 12px;
+    font-size: 12px;
+    z-index: 10;
+  }
+  #ui.collapsed .body { display: none; }
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .head h1 {
+    font-size: 14px;
+    margin: 0;
+    letter-spacing: 0.02em;
+  }
+  .head .sub {
+    display: block;
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: #1d2333;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 8px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, transform 0.06s;
+  }
+  button:hover { background: #262e42; }
+  button:active { transform: translateY(1px); }
+  button.on {
+    background: #22406b;
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px rgba(90, 169, 255, 0.35);
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .tool { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 2px; }
+  .tool .ico { font-size: 15px; line-height: 1.1; }
+  .tool .lbl { font-size: 9.5px; color: var(--muted); letter-spacing: 0.03em; }
+  .tool.on .lbl { color: var(--text); }
+  .section {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .section > .title {
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--muted);
+    margin-bottom: 7px;
+  }
+  .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .sw {
+    height: 26px;
+    border-radius: 7px;
+    border: 2px solid transparent;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    cursor: pointer;
+    padding: 0;
+  }
+  .sw.on { border-color: #fff; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 7px 0; }
+  .row label { flex: 0 0 74px; color: var(--muted); }
+  .row .val { flex: 0 0 34px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  input[type="range"] {
+    flex: 1 1 0;
+    min-width: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 3px;
+    background: #2b3348;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid #0b0d14;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #0b0d14;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  select {
+    font: inherit;
+    width: 100%;
+    color: var(--text);
+    background: #1d2333;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 7px;
+  }
+  .note {
+    color: var(--muted);
+    line-height: 1.45;
+    font-size: 10.5px;
+    margin-top: 6px;
+  }
+  .check { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+  .check input { accent-color: var(--accent); }
+  #hud {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 10;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 7px 10px;
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    line-height: 1.5;
+    backdrop-filter: blur(10px);
+  }
+  #hud b { color: var(--text); font-weight: 600; }
+  #hint {
+    position: fixed;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 7px 12px;
+    font-size: 11px;
+    color: var(--muted);
+    backdrop-filter: blur(10px);
+    white-space: nowrap;
+    max-width: calc(100vw - 24px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #hint b { color: var(--text); font-weight: 600; }
+  @media (max-width: 720px) {
+    #ui { width: 210px; font-size: 11px; }
+    .row label { flex-basis: 62px; }
+    #hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="ui">
+  <div class="head">
+    <h1>Magnet Field<span class="sub">balls · magnets · color terrain</span></h1>
+    <button id="collapse" title="Collapse panel" style="padding:4px 8px">–</button>
+  </div>
+  <div class="body">
+    <div class="grid4" id="tools">
+      <button class="tool on" data-tool="magnet"><span class="ico">🧲</span><span class="lbl">Magnet</span></button>
+      <button class="tool" data-tool="ball"><span class="ico">⚪</span><span class="lbl">Ball</span></button>
+      <button class="tool" data-tool="paint"><span class="ico">🖌️</span><span class="lbl">Paint</span></button>
+      <button class="tool" data-tool="erase"><span class="ico">🧽</span><span class="lbl">Erase</span></button>
+    </div>
+
+    <div class="section">
+      <div class="title">Terrain color</div>
+      <div class="swatches" id="swatches"></div>
+      <div class="row" style="margin-top:9px">
+        <label>Brush</label>
+        <input type="range" id="brush" min="1" max="20" step="1" value="6">
+        <span class="val" id="brushVal">6</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="title">Physics</div>
+      <div class="row">
+        <label>Strength</label>
+        <input type="range" id="strength" min="0" max="300" step="1" value="100">
+        <span class="val" id="strengthVal">100</span>
+      </div>
+      <div class="row">
+        <label>Friction</label>
+        <input type="range" id="friction" min="0" max="100" step="1" value="30">
+        <span class="val" id="frictionVal">30</span>
+      </div>
+      <div class="row">
+        <label>Bounce</label>
+        <input type="range" id="bounce" min="0" max="95" step="1" value="35">
+        <span class="val" id="bounceVal">35</span>
+      </div>
+      <div class="row">
+        <label>Ball size</label>
+        <input type="range" id="ballSize" min="3" max="16" step="1" value="6">
+        <span class="val" id="ballSizeVal">6</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="title">Collision rule</div>
+      <select id="rule">
+        <option value="stay">Ball stays on its own color</option>
+        <option value="repel">Ball bounces off its own color</option>
+      </select>
+      <div class="note" id="ruleNote"></div>
+    </div>
+
+    <div class="section">
+      <div class="title">Actions</div>
+      <div class="grid2">
+        <button id="sprinkle">Sprinkle 40</button>
+        <button id="clearBalls">Clear balls</button>
+        <button id="randomMap">Random map</button>
+        <button id="clearMagnets">Clear magnets</button>
+        <button id="fillMap">Fill w/ color</button>
+        <button id="wipeMap">Wipe to black</button>
+      </div>
+      <div class="row" style="margin-top:9px; gap:12px">
+        <label class="check" style="flex:1"><input type="checkbox" id="trails"> Trails</label>
+        <label class="check" style="flex:1"><input type="checkbox" id="fields" checked> Field rings</label>
+      </div>
+      <button id="pause" style="width:100%; margin-top:2px">Pause (Space)</button>
+    </div>
+  </div>
+</div>
+
+<div id="hud">
+  <div><b id="hBalls">0</b> balls · <b id="hMag">0</b> magnets</div>
+  <div><b id="hFps">60</b> fps</div>
+</div>
+
+<div id="hint">
+  <b>Drag</b> a magnet to pull the balls · <b>right-click</b> a magnet flips it to repel · <b>shift-click</b> deletes it
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------- palette
+  // index 0 is the neutral "black" ground: it never collides with anything,
+  // and a ball spawned on it is neutral too (passes through every color).
+  const PALETTE = [
+    { name: "Black (neutral)", ground: "#0e1018", ball: "#5b6480", edge: "#242a3c" },
+    { name: "Yellow",          ground: "#d9a520", ball: "#ffd257", edge: "#f0c04a" },
+    { name: "Green",           ground: "#2f9c58", ball: "#5fe08d", edge: "#49c274" },
+    { name: "Blue",            ground: "#2d6fc4", ball: "#69b0ff", edge: "#4a92e8" },
+    { name: "Red",             ground: "#c04250", ball: "#ff8593", edge: "#e46474" },
+    { name: "Purple",          ground: "#7a4fc0", ball: "#b48cff", edge: "#9670e0" }
+  ];
+  const NEUTRAL = 0;
+  const CELL = 8;             // terrain cell size, in css pixels
+  const MAX_BALLS = 700;
+  const MAX_MAGNETS = 40;
+
+  // ---------------------------------------------------------------- state
+  const state = {
+    tool: "magnet",
+    color: 1,
+    brush: 6,
+    strength: 100,
+    friction: 30,
+    bounce: 35,
+    ballSize: 6,
+    rule: "stay",
+    trails: false,
+    fields: true,
+    paused: false
+  };
+
+  const balls = [];
+  const magnets = [];
+
+  let W = 0, H = 0, DPR = 1;      // css pixels
+  let gw = 0, gh = 0;             // grid dimensions
+  let grid = new Uint8Array(0);   // color index per cell
+
+  const canvas = document.getElementById("stage");
+  const ctx = canvas.getContext("2d", { alpha: false });
+
+  // Offscreen 1px-per-cell terrain buffer, scaled up when drawn (crisp blocks).
+  const terrainCv = document.createElement("canvas");
+  const terrainCtx = terrainCv.getContext("2d");
+  let terrainImg = null;
+  let terrainDirty = true;
+
+  const rgbOf = (function () {
+    const probe = document.createElement("canvas").getContext("2d");
+    return function (css) {
+      probe.fillStyle = css;
+      const hex = probe.fillStyle;
+      return [
+        parseInt(hex.slice(1, 3), 16),
+        parseInt(hex.slice(3, 5), 16),
+        parseInt(hex.slice(5, 7), 16)
+      ];
+    };
+  })();
+  const GROUND_RGB = PALETTE.map(p => rgbOf(p.ground));
+
+  // ---------------------------------------------------------------- terrain
+  function idx(cx, cy) { return cy * gw + cx; }
+
+  function cellAt(x, y) {
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+    if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) return NEUTRAL;
+    return grid[idx(cx, cy)];
+  }
+
+  // Is terrain color `t` solid for a ball of color `c`?
+  function solidFor(t, c) {
+    if (t === NEUTRAL || c === NEUTRAL) return false;   // black never collides
+    return state.rule === "stay" ? t !== c : t === c;
+  }
+
+  function resizeGrid(nw, nh) {
+    const next = new Uint8Array(nw * nh);
+    // Preserve whatever was already painted when the window changes size.
+    for (let y = 0; y < Math.min(nh, gh); y++) {
+      for (let x = 0; x < Math.min(nw, gw); x++) next[y * nw + x] = grid[y * gw + x];
+    }
+    // Any newly exposed area copies its nearest existing column/row so the map
+    // never grows an unpainted black border.
+    if (gw > 0 && gh > 0) {
+      for (let y = 0; y < nh; y++) {
+        for (let x = 0; x < nw; x++) {
+          if (y < gh && x < gw) continue;
+          const sx = Math.min(x, gw - 1), sy = Math.min(y, gh - 1);
+          next[y * nw + x] = grid[sy * gw + sx];
+        }
+      }
+    }
+    grid = next; gw = nw; gh = nh;
+    terrainCv.width = gw; terrainCv.height = gh;
+    terrainImg = terrainCtx.createImageData(gw, gh);
+    terrainDirty = true;
+  }
+
+  function paintTerrain(x, y, colorIdx, radiusCells) {
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+    const r = Math.max(0.5, radiusCells), r2 = r * r;
+    const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(gw - 1, Math.ceil(cx + r));
+    const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(gh - 1, Math.ceil(cy + r));
+    for (let gy = y0; gy <= y1; gy++) {
+      for (let gx = x0; gx <= x1; gx++) {
+        const dx = gx - cx, dy = gy - cy;
+        if (dx * dx + dy * dy <= r2) grid[idx(gx, gy)] = colorIdx;
+      }
+    }
+    terrainDirty = true;
+  }
+
+  function fillMap(colorIdx) {
+    grid.fill(colorIdx);
+    terrainDirty = true;
+  }
+
+  // A few octaves of sines: cheap smooth noise, enough to make borders wobble.
+  function makeWarp(scale) {
+    const oct = [];
+    for (let k = 0; k < 4; k++) {
+      const f = 0.012 * Math.pow(2, k) * (0.7 + Math.random() * 0.6);
+      oct.push({
+        fx: f * (Math.random() * 2 - 1),
+        fy: f * (Math.random() * 2 - 1),
+        a: scale / Math.pow(1.9, k),
+        p: Math.random() * Math.PI * 2
+      });
+    }
+    return function (x, y) {
+      let s = 0;
+      for (let k = 0; k < oct.length; k++) {
+        const o = oct[k];
+        s += Math.sin(x * o.fx + y * o.fy + o.p) * o.a;
+      }
+      return s;
+    };
+  }
+
+  // Organic multi-zone map: warped nearest-seed regions, fully covered (no black).
+  function randomMap() {
+    const zones = 5 + Math.floor(Math.random() * 4);
+    const colors = [1, 2, 3, 4, 5];
+    const seeds = [];
+    for (let i = 0; i < zones; i++) {
+      seeds.push({
+        x: Math.random() * gw,
+        y: Math.random() * gh,
+        // Guarantee yellow and green are both present, then fill freely.
+        c: i === 0 ? 1 : i === 1 ? 2 : colors[Math.floor(Math.random() * colors.length)],
+        w: 0.7 + Math.random() * 0.6
+      });
+    }
+    const amp = Math.min(gw, gh) * 0.28;
+    const warpX = makeWarp(amp), warpY = makeWarp(amp);
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        // Warp the sample point so region borders come out wobbly, not straight.
+        const wx = x + warpX(x, y);
+        const wy = y + warpY(x, y);
+        let best = 0, bestD = Infinity;
+        for (let i = 0; i < seeds.length; i++) {
+          const s = seeds[i];
+          const dx = wx - s.x, dy = wy - s.y;
+          const d = (dx * dx + dy * dy) / (s.w * s.w);
+          if (d < bestD) { bestD = d; best = s.c; }
+        }
+        grid[idx(x, y)] = best;
+      }
+    }
+    terrainDirty = true;
+  }
+
+  function redrawTerrain() {
+    const d = terrainImg.data;
+    for (let i = 0, n = grid.length; i < n; i++) {
+      const rgb = GROUND_RGB[grid[i]] || GROUND_RGB[0];
+      const o = i * 4;
+      d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = 255;
+    }
+    terrainCtx.putImageData(terrainImg, 0, 0);
+    terrainDirty = false;
+  }
+
+  // ---------------------------------------------------------------- entities
+  function spawnBall(x, y, colorIdx) {
+    if (balls.length >= MAX_BALLS) return null;
+    const c = colorIdx === undefined ? cellAt(x, y) : colorIdx;
+    const r = state.ballSize;
+    const spot = findFreeSpot(x, y, c, r);
+    const b = {
+      x: spot.x, y: spot.y, vx: 0, vy: 0,
+      r: r, c: c, hist: []
+    };
+    balls.push(b);
+    return b;
+  }
+
+  // Walks outward until the ball is not embedded in terrain that is solid for it
+  // (matters mostly in "bounces off its own color" mode).
+  function findFreeSpot(x, y, c, r) {
+    if (!overlapsSolid(x, y, r, c)) return { x: x, y: y };
+    for (let step = CELL; step < Math.max(W, H); step += CELL) {
+      for (let a = 0; a < 12; a++) {
+        const ang = (a / 12) * Math.PI * 2;
+        const nx = x + Math.cos(ang) * step, ny = y + Math.sin(ang) * step;
+        if (nx < r || ny < r || nx > W - r || ny > H - r) continue;
+        if (!overlapsSolid(nx, ny, r, c)) return { x: nx, y: ny };
+      }
+    }
+    return { x: x, y: y };
+  }
+
+  function overlapsSolid(x, y, r, c) {
+    const x0 = Math.max(0, Math.floor((x - r) / CELL)), x1 = Math.min(gw - 1, Math.floor((x + r) / CELL));
+    const y0 = Math.max(0, Math.floor((y - r) / CELL)), y1 = Math.min(gh - 1, Math.floor((y + r) / CELL));
+    for (let gy = y0; gy <= y1; gy++) {
+      for (let gx = x0; gx <= x1; gx++) {
+        if (!solidFor(grid[idx(gx, gy)], c)) continue;
+        const rx = gx * CELL, ry = gy * CELL;
+        const px = Math.max(rx, Math.min(x, rx + CELL));
+        const py = Math.max(ry, Math.min(y, ry + CELL));
+        const dx = x - px, dy = y - py;
+        if (dx * dx + dy * dy < r * r) return true;
+      }
+    }
+    return false;
+  }
+
+  function addMagnet(x, y, polarity) {
+    if (magnets.length >= MAX_MAGNETS) return null;
+    const m = { x: x, y: y, r: 17, pol: polarity || 1, range: 1700, phase: Math.random() * 6.28 };
+    magnets.push(m);
+    return m;
+  }
+
+  function magnetAt(x, y) {
+    for (let i = magnets.length - 1; i >= 0; i--) {
+      const m = magnets[i];
+      const dx = x - m.x, dy = y - m.y;
+      if (dx * dx + dy * dy <= (m.r + 8) * (m.r + 8)) return m;
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- physics
+  const MAX_ACC = 9000;      // px/s^2, keeps the 1/d^2 singularity in check
+  const MAX_SPEED = 2600;    // px/s
+
+  function step(dt) {
+    const strength = state.strength * 640000;    // slider 0..300 -> force constant
+    const fric = state.friction / 100 * 5.5;     // exponential velocity decay
+    const rest = state.bounce / 100;
+
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      let ax = 0, ay = 0;
+
+      for (let j = 0; j < magnets.length; j++) {
+        const m = magnets[j];
+        const dx = m.x - b.x, dy = m.y - b.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > m.range * m.range) continue;
+        const d = Math.sqrt(d2) || 0.0001;
+        // Soften the core so a ball resting on the magnet is not slingshot.
+        const soft = Math.max(d, m.r * 1.6);
+        // Full strength up close, tapering to zero at the edge so there is no pop.
+        const inner = m.range * 0.65;
+        const t = d <= inner ? 1 : 1 - (d - inner) / (m.range - inner);
+        const f = (strength * m.pol * t * t) / (soft * soft);
+        ax += (dx / d) * f;
+        ay += (dy / d) * f;
+      }
+
+      const am = Math.hypot(ax, ay);
+      if (am > MAX_ACC) { ax = ax / am * MAX_ACC; ay = ay / am * MAX_ACC; }
+
+      b.vx += ax * dt;
+      b.vy += ay * dt;
+
+      const decay = Math.exp(-fric * dt);
+      b.vx *= decay;
+      b.vy *= decay;
+
+      // Static-ish friction: kill the last crawl so balls actually come to rest.
+      const sp = Math.hypot(b.vx, b.vy);
+      if (sp < 5 && am < 8) { b.vx = 0; b.vy = 0; }
+      else if (sp > MAX_SPEED) { b.vx = b.vx / sp * MAX_SPEED; b.vy = b.vy / sp * MAX_SPEED; }
+
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+    }
+
+    collideTerrain(rest);
+    collideMagnets(rest);
+    collideBalls(rest);
+    collideWalls(rest);
+  }
+
+  function collideTerrain(rest) {
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      if (b.c === NEUTRAL) continue;   // neutral balls phase through everything
+      const r = b.r;
+      const x0 = Math.max(0, Math.floor((b.x - r) / CELL)), x1 = Math.min(gw - 1, Math.floor((b.x + r) / CELL));
+      const y0 = Math.max(0, Math.floor((b.y - r) / CELL)), y1 = Math.min(gh - 1, Math.floor((b.y + r) / CELL));
+      for (let gy = y0; gy <= y1; gy++) {
+        for (let gx = x0; gx <= x1; gx++) {
+          if (!solidFor(grid[idx(gx, gy)], b.c)) continue;
+          const rx = gx * CELL, ry = gy * CELL;
+          const px = Math.max(rx, Math.min(b.x, rx + CELL));
+          const py = Math.max(ry, Math.min(b.y, ry + CELL));
+          let nx = b.x - px, ny = b.y - py;
+          let d2 = nx * nx + ny * ny;
+          if (d2 >= r * r) continue;
+          let d = Math.sqrt(d2);
+          if (d < 0.0001) {
+            // Center is inside the cell: escape along the shallowest axis.
+            const cx = rx + CELL / 2, cy = ry + CELL / 2;
+            const ox = b.x - cx, oy = b.y - cy;
+            if (Math.abs(ox) > Math.abs(oy)) { nx = ox >= 0 ? 1 : -1; ny = 0; }
+            else { nx = 0; ny = oy >= 0 ? 1 : -1; }
+            d = 0;
+          } else { nx /= d; ny /= d; }
+          const pen = r - d;
+          b.x += nx * pen;
+          b.y += ny * pen;
+          const vn = b.vx * nx + b.vy * ny;
+          if (vn < 0) {
+            b.vx -= (1 + rest) * vn * nx;
+            b.vy -= (1 + rest) * vn * ny;
+          }
+        }
+      }
+    }
+  }
+
+  function collideMagnets(rest) {
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      for (let j = 0; j < magnets.length; j++) {
+        const m = magnets[j];
+        const dx = b.x - m.x, dy = b.y - m.y;
+        const min = m.r + b.r;
+        let d2 = dx * dx + dy * dy;
+        if (d2 >= min * min) continue;
+        let d = Math.sqrt(d2);
+        let nx, ny;
+        if (d < 0.0001) { nx = 1; ny = 0; d = 0; } else { nx = dx / d; ny = dy / d; }
+        const pen = min - d;
+        b.x += nx * pen;
+        b.y += ny * pen;
+        const vn = b.vx * nx + b.vy * ny;
+        if (vn < 0) {
+          // Softer bounce on the magnet body so balls settle against it.
+          const e = rest * 0.4;
+          b.vx -= (1 + e) * vn * nx;
+          b.vy -= (1 + e) * vn * ny;
+        }
+      }
+    }
+  }
+
+  // Uniform-grid broadphase so a few hundred balls stay cheap.
+  const hash = new Map();
+  function collideBalls(rest) {
+    if (balls.length < 2) return;
+    let maxR = 0;
+    for (let i = 0; i < balls.length; i++) if (balls[i].r > maxR) maxR = balls[i].r;
+    const cs = Math.max(8, maxR * 2);
+    hash.clear();
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      const key = (Math.floor(b.x / cs) << 16) ^ (Math.floor(b.y / cs) & 0xffff);
+      let bucket = hash.get(key);
+      if (!bucket) { bucket = []; hash.set(key, bucket); }
+      bucket.push(i);
+    }
+    const e = rest * 0.5;
+    for (let i = 0; i < balls.length; i++) {
+      const a = balls[i];
+      const bx = Math.floor(a.x / cs), by = Math.floor(a.y / cs);
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          const bucket = hash.get(((bx + ox) << 16) ^ ((by + oy) & 0xffff));
+          if (!bucket) continue;
+          for (let k = 0; k < bucket.length; k++) {
+            const j = bucket[k];
+            if (j <= i) continue;
+            const c = balls[j];
+            const dx = c.x - a.x, dy = c.y - a.y;
+            const min = a.r + c.r;
+            const d2 = dx * dx + dy * dy;
+            if (d2 >= min * min || d2 === 0) continue;
+            const d = Math.sqrt(d2);
+            const nx = dx / d, ny = dy / d;
+            const pen = (min - d) * 0.5;
+            a.x -= nx * pen; a.y -= ny * pen;
+            c.x += nx * pen; c.y += ny * pen;
+            const rvn = (c.vx - a.vx) * nx + (c.vy - a.vy) * ny;
+            if (rvn < 0) {
+              const imp = -(1 + e) * rvn * 0.5;
+              a.vx -= imp * nx; a.vy -= imp * ny;
+              c.vx += imp * nx; c.vy += imp * ny;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function collideWalls(rest) {
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      if (b.x < b.r) { b.x = b.r; if (b.vx < 0) b.vx = -b.vx * rest; }
+      else if (b.x > W - b.r) { b.x = W - b.r; if (b.vx > 0) b.vx = -b.vx * rest; }
+      if (b.y < b.r) { b.y = b.r; if (b.vy < 0) b.vy = -b.vy * rest; }
+      else if (b.y > H - b.r) { b.y = H - b.r; if (b.vy > 0) b.vy = -b.vy * rest; }
+    }
+  }
+
+  // ---------------------------------------------------------------- render
+  let time = 0;
+
+  function render() {
+    if (terrainDirty) redrawTerrain();
+
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(terrainCv, 0, 0, gw, gh, 0, 0, gw * CELL, gh * CELL);
+    ctx.imageSmoothingEnabled = true;
+
+    // Vignette keeps the flat color field from looking like a spreadsheet.
+    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, "rgba(0,0,0,0.38)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    if (state.fields) drawFields();
+
+    if (state.trails) {
+      ctx.lineCap = "round";
+      for (let i = 0; i < balls.length; i++) {
+        const b = balls[i];
+        if (b.hist.length < 4) continue;
+        const p = PALETTE[b.c] || PALETTE[0];
+        ctx.strokeStyle = p.ball;
+        ctx.lineWidth = Math.max(1, b.r * 0.5);
+        for (let k = 1; k < b.hist.length; k += 2) {
+          ctx.globalAlpha = (k / b.hist.length) * 0.4;
+          ctx.beginPath();
+          ctx.moveTo(b.hist[k - 1].x, b.hist[k - 1].y);
+          ctx.lineTo(b.hist[k].x, b.hist[k].y);
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    drawMagnets();
+    drawBalls();
+    drawCursor();
+  }
+
+  function drawFields() {
+    ctx.save();
+    for (let i = 0; i < magnets.length; i++) {
+      const m = magnets[i];
+      const base = m.pol > 0 ? "90,169,255" : "255,107,122";
+      const pulse = (time * 0.35 + m.phase) % 1;
+      const viz = 300;
+      for (let k = 0; k < 3; k++) {
+        const t = (pulse + k / 3) % 1;
+        // Attract rings travel inward, repel rings travel outward.
+        const rr = m.r + (m.pol > 0 ? (1 - t) : t) * viz;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, rr, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(" + base + "," + (0.22 * (1 - Math.abs(t - 0.5) * 1.4)).toFixed(3) + ")";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.r + viz, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(" + base + ",0.07)";
+      ctx.setLineDash([6, 10]);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  function drawMagnets() {
+    for (let i = 0; i < magnets.length; i++) {
+      const m = magnets[i];
+      const attract = m.pol > 0;
+      const g = ctx.createRadialGradient(m.x - m.r * 0.4, m.y - m.r * 0.5, m.r * 0.2, m.x, m.y, m.r);
+      if (attract) { g.addColorStop(0, "#9fd0ff"); g.addColorStop(1, "#1f5fb0"); }
+      else { g.addColorStop(0, "#ffb3bb"); g.addColorStop(1, "#a8283a"); }
+
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.r + 3, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = attract ? "#cfe6ff" : "#ffd0d6";
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.font = "bold 13px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(attract ? "N" : "S", m.x, m.y + 0.5);
+    }
+  }
+
+  function drawBalls() {
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      const p = PALETTE[b.c] || PALETTE[0];
+      ctx.beginPath();
+      ctx.arc(b.x, b.y + b.r * 0.35, b.r * 0.95, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.fill();
+
+      const g = ctx.createRadialGradient(b.x - b.r * 0.35, b.y - b.r * 0.4, b.r * 0.1, b.x, b.y, b.r);
+      g.addColorStop(0, "#ffffff");
+      g.addColorStop(0.35, p.ball);
+      g.addColorStop(1, p.edge);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,255,255,0.35)";
+      ctx.stroke();
+    }
+  }
+
+  function drawCursor() {
+    if (!pointer.inside) return;
+    if (state.tool === "paint" || state.tool === "erase") {
+      const r = state.brush * CELL;
+      ctx.beginPath();
+      ctx.arc(pointer.x, pointer.y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = state.tool === "erase" ? "rgba(255,255,255,0.7)" : PALETTE[state.color].ball;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(0,0,0,0.5)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(pointer.x, pointer.y, r + 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (state.tool === "ball") {
+      const c = cellAt(pointer.x, pointer.y);
+      ctx.beginPath();
+      ctx.arc(pointer.x, pointer.y, state.ballSize, 0, Math.PI * 2);
+      ctx.strokeStyle = (PALETTE[c] || PALETTE[0]).ball;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  // ---------------------------------------------------------------- loop
+  let last = performance.now();
+  let fpsAcc = 0, fpsFrames = 0, histAcc = 0;
+
+  function frame(now) {
+    let dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.05) dt = 0.05;      // never let a stall explode the sim
+    time += dt;
+
+    if (!state.paused) {
+      const sub = 2;
+      for (let s = 0; s < sub; s++) step(dt / sub);
+
+      if (state.trails) {
+        histAcc += dt;
+        if (histAcc > 0.03) {
+          histAcc = 0;
+          for (let i = 0; i < balls.length; i++) {
+            const b = balls[i];
+            b.hist.push({ x: b.x, y: b.y });
+            if (b.hist.length > 14) b.hist.shift();
+          }
+        }
+      }
+    }
+
+    render();
+
+    fpsAcc += dt; fpsFrames++;
+    if (fpsAcc >= 0.5) {
+      document.getElementById("hFps").textContent = Math.round(fpsFrames / fpsAcc);
+      fpsAcc = 0; fpsFrames = 0;
+    }
+    document.getElementById("hBalls").textContent = balls.length;
+    document.getElementById("hMag").textContent = magnets.length;
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---------------------------------------------------------------- input
+  const pointer = { x: 0, y: 0, down: false, inside: false, dragMagnet: null, dragDx: 0, dragDy: 0 };
+
+  function localPos(ev) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+  }
+
+  canvas.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
+
+  canvas.addEventListener("pointerdown", function (ev) {
+    const p = localPos(ev);
+    pointer.x = p.x; pointer.y = p.y; pointer.inside = true;
+    canvas.setPointerCapture(ev.pointerId);
+
+    const hit = magnetAt(p.x, p.y);
+
+    if (ev.button === 2) {                       // right-click
+      if (hit) hit.pol *= -1;
+      else { const m = addMagnet(p.x, p.y, -1); if (m) pointer.dragMagnet = m; }
+      return;
+    }
+    if (hit && ev.shiftKey) {                    // shift-click deletes
+      magnets.splice(magnets.indexOf(hit), 1);
+      return;
+    }
+    if (hit) {                                   // grabbing a magnet always wins
+      pointer.dragMagnet = hit;
+      pointer.dragDx = hit.x - p.x;
+      pointer.dragDy = hit.y - p.y;
+      pointer.down = true;
+      return;
+    }
+
+    pointer.down = true;
+    applyTool(p.x, p.y, true);
+  });
+
+  canvas.addEventListener("pointermove", function (ev) {
+    const p = localPos(ev);
+    pointer.x = p.x; pointer.y = p.y; pointer.inside = true;
+    if (pointer.dragMagnet) {
+      pointer.dragMagnet.x = Math.max(0, Math.min(W, p.x + pointer.dragDx));
+      pointer.dragMagnet.y = Math.max(0, Math.min(H, p.y + pointer.dragDy));
+      return;
+    }
+    if (pointer.down) applyTool(p.x, p.y, false);
+  });
+
+  function endPointer(ev) {
+    pointer.down = false;
+    pointer.dragMagnet = null;
+    if (ev && ev.pointerId !== undefined && canvas.hasPointerCapture(ev.pointerId)) {
+      canvas.releasePointerCapture(ev.pointerId);
+    }
+  }
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+  canvas.addEventListener("pointerleave", function () { pointer.inside = false; });
+  canvas.addEventListener("pointerenter", function () { pointer.inside = true; });
+
+  let lastSpawn = 0;
+  function applyTool(x, y, isDown) {
+    switch (state.tool) {
+      case "magnet":
+        if (isDown) {
+          const m = addMagnet(x, y, 1);
+          if (m) { pointer.dragMagnet = m; pointer.dragDx = 0; pointer.dragDy = 0; }
+        }
+        break;
+      case "ball": {
+        const now = performance.now();
+        if (isDown || now - lastSpawn > 28) {     // hold to stream balls out
+          lastSpawn = now;
+          spawnBall(x, y);
+        }
+        break;
+      }
+      case "paint":
+        paintTerrain(x, y, state.color, state.brush);
+        break;
+      case "erase":
+        paintTerrain(x, y, NEUTRAL, state.brush);
+        break;
+    }
+  }
+
+  // ---------------------------------------------------------------- ui wiring
+  const $ = function (id) { return document.getElementById(id); };
+
+  function setTool(t) {
+    state.tool = t;
+    document.querySelectorAll("#tools .tool").forEach(function (btn) {
+      btn.classList.toggle("on", btn.dataset.tool === t);
+    });
+  }
+  document.querySelectorAll("#tools .tool").forEach(function (btn) {
+    btn.addEventListener("click", function () { setTool(btn.dataset.tool); });
+  });
+
+  const swatchWrap = $("swatches");
+  PALETTE.forEach(function (p, i) {
+    const b = document.createElement("button");
+    b.className = "sw" + (i === state.color ? " on" : "");
+    b.style.background = p.ground;
+    b.title = p.name;
+    b.addEventListener("click", function () {
+      state.color = i;
+      document.querySelectorAll(".sw").forEach(function (s, k) { s.classList.toggle("on", k === i); });
+      setTool(i === NEUTRAL ? "erase" : "paint");
+    });
+    swatchWrap.appendChild(b);
+  });
+
+  function bindSlider(id, key, transform) {
+    const el = $(id), out = $(id + "Val");
+    el.value = state[key];
+    out.textContent = state[key];
+    el.addEventListener("input", function () {
+      const v = parseFloat(el.value);
+      state[key] = transform ? transform(v) : v;
+      out.textContent = el.value;
+    });
+  }
+  bindSlider("brush", "brush");
+  bindSlider("strength", "strength");
+  bindSlider("friction", "friction");
+  bindSlider("bounce", "bounce");
+  bindSlider("ballSize", "ballSize");
+
+  const RULE_NOTES = {
+    stay: "A ball takes the color it was spawned on. It rolls freely across its own color and bounces off every other color. Black ground is open to everyone.",
+    repel: "A ball takes the color it was spawned on and bounces off that same color, passing straight through the others. Black balls never collide — they drift through the whole map."
+  };
+  $("rule").value = state.rule;
+  $("ruleNote").textContent = RULE_NOTES[state.rule];
+  $("rule").addEventListener("change", function () {
+    state.rule = this.value;
+    $("ruleNote").textContent = RULE_NOTES[state.rule];
+    // Free anything now embedded in freshly-solid terrain.
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      const spot = findFreeSpot(b.x, b.y, b.c, b.r);
+      b.x = spot.x; b.y = spot.y;
+    }
+  });
+
+  $("trails").addEventListener("change", function () {
+    state.trails = this.checked;
+    if (!state.trails) for (let i = 0; i < balls.length; i++) balls[i].hist.length = 0;
+  });
+  $("fields").addEventListener("change", function () { state.fields = this.checked; });
+
+  $("sprinkle").addEventListener("click", function () {
+    for (let i = 0; i < 40; i++) {
+      spawnBall(40 + Math.random() * (W - 80), 40 + Math.random() * (H - 80));
+    }
+  });
+  $("clearBalls").addEventListener("click", function () { balls.length = 0; });
+  $("clearMagnets").addEventListener("click", function () { magnets.length = 0; });
+  $("randomMap").addEventListener("click", function () { randomMap(); freeAllBalls(); });
+  $("fillMap").addEventListener("click", function () { fillMap(state.color); freeAllBalls(); });
+  $("wipeMap").addEventListener("click", function () { fillMap(NEUTRAL); });
+
+  function freeAllBalls() {
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      const spot = findFreeSpot(b.x, b.y, b.c, b.r);
+      b.x = spot.x; b.y = spot.y;
+    }
+  }
+
+  const pauseBtn = $("pause");
+  function togglePause() {
+    state.paused = !state.paused;
+    pauseBtn.textContent = state.paused ? "Resume (Space)" : "Pause (Space)";
+    pauseBtn.classList.toggle("on", state.paused);
+  }
+  pauseBtn.addEventListener("click", togglePause);
+
+  $("collapse").addEventListener("click", function () {
+    const ui = $("ui");
+    ui.classList.toggle("collapsed");
+    this.textContent = ui.classList.contains("collapsed") ? "+" : "–";
+  });
+
+  window.addEventListener("keydown", function (ev) {
+    if (ev.target.tagName === "INPUT" || ev.target.tagName === "SELECT") return;
+    switch (ev.key.toLowerCase()) {
+      case "1": setTool("magnet"); break;
+      case "2": setTool("ball"); break;
+      case "3": setTool("paint"); break;
+      case "4": setTool("erase"); break;
+      case " ": ev.preventDefault(); togglePause(); break;
+      case "r": randomMap(); freeAllBalls(); break;
+      case "c": balls.length = 0; break;
+      case "m": magnets.length = 0; break;
+      case "t": $("trails").checked = !$("trails").checked; $("trails").dispatchEvent(new Event("change")); break;
+    }
+  });
+
+  // ---------------------------------------------------------------- boot
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    resizeGrid(Math.ceil(W / CELL), Math.ceil(H / CELL));
+  }
+
+  window.addEventListener("resize", function () {
+    const hadMap = grid.length > 0;
+    resize();
+    if (!hadMap) randomMap();
+  });
+
+  resize();
+  randomMap();
+  addMagnet(W * 0.5, H * 0.5, 1);
+  for (let i = 0; i < 90; i++) {
+    spawnBall(30 + Math.random() * (W - 60), 30 + Math.random() * (H - 60));
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
