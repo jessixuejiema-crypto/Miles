@@ -378,7 +378,7 @@
     </div>
     <div>
       <h1>Beltworks Meadow</h1>
-      <p class="sub">Frictionless billiards in curved, bent and pillared halls — every roll finds the gate.</p>
+      <p class="sub">Frictionless billiards in curved, bent and pillared halls — every hall vetted so any roll reaches the gate inside your time budget.</p>
     </div>
     <div class="spacer"></div>
     <span class="seed" id="seedTag">Meadow #0000</span>
@@ -419,11 +419,11 @@
       <div class="panel speed-panel">
         <h2>Simulation speed</h2>
         <div class="speed-row">
-          <span class="speed-val" id="speedV">2×</span>
+          <span class="speed-val" id="speedV">1×</span>
           <button class="chip" id="slowBtn" title="Slower">−</button>
           <button class="chip" id="fastBtn" title="Faster">+</button>
         </div>
-        <input type="range" id="speedR" min="1" max="64" step="1" value="8" aria-label="Simulation speed">
+        <input type="range" id="speedR" min="1" max="64" step="1" value="4" aria-label="Simulation speed">
         <div class="ticks"><span>¼×</span><span>2×</span><span>8×</span><span>16×</span></div>
       </div>
 
@@ -446,8 +446,8 @@
           <input type="range" id="sizeR" min="0" max="5" step="1" value="2">
         </div>
         <div class="field">
-          <label for="gateR">Gate width <b id="gateV">Normal</b></label>
-          <input type="range" id="gateR" min="0" max="4" step="1" value="2">
+          <label for="budgetR">Reach the gate within <b id="budgetV">10s</b></label>
+          <input type="range" id="budgetR" min="4" max="14" step="1" value="10">
         </div>
         <div class="field">
           <label for="countR">Balls in “all at once” <b id="countV">1200</b></label>
@@ -464,6 +464,11 @@
           <div class="stat"><div class="k">Bounces</div><div class="v" id="sBounce">0</div></div>
           <div class="stat"><div class="k">First arrival</div><div class="v" id="sFirst">—</div></div>
           <div class="stat"><div class="k">Slowest so far</div><div class="v" id="sLast">—</div></div>
+          <div class="stat wide">
+            <div class="k" id="sVetLabel">Slowest route, every direction</div>
+            <div class="v" id="sVet">—</div>
+            <div class="k" id="sVetSub" style="margin-top:4px;text-transform:none;letter-spacing:0"></div>
+          </div>
         </div>
         <div class="bar"><i id="bar"></i></div>
         <div class="banner" id="banner"></div>
@@ -583,22 +588,15 @@
     { name: 'Huge',   w: 1290, h: 790 },
     { name: 'Vast',   w: 1560, h: 930 }
   ];
-  const GATES = [
-    { name: 'Pinhole', k: 0.55 },
-    { name: 'Narrow',  k: 0.78 },
-    { name: 'Normal',  k: 1.0 },
-    { name: 'Wide',    k: 1.35 },
-    { name: 'Barn',    k: 1.8 }
-  ];
   const STRUCT = ['Bare', 'Light', 'Busy', 'Dense'];
   const SHAPE_POOL = ['ellipse', 'stadium', 'round', 'hex', 'ell'];
 
   const opts = {
     shape: 'random',
     size: 2,
-    gate: 2,
+    budget: 10,
     struct: 1,
-    speed: 2,
+    speed: 1,
     count: 1200,
     trails: true,
     ribbon: true,
@@ -829,7 +827,7 @@
     };
   }
 
-  function buildShell(kind, rnd, W, H, rail) {
+  function buildShell(kind, rnd, W, H, rail, attempt) {
     if (kind === 'ellipse') {
       const a = W / 2 - rail, b = H / 2 - rail, cx = W / 2, cy = H / 2;
       return {
@@ -910,8 +908,13 @@
     }
     // 'ell' — two wings around a corner post
     const x0 = rail, y0 = rail, x1 = W - rail, y1 = H - rail;
-    const bx = x0 + (x1 - x0) * (0.38 + rnd() * 0.2);
-    const by = y0 + (y1 - y0) * (0.38 + rnd() * 0.2);
+    // A deep L is two rooms that can barely see each other, so each rejected
+    // attempt trades away a little of the notch — but only a little: flattened
+    // all the way to a rectangle it becomes integrable and hopeless instead.
+    const gentle = clamp((attempt || 0) / 30, 0, 0.6);
+    const fx = (0.42 + rnd() * 0.22), fy = (0.42 + rnd() * 0.22);
+    const bx = x0 + (x1 - x0) * (fx + (0.88 - fx) * gentle);
+    const by = y0 + (y1 - y0) * (fy + (0.14 - fy) * gentle);
     const flip = rnd() < 0.5;
     const pts = flip
       ? [[x0, y0], [x1, y0], [x1, by], [bx, by], [bx, y1], [x0, y1]]
@@ -990,40 +993,120 @@
 
   /* ------------------------------------------------------------- the map  */
 
-  function noteFor(kind, hasStuff, pure) {
+  function noteFor(kind, pure) {
     if (kind === 'ellipse' && pure) {
-      return 'An ellipse reflects every path that leaves one focus straight onto the other — and each of ' +
-             'those paths is exactly the same length. <b>Every ball lands on the gate together, after one bounce.</b>';
+      return 'An ellipse bounces every path that leaves one focus straight onto the other, and every one of ' +
+             'those paths is the same length — so each ball takes <b>a single bounce</b> to the gate, and they ' +
+             'all land together.';
     }
     if (kind === 'ellipse') {
-      return 'The ellipse always runs bare — one pillar in the way and a wall-skimming path would circle ' +
-             'forever without ever seeing the gate. Pillars and baffles are waiting on the other shapes.';
+      return 'The ellipse always runs bare: one pillar in the way and a wall-skimming path would circle forever ' +
+             'without ever seeing the gate. Pillars and baffles are waiting on the other shapes.';
     }
-    if (kind === 'stadium') {
-      return 'A stadium is the classic chaotic billiard: the round ends defocus every beam, so paths spread ' +
-             'over the whole floor and <b>every direction reaches the gate sooner or later</b>.';
-    }
-    const base = kind === 'hex' ? 'Bevelled walls keep folding a straight run into new angles, so it never settles into a loop'
-      : kind === 'ell' ? 'Two wings and a corner post keep turning a straight run back on itself'
-      : 'Straight runs bent into round corners keep a path from ever repeating';
-    return base + (hasStuff ? ', and the pillars scatter it further' : '') +
-           '. A path with an irrational slope sweeps the whole floor, so <b>every direction reaches the gate eventually</b>.';
+    const flavour = kind === 'stadium' ? 'Straight runs between two round caps'
+      : kind === 'hex' ? 'Bevelled walls that keep turning a straight run'
+      : kind === 'ell' ? 'Two wings around a corner post'
+      : 'Straight runs bent into round corners';
+    return flavour + '. This hall was <b>rolled through before you saw it</b>: the generator fires a full fan of ' +
+           'test directions at it and throws the map away unless every last one is at the gate inside the budget, ' +
+           'so no roll depends on luck.';
   }
 
-  function makeMap() {
-    const seed = (Math.random() * 0xffffffff) >>> 0;
+  /* ------------------------------------------------------- vetting a map */
+
+  const PROBE_DIRS = 720;
+  const ROUTE = { dist: 0, bounces: 0 };
+
+  // Fly one direction until it meets the gate. Same collision core as the live
+  // simulation, minus trails and bookkeeping; false means it never arrived.
+  function routeToGate(angle, total, hitR2) {
+    const gx = map.end.x, gy = map.end.y;
+    let x = map.start.x, y = map.start.y;
+    let dx = Math.cos(angle), dy = Math.sin(angle);
+    let left = total, gone = 0, bounces = 0;
+    while (left > 1e-9) {
+      if (bounces > 3000) return false;            // trapped skimming a wall
+      const met = nearestImpact(x, y, dx, dy, left, map.ballR);
+      const t = met ? HIT.t : left;
+      const abx = dx * t, aby = dy * t;
+      const l2 = abx * abx + aby * aby;
+      let u = 0;
+      if (l2 > 1e-12) u = clamp(((gx - x) * abx + (gy - y) * aby) / l2, 0, 1);
+      const ex = x + u * abx - gx, ey = y + u * aby - gy;
+      if (ex * ex + ey * ey <= hitR2) {
+        ROUTE.dist = gone + u * t; ROUTE.bounces = bounces;
+        return true;
+      }
+      x += abx; y += aby; gone += t; left -= t;
+      if (!met) break;
+      const dot = dx * HIT.nx + dy * HIT.ny;
+      if (dot < 0) {
+        dx -= 2 * dot * HIT.nx; dy -= 2 * dot * HIT.ny;
+        const inv = 1 / Math.hypot(dx, dy);
+        dx *= inv; dy *= inv;
+        bounces++;
+      }
+      x += HIT.nx * HIT.push; y += HIT.ny * HIT.push;
+    }
+    return false;
+  }
+
+  // Roll a dense fan through a finished candidate. One direction that dawdles
+  // past the budget and the whole map is thrown away — that is what stops a
+  // roll from being a matter of luck. The fan the user can actually launch is
+  // vetted angle for angle, so the promise covers every ball they will see.
+  function vetGrids() {
+    const g = [PROBE_DIRS];
+    if (opts.count !== PROBE_DIRS) g.push(opts.count);
+    return g;
+  }
+
+  // maxB is what keeps a route looking like a route. It also keeps the check
+  // honest: a billiard amplifies the tiniest arithmetic difference, so a
+  // 200-bounce path measured here is not the path the live run will take,
+  // while a 20-bounce one is the same path to the last decimal.
+  function vetMap(budget, maxB, full) {
+    const v = speedPx();                          // ball speed at 1x
+    const total = v * budget;
+    const hitR = map.gateR + map.ballR, hitR2 = hitR * hitR;
+    let worst = 0, worstB = 0, dirs = 0, late = 0;
+    for (const n of vetGrids()) {
+      for (let i = 0; i < n; i++) {
+        dirs++;
+        if (!routeToGate(i * TAU / n, total, hitR2) || ROUTE.bounces > maxB) {
+          if (!full) return null;
+          late++;
+          continue;
+        }
+        if (ROUTE.dist > worst) worst = ROUTE.dist;
+        if (ROUTE.bounces > worstB) worstB = ROUTE.bounces;
+      }
+    }
+    return { seconds: worst / v, bounces: worstB, dirs, late };
+  }
+
+  /* ----------------------------------------------------- building a map  */
+
+  function buildCandidate(seed, kind, attempt, budget, maxB) {
     const rnd = mulberry32(seed);
-    const kind = opts.shape === 'random' ? SHAPE_POOL[Math.floor(rnd() * SHAPE_POOL.length)] : opts.shape;
     const base = SIZES[opts.size];
     const W = Math.round(base.w * (0.88 + rnd() * 0.26));
     const H = Math.round(base.h * (0.88 + rnd() * 0.26));
     const rail = Math.round(clamp(Math.min(W, H) / 40, 10, 22));
     const ballR = clamp(Math.min(W, H) / 78, 4.5, 9.5);
-    const gateR = clamp(Math.min(W, H) / 22, 13, 32) * GATES[opts.gate].k;
+    // Each rejected attempt opens the gate a little wider and, later on, thins
+    // the structure out, until the hall can meet the budget from every angle.
+    // The cap matters: left to grow freely the gate ends up swallowing the pad,
+    // and then "every direction arrives" only because there was no journey.
+    const room = Math.min(W, H);
+    const gateR = Math.min(clamp(room / 22, 13, 32) * (1 + attempt * 0.12),
+                           room * Math.min(0.45, 0.12 + attempt * 0.008));
+    const struct = kind === 'ellipse' ? 0
+      : Math.max(opts.struct > 0 ? 1 : 0, opts.struct - Math.floor(attempt / 10));
 
-    const shell = buildShell(kind, rnd, W, H, rail);
+    const shell = buildShell(kind, rnd, W, H, rail, attempt);
     map = {
-      seed, kind, W, H, rail, ballR, gateR,
+      seed, kind, W, H, rail, ballR, gateR, rnd,
       label: seed.toString(16).toUpperCase().slice(0, 4).padStart(4, '0'),
       name: shell.name,
       surfaces: shell.surfaces.slice(),
@@ -1032,12 +1115,9 @@
       obstacles: []
     };
     // The ellipse is left bare on purpose: its guarantee comes from the focus
-    // reflection, and a single pillar in the way destroys it — a ball skimming
-    // the wall would then circle forever on a caustic and never see the gate.
-    map.obstacles = addStructure(shell, rnd, W, H, ballR, kind === 'ellipse' ? 0 : opts.struct);
+    // reflection, and a single pillar in the way destroys it.
+    map.obstacles = addStructure(shell, rnd, W, H, ballR, struct);
 
-    // pad and gate
-    const need = gateR + ballR + Math.max(8, rail * 0.5);
     let start = null, end = null;
     if (shell.ellipse) {
       // the two foci of the ellipse the ball's *centre* actually runs in
@@ -1046,7 +1126,6 @@
       const c = Math.sqrt(Math.abs(A * A - B * B));
       if (A >= B) { start = { x: cx - c, y: cy }; end = { x: cx + c, y: cy }; }
       else { start = { x: cx, y: cy - c }; end = { x: cx, y: cy + c }; }
-      if (clearanceAt(start.x, start.y) < need || clearanceAt(end.x, end.y) < need) { start = end = null; }
     }
     // Never fall back to "the middle" — in a busy hall the middle can be inside
     // a pillar, and a ball born inside a pillar has nowhere to bounce to.
@@ -1062,30 +1141,122 @@
       }
       return best;
     };
-    const pick = () => {
-      for (const relax of [1, 0.75, 0.5, 0.35]) {
-        for (let i = 0; i < 500; i++) {
-          const x = rnd() * W, y = rnd() * H;
-          if (map.inside(x, y) && clearanceAt(x, y) >= need * relax) return { x, y };
+    const fitGate = (a, b) => Math.min(gateR,
+      Math.hypot(b.x - a.x, b.y - a.y) * 0.3,
+      Math.max(ballR * 1.6, clearanceAt(b.x, b.y) - ballR - 2));
+
+    if (!start) {
+      // Where the pad and the gate stand decides everything. Picking the
+      // roomiest pair is not enough — in an L-shaped hall the roomiest spots
+      // sit in opposite wings, which cannot see each other at all. So try
+      // several pairs and roll a coarse fan through each before committing.
+      const apart = gateR + room * Math.max(0.18, 0.32 - attempt * 0.006);
+      const spots = [];
+      for (let i = 0; i < 900 && spots.length < 60; i++) {
+        const x = rnd() * W, y = rnd() * H;
+        if (map.inside(x, y) && clearanceAt(x, y) >= ballR * 3) spots.push({ x, y });
+      }
+      if (!spots.length) spots.push(roomiest() || { x: W / 2, y: H / 2 });
+
+      // Spread the candidates over the whole hall rather than ranking them by
+      // elbow room. The best spot in an L is the junction the two wings share,
+      // and a junction is a corner — roominess alone never offers it up.
+      const spread = [spots[0]];
+      while (spread.length < 16 && spread.length < spots.length) {
+        let far = null, fd = -1;
+        for (const c of spots) {
+          let d = Infinity;
+          for (const t of spread) d = Math.min(d, Math.hypot(c.x - t.x, c.y - t.y));
+          if (d > fd) { fd = d; far = c; }
+        }
+        if (!far) break;
+        spread.push(far);
+        spots.splice(spots.indexOf(far), 1);
+      }
+      const pads = spread.slice(0, 3);
+      const gates = spread.slice(0, 8);
+      const v = speedPx(), N = 60;
+      const tight = v * budget, loose = tight * 2.5;
+      let bestSel = Infinity, bestScore = Infinity, bestMiss = 0;
+      for (const pad of pads) {
+        for (const gate of gates) {
+          if (Math.hypot(gate.x - pad.x, gate.y - pad.y) < apart) continue;
+          map.start = pad; map.end = gate;
+          map.gateR = fitGate(pad, gate);
+          const hitR = map.gateR + ballR, hitR2 = hitR * hitR;
+          let miss = 0, lost = 0, worst = 0;
+          for (let i = 0; i < N; i++) {
+            if (!routeToGate(i * TAU / N, loose, hitR2)) { miss++; lost++; continue; }
+            if (ROUTE.dist > tight || ROUTE.bounces > maxB) miss++;
+            if (ROUTE.dist > worst) worst = ROUTE.dist;
+          }
+          // Two different questions, two different numbers: `sel` picks the
+          // best pair for this hall against the budget, while `cmp` is scored
+          // the same way on every attempt so that, if nothing ever meets the
+          // budget, the closest hall of the lot can still be recognised.
+          const sel = miss * 1e6 + worst / v;
+          if (sel < bestSel) {
+            bestSel = sel;
+            start = pad; end = gate;
+            bestMiss = miss; bestScore = lost * 1e6 + worst / v;
+          }
         }
       }
-      return roomiest() || { x: W / 2, y: H / 2 };
-    };
-    if (!start) {
-      start = pick();
-      for (let i = 0; i < 900; i++) {
-        end = pick();
-        if (Math.hypot(end.x - start.x, end.y - start.y) > Math.min(W, H) * 0.4) break;
-      }
+      if (!start) { start = spots[0]; end = spots[spots.length - 1]; }
+      map.placeMiss = bestMiss;
+      map.placeScore = bestScore;
     }
     map.start = start;
     map.end = end;
     // in a tight hall, narrow the gate rather than let it sink into a wall
-    map.gateR = Math.min(gateR, Math.max(ballR * 1.6, clearanceAt(end.x, end.y) - ballR - 2));
+    map.gateR = fitGate(start, end);
     map.pure = kind === 'ellipse' && map.obstacles.length === 0 && !!shell.ellipse;
-    map.note = noteFor(kind, map.obstacles.length > 0, map.pure);
+    if (map.placeScore === undefined) map.placeScore = 0;
+  }
+
+  function makeMap() {
+    const seed0 = (Math.random() * 0xffffffff) >>> 0;
+    let kind = opts.shape === 'random' ? SHAPE_POOL[0] : opts.shape;
+
+    let check = null, tries = 0;
+    const LAST = 33;
+    let bestSeed = 0, bestKind = kind, bestAtt = 0, bestScore = Infinity, bestMaxB = 16;
+    for (let attempt = 0; attempt <= LAST; attempt++) {
+      tries = attempt + 1;
+      const seed = (seed0 + attempt * 0x9E3779B1) >>> 0;
+      // On Surprise, stay with the shape we drew for a good while. Re-rolling
+      // it every attempt would just hand back the ellipse every time, since
+      // that one passes on its first try and the halls take a few goes.
+      if (opts.shape === 'random' && (attempt === 0 || attempt >= 20)) {
+        kind = SHAPE_POOL[Math.floor(mulberry32(seed)() * SHAPE_POOL.length)];
+      }
+      // early attempts insist on a really tidy route and give way slowly
+      const maxB = Math.min(56, 16 + Math.round(attempt * 1.3));
+      buildCandidate(seed, kind, attempt, opts.budget, maxB);
+      if (map.placeScore < bestScore) {
+        bestScore = map.placeScore;
+        bestSeed = seed; bestKind = kind; bestAtt = attempt; bestMaxB = maxB;
+      }
+      check = map.placeMiss
+        ? null                              // the coarse probe already failed it
+        : vetMap(opts.budget, maxB, false);
+      if (check) break;
+    }
+    if (!check) {
+      // Nothing met the budget. Go back to the closest hall of the lot and
+      // measure it properly, so the readout names the time it really manages
+      // instead of just reporting a failure.
+      buildCandidate(bestSeed, bestKind, bestAtt, opts.budget, bestMaxB);
+      kind = bestKind;
+      check = vetMap(opts.budget * 6, 4000, true);
+      map.over = !check || check.late > 0 || check.seconds > opts.budget;
+    }
+    map.check = check;
+    map.tries = tries;
+    map.note = noteFor(kind, map.pure);
 
     // decoration, scattered only where the floor actually is
+    const rnd = map.rnd, W = map.W, H = map.H;
     map.flowers = []; map.tufts = []; map.dapples = [];
     const nF = Math.round(W * H / 2600), nT = Math.round(W * H / 1500);
     for (let i = 0; i < nF * 3 && map.flowers.length < nF; i++) {
@@ -1103,17 +1274,33 @@
     return map;
   }
 
+  function showCheck() {
+    const c = map.check;
+    const ok = c && !map.over;
+    el('sVet').textContent = !c ? '—'
+      : (c.late ? '> ' : '') + c.seconds.toFixed(2) + 's · ' +
+        c.bounces + (c.bounces === 1 ? ' bounce' : ' bounces');
+    el('sVetSub').textContent = ok
+      ? c.dirs.toLocaleString() + ' directions checked at 1×' + (map.tries > 1 ? ', ' + map.tries + ' layouts tried' : '')
+      : 'this shape would not fit ' + opts.budget + 's — raise the budget, or pick another hall';
+    el('sVetLabel').textContent = ok ? 'Slowest route, every direction' : 'Slowest route — over budget';
+  }
+
   function newMap() {
     makeMap();
     el('seedTag').textContent = map.name + ' #' + map.label;
     el('note').innerHTML = map.note;
+    showCheck();
     resize();
     clearBalls();
   }
 
   /* ============================================================ SIMULATION */
 
-  function speedPx() { return Math.min(map.W, map.H) * 1.5 * opts.speed; }
+  // Ball speed at 1x. The speed control stretches simulated time rather than
+  // the ball, so every clock and arrival time in the readout is in the same
+  // 1x seconds the generator budgets against.
+  function speedPx() { return Math.min(map.W, map.H) * 4.5; }
 
   function makeBall(angle) {
     return {
@@ -1128,11 +1315,11 @@
   const EPS = 0.01;
   const trailSegs = [];
 
-  function advance(b, dist, gx, gy, hitR2, wantTrail) {
+  function advance(b, dist, gx, gy, hitR2, wantTrail, t0, v) {
     // a ball skimming a curved wall really does bounce hundreds of times per
     // frame (a whispering-gallery orbit), so the guard has to be generous or
     // those balls get quietly throttled and fall behind the rest
-    let left = dist, guard = 0;
+    let left = dist, gone = 0, guard = 0;
     while (left > 1e-9 && guard++ < 600) {
       const met = nearestImpact(b.x, b.y, b.dx, b.dy, left, map.ballR);
       const t = met ? HIT.t : left;
@@ -1145,7 +1332,7 @@
         if (l2 > 1e-12) u = clamp(((gx - b.x) * abx + (gy - b.y) * aby) / l2, 0, 1);
         const ddx = b.x + u * abx - gx, ddy = b.y + u * aby - gy;
         if (ddx * ddx + ddy * ddy <= hitR2) {
-          const age = simT - b.t0;
+          const age = t0 + (gone + u * Math.hypot(abx, aby)) / v - b.t0;
           b.hit = true; b.hitAt = age;
           hitCount++;
           if (firstHit === null || age < firstHit) firstHit = age;
@@ -1156,6 +1343,7 @@
       if (wantTrail) trailSegs.push(b.x, b.y, nx2, ny2, b.hit ? 1 : 0);
 
       b.x = nx2; b.y = ny2;
+      gone += t;
       if (!met) break;
       const dot = b.dx * HIT.nx + b.dy * HIT.ny;
       if (dot < 0) {                       // otherwise it is already leaving
@@ -1185,14 +1373,17 @@
 
   function step(dt) {
     if (!balls.length) return;
-    const dist = speedPx() * dt;
+    const sdt = dt * opts.speed;
+    const v = speedPx();
+    const dist = v * sdt;
+    const t0 = simT;
     const hitR = map.gateR + map.ballR, hitR2 = hitR * hitR;
     const gx = map.end.x, gy = map.end.y;
     const wantTrail = opts.trails && balls.length <= 96;
     trailSegs.length = 0;
-    simT += dt;
+    simT += sdt;
 
-    for (let i = 0; i < balls.length; i++) advance(balls[i], dist, gx, gy, hitR2, wantTrail);
+    for (let i = 0; i < balls.length; i++) advance(balls[i], dist, gx, gy, hitR2, wantTrail, t0, v);
 
     if (opts.trails) {
       if (balls.length > 120) {
@@ -1237,8 +1428,9 @@
   function rollAll() {
     mode = 'all';
     clearBalls();
-    const n = opts.count, off = Math.random() * TAU;
-    for (let i = 0; i < n; i++) balls.push(makeBall(off + i * TAU / n));
+    // no random offset: these are the very angles the generator vetted
+    const n = opts.count;
+    for (let i = 0; i < n; i++) balls.push(makeBall(i * TAU / n));
     updateReadout();
   }
 
@@ -1478,39 +1670,55 @@
     c.restore();
   }
 
+  // The generator sizes the gate to whatever the time budget needs, so it has
+  // to hold up both as a small target and as a wide catch zone: the marked
+  // floor grows, the brass mechanism in the middle does not.
   function drawGate(c, time) {
     const p = pal();
     const { x, y } = map.end;
     const R = map.gateR;
+    const hub = Math.min(R, Math.max(14, map.ballR * 3.4));
     const pulse = 0.75 + 0.25 * Math.sin(time * 2.4);
     c.save();
     c.translate(x, y);
-    const g = c.createRadialGradient(0, 0, R * 0.15, 0, 0, R * 2.1);
+
+    const g = c.createRadialGradient(0, 0, hub * 0.4, 0, 0, R * 1.12);
     g.addColorStop(0, p.gateGlow);
-    g.addColorStop(0.42, 'rgba(255,206,102,0.28)');
-    g.addColorStop(1, 'rgba(255,206,102,0)');
-    c.globalAlpha = pulse; c.fillStyle = g;
-    c.beginPath(); c.arc(0, 0, R * 2.1, 0, TAU); c.fill();
+    g.addColorStop(0.45, 'rgba(255,206,102,0.3)');
+    g.addColorStop(1, 'rgba(255,206,102,0.06)');
+    c.globalAlpha = pulse;
+    c.fillStyle = g;
+    c.beginPath(); c.arc(0, 0, R, 0, TAU); c.fill();
     c.globalAlpha = 1;
+
+    if (R > hub * 1.4) {                    // a marked landing zone on the floor
+      c.strokeStyle = p.gateRing;
+      c.lineWidth = Math.max(2, map.ballR * 0.5);
+      c.setLineDash([map.ballR * 2.2, map.ballR * 1.8]);
+      c.lineDashOffset = -gearRot * 12;
+      c.beginPath(); c.arc(0, 0, R - c.lineWidth * 0.5, 0, TAU); c.stroke();
+      c.setLineDash([]);
+    }
+
     c.fillStyle = p.gear;
-    gearPath(c, 0, 0, R * 1.28, 12, -gearRot * 0.8);
+    gearPath(c, 0, 0, hub * 1.28, 12, -gearRot * 0.8);
     c.fill();
     c.strokeStyle = p.gearDark; c.lineWidth = 1.6; c.stroke();
     c.fillStyle = 'rgba(255,247,220,0.92)';
-    c.beginPath(); c.arc(0, 0, R * 0.92, 0, TAU); c.fill();
-    c.strokeStyle = p.gateRing; c.lineWidth = Math.max(2.5, R * 0.14);
-    c.beginPath(); c.arc(0, 0, R * 0.92, 0, TAU); c.stroke();
+    c.beginPath(); c.arc(0, 0, hub * 0.92, 0, TAU); c.fill();
+    c.strokeStyle = p.gateRing; c.lineWidth = Math.max(2.5, hub * 0.14);
+    c.beginPath(); c.arc(0, 0, hub * 0.92, 0, TAU); c.stroke();
     c.save();
     c.rotate(gearRot * 1.6);
     c.fillStyle = p.gateRing;
     for (let i = 0; i < 6; i++) {
       c.beginPath(); c.moveTo(0, 0);
-      c.arc(0, 0, R * 0.62, i * TAU / 6, i * TAU / 6 + TAU / 12);
+      c.arc(0, 0, hub * 0.62, i * TAU / 6, i * TAU / 6 + TAU / 12);
       c.closePath(); c.fill();
     }
     c.restore();
     c.fillStyle = '#3a2a12';
-    c.beginPath(); c.arc(0, 0, R * 0.2, 0, TAU); c.fill();
+    c.beginPath(); c.arc(0, 0, hub * 0.2, 0, TAU); c.fill();
     c.restore();
   }
 
@@ -1589,9 +1797,10 @@
     drawStartPad(ctx);
     drawGate(ctx, time);
     drawBalls(ctx);
+    const hub = Math.min(map.gateR, Math.max(14, map.ballR * 3.4));
     ctx.strokeStyle = pal().gateRing;
-    ctx.lineWidth = Math.max(2, map.gateR * 0.16);
-    ctx.beginPath(); ctx.arc(map.end.x, map.end.y, map.gateR * 0.92, 0, TAU); ctx.stroke();
+    ctx.lineWidth = Math.max(2, hub * 0.16);
+    ctx.beginPath(); ctx.arc(map.end.x, map.end.y, hub * 0.92, 0, TAU); ctx.stroke();
     drawBursts(ctx);
   }
 
@@ -1705,14 +1914,18 @@
     el('sizeV').textContent = SIZES[opts.size].name;
     newMap();
   };
-  el('gateR').oninput = e => {
-    opts.gate = +e.target.value;
-    el('gateV').textContent = GATES[opts.gate].name;
+  el('budgetR').oninput = e => {
+    opts.budget = +e.target.value;
+    el('budgetV').textContent = opts.budget + 's';
     newMap();
   };
   el('countR').oninput = e => {
     opts.count = +e.target.value;
     el('countV').textContent = opts.count.toLocaleString();
+    // the guarantee is angle-for-angle, so a different fan size needs a fresh
+    // check — and a fresh map if this hall cannot keep the promise for it
+    const again = vetMap(opts.budget, map.check ? Math.max(24, map.check.bounces) : 40);
+    if (again) { map.check = again; showCheck(); } else newMap();
   };
   el('themeBtn').onclick = () => {
     const next = isDark() ? 'light' : 'dark';
@@ -1749,7 +1962,7 @@
   /* ------------------------------------------------------------------ boot */
 
   el('sizeV').textContent = SIZES[opts.size].name;
-  el('gateV').textContent = GATES[opts.gate].name;
+  el('budgetV').textContent = opts.budget + 's';
   el('structV').textContent = STRUCT[opts.struct];
   el('countV').textContent = opts.count.toLocaleString();
   el('themeBtn').setAttribute('aria-pressed', String(isDark()));
