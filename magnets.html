@@ -224,7 +224,7 @@
     </div>
 
     <div class="section">
-      <div class="title">Terrain color</div>
+      <div class="title">Color — map &amp; new magnets</div>
       <div class="swatches" id="swatches"></div>
       <div class="row" style="margin-top:9px">
         <label>Brush</label>
@@ -258,22 +258,24 @@
     </div>
 
     <div class="section">
-      <div class="title">Collision rule</div>
-      <select id="rule">
-        <option value="stay">Ball stays on its own color</option>
-        <option value="repel">Ball bounces off its own color</option>
-      </select>
-      <div class="note" id="ruleNote"></div>
+      <div class="title">Color rule</div>
+      <div class="note" style="margin-top:0">
+        A ball takes the color of the ground it spawns on. <b>Every</b> magnet pulls it,
+        but only a magnet of its own color can hold it — a wrong-colored one whips it
+        straight back out. So a ball born on yellow wanders the field and always ends up
+        parked on a yellow magnet. Nothing blocks it on the way: the colors are pull, not
+        walls. A ball born on black is neutral and never moves.
+      </div>
     </div>
 
     <div class="section">
       <div class="title">Actions</div>
       <div class="grid2">
+        <button id="newSetup">New setup</button>
+        <button id="shuffleMap">Reshuffle map</button>
         <button id="sprinkle">Sprinkle 40</button>
         <button id="clearBalls">Clear balls</button>
-        <button id="randomMap">Random map</button>
         <button id="clearMagnets">Clear magnets</button>
-        <button id="fillMap">Fill w/ color</button>
         <button id="wipeMap">Wipe to black</button>
       </div>
       <div class="row" style="margin-top:9px; gap:12px">
@@ -291,7 +293,7 @@
 </div>
 
 <div id="hint">
-  <b>Drag</b> a magnet to pull the balls · <b>right-click</b> a magnet flips it to repel · <b>shift-click</b> deletes it
+  <b>Drag</b> a magnet and its own-color balls follow · <b>right-click</b> flips it to repel · <b>shift-click</b> deletes it
 </div>
 
 <script>
@@ -299,8 +301,8 @@
   "use strict";
 
   // ---------------------------------------------------------------- palette
-  // index 0 is the neutral "black" ground: it never collides with anything,
-  // and a ball spawned on it is neutral too (passes through every color).
+  // index 0 is the neutral "black" ground: no magnet pulls a ball spawned on it,
+  // so it just sits where it lands. Maps generated here never contain black.
   const PALETTE = [
     { name: "Black (neutral)", ground: "#0e1018", ball: "#5b6480", edge: "#242a3c" },
     { name: "Yellow",          ground: "#d9a520", ball: "#ffd257", edge: "#f0c04a" },
@@ -323,7 +325,6 @@
     friction: 30,
     bounce: 35,
     ballSize: 6,
-    rule: "stay",
     trails: false,
     fields: true,
     paused: false
@@ -358,6 +359,7 @@
     };
   })();
   const GROUND_RGB = PALETTE.map(p => rgbOf(p.ground));
+  const BALL_RGB = PALETTE.map(p => rgbOf(p.ball));
 
   // ---------------------------------------------------------------- terrain
   function idx(cx, cy) { return cy * gw + cx; }
@@ -366,12 +368,6 @@
     const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
     if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) return NEUTRAL;
     return grid[idx(cx, cy)];
-  }
-
-  // Is terrain color `t` solid for a ball of color `c`?
-  function solidFor(t, c) {
-    if (t === NEUTRAL || c === NEUTRAL) return false;   // black never collides
-    return state.rule === "stay" ? t !== c : t === c;
   }
 
   function resizeGrid(nw, nh) {
@@ -438,19 +434,23 @@
     };
   }
 
-  // Organic multi-zone map: warped nearest-seed regions, fully covered (no black).
-  function randomMap() {
-    const zones = 5 + Math.floor(Math.random() * 4);
-    const colors = [1, 2, 3, 4, 5];
+  // Organic zone map, one zone per color, fully covered (never any black).
+  // `colors` comes from the magnets on screen, so every patch of ground has a
+  // magnet somewhere that will claim the balls born on it.
+  function buildMap(colors) {
+    if (!colors || !colors.length) colors = [1, 2];
     const seeds = [];
-    for (let i = 0; i < zones; i++) {
-      seeds.push({
-        x: Math.random() * gw,
-        y: Math.random() * gh,
-        // Guarantee yellow and green are both present, then fill freely.
-        c: i === 0 ? 1 : i === 1 ? 2 : colors[Math.floor(Math.random() * colors.length)],
-        w: 0.7 + Math.random() * 0.6
-      });
+    for (let i = 0; i < colors.length; i++) {
+      // One guaranteed zone per color, plus the odd extra patch for variety.
+      const extra = colors.length <= 3 ? 2 : 1;
+      for (let k = 0; k < extra; k++) {
+        seeds.push({
+          x: Math.random() * gw,
+          y: Math.random() * gh,
+          c: colors[i],
+          w: 0.75 + Math.random() * 0.5
+        });
+      }
     }
     const amp = Math.min(gw, gh) * 0.28;
     const warpX = makeWarp(amp), warpY = makeWarp(amp);
@@ -469,7 +469,32 @@
         grid[idx(x, y)] = best;
       }
     }
+    // A seed can get squeezed out entirely by its neighbours. Every magnet color
+    // must own some ground, otherwise that magnet never gets a single ball.
+    const present = new Uint8Array(PALETTE.length);
+    for (let i = 0; i < grid.length; i++) present[grid[i]] = 1;
+    for (let i = 0; i < colors.length; i++) {
+      if (present[colors[i]]) continue;
+      let s = null;
+      for (let k = 0; k < seeds.length && !s; k++) if (seeds[k].c === colors[i]) s = seeds[k];
+      stampBlob(s.x, s.y, Math.min(gw, gh) * 0.18, colors[i]);
+    }
     terrainDirty = true;
+  }
+
+  // Wobbly disc of one color, in grid space.
+  function stampBlob(cx, cy, r, colorIdx) {
+    const lobes = 2 + Math.floor(Math.random() * 3);
+    const phase = Math.random() * Math.PI * 2;
+    const x0 = Math.max(0, Math.floor(cx - r * 1.4)), x1 = Math.min(gw - 1, Math.ceil(cx + r * 1.4));
+    const y0 = Math.max(0, Math.floor(cy - r * 1.4)), y1 = Math.min(gh - 1, Math.ceil(cy + r * 1.4));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const dx = x - cx, dy = y - cy;
+        const rr = r * (1 + 0.28 * Math.sin(Math.atan2(dy, dx) * lobes + phase));
+        if (dx * dx + dy * dy <= rr * rr) grid[idx(x, y)] = colorIdx;
+      }
+    }
   }
 
   function redrawTerrain() {
@@ -487,50 +512,23 @@
   function spawnBall(x, y, colorIdx) {
     if (balls.length >= MAX_BALLS) return null;
     const c = colorIdx === undefined ? cellAt(x, y) : colorIdx;
-    const r = state.ballSize;
-    const spot = findFreeSpot(x, y, c, r);
     const b = {
-      x: spot.x, y: spot.y, vx: 0, vy: 0,
-      r: r, c: c, hist: []
+      x: x, y: y, vx: 0, vy: 0,
+      r: state.ballSize, c: c, hist: []
     };
     balls.push(b);
     return b;
   }
 
-  // Walks outward until the ball is not embedded in terrain that is solid for it
-  // (matters mostly in "bounces off its own color" mode).
-  function findFreeSpot(x, y, c, r) {
-    if (!overlapsSolid(x, y, r, c)) return { x: x, y: y };
-    for (let step = CELL; step < Math.max(W, H); step += CELL) {
-      for (let a = 0; a < 12; a++) {
-        const ang = (a / 12) * Math.PI * 2;
-        const nx = x + Math.cos(ang) * step, ny = y + Math.sin(ang) * step;
-        if (nx < r || ny < r || nx > W - r || ny > H - r) continue;
-        if (!overlapsSolid(nx, ny, r, c)) return { x: nx, y: ny };
-      }
-    }
-    return { x: x, y: y };
-  }
-
-  function overlapsSolid(x, y, r, c) {
-    const x0 = Math.max(0, Math.floor((x - r) / CELL)), x1 = Math.min(gw - 1, Math.floor((x + r) / CELL));
-    const y0 = Math.max(0, Math.floor((y - r) / CELL)), y1 = Math.min(gh - 1, Math.floor((y + r) / CELL));
-    for (let gy = y0; gy <= y1; gy++) {
-      for (let gx = x0; gx <= x1; gx++) {
-        if (!solidFor(grid[idx(gx, gy)], c)) continue;
-        const rx = gx * CELL, ry = gy * CELL;
-        const px = Math.max(rx, Math.min(x, rx + CELL));
-        const py = Math.max(ry, Math.min(y, ry + CELL));
-        const dx = x - px, dy = y - py;
-        if (dx * dx + dy * dy < r * r) return true;
-      }
-    }
-    return false;
-  }
-
-  function addMagnet(x, y, polarity) {
+  function addMagnet(x, y, polarity, colorIdx) {
     if (magnets.length >= MAX_MAGNETS) return null;
-    const m = { x: x, y: y, r: 17, pol: polarity || 1, range: 1700, phase: Math.random() * 6.28 };
+    // A black magnet would have nothing to catch, so fall back to a real color.
+    let c = colorIdx === undefined ? state.color : colorIdx;
+    if (c === NEUTRAL) c = 1 + Math.floor(Math.random() * (PALETTE.length - 1));
+    const m = {
+      x: x, y: y, r: 18, c: c,
+      pol: polarity || 1, range: 1700, phase: Math.random() * 6.28
+    };
     magnets.push(m);
     return m;
   }
@@ -548,14 +546,33 @@
   const MAX_ACC = 9000;      // px/s^2, keeps the 1/d^2 singularity in check
   const MAX_SPEED = 2600;    // px/s
 
+  const CAPTURE_R = 130;     // reach of a matching magnet's grip, past its surface
+  const REJECT_R = 70;       // reach of a wrong magnet's kick, past its surface
+
+  // Which colors currently have a magnet. A ball whose color has no magnet on the
+  // board is homeless: it is allowed to settle anywhere instead of rattling forever.
+  const hasMagnet = new Uint8Array(PALETTE.length);
+  function refreshMagnetColors() {
+    hasMagnet.fill(0);
+    for (let i = 0; i < magnets.length; i++) hasMagnet[magnets[i].c] = 1;
+  }
+
   function step(dt) {
     const strength = state.strength * 640000;    // slider 0..300 -> force constant
     const fric = state.friction / 100 * 5.5;     // exponential velocity decay
     const rest = state.bounce / 100;
+    // A wrong magnet must always win against friction, or a ball could stall on it.
+    const boost = fric + 2.2;
+
+    refreshMagnetColors();
 
     for (let i = 0; i < balls.length; i++) {
       const b = balls[i];
+      // Black balls are inert: nothing pulls them, they sit where they landed.
+      if (b.c === NEUTRAL) { b.vx = 0; b.vy = 0; continue; }
+      const homeless = !hasMagnet[b.c];
       let ax = 0, ay = 0;
+      let home = null, homeD = Infinity, wrong = null, wrongD = Infinity;
 
       for (let j = 0; j < magnets.length; j++) {
         const m = magnets[j];
@@ -563,14 +580,20 @@
         const d2 = dx * dx + dy * dy;
         if (d2 > m.range * m.range) continue;
         const d = Math.sqrt(d2) || 0.0001;
-        // Soften the core so a ball resting on the magnet is not slingshot.
+        // Every magnet pulls every ball, whatever the colors are.
         const soft = Math.max(d, m.r * 1.6);
-        // Full strength up close, tapering to zero at the edge so there is no pop.
         const inner = m.range * 0.65;
         const t = d <= inner ? 1 : 1 - (d - inner) / (m.range - inner);
         const f = (strength * m.pol * t * t) / (soft * soft);
         ax += (dx / d) * f;
         ay += (dy / d) * f;
+
+        if (m.pol < 0) continue;                      // a flipped magnet holds nobody
+        if (m.c === b.c || homeless) {
+          if (d < m.r + b.r + CAPTURE_R && d < homeD) { homeD = d; home = m; }
+        } else if (d < m.r + b.r + REJECT_R && d < wrongD) {
+          wrongD = d; wrong = m;
+        }
       }
 
       const am = Math.hypot(ax, ay);
@@ -578,10 +601,38 @@
 
       b.vx += ax * dt;
       b.vy += ay * dt;
+      b.vx *= Math.exp(-fric * dt);
+      b.vy *= Math.exp(-fric * dt);
 
-      const decay = Math.exp(-fric * dt);
-      b.vx *= decay;
-      b.vy *= decay;
+      if (home) {
+        // Its own color grips: a speed ceiling that tightens as the ball closes in,
+        // so even a ball screaming past gets dragged down and parks on the magnet.
+        const surf = home.r + b.r;
+        const t = Math.min(1, Math.max(0, (homeD - surf) / CAPTURE_R));
+        const cap = 40 + t * t * 1200;
+        // Grip hardens right at the magnet so the cluster stops churning.
+        const grip = Math.exp(-(6 + 20 * (1 - t)) * dt);
+        b.vx *= grip;
+        b.vy *= grip;
+        const sp1 = Math.hypot(b.vx, b.vy);
+        if (sp1 > cap) { b.vx = b.vx / sp1 * cap; b.vy = b.vy / sp1 * cap; }
+      } else if (wrong) {
+        // Wrong color: pump energy back in so the ball always leaves again,
+        // sling-shotting past instead of settling.
+        const gain = Math.exp(boost * dt);
+        b.vx *= gain;
+        b.vy *= gain;
+        const sp0 = Math.hypot(b.vx, b.vy);
+        if (sp0 < 90) {
+          // Nearly stalled on a wrong magnet: shove it clear.
+          const nx = (b.x - wrong.x) || (Math.random() - 0.5);
+          const ny = (b.y - wrong.y) || (Math.random() - 0.5);
+          const nl = Math.hypot(nx, ny) || 1;
+          const ang = Math.atan2(ny / nl, nx / nl) + (Math.random() - 0.5) * 1.2;
+          b.vx += Math.cos(ang) * 300;
+          b.vy += Math.sin(ang) * 300;
+        }
+      }
 
       // Static-ish friction: kill the last crawl so balls actually come to rest.
       const sp = Math.hypot(b.vx, b.vy);
@@ -592,55 +643,20 @@
       b.y += b.vy * dt;
     }
 
-    collideTerrain(rest);
     collideMagnets(rest);
     collideBalls(rest);
     collideWalls(rest);
   }
 
-  function collideTerrain(rest) {
-    for (let i = 0; i < balls.length; i++) {
-      const b = balls[i];
-      if (b.c === NEUTRAL) continue;   // neutral balls phase through everything
-      const r = b.r;
-      const x0 = Math.max(0, Math.floor((b.x - r) / CELL)), x1 = Math.min(gw - 1, Math.floor((b.x + r) / CELL));
-      const y0 = Math.max(0, Math.floor((b.y - r) / CELL)), y1 = Math.min(gh - 1, Math.floor((b.y + r) / CELL));
-      for (let gy = y0; gy <= y1; gy++) {
-        for (let gx = x0; gx <= x1; gx++) {
-          if (!solidFor(grid[idx(gx, gy)], b.c)) continue;
-          const rx = gx * CELL, ry = gy * CELL;
-          const px = Math.max(rx, Math.min(b.x, rx + CELL));
-          const py = Math.max(ry, Math.min(b.y, ry + CELL));
-          let nx = b.x - px, ny = b.y - py;
-          let d2 = nx * nx + ny * ny;
-          if (d2 >= r * r) continue;
-          let d = Math.sqrt(d2);
-          if (d < 0.0001) {
-            // Center is inside the cell: escape along the shallowest axis.
-            const cx = rx + CELL / 2, cy = ry + CELL / 2;
-            const ox = b.x - cx, oy = b.y - cy;
-            if (Math.abs(ox) > Math.abs(oy)) { nx = ox >= 0 ? 1 : -1; ny = 0; }
-            else { nx = 0; ny = oy >= 0 ? 1 : -1; }
-            d = 0;
-          } else { nx /= d; ny /= d; }
-          const pen = r - d;
-          b.x += nx * pen;
-          b.y += ny * pen;
-          const vn = b.vx * nx + b.vy * ny;
-          if (vn < 0) {
-            b.vx -= (1 + rest) * vn * nx;
-            b.vy -= (1 + rest) * vn * ny;
-          }
-        }
-      }
-    }
-  }
-
   function collideMagnets(rest) {
     for (let i = 0; i < balls.length; i++) {
       const b = balls[i];
+      if (b.c === NEUTRAL) continue;
+      const homeless = !hasMagnet[b.c];
       for (let j = 0; j < magnets.length; j++) {
         const m = magnets[j];
+        // Only its own color is solid — a ball flies straight through the rest.
+        if (m.c !== b.c && !homeless) continue;
         const dx = b.x - m.x, dy = b.y - m.y;
         const min = m.r + b.r;
         let d2 = dx * dx + dy * dy;
@@ -689,6 +705,9 @@
             const j = bucket[k];
             if (j <= i) continue;
             const c = balls[j];
+            // Only like colors touch. Otherwise a mixed pile jams solid and the
+            // odd-colored balls in it can never reach a magnet to be flung off.
+            if (c.c !== a.c) continue;
             const dx = c.x - a.x, dy = c.y - a.y;
             const min = a.r + c.r;
             const d2 = dx * dx + dy * dy;
@@ -699,7 +718,9 @@
             a.x -= nx * pen; a.y -= ny * pen;
             c.x += nx * pen; c.y += ny * pen;
             const rvn = (c.vx - a.vx) * nx + (c.vy - a.vy) * ny;
-            if (rvn < 0) {
+            // Below a crawl, separate them but skip the bounce, or a packed
+            // cluster jitters forever instead of going quiet.
+            if (rvn < -25) {
               const imp = -(1 + e) * rvn * 0.5;
               a.vx -= imp * nx; a.vy -= imp * ny;
               c.vx += imp * nx; c.vy += imp * ny;
@@ -768,7 +789,8 @@
     ctx.save();
     for (let i = 0; i < magnets.length; i++) {
       const m = magnets[i];
-      const base = m.pol > 0 ? "90,169,255" : "255,107,122";
+      const rgb = BALL_RGB[m.c] || BALL_RGB[1];
+      const base = rgb[0] + "," + rgb[1] + "," + rgb[2];
       const pulse = (time * 0.35 + m.phase) % 1;
       const viz = 300;
       for (let k = 0; k < 3; k++) {
@@ -796,13 +818,16 @@
     for (let i = 0; i < magnets.length; i++) {
       const m = magnets[i];
       const attract = m.pol > 0;
+      const p = PALETTE[m.c] || PALETTE[1];
       const g = ctx.createRadialGradient(m.x - m.r * 0.4, m.y - m.r * 0.5, m.r * 0.2, m.x, m.y, m.r);
-      if (attract) { g.addColorStop(0, "#9fd0ff"); g.addColorStop(1, "#1f5fb0"); }
-      else { g.addColorStop(0, "#ffb3bb"); g.addColorStop(1, "#a8283a"); }
+      g.addColorStop(0, "#ffffff");
+      g.addColorStop(0.4, p.ball);
+      g.addColorStop(1, p.ground);
 
+      // Dark collar so a magnet stays readable on top of its own color zone.
       ctx.beginPath();
-      ctx.arc(m.x, m.y, m.r + 3, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.arc(m.x, m.y, m.r + 5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(8,10,18,0.72)";
       ctx.fill();
 
       ctx.beginPath();
@@ -810,10 +835,12 @@
       ctx.fillStyle = g;
       ctx.fill();
       ctx.lineWidth = 2;
-      ctx.strokeStyle = attract ? "#cfe6ff" : "#ffd0d6";
+      ctx.strokeStyle = attract ? "rgba(255,255,255,0.85)" : "rgba(255,120,140,0.95)";
+      if (!attract) ctx.setLineDash([4, 3]);
       ctx.stroke();
+      ctx.setLineDash([]);
 
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.fillStyle = "rgba(10,12,20,0.85)";
       ctx.font = "bold 13px ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -1038,23 +1065,6 @@
   bindSlider("bounce", "bounce");
   bindSlider("ballSize", "ballSize");
 
-  const RULE_NOTES = {
-    stay: "A ball takes the color it was spawned on. It rolls freely across its own color and bounces off every other color. Black ground is open to everyone.",
-    repel: "A ball takes the color it was spawned on and bounces off that same color, passing straight through the others. Black balls never collide — they drift through the whole map."
-  };
-  $("rule").value = state.rule;
-  $("ruleNote").textContent = RULE_NOTES[state.rule];
-  $("rule").addEventListener("change", function () {
-    state.rule = this.value;
-    $("ruleNote").textContent = RULE_NOTES[state.rule];
-    // Free anything now embedded in freshly-solid terrain.
-    for (let i = 0; i < balls.length; i++) {
-      const b = balls[i];
-      const spot = findFreeSpot(b.x, b.y, b.c, b.r);
-      b.x = spot.x; b.y = spot.y;
-    }
-  });
-
   $("trails").addEventListener("change", function () {
     state.trails = this.checked;
     if (!state.trails) for (let i = 0; i < balls.length; i++) balls[i].hist.length = 0;
@@ -1068,16 +1078,53 @@
   });
   $("clearBalls").addEventListener("click", function () { balls.length = 0; });
   $("clearMagnets").addEventListener("click", function () { magnets.length = 0; });
-  $("randomMap").addEventListener("click", function () { randomMap(); freeAllBalls(); });
-  $("fillMap").addEventListener("click", function () { fillMap(state.color); freeAllBalls(); });
+  $("newSetup").addEventListener("click", function () { newSetup(); });
+  $("shuffleMap").addEventListener("click", function () { buildMap(magnetColors()); });
   $("wipeMap").addEventListener("click", function () { fillMap(NEUTRAL); });
 
-  function freeAllBalls() {
-    for (let i = 0; i < balls.length; i++) {
-      const b = balls[i];
-      const spot = findFreeSpot(b.x, b.y, b.c, b.r);
-      b.x = spot.x; b.y = spot.y;
+  // The colors that currently have a magnet — the only ones worth painting a map
+  // with, since every zone needs somewhere for its balls to end up.
+  function magnetColors() {
+    const seen = [];
+    for (let i = 0; i < magnets.length; i++) {
+      if (magnets[i].pol > 0 && seen.indexOf(magnets[i].c) < 0) seen.push(magnets[i].c);
     }
+    return seen;
+  }
+
+  // A magnet layout always comes with a matching color map: one zone per magnet
+  // color, so wherever a ball is born there is a magnet of that color waiting.
+  function newSetup() {
+    magnets.length = 0;
+    const pool = [1, 2, 3, 4, 5];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    const count = 3 + Math.floor(Math.random() * 3);       // 3 to 5 magnets
+    const margin = 110;
+    const placed = [];
+    // Keep magnets out from under the control panel where they can't be grabbed.
+    const panel = $("ui").getBoundingClientRect();
+    const clear = W - panel.right > 360;
+    for (let i = 0; i < count; i++) {
+      let best = null, bestD = -1;
+      // Farthest-of-8-candidates keeps the magnets spread across the field.
+      for (let k = 0; k < 12; k++) {
+        const x = margin + Math.random() * Math.max(1, W - margin * 2);
+        const y = margin + Math.random() * Math.max(1, H - margin * 2);
+        if (clear && x < panel.right + 40 && y < panel.bottom + 40) continue;
+        let near = Infinity;
+        for (let q = 0; q < placed.length; q++) {
+          near = Math.min(near, Math.hypot(x - placed[q].x, y - placed[q].y));
+        }
+        if (near > bestD) { bestD = near; best = { x: x, y: y }; }
+      }
+      if (!best) best = { x: W * 0.5 + (Math.random() - 0.5) * W * 0.4, y: H * 0.6 };
+      placed.push(best);
+      addMagnet(best.x, best.y, 1, pool[i % pool.length]);
+    }
+    buildMap(magnetColors());
   }
 
   const pauseBtn = $("pause");
@@ -1102,7 +1149,8 @@
       case "3": setTool("paint"); break;
       case "4": setTool("erase"); break;
       case " ": ev.preventDefault(); togglePause(); break;
-      case "r": randomMap(); freeAllBalls(); break;
+      case "r": newSetup(); break;
+      case "s": buildMap(magnetColors()); break;
       case "c": balls.length = 0; break;
       case "m": magnets.length = 0; break;
       case "t": $("trails").checked = !$("trails").checked; $("trails").dispatchEvent(new Event("change")); break;
@@ -1121,15 +1169,13 @@
     resizeGrid(Math.ceil(W / CELL), Math.ceil(H / CELL));
   }
 
-  window.addEventListener("resize", function () {
-    const hadMap = grid.length > 0;
-    resize();
-    if (!hadMap) randomMap();
-  });
+  window.addEventListener("resize", resize);
+
+  // Small handle on the live sim, handy from the console.
+  window.magnetField = { balls: balls, magnets: magnets, state: state, newSetup: newSetup, palette: PALETTE };
 
   resize();
-  randomMap();
-  addMagnet(W * 0.5, H * 0.5, 1);
+  newSetup();
   for (let i = 0; i < 90; i++) {
     spawnBall(30 + Math.random() * (W - 60), 30 + Math.random() * (H - 60));
   }
