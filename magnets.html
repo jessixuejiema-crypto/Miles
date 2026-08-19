@@ -288,10 +288,15 @@
 
     <div class="section">
       <div class="title">Actions</div>
+      <div class="row" style="margin:0 0 8px">
+        <label>Grid gap</label>
+        <input type="range" id="gap" min="16" max="120" step="8" value="32">
+        <span class="val" id="gapVal">32</span>
+      </div>
       <div class="grid2">
         <button id="newSetup">New setup</button>
         <button id="remap">Redraw map</button>
-        <button id="sprinkle">Sprinkle 40</button>
+        <button id="dropGrid">Drop grid</button>
         <button id="clearBalls">Clear balls</button>
         <button id="clearMagnets">Clear magnets</button>
         <button id="pause">Pause</button>
@@ -330,7 +335,7 @@
   ];
   const NEUTRAL = 0;
   const CELL = 8;              // map resolution, in css pixels
-  const MAX_BALLS = 700;
+  const MAX_BALLS = 4000;
   const MAX_MAGNETS = 24;
 
   const SIM_DT = 1 / 120;      // one physics step, shared by the sim and the map
@@ -347,6 +352,7 @@
     friction: 30,
     bounce: 35,
     ballSize: 6,
+    gap: 32,
     trails: false,
     fields: true,
     paused: false
@@ -399,7 +405,7 @@
   function spawnBall(x, y, colorIdx) {
     if (balls.length >= MAX_BALLS) return null;
     const b = {
-      x: snap(x), y: snap(y), vx: 0, vy: 0,
+      x: snap(x), y: snap(y), vx: 0, vy: 0, asleep: false,
       r: state.ballSize,
       c: colorIdx === undefined ? cellAt(x, y) : colorIdx,
       hist: []
@@ -534,8 +540,18 @@
     const rest = state.bounce / 100;
     packMagnets();
     for (let i = 0; i < balls.length; i++) {
-      advance(balls[i], balls[i].r, strength, fric, rest, dt);
+      const b = balls[i];
+      // A ball parked on a magnet will never move again by itself, so stop
+      // paying for it — a full lattice ends up almost free once it lands.
+      if (b.asleep) continue;
+      const landed = advance(b, b.r, strength, fric, rest, dt);
+      if (landed >= 0 && b.vx * b.vx + b.vy * b.vy < 0.25) b.asleep = true;
     }
+  }
+
+  // Anything that moves a magnet or changes the physics puts them back to work.
+  function wakeBalls() {
+    for (let i = 0; i < balls.length; i++) balls[i].asleep = false;
   }
 
   // ---------------------------------------------------------------- the map
@@ -568,6 +584,7 @@
   const scan = { running: false, pass: 0, i: 0 };
 
   function requestMap() {
+    wakeBalls();
     scan.running = true;
     scan.pass = 0;
     scan.i = 0;
@@ -647,6 +664,38 @@
 
   // ---------------------------------------------------------------- render
   let time = 0;
+  let vignette = null;
+
+  // One pre-rendered sprite per color. Drawing a few thousand balls as sprites
+  // costs a fraction of building a gradient and an arc for each one, and they
+  // still look the same.
+  let spriteR = -1;
+  const spriteCache = [];
+  function ballSprite(c) {
+    const r = state.ballSize;
+    if (spriteR !== r) { spriteR = r; spriteCache.length = 0; }
+    if (spriteCache[c]) return spriteCache[c];
+    const p = PALETTE[c] || PALETTE[0];
+    const size = Math.ceil((r + 2) * 2);
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = Math.ceil(size * DPR);
+    const g2 = cv.getContext("2d");
+    g2.scale(DPR, DPR);
+    const m = size / 2;
+    const grad = g2.createRadialGradient(m - r * 0.35, m - r * 0.4, r * 0.1, m, m, r);
+    grad.addColorStop(0, "#ffffff");
+    grad.addColorStop(0.35, p.ball);
+    grad.addColorStop(1, p.edge);
+    g2.beginPath();
+    g2.arc(m, m, r, 0, Math.PI * 2);
+    g2.fillStyle = grad;
+    g2.fill();
+    g2.lineWidth = 1;
+    g2.strokeStyle = "rgba(255,255,255,0.4)";
+    g2.stroke();
+    spriteCache[c] = { cv: cv, size: size };
+    return spriteCache[c];
+  }
 
   function render() {
     if (terrainDirty) redrawTerrain();
@@ -656,15 +705,17 @@
     ctx.drawImage(terrainCv, 0, 0, gw, gh, 0, 0, gw * CELL, gh * CELL);
     ctx.imageSmoothingEnabled = true;
 
-    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
-    vg.addColorStop(0, "rgba(0,0,0,0)");
-    vg.addColorStop(1, "rgba(0,0,0,0.34)");
-    ctx.fillStyle = vg;
+    if (!vignette) {
+      vignette = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
+      vignette.addColorStop(0, "rgba(0,0,0,0)");
+      vignette.addColorStop(1, "rgba(0,0,0,0.34)");
+    }
+    ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, W, H);
 
     if (state.fields) drawFields();
 
-    if (state.trails) {
+    if (state.trails && balls.length <= 320) {
       ctx.lineCap = "round";
       for (let i = 0; i < balls.length; i++) {
         const b = balls[i];
@@ -743,6 +794,17 @@
   }
 
   function drawBalls() {
+    // Building a gradient and an arc per ball does not scale to a full lattice,
+    // so past a few hundred they are blitted from pre-rendered sprites instead.
+    if (balls.length > 320) {
+      for (let i = 0; i < balls.length; i++) {
+        const b = balls[i];
+        const sp = ballSprite(b.c);
+        const h = sp.size / 2;
+        ctx.drawImage(sp.cv, b.x - h, b.y - h, sp.size, sp.size);
+      }
+      return;
+    }
     for (let i = 0; i < balls.length; i++) {
       const b = balls[i];
       const p = PALETTE[b.c] || PALETTE[0];
@@ -790,7 +852,7 @@
       acc = Math.min(acc + dt, 0.1);
       while (acc >= SIM_DT) { step(SIM_DT); acc -= SIM_DT; }
 
-      if (state.trails) {
+      if (state.trails && balls.length <= 320) {
         histAcc += dt;
         if (histAcc > 0.03) {
           histAcc = 0;
@@ -866,6 +928,7 @@
     if (pointer.dragMagnet) {
       pointer.dragMagnet.x = Math.max(0, Math.min(W, p.x + pointer.dragDx));
       pointer.dragMagnet.y = Math.max(0, Math.min(H, p.y + pointer.dragDy));
+      wakeBalls();
       return;
     }
     if (pointer.down) applyTool(p.x, p.y, false);
@@ -961,6 +1024,7 @@
   bindSlider("friction", "friction", true);
   bindSlider("bounce", "bounce", true);
   bindSlider("ballSize", "ballSize", true);
+  bindSlider("gap", "gap", false);
 
   $("trails").addEventListener("change", function () {
     state.trails = this.checked;
@@ -968,11 +1032,28 @@
   });
   $("fields").addEventListener("change", function () { state.fields = this.checked; });
 
-  $("sprinkle").addEventListener("click", function () {
-    for (let i = 0; i < 40; i++) {
-      spawnBall(40 + Math.random() * (W - 80), 40 + Math.random() * (H - 80));
+  $("dropGrid").addEventListener("click", dropGrid);
+
+  // Fill the whole field in one go with an evenly spaced lattice of balls.
+  // The spacing is a whole number of map cells and the first ball sits on a
+  // cell centre, so every ball lands exactly on a point the map traced — the
+  // lattice is a true grid and every ball's color is still a real prediction.
+  function dropGrid() {
+    balls.length = 0;
+    let step = Math.max(CELL * 2, Math.round(state.gap / CELL) * CELL);
+    let cols = Math.max(1, Math.floor(W / step));
+    let rows = Math.max(1, Math.floor(H / step));
+    while (cols * rows > MAX_BALLS) {
+      step += CELL;
+      cols = Math.max(1, Math.floor(W / step));
+      rows = Math.max(1, Math.floor(H / step));
     }
-  });
+    const ox = snap((W - (cols - 1) * step) / 2);
+    const oy = snap((H - (rows - 1) * step) / 2);
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) spawnBall(ox + i * step, oy + j * step);
+    }
+  }
   $("clearBalls").addEventListener("click", function () { balls.length = 0; });
   $("clearMagnets").addEventListener("click", function () { magnets.length = 0; requestMap(); });
   $("remap").addEventListener("click", requestMap);
@@ -1002,6 +1083,7 @@
       case "2": setTool("ball"); break;
       case " ": ev.preventDefault(); togglePause(); break;
       case "r": newSetup(); break;
+      case "g": dropGrid(); break;
       case "c": balls.length = 0; break;
       case "m": magnets.length = 0; requestMap(); break;
       case "t": $("trails").checked = !$("trails").checked; $("trails").dispatchEvent(new Event("change")); break;
@@ -1044,6 +1126,8 @@
     canvas.height = Math.round(H * DPR);
     canvas.style.width = W + "px";
     canvas.style.height = H + "px";
+    vignette = null;
+    spriteR = -1;
     resizeGrid(Math.ceil(W / CELL), Math.ceil(H / CELL));
     requestMap();
   }
