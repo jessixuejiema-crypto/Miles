@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Double Pendulum Chaos Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
   :root {
     --bg: #000000;
@@ -14,6 +17,12 @@
     --text: #ededed;
     --muted: #8f8f8f;
     --dim: #5e5e5e;
+    /* Neutrals are deliberately untinted: the map's own greys carry the
+       measurement, and a hued interface grey would misreport them. */
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system,
+            "Segoe UI", Helvetica, Arial, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -21,9 +30,20 @@
     padding: 0;
     background: var(--bg);
     color: var(--text);
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-family: var(--sans);
     font-size: 13px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+  }
+  /* Every figure the instrument reports is set in the mono face, tabular, so
+     digits hold their column while the simulation runs. */
+  .badge, table.readout td:last-child, #axesRange, button, h1 {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
   }
   body { min-height: 100vh; }
 
@@ -157,7 +177,10 @@
     text-transform: uppercase;
     margin-bottom: 6px;
   }
-  .row label .val { color: var(--text); text-transform: none; letter-spacing: 0; }
+  .row label .val {
+    color: var(--text); text-transform: none; letter-spacing: 0;
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+  }
 
   input[type=range] {
     -webkit-appearance: none;
