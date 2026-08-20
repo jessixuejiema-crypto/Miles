@@ -314,7 +314,7 @@
         </div>
         <div class="row">
           <label style="margin-bottom:0">
-            <span class="check"><input type="checkbox" id="keepTime" checked> replay elapsed time after zooming</span>
+            <span class="check"><input type="checkbox" id="keepTime" checked> keep elapsed time when the view changes</span>
           </label>
         </div>
       </div>
@@ -537,6 +537,24 @@ void main() {
   frag = vec4(g, g, g, 1.0);
 }`;
 
+// Redraws a previously captured picture under a new view transform. This is
+// what keeps the old map on screen, warped into place, while the grid behind it
+// is being re-integrated for the new initial conditions.
+const FRAG_BLIT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec3 uXform;
+out vec4 frag;
+void main() {
+  vec2 uv = (vUv - 0.5) * uXform.x + uXform.yz + 0.5;
+  vec3 c = texture(uTex, clamp(uv, 0.0, 1.0)).rgb;
+  // Zooming out asks for area the capture never covered; dim it rather than
+  // smearing edge pixels, so it does not read as real data.
+  bool have = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
+  frag = vec4(have ? c : c * 0.3, 1.0);
+}`;
+
 /* ============================================================
    WebGL2 map engine
    ============================================================ */
@@ -576,11 +594,12 @@ function createGLEngine(canvas) {
     return { prog: p, u };
   }
 
-  let progInit, progSim, progDisp;
+  let progInit, progSim, progDisp, progBlit;
   try {
     progInit = link(FRAG_INIT);
     progSim = link(FRAG_SIM);
     progDisp = link(FRAG_DISPLAY);
+    progBlit = link(FRAG_BLIT);
   } catch (e) {
     console.error(e);
     return null;
@@ -598,6 +617,11 @@ function createGLEngine(canvas) {
   let texA = [null, null], texB = [null, null], fbo = [null, null];
   let src = 0;
 
+  // The captured picture is held at a fixed size so that changing the map
+  // resolution does not throw away what is currently on screen.
+  const SNAP = 1024;
+  let texSnap = null, fboSnap = null;
+
   function makeTex(n) {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -607,6 +631,23 @@ function createGLEngine(canvas) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return t;
+  }
+
+  function initSnapshot() {
+    texSnap = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texSnap);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, SNAP, SNAP, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    fboSnap = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboSnap);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texSnap, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
   function setRes(n) {
@@ -668,10 +709,10 @@ function createGLEngine(canvas) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  function draw(eps, tone, xform) {
+  function displayPass(eps, tone, xform, target, size) {
     gl.bindVertexArray(vao);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, res, res);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+    gl.viewport(0, 0, size, size);
     gl.useProgram(progDisp.prog);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA[src]);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB[src]);
@@ -681,9 +722,32 @@ function createGLEngine(canvas) {
     gl.uniform1i(progDisp.u.uTone, tone ? 1 : 0);
     gl.uniform3f(progDisp.u.uXform, xform[0], xform[1], xform[2]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    if (target) gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  return { kind: "gpu", setRes, init, step, draw, maxRes: 1024 };
+  function drawLive(eps, tone, xform) {
+    displayPass(eps, tone, xform, null, res);
+  }
+
+  // Keep a copy of the picture exactly as it stands, un-warped.
+  function capture(eps, tone) {
+    displayPass(eps, tone, [1, 0, 0], fboSnap, SNAP);
+  }
+
+  function drawSnapshot(xform) {
+    gl.bindVertexArray(vao);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, res, res);
+    gl.useProgram(progBlit.prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texSnap);
+    gl.uniform1i(progBlit.u.uTex, 0);
+    gl.uniform3f(progBlit.u.uXform, xform[0], xform[1], xform[2]);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  initSnapshot();
+  return { kind: "gpu", setRes, init, step, drawLive, capture, drawSnapshot, maxRes: 1024 };
 }
 
 /* ============================================================
@@ -695,6 +759,10 @@ function createCPUEngine(canvas) {
   if (!ctx) return null;
   const off = document.createElement("canvas");
   const offCtx = off.getContext("2d");
+  const snap = document.createElement("canvas");
+  const snapCtx = snap.getContext("2d");
+  const SNAP = 512;
+  snap.width = SNAP; snap.height = SNAP;
 
   let res = 0, state = null, img = null;
 
@@ -732,7 +800,8 @@ function createCPUEngine(canvas) {
     }
   }
 
-  function draw(eps, tone, xform) {
+  // Paint the current divergence field into the offscreen buffer.
+  function shade(eps, tone) {
     const n = res, s = state, d = img.data;
     const base = Math.max(eps, 1e-9);
     const denom = Math.log(Math.PI * Math.SQRT2 / base);
@@ -753,19 +822,36 @@ function createCPUEngine(canvas) {
       }
     }
     offCtx.putImageData(img, 0, 0);
+  }
+
+  // xform maps display uv -> source uv; invert it into a destination rect. The
+  // source image is stored top-down, so the y offset flips sign.
+  function blit(source, xform) {
+    const n = res;
+    const sc = xform[0], ox = xform[1], oy = xform[2];
+    const w = n / sc;
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, n, n);
-    // xform maps display uv -> source uv; invert it into a destination rect.
-    // The offscreen image is already stored top-down, so the y offset flips sign.
-    const sc = xform[0], ox = xform[1], oy = xform[2];
-    const w = n / sc;
-    const dx = n * ((-0.5 - ox) / sc + 0.5);
-    const dy = n * ((-0.5 + oy) / sc + 0.5);
-    ctx.drawImage(off, 0, 0, n, n, dx, dy, w, w);
+    ctx.drawImage(source, 0, 0, source.width, source.height,
+                  n * ((-0.5 - ox) / sc + 0.5), n * ((-0.5 + oy) / sc + 0.5), w, w);
   }
 
-  return { kind: "cpu", setRes, init, step, draw, maxRes: 192 };
+  function drawLive(eps, tone, xform) {
+    shade(eps, tone);
+    blit(off, xform);
+  }
+
+  function capture(eps, tone) {
+    shade(eps, tone);
+    snapCtx.imageSmoothingEnabled = false;
+    snapCtx.clearRect(0, 0, SNAP, SNAP);
+    snapCtx.drawImage(off, 0, 0, res, res, 0, 0, SNAP, SNAP);
+  }
+
+  function drawSnapshot(xform) { blit(snap, xform); }
+
+  return { kind: "cpu", setRes, init, step, drawLive, capture, drawSnapshot, maxRes: 192 };
 }
 
 /* ============================================================
@@ -795,6 +881,7 @@ const MAX_SPAN = TWO_PI;
 
 let view = { ...HOME };             // what the user is looking at right now
 let simView = { ...HOME };          // what the state textures were seeded from
+let snapView = { ...HOME };         // the view the retained picture was captured at
 let eps = 1e-4;
 let resolution = 512;
 let speed = 3;
@@ -802,8 +889,13 @@ let tone = false;
 let keepTime = true;
 let running = true;
 
+// clock is the elapsed simulated time the user is watching, and it only ever
+// moves forward. simTime is how far the current grid has actually been
+// integrated: a view change resets the grid, not the clock, and `resolving`
+// covers the gap while the grid climbs back to the clock.
+let clock = 0;
 let simTime = 0;
-let targetTime = 0;                 // catch-up goal after a view change
+let resolving = false;
 let needsInit = true;
 
 let stepBudget = 400;               // adaptive per-frame cap, tuned to the hardware
@@ -819,10 +911,11 @@ function clampView(v) {
   return v;
 }
 
-function xformFor() {
-  // Maps current-view uv into the uv of the last-seeded state textures.
-  const sc = view.span / simView.span;
-  return [sc, (view.cx - simView.cx) / simView.span, (view.cy - simView.cy) / simView.span];
+// Maps uv in the current view into uv of whatever `from` was rendered at.
+function xformFrom(from) {
+  return [view.span / from.span,
+          (view.cx - from.cx) / from.span,
+          (view.cy - from.cy) / from.span];
 }
 
 function viewsMatch() {
@@ -835,22 +928,26 @@ function scheduleCommit(delay) {
   commitTimer = setTimeout(commitView, delay);
 }
 
-// Replaying more than this many simulated seconds after a view change would
-// take longer than anyone wants to watch, and the map has long since saturated.
-const MAX_REPLAY = 90;
-
+// A new view means every pixel stands for a different pair of starting angles,
+// and chaos cannot be interpolated from the old ones, so the grid genuinely has
+// to be integrated again from rest. The clock is not what restarts: it holds,
+// the last good picture stays on screen warped into the new view, and the fresh
+// grid replaces it only once it has caught up.
 function commitView() {
   clearTimeout(commitTimer);
   simView = { ...view };
-  targetTime = keepTime ? Math.min(MAX_REPLAY, Math.max(targetTime, simTime)) : 0;
+  if (!keepTime) clock = 0;
   simTime = 0;
   needsInit = true;
+  resolving = clock > 0;
 }
 
+// The one control that is meant to put the clock back to zero.
 function restartTime() {
-  targetTime = 0;
+  clock = 0;
   simTime = 0;
   needsInit = true;
+  resolving = false;
 }
 
 /* ---- pointer interaction ---- */
@@ -974,7 +1071,12 @@ el("speed").addEventListener("input", (e) => {
 el("eps").addEventListener("input", (e) => {
   eps = Math.pow(10, parseFloat(e.target.value));
   el("valEps").textContent = eps.toExponential(1);
-  restartTime();
+  // A different perturbation re-seeds the twins, so the grid restarts — but the
+  // clock holds, exactly as it does for a view change.
+  simTime = 0;
+  needsInit = true;
+  resolving = keepTime && clock > 0;
+  if (!resolving) clock = 0;
   resetInspector();
 });
 
@@ -985,7 +1087,7 @@ el("res").addEventListener("change", (e) => {
   if (engine) engine.setRes(applied);
   needsInit = true;
   simTime = 0;
-  if (!keepTime) targetTime = 0;
+  resolving = clock > 0;
 });
 
 el("tone").addEventListener("change", (e) => {
@@ -1170,37 +1272,50 @@ function frame(now) {
     needsInit = false;
   }
 
-  let catchingUp = simTime < targetTime - 1e-9;
   let steps = 0;
-  if (catchingUp) {
-    // Push harder than the steady-state budget so the wait is short; frames may
-    // stretch to ~120 ms during the burst, which the progress badge explains.
-    const want = Math.ceil((targetTime - simTime) / DT);
-    steps = Math.floor(Math.min(want, hardCap, Math.max(stepBudget * 4, 12)));
+  if (resolving) {
+    // Run well past the steady-state budget: nothing on screen is waiting on
+    // these frames, since the retained picture is what the user is looking at.
+    const want = Math.ceil((clock - simTime) / DT);
+    steps = Math.min(want, hardCap * 3, Math.max(stepBudget * 4, 12));
   } else if (running) {
     const want = Math.round(speed * dtWall / DT);
-    steps = Math.floor(Math.min(Math.max(want, 1), Math.max(stepBudget, 1)));
+    steps = Math.min(Math.max(want, 1), Math.max(stepBudget, 1));
   }
-  steps = Math.max(0, steps | 0);
+  steps = Math.max(0, Math.floor(steps));
 
   if (steps > 0) {
     engine.step(steps);
     simTime += steps * DT;
-    if (!catchingUp) targetTime = simTime;
-    else if (simTime > targetTime) { simTime = targetTime; }
+    if (resolving) {
+      if (simTime >= clock - 1e-9) { simTime = clock; resolving = false; }
+    } else {
+      clock = simTime;              // live: the grid is the clock
+    }
   }
 
-  engine.draw(eps, tone, xformFor());
+  if (resolving) {
+    // Hold the last good picture, warped into the new view, so the map never
+    // blanks and the clock never appears to rewind.
+    engine.drawSnapshot(xformFrom(snapView));
+  } else {
+    engine.drawLive(eps, tone, xformFrom(simView));
+    // Only worth keeping when it is not already warped by an in-progress drag.
+    if (viewsMatch()) {
+      engine.capture(eps, tone);
+      snapView = { ...simView };
+    }
+  }
 
-  syncInspector(simTime);
+  syncInspector(clock);
   drawInspector();
   updateInspectorReadout();
   placeMarker();
 
   // readouts
-  el("badgeTime").textContent = catchingUp
-    ? `recomputing… ${((simTime / Math.max(targetTime, 1e-6)) * 100).toFixed(0)}%`
-    : `t = ${simTime.toFixed(2)} s`;
+  el("badgeTime").textContent = resolving
+    ? `t = ${clock.toFixed(2)} s · resolving ${((simTime / Math.max(clock, 1e-6)) * 100).toFixed(0)}%`
+    : `t = ${clock.toFixed(2)} s`;
   const zoom = TWO_PI / view.span;
   el("badgeZoom").textContent = zoom < 10 ? `zoom ${zoom.toFixed(2)}×` : `zoom ${zoom.toPrecision(3)}×`;
   el("roCx").textContent = view.cx.toFixed(6);
