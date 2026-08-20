@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Double Pendulum Chaos Map</title>
+<style>
+  :root {
+    --bg: #000000;
+    --panel: #0d0d0d;
+    --panel-2: #151515;
+    --line: #2b2b2b;
+    --line-2: #3d3d3d;
+    --text: #ededed;
+    --muted: #8f8f8f;
+    --dim: #5e5e5e;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+  body { min-height: 100vh; }
+
+  .wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 18px;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 18px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .wrap { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 10px;
+  }
+  h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 0;
+  }
+  header .sub { color: var(--muted); font-size: 12px; }
+
+  /* ---- map ---- */
+  .stage { position: relative; }
+  .mapbox {
+    position: relative;
+    width: 100%;
+    max-width: calc(100vh - 150px);
+    margin: 0 auto;
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--line);
+    background: #000;
+    overflow: hidden;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .mapbox canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: auto;
+  }
+  /* Upscaling blurs the three levels into a gradient, which is exactly what
+     3-tone mode exists to avoid. */
+  .mapbox.crisp canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  .mapbox.dragging { cursor: grabbing; }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .badge {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    background: rgba(0,0,0,0.72);
+    border: 1px solid var(--line);
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    white-space: pre;
+  }
+  .badge.right { left: auto; right: 8px; }
+  .badge.bottom { top: auto; bottom: 8px; }
+  .fatal {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 28px;
+    text-align: center;
+    color: var(--muted);
+    line-height: 1.6;
+    background: #000;
+  }
+
+  .axes {
+    display: flex;
+    justify-content: space-between;
+    color: var(--dim);
+    font-size: 11px;
+    padding-top: 6px;
+  }
+
+  /* ---- panel ---- */
+  .panel {
+    border: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .panel + .panel { margin-top: 14px; }
+  .panel h2 {
+    margin: 0;
+    padding: 9px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+  }
+  .panel .body { padding: 12px; }
+
+  .row { margin-bottom: 13px; }
+  .row:last-child { margin-bottom: 0; }
+  .row label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .row label .val { color: var(--text); text-transform: none; letter-spacing: 0; }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 18px;
+    background: transparent;
+    margin: 0;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 2px; background: var(--line-2);
+  }
+  input[type=range]::-moz-range-track { height: 2px; background: var(--line-2); }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 12px; height: 12px; margin-top: -5px;
+    background: var(--text); border: none; border-radius: 0;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px; background: var(--text);
+    border: none; border-radius: 0;
+  }
+
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  button, select {
+    font: inherit;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line-2);
+    padding: 6px 10px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+  }
+  button:hover, select:hover { background: #202020; }
+  button:active { background: #2c2c2c; }
+  button.wide { flex: 1; }
+  select { width: 100%; padding: 6px 8px; }
+
+  .check {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--muted); font-size: 12px; cursor: pointer;
+  }
+  .check input { accent-color: #cfcfcf; width: 14px; height: 14px; }
+
+  table.readout { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.readout td { padding: 3px 0; vertical-align: baseline; }
+  table.readout td:first-child { color: var(--muted); width: 46%; }
+  table.readout td:last-child { text-align: right; }
+
+  .legend { display: flex; gap: 0; margin-bottom: 8px; }
+  .legend div {
+    flex: 1; height: 22px; border: 1px solid var(--line);
+  }
+  .legend div + div { border-left: none; }
+  .legend-labels {
+    display: flex; justify-content: space-between;
+    color: var(--dim); font-size: 10.5px; line-height: 1.5;
+  }
+  .legend-labels span { flex: 1; }
+  .legend-labels span:nth-child(2) { text-align: center; }
+  .legend-labels span:nth-child(3) { text-align: right; }
+
+  #inspect {
+    display: block; width: 100%; height: auto; aspect-ratio: 1 / 1;
+    background: #000; border: 1px solid var(--line);
+  }
+  .hint { color: var(--dim); font-size: 11px; line-height: 1.6; margin-top: 10px; }
+  .hint b { color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Double Pendulum Chaos Map</h1>
+    <span class="sub">every pixel is a frictionless double pendulum &mdash; released from rest at (&theta;<sub>1</sub>, &theta;<sub>2</sub>)</span>
+  </header>
+
+  <div class="stage">
+    <div class="mapbox" id="mapbox">
+      <canvas id="map"></canvas>
+      <div class="overlay">
+        <div class="badge" id="badgeTime">t = 0.00 s</div>
+        <div class="badge right" id="badgeZoom">zoom 1&times;</div>
+        <div class="badge bottom" id="badgeCursor">&theta;1 &mdash;  &theta;2 &mdash;</div>
+      </div>
+      <div class="fatal" id="fatal"></div>
+    </div>
+    <div class="axes">
+      <span>&larr; &theta;<sub>1</sub> horizontal &nbsp;&middot;&nbsp; &theta;<sub>2</sub> vertical &rarr;</span>
+      <span id="axesRange">&minus;&pi; &hellip; &pi;</span>
+    </div>
+    <div class="hint">
+      <b>Drag</b> to pan &nbsp;&middot;&nbsp; <b>scroll / pinch</b> to zoom &nbsp;&middot;&nbsp;
+      <b>click</b> to inspect a point &nbsp;&middot;&nbsp; <b>space</b> pause &nbsp;&middot;&nbsp; <b>R</b> reset view
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h2>Simulation</h2>
+      <div class="body">
+        <div class="btns" style="margin-bottom:13px">
+          <button id="btnPlay" class="wide">&#10074;&#10074; Pause</button>
+          <button id="btnReset" class="wide">&#8635; Restart time</button>
+        </div>
+        <div class="row">
+          <label>Speed <span class="val" id="valSpeed">3.0&times;</span></label>
+          <input type="range" id="speed" min="0.1" max="20" step="0.1" value="3">
+        </div>
+        <div class="row">
+          <label>Perturbation &epsilon; <span class="val" id="valEps">1.0e-4</span></label>
+          <input type="range" id="eps" min="-6" max="-2" step="0.05" value="-4">
+        </div>
+        <div class="row">
+          <label>Map resolution <span class="val" id="valRes">512&sup2;</span></label>
+          <select id="res">
+            <option value="256">256 &times; 256 (fastest)</option>
+            <option value="384">384 &times; 384</option>
+            <option value="512" selected>512 &times; 512</option>
+            <option value="768">768 &times; 768</option>
+            <option value="1024">1024 &times; 1024 (slow)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label style="margin-bottom:0">
+            <span class="check"><input type="checkbox" id="tone"> 3&#8209;tone shading</span>
+          </label>
+        </div>
+        <div class="row">
+          <label style="margin-bottom:0">
+            <span class="check"><input type="checkbox" id="keepTime" checked> replay elapsed time after zooming</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>View</h2>
+      <div class="body">
+        <div class="btns">
+          <button id="btnIn" class="wide">Zoom in</button>
+          <button id="btnOut" class="wide">Zoom out</button>
+          <button id="btnHome" class="wide">Reset view</button>
+        </div>
+        <table class="readout" style="margin-top:12px">
+          <tr><td>center &theta;<sub>1</sub></td><td id="roCx">0.000000</td></tr>
+          <tr><td>center &theta;<sub>2</sub></td><td id="roCy">0.000000</td></tr>
+          <tr><td>span</td><td id="roSpan">6.283185</td></tr>
+          <tr><td>rate</td><td id="roFps">&mdash;</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Shading</h2>
+      <div class="body">
+        <div class="legend">
+          <div style="background:#000"></div>
+          <div style="background:#555"></div>
+          <div style="background:#aaa"></div>
+          <div style="background:#fff"></div>
+        </div>
+        <div class="legend-labels">
+          <span>black</span>
+          <span>gray</span>
+          <span>white</span>
+        </div>
+        <div class="hint" style="margin-top:9px">
+          <b>Black</b> &mdash; stable: the neighbouring pendulum is still in almost the same
+          position.<br>
+          <b>Gray</b> &mdash; the two have drifted slightly apart.<br>
+          <b>White</b> &mdash; chaotic: the two have nothing in common any more.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Inspector</h2>
+      <div class="body">
+        <canvas id="inspect"></canvas>
+        <table class="readout" style="margin-top:10px">
+          <tr><td>&theta;<sub>1</sub> start</td><td id="ipT1">&mdash;</td></tr>
+          <tr><td>&theta;<sub>2</sub> start</td><td id="ipT2">&mdash;</td></tr>
+          <tr><td>separation</td><td id="ipSep">&mdash;</td></tr>
+          <tr><td>verdict</td><td id="ipVerdict">&mdash;</td></tr>
+        </table>
+        <div class="hint">
+          Solid = the pendulum at the clicked pixel. Faint = its twin, started &epsilon; away.
+          No friction, no drag &mdash; energy is conserved forever.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Physics: frictionless double pendulum.
+   m1 = m2 = 1, l1 = l2 = 1, g = 9.81. No damping term anywhere.
+   State s = (theta1, theta2, omega1, omega2).
+   ============================================================ */
+
+const G = 9.81;
+const DT = 0.005;          // integrator step, seconds of simulated time
+const TWO_PI = Math.PI * 2;
+
+const _acc = new Float64Array(2);
+
+function accel(t1, t2, w1, w2, out) {
+  const d = t1 - t2;
+  const sd = Math.sin(d), cd = Math.cos(d);
+  const den = 3 - Math.cos(2 * d);
+  out[0] = (-3 * G * Math.sin(t1) - G * Math.sin(t1 - 2 * t2)
+            - 2 * sd * (w2 * w2 + w1 * w1 * cd)) / den;
+  out[1] = (2 * sd * (2 * w1 * w1 + 2 * G * Math.cos(t1) + w2 * w2 * cd)) / den;
+}
+
+// Classic RK4 on the 4-vector stored at st[i..i+3].
+function rk4(st, i, h) {
+  const t1 = st[i], t2 = st[i + 1], w1 = st[i + 2], w2 = st[i + 3];
+  const h2 = h * 0.5, h6 = h / 6;
+
+  accel(t1, t2, w1, w2, _acc);
+  const k1a = w1, k1b = w2, k1c = _acc[0], k1d = _acc[1];
+
+  accel(t1 + h2 * k1a, t2 + h2 * k1b, w1 + h2 * k1c, w2 + h2 * k1d, _acc);
+  const k2a = w1 + h2 * k1c, k2b = w2 + h2 * k1d, k2c = _acc[0], k2d = _acc[1];
+
+  accel(t1 + h2 * k2a, t2 + h2 * k2b, w1 + h2 * k2c, w2 + h2 * k2d, _acc);
+  const k3a = w1 + h2 * k2c, k3b = w2 + h2 * k2d, k3c = _acc[0], k3d = _acc[1];
+
+  accel(t1 + h * k3a, t2 + h * k3b, w1 + h * k3c, w2 + h * k3d, _acc);
+  const k4a = w1 + h * k3c, k4b = w2 + h * k3d, k4c = _acc[0], k4d = _acc[1];
+
+  st[i]     = t1 + h6 * (k1a + 2 * k2a + 2 * k3a + k4a);
+  st[i + 1] = t2 + h6 * (k1b + 2 * k2b + 2 * k3b + k4b);
+  st[i + 2] = w1 + h6 * (k1c + 2 * k2c + 2 * k3c + k4c);
+  st[i + 3] = w2 + h6 * (k1d + 2 * k2d + 2 * k3d + k4d);
+}
+
+function wrapPi(x) {
+  return x - TWO_PI * Math.floor((x + Math.PI) / TWO_PI);
+}
+
+// The twin is displaced by eps along a generic (non-symmetric) direction.
+const PDIR_X = 0.6, PDIR_Y = 0.8;
+
+/* ============================================================
+   Shared GLSL
+   ============================================================ */
+
+const GLSL_PHYSICS = `
+const float G = 9.81;
+
+vec4 deriv(vec4 s) {
+  float d = s.x - s.y;
+  float sd = sin(d), cd = cos(d);
+  float den = 3.0 - cos(2.0 * d);
+  float a1 = (-3.0 * G * sin(s.x) - G * sin(s.x - 2.0 * s.y)
+              - 2.0 * sd * (s.w * s.w + s.z * s.z * cd)) / den;
+  float a2 = (2.0 * sd * (2.0 * s.z * s.z + 2.0 * G * cos(s.x) + s.w * s.w * cd)) / den;
+  return vec4(s.z, s.w, a1, a2);
+}
+
+vec4 rk4(vec4 s, float h) {
+  vec4 k1 = deriv(s);
+  vec4 k2 = deriv(s + 0.5 * h * k1);
+  vec4 k3 = deriv(s + 0.5 * h * k2);
+  vec4 k4 = deriv(s + h * k3);
+  return s + (h / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+}
+`;
+
+const VERT = `#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+const FRAG_INIT = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 vUv;
+uniform vec2 uCenter;
+uniform float uSpan;
+uniform float uEps;
+layout(location = 0) out vec4 oA;
+layout(location = 1) out vec4 oB;
+void main() {
+  vec2 th = uCenter + (vUv - 0.5) * uSpan;
+  oA = vec4(th.x, th.y, 0.0, 0.0);
+  oB = vec4(th.x + uEps * ${PDIR_X.toFixed(1)}, th.y + uEps * ${PDIR_Y.toFixed(1)}, 0.0, 0.0);
+}`;
+
+const FRAG_SIM = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uA;
+uniform sampler2D uB;
+uniform float uDt;
+uniform int uSteps;
+layout(location = 0) out vec4 oA;
+layout(location = 1) out vec4 oB;
+${GLSL_PHYSICS}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 a = texelFetch(uA, p, 0);
+  vec4 b = texelFetch(uB, p, 0);
+  for (int i = 0; i < uSteps; i++) {
+    a = rk4(a, uDt);
+    b = rk4(b, uDt);
+  }
+  oA = a;
+  oB = b;
+}`;
+
+const FRAG_DISPLAY = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 vUv;
+uniform sampler2D uA;
+uniform sampler2D uB;
+uniform float uEps;
+uniform int uTone;
+uniform vec3 uXform;     // .x = scale, .yz = offset (live preview while dragging)
+out vec4 frag;
+
+float wrapPi(float x) {
+  return x - 6.283185307 * floor((x + 3.141592653) / 6.283185307);
+}
+
+void main() {
+  vec2 uv = clamp((vUv - 0.5) * uXform.x + uXform.yz + 0.5, 0.0, 1.0);
+  vec4 a = texture(uA, uv);
+  vec4 b = texture(uB, uv);
+  float d1 = wrapPi(a.x - b.x);
+  float d2 = wrapPi(a.y - b.y);
+  float sep = sqrt(d1 * d1 + d2 * d2);
+
+  float base = max(uEps, 1e-9);
+  float g = log(max(sep, base) / base) / log(4.442883 / base);   // 4.4429 = pi*sqrt(2)
+  g = clamp(g, 0.0, 1.0);
+
+  if (uTone == 1) {
+    g = g < 0.3333 ? 0.0 : (g < 0.6667 ? 0.5 : 1.0);
+  }
+  frag = vec4(g, g, g, 1.0);
+}`;
+
+/* ============================================================
+   WebGL2 map engine
+   ============================================================ */
+
+function createGLEngine(canvas) {
+  const gl = canvas.getContext("webgl2", {
+    antialias: false, depth: false, stencil: false,
+    preserveDrawingBuffer: false, powerPreference: "high-performance"
+  });
+  if (!gl) return null;
+  if (!gl.getExtension("EXT_color_buffer_float")) return null;
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(sh) || "shader compile failed");
+    }
+    return sh;
+  }
+  function link(fragSrc) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fragSrc));
+    gl.bindAttribLocation(p, 0, "aPos");
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramInfoLog(p) || "program link failed");
+    }
+    const u = {};
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const info = gl.getActiveUniform(p, i);
+      u[info.name] = gl.getUniformLocation(p, info.name);
+    }
+    return { prog: p, u };
+  }
+
+  let progInit, progSim, progDisp;
+  try {
+    progInit = link(FRAG_INIT);
+    progSim = link(FRAG_SIM);
+    progDisp = link(FRAG_DISPLAY);
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  let res = 0;
+  let texA = [null, null], texB = [null, null], fbo = [null, null];
+  let src = 0;
+
+  function makeTex(n) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, n, n, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+
+  function setRes(n) {
+    if (n === res) return;
+    for (let i = 0; i < 2; i++) {
+      if (texA[i]) gl.deleteTexture(texA[i]);
+      if (texB[i]) gl.deleteTexture(texB[i]);
+      if (fbo[i]) gl.deleteFramebuffer(fbo[i]);
+    }
+    res = n;
+    canvas.width = n;
+    canvas.height = n;
+    for (let i = 0; i < 2; i++) {
+      texA[i] = makeTex(n);
+      texB[i] = makeTex(n);
+      fbo[i] = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[i]);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texA[i], 0);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texB[i], 0);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  function init(view, eps) {
+    src = 0;
+    gl.bindVertexArray(vao);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[src]);
+    gl.viewport(0, 0, res, res);
+    gl.useProgram(progInit.prog);
+    gl.uniform2f(progInit.u.uCenter, view.cx, view.cy);
+    gl.uniform1f(progInit.u.uSpan, view.span);
+    gl.uniform1f(progInit.u.uEps, eps);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  // Advance every pixel by `steps` RK4 steps. Chunked so no single draw runs long.
+  function step(steps) {
+    if (steps <= 0) return;
+    gl.bindVertexArray(vao);
+    gl.useProgram(progSim.prog);
+    gl.uniform1f(progSim.u.uDt, DT);
+    gl.uniform1i(progSim.u.uA, 0);
+    gl.uniform1i(progSim.u.uB, 1);
+    gl.viewport(0, 0, res, res);
+    let left = steps;
+    while (left > 0) {
+      const chunk = Math.min(left, 24);
+      left -= chunk;
+      const dst = 1 - src;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[dst]);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA[src]);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB[src]);
+      gl.uniform1i(progSim.u.uSteps, chunk);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      src = dst;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  function draw(eps, tone, xform) {
+    gl.bindVertexArray(vao);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, res, res);
+    gl.useProgram(progDisp.prog);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA[src]);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB[src]);
+    gl.uniform1i(progDisp.u.uA, 0);
+    gl.uniform1i(progDisp.u.uB, 1);
+    gl.uniform1f(progDisp.u.uEps, eps);
+    gl.uniform1i(progDisp.u.uTone, tone ? 1 : 0);
+    gl.uniform3f(progDisp.u.uXform, xform[0], xform[1], xform[2]);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  return { kind: "gpu", setRes, init, step, draw, maxRes: 1024 };
+}
+
+/* ============================================================
+   CPU fallback map engine (small, but never a dead end)
+   ============================================================ */
+
+function createCPUEngine(canvas) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const off = document.createElement("canvas");
+  const offCtx = off.getContext("2d");
+
+  let res = 0, state = null, img = null;
+
+  function setRes(n) {
+    n = Math.min(n, 192);           // CPU cannot keep up above this
+    if (n === res) return;
+    res = n;
+    canvas.width = n; canvas.height = n;
+    off.width = n; off.height = n;
+    state = new Float64Array(n * n * 8);
+    img = offCtx.createImageData(n, n);
+  }
+
+  function init(view, eps) {
+    const n = res, s = state;
+    for (let y = 0; y < n; y++) {
+      const t2 = view.cy + ((y + 0.5) / n - 0.5) * view.span;
+      for (let x = 0; x < n; x++) {
+        const t1 = view.cx + ((x + 0.5) / n - 0.5) * view.span;
+        const i = (y * n + x) * 8;
+        s[i] = t1; s[i + 1] = t2; s[i + 2] = 0; s[i + 3] = 0;
+        s[i + 4] = t1 + eps * PDIR_X; s[i + 5] = t2 + eps * PDIR_Y;
+        s[i + 6] = 0; s[i + 7] = 0;
+      }
+    }
+  }
+
+  function step(steps) {
+    const s = state, total = res * res * 8;
+    for (let k = 0; k < steps; k++) {
+      for (let i = 0; i < total; i += 8) {
+        rk4(s, i, DT);
+        rk4(s, i + 4, DT);
+      }
+    }
+  }
+
+  function draw(eps, tone, xform) {
+    const n = res, s = state, d = img.data;
+    const base = Math.max(eps, 1e-9);
+    const denom = Math.log(Math.PI * Math.SQRT2 / base);
+    for (let y = 0; y < n; y++) {
+      // ImageData row 0 is the top; theta2 grows upward.
+      const srcRow = (n - 1 - y) * n;
+      for (let x = 0; x < n; x++) {
+        const i = (srcRow + x) * 8;
+        const d1 = wrapPi(s[i] - s[i + 4]);
+        const d2 = wrapPi(s[i + 1] - s[i + 5]);
+        const sep = Math.sqrt(d1 * d1 + d2 * d2);
+        let g = Math.log(Math.max(sep, base) / base) / denom;
+        g = g < 0 ? 0 : (g > 1 ? 1 : g);
+        if (tone) g = g < 0.3333 ? 0 : (g < 0.6667 ? 0.5 : 1);
+        const v = (g * 255) | 0;
+        const o = ((y * n) + x) * 4;
+        d[o] = v; d[o + 1] = v; d[o + 2] = v; d[o + 3] = 255;
+      }
+    }
+    offCtx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, n, n);
+    // xform maps display uv -> source uv; invert it into a destination rect.
+    // The offscreen image is already stored top-down, so the y offset flips sign.
+    const sc = xform[0], ox = xform[1], oy = xform[2];
+    const w = n / sc;
+    const dx = n * ((-0.5 - ox) / sc + 0.5);
+    const dy = n * ((-0.5 + oy) / sc + 0.5);
+    ctx.drawImage(off, 0, 0, n, n, dx, dy, w, w);
+  }
+
+  return { kind: "cpu", setRes, init, step, draw, maxRes: 192 };
+}
+
+/* ============================================================
+   App
+   ============================================================ */
+
+const el = (id) => document.getElementById(id);
+
+const mapCanvas = el("map");
+const mapbox = el("mapbox");
+const fatal = el("fatal");
+
+let engine = createGLEngine(mapCanvas);
+let cpuMode = false;
+if (!engine) {
+  engine = createCPUEngine(mapCanvas);
+  cpuMode = true;
+}
+if (!engine) {
+  fatal.style.display = "flex";
+  fatal.textContent = "This browser cannot render the map: neither WebGL2 nor a 2D canvas is available.";
+}
+
+const HOME = { cx: 0, cy: 0, span: TWO_PI };
+const MIN_SPAN = TWO_PI / 30000;    // float32 in the shader starts banding below this
+const MAX_SPAN = TWO_PI;
+
+let view = { ...HOME };             // what the user is looking at right now
+let simView = { ...HOME };          // what the state textures were seeded from
+let eps = 1e-4;
+let resolution = 512;
+let speed = 3;
+let tone = false;
+let keepTime = true;
+let running = true;
+
+let simTime = 0;
+let targetTime = 0;                 // catch-up goal after a view change
+let needsInit = true;
+
+let stepBudget = 400;               // adaptive per-frame cap, tuned to the hardware
+let emaFrame = 16;
+let fpsEma = 60;
+
+let selected = { t1: 2.2, t2: 2.2, active: true };
+
+/* ---- helpers ---- */
+
+function clampView(v) {
+  v.span = Math.min(MAX_SPAN, Math.max(MIN_SPAN, v.span));
+  return v;
+}
+
+function xformFor() {
+  // Maps current-view uv into the uv of the last-seeded state textures.
+  const sc = view.span / simView.span;
+  return [sc, (view.cx - simView.cx) / simView.span, (view.cy - simView.cy) / simView.span];
+}
+
+function viewsMatch() {
+  return view.cx === simView.cx && view.cy === simView.cy && view.span === simView.span;
+}
+
+let commitTimer = 0;
+function scheduleCommit(delay) {
+  clearTimeout(commitTimer);
+  commitTimer = setTimeout(commitView, delay);
+}
+
+// Replaying more than this many simulated seconds after a view change would
+// take longer than anyone wants to watch, and the map has long since saturated.
+const MAX_REPLAY = 90;
+
+function commitView() {
+  clearTimeout(commitTimer);
+  simView = { ...view };
+  targetTime = keepTime ? Math.min(MAX_REPLAY, Math.max(targetTime, simTime)) : 0;
+  simTime = 0;
+  needsInit = true;
+}
+
+function restartTime() {
+  targetTime = 0;
+  simTime = 0;
+  needsInit = true;
+}
+
+/* ---- pointer interaction ---- */
+
+const pointers = new Map();
+let dragMoved = 0;
+let pinchStart = null;
+
+function mapPos(ev) {
+  const r = mapbox.getBoundingClientRect();
+  return {
+    u: (ev.clientX - r.left) / r.width,
+    v: 1 - (ev.clientY - r.top) / r.height,     // theta2 grows upward
+    px: ev.clientX, py: ev.clientY, rect: r
+  };
+}
+
+function uvToTheta(u, v) {
+  return { t1: view.cx + (u - 0.5) * view.span, t2: view.cy + (v - 0.5) * view.span };
+}
+
+mapbox.addEventListener("pointerdown", (ev) => {
+  mapbox.setPointerCapture(ev.pointerId);
+  pointers.set(ev.pointerId, mapPos(ev));
+  dragMoved = 0;
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinchStart = {
+      dist: Math.hypot(a.px - b.px, a.py - b.py),
+      span: view.span,
+      u: (a.u + b.u) / 2, v: (a.v + b.v) / 2,
+      cx: view.cx, cy: view.cy
+    };
+  }
+  mapbox.classList.add("dragging");
+});
+
+mapbox.addEventListener("pointermove", (ev) => {
+  if (!pointers.has(ev.pointerId)) {
+    const p = mapPos(ev);
+    const th = uvToTheta(p.u, p.v);
+    el("badgeCursor").textContent =
+      `θ1 ${th.t1.toFixed(6)}   θ2 ${th.t2.toFixed(6)}`;
+    return;
+  }
+  const prev = pointers.get(ev.pointerId);
+  const cur = mapPos(ev);
+  pointers.set(ev.pointerId, cur);
+  dragMoved += Math.hypot(cur.px - prev.px, cur.py - prev.py);
+
+  if (pointers.size === 2 && pinchStart) {
+    const [a, b] = [...pointers.values()];
+    const dist = Math.hypot(a.px - b.px, a.py - b.py);
+    if (dist > 4 && pinchStart.dist > 4) {
+      view.span = pinchStart.span * (pinchStart.dist / dist);
+      clampView(view);
+    }
+    // keep the pinch midpoint anchored
+    const mu = (a.u + b.u) / 2, mv = (a.v + b.v) / 2;
+    view.cx = pinchStart.cx + (pinchStart.u - 0.5) * pinchStart.span - (mu - 0.5) * view.span;
+    view.cy = pinchStart.cy + (pinchStart.v - 0.5) * pinchStart.span - (mv - 0.5) * view.span;
+    scheduleCommit(160);
+  } else if (pointers.size === 1) {
+    view.cx -= (cur.u - prev.u) * view.span;
+    view.cy -= (cur.v - prev.v) * view.span;
+    scheduleCommit(160);
+  }
+});
+
+function endPointer(ev) {
+  const had = pointers.has(ev.pointerId);
+  pointers.delete(ev.pointerId);
+  if (pointers.size < 2) pinchStart = null;
+  if (pointers.size === 0) {
+    mapbox.classList.remove("dragging");
+    if (had && dragMoved < 4) {
+      const p = mapPos(ev);
+      const th = uvToTheta(p.u, p.v);
+      selected = { t1: th.t1, t2: th.t2, active: true };
+      resetInspector();
+    }
+    if (!viewsMatch()) scheduleCommit(0);
+  }
+}
+mapbox.addEventListener("pointerup", endPointer);
+mapbox.addEventListener("pointercancel", endPointer);
+
+mapbox.addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const p = mapPos(ev);
+  const factor = Math.exp(ev.deltaY * 0.0016);
+  const before = view.span;
+  view.span = Math.min(MAX_SPAN, Math.max(MIN_SPAN, view.span * factor));
+  // anchor the point under the cursor
+  view.cx += (p.u - 0.5) * (before - view.span);
+  view.cy += (p.v - 0.5) * (before - view.span);
+  scheduleCommit(150);
+}, { passive: false });
+
+function zoomBy(factor) {
+  view.span = Math.min(MAX_SPAN, Math.max(MIN_SPAN, view.span * factor));
+  scheduleCommit(0);
+}
+
+/* ---- controls ---- */
+
+el("btnPlay").addEventListener("click", () => {
+  running = !running;
+  el("btnPlay").innerHTML = running ? "&#10074;&#10074; Pause" : "&#9654; Play";
+});
+el("btnReset").addEventListener("click", restartTime);
+el("btnIn").addEventListener("click", () => zoomBy(1 / 1.6));
+el("btnOut").addEventListener("click", () => zoomBy(1.6));
+el("btnHome").addEventListener("click", () => { view = { ...HOME }; scheduleCommit(0); });
+
+el("speed").addEventListener("input", (e) => {
+  speed = parseFloat(e.target.value);
+  el("valSpeed").textContent = speed.toFixed(1) + "×";
+});
+
+el("eps").addEventListener("input", (e) => {
+  eps = Math.pow(10, parseFloat(e.target.value));
+  el("valEps").textContent = eps.toExponential(1);
+  restartTime();
+  resetInspector();
+});
+
+el("res").addEventListener("change", (e) => {
+  resolution = parseInt(e.target.value, 10);
+  const applied = Math.min(resolution, engine ? engine.maxRes : resolution);
+  el("valRes").textContent = applied + "²" + (applied < resolution ? " (capped)" : "");
+  if (engine) engine.setRes(applied);
+  needsInit = true;
+  simTime = 0;
+  if (!keepTime) targetTime = 0;
+});
+
+el("tone").addEventListener("change", (e) => {
+  tone = e.target.checked;
+  mapbox.classList.toggle("crisp", tone);
+});
+el("keepTime").addEventListener("change", (e) => { keepTime = e.target.checked; });
+
+window.addEventListener("keydown", (e) => {
+  if (e.target && /input|select|textarea/i.test(e.target.tagName)) return;
+  if (e.code === "Space") {
+    e.preventDefault();
+    el("btnPlay").click();
+  } else if (e.key === "r" || e.key === "R") {
+    view = { ...HOME };
+    scheduleCommit(0);
+  }
+});
+
+/* ---- inspector ---- */
+
+const insp = el("inspect");
+const ictx = insp.getContext("2d");
+const inspState = new Float64Array(8);
+let inspTime = 0;
+const trailA = [], trailB = [];
+const TRAIL_MAX = 260;
+
+function resetInspector() {
+  inspState[0] = selected.t1; inspState[1] = selected.t2;
+  inspState[2] = 0; inspState[3] = 0;
+  inspState[4] = selected.t1 + eps * PDIR_X;
+  inspState[5] = selected.t2 + eps * PDIR_Y;
+  inspState[6] = 0; inspState[7] = 0;
+  inspTime = 0;
+  trailA.length = 0;
+  trailB.length = 0;
+}
+resetInspector();
+
+function sizeInspector() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = insp.clientWidth || 280;
+  insp.width = Math.round(w * dpr);
+  insp.height = Math.round(w * dpr);
+}
+window.addEventListener("resize", sizeInspector);
+
+function syncInspector(t) {
+  if (t < inspTime - 1e-9) resetInspector();
+  let guard = 60000;
+  while (inspTime < t - 1e-9 && guard-- > 0) {
+    rk4(inspState, 0, DT);
+    rk4(inspState, 4, DT);
+    inspTime += DT;
+    const tipA = tip(inspState, 0), tipB = tip(inspState, 4);
+    trailA.push(tipA[0], tipA[1]);
+    trailB.push(tipB[0], tipB[1]);
+    if (trailA.length > TRAIL_MAX * 2) trailA.splice(0, trailA.length - TRAIL_MAX * 2);
+    if (trailB.length > TRAIL_MAX * 2) trailB.splice(0, trailB.length - TRAIL_MAX * 2);
+  }
+}
+
+function tip(s, i) {
+  const x = Math.sin(s[i]) + Math.sin(s[i + 1]);
+  const y = Math.cos(s[i]) + Math.cos(s[i + 1]);
+  return [x, y];
+}
+
+function drawInspector() {
+  const w = insp.width, h = insp.height;
+  const cx = w / 2, cy = h * 0.46, scale = Math.min(w, h) * 0.225;
+  ictx.setTransform(1, 0, 0, 1, 0, 0);
+  ictx.fillStyle = "#000";
+  ictx.fillRect(0, 0, w, h);
+
+  const px = (a) => cx + a * scale;
+  const py = (a) => cy + a * scale;
+
+  function drawTrail(tr, style, width) {
+    if (tr.length < 4) return;
+    ictx.strokeStyle = style;
+    ictx.lineWidth = width;
+    ictx.beginPath();
+    ictx.moveTo(px(tr[0]), py(tr[1]));
+    for (let i = 2; i < tr.length; i += 2) ictx.lineTo(px(tr[i]), py(tr[i + 1]));
+    ictx.stroke();
+  }
+  drawTrail(trailB, "rgba(255,255,255,0.22)", Math.max(1, w / 300));
+  drawTrail(trailA, "rgba(255,255,255,0.45)", Math.max(1, w / 260));
+
+  function drawPend(s, i, stroke, bob, lw) {
+    const x1 = Math.sin(s[i]), y1 = Math.cos(s[i]);
+    const x2 = x1 + Math.sin(s[i + 1]), y2 = y1 + Math.cos(s[i + 1]);
+    ictx.strokeStyle = stroke;
+    ictx.lineWidth = lw;
+    ictx.lineCap = "round";
+    ictx.beginPath();
+    ictx.moveTo(cx, cy);
+    ictx.lineTo(px(x1), py(y1));
+    ictx.lineTo(px(x2), py(y2));
+    ictx.stroke();
+    ictx.fillStyle = bob;
+    for (const [bx, by, r] of [[x1, y1, w / 90], [x2, y2, w / 75]]) {
+      ictx.beginPath();
+      ictx.arc(px(bx), py(by), r, 0, TWO_PI);
+      ictx.fill();
+    }
+  }
+
+  drawPend(inspState, 4, "#6e6e6e", "#8c8c8c", Math.max(1, w / 190));
+  drawPend(inspState, 0, "#ffffff", "#ffffff", Math.max(1.2, w / 150));
+
+  ictx.fillStyle = "#3a3a3a";
+  ictx.beginPath();
+  ictx.arc(cx, cy, Math.max(1.5, w / 140), 0, TWO_PI);
+  ictx.fill();
+}
+
+function updateInspectorReadout() {
+  const d1 = wrapPi(inspState[0] - inspState[4]);
+  const d2 = wrapPi(inspState[1] - inspState[5]);
+  const sep = Math.hypot(d1, d2);
+  el("ipT1").textContent = selected.t1.toFixed(6);
+  el("ipT2").textContent = selected.t2.toFixed(6);
+  el("ipSep").textContent = sep.toExponential(2) + " rad";
+  const base = Math.max(eps, 1e-9);
+  const g = Math.min(1, Math.max(0, Math.log(Math.max(sep, base) / base) / Math.log(Math.PI * Math.SQRT2 / base)));
+  el("ipVerdict").textContent =
+    g < 0.3333 ? "stable (black)" : (g < 0.6667 ? "slightly off (gray)" : "chaotic (white)");
+}
+
+/* ---- marker for the selected point ---- */
+
+const marker = document.createElement("div");
+marker.style.cssText =
+  "position:absolute;width:13px;height:13px;margin:-7px 0 0 -7px;pointer-events:none;" +
+  "border:1px solid #fff;box-shadow:0 0 0 1px #000, inset 0 0 0 1px #000;display:none";
+mapbox.querySelector(".overlay").appendChild(marker);
+
+function placeMarker() {
+  if (!selected.active) { marker.style.display = "none"; return; }
+  const u = (selected.t1 - view.cx) / view.span + 0.5;
+  const v = (selected.t2 - view.cy) / view.span + 0.5;
+  if (u < 0 || u > 1 || v < 0 || v > 1) { marker.style.display = "none"; return; }
+  marker.style.display = "block";
+  marker.style.left = (u * 100) + "%";
+  marker.style.top = ((1 - v) * 100) + "%";
+}
+
+/* ---- main loop ---- */
+
+let lastFrame = performance.now();
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (!engine) return;
+
+  const dtWall = Math.min(0.05, Math.max(0.001, (now - lastFrame) / 1000));
+  lastFrame = now;
+  emaFrame = emaFrame * 0.9 + (dtWall * 1000) * 0.1;
+  fpsEma = fpsEma * 0.9 + (1 / dtWall) * 0.1;
+
+  // Adaptive workload cap: keep the page responsive on whatever GPU this is.
+  // The hard ceiling scales with pixel count so one burst can never wedge the
+  // tab for seconds on a big map; the adaptive term finds the real limit.
+  const applied = Math.min(resolution, engine.maxRes);
+  const hardCap = cpuMode ? 6 : Math.max(6, Math.min(600, Math.floor(2.5e7 / (applied * applied))));
+  // Proportional controller aiming at TARGET_FRAME_MS. Deliberately has no dead
+  // band: a dead band lets the budget get stuck at 1 on a display whose frame
+  // time never leaves the band, and the simulation then never speeds back up.
+  // The floor matters: on hardware whose baseline frame time already exceeds the
+  // target (software GL, for one) an unbounded controller throttles to a single
+  // step per frame and the map effectively stops evolving.
+  const TARGET_FRAME_MS = 32;
+  const FLOOR = cpuMode ? 1 : 4;
+  const gain = Math.min(1.12, Math.max(0.82, TARGET_FRAME_MS / Math.max(emaFrame, 1)));
+  stepBudget = Math.max(FLOOR, Math.min(hardCap, stepBudget * gain));
+
+  if (needsInit) {
+    engine.init(simView, eps);
+    needsInit = false;
+  }
+
+  let catchingUp = simTime < targetTime - 1e-9;
+  let steps = 0;
+  if (catchingUp) {
+    // Push harder than the steady-state budget so the wait is short; frames may
+    // stretch to ~120 ms during the burst, which the progress badge explains.
+    const want = Math.ceil((targetTime - simTime) / DT);
+    steps = Math.floor(Math.min(want, hardCap, Math.max(stepBudget * 4, 12)));
+  } else if (running) {
+    const want = Math.round(speed * dtWall / DT);
+    steps = Math.floor(Math.min(Math.max(want, 1), Math.max(stepBudget, 1)));
+  }
+  steps = Math.max(0, steps | 0);
+
+  if (steps > 0) {
+    engine.step(steps);
+    simTime += steps * DT;
+    if (!catchingUp) targetTime = simTime;
+    else if (simTime > targetTime) { simTime = targetTime; }
+  }
+
+  engine.draw(eps, tone, xformFor());
+
+  syncInspector(simTime);
+  drawInspector();
+  updateInspectorReadout();
+  placeMarker();
+
+  // readouts
+  el("badgeTime").textContent = catchingUp
+    ? `recomputing… ${((simTime / Math.max(targetTime, 1e-6)) * 100).toFixed(0)}%`
+    : `t = ${simTime.toFixed(2)} s`;
+  const zoom = TWO_PI / view.span;
+  el("badgeZoom").textContent = zoom < 10 ? `zoom ${zoom.toFixed(2)}×` : `zoom ${zoom.toPrecision(3)}×`;
+  el("roCx").textContent = view.cx.toFixed(6);
+  el("roCy").textContent = view.cy.toFixed(6);
+  el("roSpan").textContent = view.span < 1e-3 ? view.span.toExponential(3) : view.span.toFixed(6);
+  el("roFps").textContent = `${fpsEma.toFixed(0)} fps · ${steps} steps/frame`;
+  const half = view.span / 2;
+  el("axesRange").textContent =
+    `${(view.cx - half).toFixed(3)} … ${(view.cx + half).toFixed(3)}`;
+}
+
+/* ---- boot ---- */
+
+if (engine) {
+  const applied = Math.min(resolution, engine.maxRes);
+  engine.setRes(applied);
+  el("valRes").textContent = applied + "²" + (applied < resolution ? " (capped)" : "");
+  if (cpuMode) {
+    const note = document.createElement("div");
+    note.className = "badge";
+    note.style.top = "auto";
+    note.style.bottom = "34px";
+    note.textContent = "WebGL2 float targets unavailable — low-res CPU mode";
+    mapbox.querySelector(".overlay").appendChild(note);
+    el("res").disabled = true;
+    speed = 1;
+    el("speed").value = "1";
+    el("valSpeed").textContent = "1.0×";
+    stepBudget = 3;
+  }
+  sizeInspector();
+  commitView();
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
