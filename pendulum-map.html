@@ -314,7 +314,7 @@
         </div>
         <div class="row">
           <label style="margin-bottom:0">
-            <span class="check"><input type="checkbox" id="keepTime" checked> keep elapsed time when the view changes</span>
+            <span class="check"><input type="checkbox" id="keepTime" checked> fast-forward back to the same time after a view change</span>
           </label>
         </div>
       </div>
@@ -537,24 +537,6 @@ void main() {
   frag = vec4(g, g, g, 1.0);
 }`;
 
-// Redraws a previously captured picture under a new view transform. This is
-// what keeps the old map on screen, warped into place, while the grid behind it
-// is being re-integrated for the new initial conditions.
-const FRAG_BLIT = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uTex;
-uniform vec3 uXform;
-out vec4 frag;
-void main() {
-  vec2 uv = (vUv - 0.5) * uXform.x + uXform.yz + 0.5;
-  vec3 c = texture(uTex, clamp(uv, 0.0, 1.0)).rgb;
-  // Zooming out asks for area the capture never covered; dim it rather than
-  // smearing edge pixels, so it does not read as real data.
-  bool have = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
-  frag = vec4(have ? c : c * 0.3, 1.0);
-}`;
-
 /* ============================================================
    WebGL2 map engine
    ============================================================ */
@@ -594,12 +576,11 @@ function createGLEngine(canvas) {
     return { prog: p, u };
   }
 
-  let progInit, progSim, progDisp, progBlit;
+  let progInit, progSim, progDisp;
   try {
     progInit = link(FRAG_INIT);
     progSim = link(FRAG_SIM);
     progDisp = link(FRAG_DISPLAY);
-    progBlit = link(FRAG_BLIT);
   } catch (e) {
     console.error(e);
     return null;
@@ -617,11 +598,6 @@ function createGLEngine(canvas) {
   let texA = [null, null], texB = [null, null], fbo = [null, null];
   let src = 0;
 
-  // The captured picture is held at a fixed size so that changing the map
-  // resolution does not throw away what is currently on screen.
-  const SNAP = 1024;
-  let texSnap = null, fboSnap = null;
-
   function makeTex(n) {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -631,23 +607,6 @@ function createGLEngine(canvas) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return t;
-  }
-
-  function initSnapshot() {
-    texSnap = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texSnap);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, SNAP, SNAP, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    fboSnap = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fboSnap);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texSnap, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
-    gl.clearColor(0, 0, 0, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
   function setRes(n) {
@@ -729,27 +688,10 @@ function createGLEngine(canvas) {
     displayPass(eps, tone, xform, null, res);
   }
 
-  // Keep a copy of the picture exactly as it stands, un-warped.
-  function capture(eps, tone) {
-    displayPass(eps, tone, [1, 0, 0], fboSnap, SNAP);
-  }
-
-  function drawSnapshot(xform) {
-    gl.bindVertexArray(vao);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, res, res);
-    gl.useProgram(progBlit.prog);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texSnap);
-    gl.uniform1i(progBlit.u.uTex, 0);
-    gl.uniform3f(progBlit.u.uXform, xform[0], xform[1], xform[2]);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  }
-
   // drawArrays only queues work, so wall time around it measures nothing.
   // gl.finish() is not dependable either — some drivers return early — so the
-  // resolve paces itself on a fence, which reports when the GPU has genuinely
-  // retired the burst.
+  // fast-forward paces itself on a fence, which reports when the GPU has
+  // genuinely retired the burst.
   function fence() {
     const f = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
     gl.flush();
@@ -763,9 +705,7 @@ function createGLEngine(canvas) {
     return done;
   }
 
-  initSnapshot();
-  return { kind: "gpu", setRes, init, step, drawLive, capture, drawSnapshot,
-           fence, fenceDone, maxRes: 1024 };
+  return { kind: "gpu", setRes, init, step, drawLive, fence, fenceDone, maxRes: 1024 };
 }
 
 /* ============================================================
@@ -777,11 +717,6 @@ function createCPUEngine(canvas) {
   if (!ctx) return null;
   const off = document.createElement("canvas");
   const offCtx = off.getContext("2d");
-  const snap = document.createElement("canvas");
-  const snapCtx = snap.getContext("2d");
-  const SNAP = 512;
-  snap.width = SNAP; snap.height = SNAP;
-
   let res = 0, state = null, img = null;
 
   function setRes(n) {
@@ -860,17 +795,8 @@ function createCPUEngine(canvas) {
     blit(off, xform);
   }
 
-  function capture(eps, tone) {
-    shade(eps, tone);
-    snapCtx.imageSmoothingEnabled = false;
-    snapCtx.clearRect(0, 0, SNAP, SNAP);
-    snapCtx.drawImage(off, 0, 0, res, res, 0, 0, SNAP, SNAP);
-  }
-
-  function drawSnapshot(xform) { blit(snap, xform); }
-
   // CPU stepping is synchronous, so a burst is finished the moment it returns.
-  return { kind: "cpu", setRes, init, step, drawLive, capture, drawSnapshot,
+  return { kind: "cpu", setRes, init, step, drawLive,
            fence: () => null, fenceDone: () => true, maxRes: 192 };
 }
 
@@ -901,7 +827,6 @@ const MAX_SPAN = TWO_PI;
 
 let view = { ...HOME };             // what the user is looking at right now
 let simView = { ...HOME };          // what the state textures were seeded from
-let snapView = { ...HOME };         // the view the retained picture was captured at
 let eps = 1e-4;
 let resolution = 512;
 let speed = 3;
@@ -909,24 +834,37 @@ let tone = false;
 let keepTime = true;
 let running = true;
 
-// Both clocks are counted in whole integrator steps, not seconds, so that a
-// resolve lands on exactly the step the map was on before the view moved
-// rather than somewhere within a step of it.
-let clockSteps = 0;                 // elapsed simulated time the user is watching
-let simSteps = 0;                   // how far the current grid has been integrated
-let resolving = false;
+// Counted in whole integrator steps, not seconds, so a fast-forward stops on
+// exactly the step the map was on before the view moved rather than somewhere
+// within a step of it. simSteps is both how far the grid has been integrated
+// and what the clock reads — they are never allowed to disagree.
+let simSteps = 0;
+let targetSteps = 0;                // fast-forward goal; 0 when simply running
 let needsInit = true;
 const secs = (n) => n * DT;
+const fastForwarding = () => simSteps < targetSteps;
 
-// Resolve burst size, adapted so each burst occupies roughly RESOLVE_MS of GPU
-// time. Controlled as a size rather than a rate: deriving the size from a
-// measured rate lets fixed per-burst overhead feed back on itself, shrinking
-// the burst until overhead is all there is. MIN_BURST and the clamped
-// adjustment keep that from happening. Nothing on screen waits on these bursts,
-// so a long one costs nothing in responsiveness.
+// Fast-forward burst size, adapted so each burst occupies roughly BURST_MS of
+// GPU time, which also sets how smoothly the catch-up animates.
+//
+// Several bursts are kept in flight at once. Asking the GPU to confirm one
+// burst before issuing the next sounds tidy but costs a fence round trip —
+// around 150 ms here — of pure idle per burst, which dwarfed the work itself
+// and drove the burst size down to the floor. Pipelining hides that latency;
+// the fences are only backpressure, bounding how much unretired work may queue.
 let burstSize = 32;
-let pending = null;                 // the resolve burst currently on the GPU
-const RESOLVE_MS = 300;
+let inflight = [];                  // bursts handed to the GPU, oldest first
+let lastRetire = 0;
+const MAX_INFLIGHT = 4;
+const MAX_BURST = 2000;
+
+// Between bursts the grid is unchanged, so redrawing the map would render an
+// identical image at the cost of real GPU time that the fast-forward wants.
+// The canvas keeps its last composited frame when nothing is drawn.
+let mapDirty = true;
+let lastXf = [NaN, NaN, NaN];
+let lastBurst = 0;
+const BURST_MS = 110;
 const MIN_BURST = 4;
 
 let stepBudget = 400;               // adaptive per-frame cap, tuned to the hardware
@@ -960,25 +898,34 @@ function scheduleCommit(delay) {
 }
 
 // A new view means every pixel stands for a different pair of starting angles,
-// and chaos cannot be interpolated from the old ones, so the grid genuinely has
-// to be integrated again from rest. The clock is not what restarts: it holds,
-// the last good picture stays on screen warped into the new view, and the fresh
-// grid replaces it only once it has caught up.
+// and chaos cannot be interpolated from the old ones, so the grid has to be
+// integrated again from rest. The clock restarts at zero with it and is then
+// run forward as fast as the device allows until it reaches the time the map
+// was already at, with the map drawn live the whole way.
+// Re-seed the grid for a new set of starting angles. The time being headed for
+// is carried across, never replaced by however far this run happened to get:
+// zooming twice in a row, or nudging the wheel in separate increments, would
+// otherwise leave the second fast-forward aiming at the first one's progress
+// and quietly erode the elapsed time down to nothing.
+function reseedGrid() {
+  targetSteps = keepTime ? Math.max(targetSteps, simSteps) : 0;
+  simSteps = 0;
+  needsInit = true;
+  inflight = [];
+  schedulePump();
+}
+
 function commitView() {
   clearTimeout(commitTimer);
   simView = { ...view };
-  if (!keepTime) clockSteps = 0;
-  simSteps = 0;
-  needsInit = true;
-  resolving = clockSteps > 0;
+  reseedGrid();
 }
 
-// The one control that is meant to put the clock back to zero.
+// Restart with nothing to catch up to.
 function restartTime() {
-  clockSteps = 0;
   simSteps = 0;
+  targetSteps = 0;
   needsInit = true;
-  resolving = false;
 }
 
 /* ---- pointer interaction ---- */
@@ -1104,10 +1051,7 @@ el("eps").addEventListener("input", (e) => {
   el("valEps").textContent = eps.toExponential(1);
   // A different perturbation re-seeds the twins, so the grid restarts — but the
   // clock holds, exactly as it does for a view change.
-  simSteps = 0;
-  needsInit = true;
-  resolving = keepTime && clockSteps > 0;
-  if (!resolving) clockSteps = 0;
+  reseedGrid();
   resetInspector();
 });
 
@@ -1116,14 +1060,13 @@ el("res").addEventListener("change", (e) => {
   const applied = Math.min(resolution, engine ? engine.maxRes : resolution);
   el("valRes").textContent = applied + "²" + (applied < resolution ? " (capped)" : "");
   if (engine) engine.setRes(applied);
-  needsInit = true;
-  simSteps = 0;
-  resolving = clockSteps > 0;
+  reseedGrid();
 });
 
 el("tone").addEventListener("change", (e) => {
   tone = e.target.checked;
   mapbox.classList.toggle("crisp", tone);
+  mapDirty = true;
 });
 el("keepTime").addEventListener("change", (e) => { keepTime = e.target.checked; });
 
@@ -1271,6 +1214,67 @@ function placeMarker() {
 
 /* ---- main loop ---- */
 
+function ensureInit() {
+  if (!needsInit) return;
+  engine.init(simView, eps);
+  needsInit = false;
+  inflight = [];             // whatever was in flight was for the old grid
+  mapDirty = true;
+}
+
+// The fast-forward runs on its own loop rather than one burst per animation
+// frame. Animation frames stall while the GPU is busy, which would cap the
+// catch-up at the frame rate instead of the device's actual throughput; a plain
+// timer keeps polling the fence and issuing the next burst within a millisecond
+// or so of the last one retiring. Drawing stays on the animation frame.
+let pumpScheduled = false;
+
+function schedulePump() {
+  if (pumpScheduled || !engine || !fastForwarding()) return;
+  pumpScheduled = true;
+  setTimeout(pump, 0);
+}
+
+function pump() {
+  pumpScheduled = false;
+  if (!engine || !fastForwarding()) { inflight = []; return; }
+  ensureInit();
+
+  // Bursts retire in the order they were issued.
+  while (inflight.length && engine.fenceDone(inflight[0].fence)) {
+    const done = inflight.shift();
+    const now = performance.now();
+    // With the pipeline full, the gap between retirements is the GPU's actual
+    // time per burst. Issue-to-retire latency would measure the fence round
+    // trip instead, and a burst cut short by the target measures nothing.
+    if (done.full && lastRetire && inflight.length) {
+      const gap = Math.max(1, now - lastRetire);
+      const adjust = Math.min(2, Math.max(0.5, BURST_MS / gap));
+      burstSize = Math.max(MIN_BURST, Math.min(MAX_BURST, Math.round(done.n * adjust)));
+    }
+    lastRetire = now;
+  }
+
+  // Issuing is cheap on the GPU but synchronous on the CPU fallback, so cap the
+  // time one pump may hold the main thread.
+  const deadline = performance.now() + 30;
+  while (inflight.length < MAX_INFLIGHT && fastForwarding() &&
+         performance.now() < deadline) {
+    const n = Math.max(1, Math.min(targetSteps - simSteps, burstSize));
+    engine.step(n);
+    // The drawn map reflects every burst already issued, so the clock advances
+    // with the issue, not with the fence — otherwise the readout would lag the
+    // picture it is labelling.
+    simSteps += n;
+    lastBurst = n;
+    mapDirty = true;
+    inflight.push({ fence: engine.fence(), n, at: performance.now(), full: n === burstSize });
+  }
+
+  if (!fastForwarding()) { targetSteps = 0; inflight = []; return; }   // arrived
+  schedulePump();
+}
+
 let lastFrame = performance.now();
 
 function frame(now) {
@@ -1295,73 +1299,43 @@ function frame(now) {
   // step per frame and the map effectively stops evolving.
   const TARGET_FRAME_MS = 32;
   const FLOOR = cpuMode ? 1 : 4;
-  const gain = Math.min(1.12, Math.max(0.82, TARGET_FRAME_MS / Math.max(emaFrame, 1)));
-  stepBudget = Math.max(FLOOR, Math.min(hardCap, stepBudget * gain));
-
-  if (needsInit) {
-    engine.init(simView, eps);
-    needsInit = false;
-    pending = null;         // whatever was in flight was for the old grid
+  if (!fastForwarding()) {
+    const gain = Math.min(1.12, Math.max(0.82, TARGET_FRAME_MS / Math.max(emaFrame, 1)));
+    stepBudget = Math.max(FLOOR, Math.min(hardCap, stepBudget * gain));
   }
 
+  ensureInit();
+
   let steps = 0;
-  if (resolving) {
-    // Flat out, but paced: keep exactly one burst in flight and issue the next
-    // the moment the GPU reports the last one retired. That saturates the
-    // device without queueing work it cannot drain, and the burst is sized from
-    // throughput measured on the real hardware rather than a fixed guess.
-    if (pending && engine.fenceDone(pending.fence)) {
-      // A burst cut short by the target is no evidence about how big the next
-      // one should be, so it does not feed the controller.
-      if (!pending.clamped) {
-        const spent = Math.max(1, performance.now() - pending.at);
-        const adjust = Math.min(4, Math.max(0.25, RESOLVE_MS / spent));
-        burstSize = Math.max(MIN_BURST, Math.round(pending.n * adjust));
-      }
-      simSteps += pending.n;
-      pending = null;
-      if (simSteps >= clockSteps) resolving = false;
-    }
-    if (resolving && !pending) {
-      const remaining = clockSteps - simSteps;
-      const n = Math.max(1, Math.min(remaining, burstSize));
-      engine.step(n);
-      pending = { fence: engine.fence(), n, at: performance.now(), clamped: n < burstSize };
-      steps = n;
-    }
+  if (fastForwarding()) {
+    schedulePump();          // driven off its own loop, not the frame rate
+    steps = lastBurst;
   } else if (running) {
     const want = Math.round(speed * dtWall / DT);
     steps = Math.max(0, Math.floor(Math.min(Math.max(want, 1), Math.max(stepBudget, 1))));
     if (steps > 0) {
       engine.step(steps);
       simSteps += steps;
-      clockSteps = simSteps;        // live: the grid is the clock
+      mapDirty = true;
     }
   }
 
-  if (resolving) {
-    // Hold the last good picture, warped into the new view, so the map never
-    // blanks and the clock never appears to rewind.
-    engine.drawSnapshot(xformFrom(snapView));
-  } else {
-    engine.drawLive(eps, tone, xformFrom(simView));
-    // Only worth keeping when it is not already warped by an in-progress drag.
-    if (viewsMatch()) {
-      engine.capture(eps, tone);
-      snapView = { ...simView };
-    }
+  const xf = xformFrom(simView);
+  if (mapDirty || xf[0] !== lastXf[0] || xf[1] !== lastXf[1] || xf[2] !== lastXf[2]) {
+    engine.drawLive(eps, tone, xf);
+    lastXf = xf;
+    mapDirty = false;
   }
 
-  syncInspector(secs(clockSteps));
+  syncInspector(secs(simSteps));
   drawInspector();
   updateInspectorReadout();
   placeMarker();
 
   // readouts
-  el("badgeTime").textContent = resolving
-    ? `t = ${secs(clockSteps).toFixed(2)} s · resolving ` +
-      `${((simSteps / Math.max(clockSteps, 1)) * 100).toFixed(0)}%`
-    : `t = ${secs(clockSteps).toFixed(2)} s`;
+  el("badgeTime").textContent = fastForwarding()
+    ? `t = ${secs(simSteps).toFixed(2)} s → ${secs(targetSteps).toFixed(2)} s`
+    : `t = ${secs(simSteps).toFixed(2)} s`;
   const zoom = TWO_PI / view.span;
   el("badgeZoom").textContent = zoom < 10 ? `zoom ${zoom.toFixed(2)}×` : `zoom ${zoom.toPrecision(3)}×`;
   el("roCx").textContent = view.cx.toFixed(6);
