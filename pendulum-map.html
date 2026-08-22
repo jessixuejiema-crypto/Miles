@@ -249,6 +249,40 @@
     display: block; width: 100%; height: auto; aspect-ratio: 1 / 1;
     background: #000; border: 1px solid var(--line);
   }
+  .isl-list {
+    margin-top: 10px; max-height: 196px; overflow-y: auto;
+    border: 1px solid var(--line); display: none;
+  }
+  .isl-list.on { display: block; }
+  .isl-row {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 5px 8px; border: none; border-bottom: 1px solid var(--line);
+    background: transparent; text-align: left; font-size: 11.5px;
+  }
+  .isl-row:last-child { border-bottom: none; }
+  .isl-row:hover { background: #1c1c1c; }
+  .isl-row[aria-current="true"] { background: #262626; }
+  .isl-row .sw {
+    width: 11px; height: 11px; flex: none; border: 1px solid var(--line-2);
+  }
+  .isl-row .nm { flex: 1; color: var(--text); }
+  .isl-row .co {
+    flex: none; text-align: right; color: var(--dim);
+    font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 10.5px;
+  }
+  /* Island pins sit in the map overlay and are positioned from angle, so they
+     stay put on the structure as the view moves. */
+  /* Islands turn up in white regions as readily as black ones, so a pin needs
+     both a light and a dark edge to stay visible wherever it lands. */
+  .pin {
+    position: absolute; width: 9px; height: 9px; margin: -5px 0 0 -5px;
+    border: 1px solid #fff; pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(0,0,0,0.9);
+  }
+  .pin.sel {
+    width: 15px; height: 15px; margin: -8px 0 0 -8px;
+    border: 1px solid #fff; box-shadow: 0 0 0 1px #000, inset 0 0 0 1px #000;
+  }
   .hint { color: var(--dim); font-size: 11px; line-height: 1.6; margin-top: 10px; }
   .hint b { color: var(--muted); font-weight: 600; }
 </style>
@@ -357,6 +391,30 @@
           <b>Gray</b> &mdash; the two have drifted slightly apart.<br>
           <b>White</b> &mdash; chaotic: the two have nothing in common any more.
         </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Islands</h2>
+      <div class="body">
+        <div class="row">
+          <label for="islSize">Biggest patch to count as small</label>
+          <select id="islSize">
+            <option value="64">tiny &mdash; up to 64 pixels</option>
+            <option value="256" selected>small &mdash; up to 256 pixels</option>
+            <option value="1024">medium &mdash; up to 1024 pixels</option>
+          </select>
+        </div>
+        <div class="btns">
+          <button id="btnFind" class="wide">Find small islands</button>
+          <button id="btnIslZoom">Zoom to it</button>
+        </div>
+        <div class="hint" id="islStatus">
+          Finds patches where every pixel agrees &mdash; all black, all gray or all
+          white &mdash; ringed by a different tone. Chaos looks nothing like that:
+          there the tone changes pixel to pixel. Pick one to put it in the inspector.
+        </div>
+        <div class="isl-list" id="islList"></div>
       </div>
     </div>
 
@@ -705,7 +763,43 @@ function createGLEngine(canvas) {
     return done;
   }
 
-  return { kind: "gpu", setRes, init, step, drawLive, fence, fenceDone, maxRes: 1024 };
+  // The island scan needs the shaded map as data. The default framebuffer is
+  // not readable after compositing, so shade once more into an offscreen target
+  // and read that. Always shaded smooth, so the scan classifies from the full
+  // range rather than from an already-posterised image.
+  let texRead = null, fboRead = null, readRes = 0;
+
+  function readGray() {
+    if (readRes !== res) {
+      if (texRead) gl.deleteTexture(texRead);
+      if (fboRead) gl.deleteFramebuffer(fboRead);
+      texRead = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texRead);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, res, res, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      fboRead = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fboRead);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texRead, 0);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      readRes = res;
+    }
+    displayPass(currentEps, false, [1, 0, 0], fboRead, res);
+    const rgba = new Uint8Array(res * res * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboRead);
+    gl.readPixels(0, 0, res, res, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const out = new Uint8Array(res * res);
+    for (let i = 0, j = 0; j < out.length; i += 4, j++) out[j] = rgba[i];
+    return out;
+  }
+
+  let currentEps = 1e-4;
+  function setEps(e) { currentEps = e; }
+
+  return { kind: "gpu", setRes, init, step, drawLive, fence, fenceDone,
+           readGray, setEps, getRes: () => res, maxRes: 1024 };
 }
 
 /* ============================================================
@@ -796,8 +890,28 @@ function createCPUEngine(canvas) {
   }
 
   // CPU stepping is synchronous, so a burst is finished the moment it returns.
+  // Same shading maths as the shader, evaluated straight off the state array.
+  function readGray() {
+    const n = res, st = state, out = new Uint8Array(n * n);
+    const base = Math.max(currentEps, 1e-9);
+    const denom = Math.log(Math.PI * Math.SQRT2 / base);
+    for (let i = 0, j = 0; j < out.length; i += 8, j++) {
+      const d1 = wrapPi(st[i] - st[i + 4]);
+      const d2 = wrapPi(st[i + 1] - st[i + 5]);
+      const sep = Math.sqrt(d1 * d1 + d2 * d2);
+      let g = Math.log(Math.max(sep, base) / base) / denom;
+      g = g < 0 ? 0 : (g > 1 ? 1 : g);
+      out[j] = (g * 255) | 0;
+    }
+    return out;
+  }
+
+  let currentEps = 1e-4;
+  function setEps(e) { currentEps = e; }
+
   return { kind: "cpu", setRes, init, step, drawLive,
-           fence: () => null, fenceDone: () => true, maxRes: 192 };
+           fence: () => null, fenceDone: () => true,
+           readGray, setEps, getRes: () => res, maxRes: 192 };
 }
 
 /* ============================================================
@@ -1032,10 +1146,11 @@ function zoomBy(factor) {
 
 /* ---- controls ---- */
 
-el("btnPlay").addEventListener("click", () => {
-  running = !running;
+function setRunning(v) {
+  running = v;
   el("btnPlay").innerHTML = running ? "&#10074;&#10074; Pause" : "&#9654; Play";
-});
+}
+el("btnPlay").addEventListener("click", () => setRunning(!running));
 el("btnReset").addEventListener("click", restartTime);
 el("btnIn").addEventListener("click", () => zoomBy(1 / 1.6));
 el("btnOut").addEventListener("click", () => zoomBy(1.6));
@@ -1048,6 +1163,7 @@ el("speed").addEventListener("input", (e) => {
 
 el("eps").addEventListener("input", (e) => {
   eps = Math.pow(10, parseFloat(e.target.value));
+  if (engine) engine.setEps(eps);
   el("valEps").textContent = eps.toExponential(1);
   // A different perturbation re-seeds the twins, so the grid restarts — but the
   // clock holds, exactly as it does for a view change.
@@ -1194,6 +1310,210 @@ function updateInspectorReadout() {
     g < 0.3333 ? "stable (black)" : (g < 0.6667 ? "slightly off (gray)" : "chaotic (white)");
 }
 
+/* ---- island finder ----------------------------------------------------
+   A patch of the map where every pixel carries the same verdict, completely
+   ringed by a different one. Chaos never looks like that: neighbouring pixels
+   there land on different tones, because their pendulums have already parted
+   company. So a compact single-tone patch is a pocket of order, whichever tone
+   it happens to be.                                                        */
+
+const TONE_NAMES = ["black", "gray", "white"];
+const TONE_SWATCH = ["#000", "#8a8a8a", "#fff"];
+const MIN_ISLAND = 9;          // below this it is single-pixel speckle, i.e. chaos
+const MIN_FILL = 0.35;         // area vs bounding box: a blob, not a scattered filament
+const MAX_ASPECT = 6;
+const MAX_ROWS = 40;
+const MAX_PINS = MAX_ROWS;     // every pin on the map is a row you can click
+// A genuine island is ringed by one tone, not lodged where several meet, and
+// reads as a single tone rather than straddling a threshold. Without these two
+// the scan returns every speckle in the transition band — hundreds of them.
+const MIN_ENCLOSURE = 0.7;     // share of the boundary that is one single tone
+const MAX_SPREAD = 34;         // spread of grey levels inside the patch, 0..255
+// A patch whose average sits right on a threshold is only nominally its tone.
+// The map is integrated in float32 on the GPU and the inspector in float64 on
+// the CPU, and in a chaotic region those two are not obliged to agree closely,
+// so a borderline patch can be listed as one tone and inspected as the next.
+// Keeping a margin from the band edges keeps the list honest about itself.
+const TONE_EDGES = [0, 85, 170, 256];
+const TONE_MARGIN = 12;
+
+let islands = [];
+let islandIdx = -1;
+
+// Same thirds the 3-tone shading uses, so what the scan calls an island is what
+// the map draws as one solid tone.
+const toneOf = (v) => (v < 85 ? 0 : v < 170 ? 1 : 2);
+
+function findIslands(maxArea) {
+  const n = engine.getRes();
+  engine.setEps(eps);
+  const gray = engine.readGray();
+  const tone = new Uint8Array(n * n);
+  for (let i = 0; i < tone.length; i++) tone[i] = toneOf(gray[i]);
+
+  const seen = new Uint8Array(n * n);
+  const comp = new Int32Array(n * n);      // pixels of the patch being grown
+  const found = [];
+
+  for (let start = 0; start < tone.length; start++) {
+    if (seen[start]) continue;
+    const cls = tone[start];
+    let head = 0, tail = 0;
+    comp[tail++] = start;
+    seen[start] = 1;
+    let minx = n, maxx = -1, miny = n, maxy = -1, edge = false;
+
+    while (head < tail) {
+      const q = comp[head++];
+      const x = q % n, y = (q - x) / n;
+      if (x < minx) minx = x;
+      if (x > maxx) maxx = x;
+      if (y < miny) miny = y;
+      if (y > maxy) maxy = y;
+      if (x === 0 || y === 0 || x === n - 1 || y === n - 1) edge = true;
+      if (x > 0 && !seen[q - 1] && tone[q - 1] === cls) { seen[q - 1] = 1; comp[tail++] = q - 1; }
+      if (x < n - 1 && !seen[q + 1] && tone[q + 1] === cls) { seen[q + 1] = 1; comp[tail++] = q + 1; }
+      if (y > 0 && !seen[q - n] && tone[q - n] === cls) { seen[q - n] = 1; comp[tail++] = q - n; }
+      if (y < n - 1 && !seen[q + n] && tone[q + n] === cls) { seen[q + n] = 1; comp[tail++] = q + n; }
+    }
+
+    const area = tail;
+    // Touching the edge means the rest of it is outside the view, so its size
+    // cannot be judged and it may not be enclosed at all.
+    if (edge || area < MIN_ISLAND || area > maxArea) continue;
+    const w = maxx - minx + 1, h = maxy - miny + 1;
+    if (area / (w * h) < MIN_FILL) continue;
+    if (Math.max(w, h) / Math.min(w, h) > MAX_ASPECT) continue;
+
+    // What rings it, and how consistently.
+    const ring = [0, 0, 0];
+    let ringTotal = 0;
+    for (let k = 0; k < tail; k++) {
+      const q = comp[k], x = q % n, y = (q - x) / n;
+      if (x > 0 && tone[q - 1] !== cls) { ring[tone[q - 1]]++; ringTotal++; }
+      if (x < n - 1 && tone[q + 1] !== cls) { ring[tone[q + 1]]++; ringTotal++; }
+      if (y > 0 && tone[q - n] !== cls) { ring[tone[q - n]]++; ringTotal++; }
+      if (y < n - 1 && tone[q + n] !== cls) { ring[tone[q + n]]++; ringTotal++; }
+    }
+    if (!ringTotal) continue;
+    const ringTone = ring.indexOf(Math.max(...ring));
+    const enclosure = ring[ringTone] / ringTotal;
+    if (enclosure < MIN_ENCLOSURE) continue;
+
+    // How uniform the patch really is, below the three-way rounding.
+    let sum = 0, sumSq = 0;
+    for (let k = 0; k < tail; k++) { const v = gray[comp[k]]; sum += v; sumSq += v * v; }
+    const mean = sum / area;
+    const spread = Math.sqrt(Math.max(0, sumSq / area - mean * mean));
+    if (spread > MAX_SPREAD) continue;
+    if (cls > 0 && mean - TONE_EDGES[cls] < TONE_MARGIN) continue;
+    if (cls < 2 && TONE_EDGES[cls + 1] - mean < TONE_MARGIN) continue;
+
+    let sx = 0, sy = 0;
+    for (let k = 0; k < tail; k++) { const q = comp[k]; const x = q % n; sx += x; sy += (q - x) / n; }
+    const cxp = sx / area, cyp = sy / area;
+    // A concave patch can have its centroid outside itself, so anchor to a
+    // pixel of the patch nearest that centroid — the inspector must be handed a
+    // pendulum that really is in the island. Only pixels sitting clear of the
+    // band edges are eligible: the anchor is the one point whose verdict the
+    // inspector will recompute, and one taken from the rim of the band is the
+    // one most likely to come back as the neighbouring tone.
+    let best = -1, bestD = Infinity;
+    for (let k = 0; k < tail; k++) {
+      const q = comp[k], v = gray[q];
+      if (cls > 0 && v - TONE_EDGES[cls] < TONE_MARGIN) continue;
+      if (cls < 2 && TONE_EDGES[cls + 1] - v < TONE_MARGIN) continue;
+      const x = q % n, y = (q - x) / n;
+      const d = (x - cxp) * (x - cxp) + (y - cyp) * (y - cyp);
+      if (d < bestD) { bestD = d; best = q; }
+    }
+    if (best < 0) continue;
+    const bx = best % n, by = (best - bx) / n;
+
+    found.push({
+      tone: cls, area, ringTone, enclosure,
+      // Cleanliness decides, but size still counts: a tidy 200-pixel island is
+      // a better find than a tidy 9-pixel one, which is merely the smallest
+      // thing that clears the speckle threshold.
+      score: enclosure * (1 - Math.min(1, spread / MAX_SPREAD)) * Math.sqrt(area),
+      t1: simView.cx + ((bx + 0.5) / n - 0.5) * simView.span,
+      t2: simView.cy + ((by + 0.5) / n - 0.5) * simView.span,
+      radius: (Math.max(w, h) / n) * simView.span
+    });
+  }
+
+  // Cleanest and most substantial first.
+  found.sort((a, b) => (b.score - a.score) || (b.area - a.area));
+  return found;
+}
+
+function renderIslands() {
+  const list = el("islList");
+  list.innerHTML = "";
+  list.classList.toggle("on", islands.length > 0);
+  islands.slice(0, MAX_ROWS).forEach((isl, i) => {
+    const row = document.createElement("button");
+    row.className = "isl-row";
+    row.dataset.i = String(i);
+    if (i === islandIdx) row.setAttribute("aria-current", "true");
+    row.innerHTML =
+      `<span class="sw" style="background:${TONE_SWATCH[isl.tone]}"></span>` +
+      `<span class="nm">${TONE_NAMES[isl.tone]} · ${isl.area} px ` +
+      `<span style="color:var(--dim)">in ${TONE_NAMES[isl.ringTone]}</span></span>` +
+      `<span class="co">${isl.t1.toFixed(4)}, ${isl.t2.toFixed(4)}</span>`;
+    row.addEventListener("click", () => pickIsland(i));
+    list.appendChild(row);
+  });
+}
+
+function pickIsland(i) {
+  const isl = islands[i];
+  if (!isl) return;
+  islandIdx = i;
+  selected = { t1: isl.t1, t2: isl.t2, active: true };
+  resetInspector();
+  renderIslands();
+}
+
+el("btnFind").addEventListener("click", () => {
+  if (!engine) return;
+  if (fastForwarding()) {
+    el("islStatus").textContent = "Still catching up to the previous time — try again once the clock arrives.";
+    return;
+  }
+  // A scan is a reading of one instant. Left running, the map moves on and a
+  // patch listed as gray is white by the time it reaches the inspector, so the
+  // scan stops the clock and the findings stay true to what is on screen.
+  setRunning(false);
+  const maxArea = parseInt(el("islSize").value, 10);
+  const at = secs(simSteps).toFixed(2);
+  const t0 = performance.now();
+  islands = findIslands(maxArea);
+  const ms = Math.round(performance.now() - t0);
+  islandIdx = -1;
+  const counts = [0, 0, 0];
+  for (const isl of islands) counts[isl.tone]++;
+  const shown = Math.min(islands.length, MAX_ROWS);
+  el("islStatus").textContent = islands.length
+    ? `${islands.length} found at t = ${at} s — ${counts[0]} black, ` +
+      `${counts[1]} gray, ${counts[2]} white. Clock stopped so the list keeps ` +
+      `matching the map; press Play to carry on. ` +
+      `Showing the ${shown} cleanest. (${ms} ms)`
+    : `Nothing up to ${maxArea} pixels is cleanly ringed at t = ${at} s. ` +
+      `Try a bigger size, another part of the map, or let it run on.`;
+  if (islands.length) pickIsland(0);
+  else renderIslands();
+});
+
+el("btnIslZoom").addEventListener("click", () => {
+  const isl = islands[islandIdx];
+  if (!isl) return;
+  view.cx = isl.t1;
+  view.cy = isl.t2;
+  view.span = Math.min(MAX_SPAN, Math.max(MIN_SPAN, Math.max(isl.radius * 6, MIN_SPAN)));
+  scheduleCommit(0);
+});
+
 /* ---- marker for the selected point ---- */
 
 const marker = document.createElement("div");
@@ -1201,6 +1521,36 @@ marker.style.cssText =
   "position:absolute;width:13px;height:13px;margin:-7px 0 0 -7px;pointer-events:none;" +
   "border:1px solid #fff;box-shadow:0 0 0 1px #000, inset 0 0 0 1px #000;display:none";
 mapbox.querySelector(".overlay").appendChild(marker);
+
+// Pins are positioned from angle, not from pixels, so they track the structure
+// they mark as the view pans and zooms.
+const pinLayer = document.createElement("div");
+pinLayer.style.cssText = "position:absolute;inset:0;pointer-events:none";
+mapbox.querySelector(".overlay").appendChild(pinLayer);
+let pins = [];
+
+function syncPins() {
+  const want = Math.min(islands.length, MAX_PINS);
+  while (pins.length < want) {
+    const d = document.createElement("div");
+    d.className = "pin";
+    pinLayer.appendChild(d);
+    pins.push(d);
+  }
+  while (pins.length > want) pinLayer.removeChild(pins.pop());
+
+  for (let i = 0; i < want; i++) {
+    const isl = islands[i];
+    const u = (isl.t1 - view.cx) / view.span + 0.5;
+    const v = (isl.t2 - view.cy) / view.span + 0.5;
+    const p = pins[i];
+    if (u < 0 || u > 1 || v < 0 || v > 1) { p.style.display = "none"; continue; }
+    p.style.display = "block";
+    p.className = i === islandIdx ? "pin sel" : "pin";
+    p.style.left = (u * 100) + "%";
+    p.style.top = ((1 - v) * 100) + "%";
+  }
+}
 
 function placeMarker() {
   if (!selected.active) { marker.style.display = "none"; return; }
@@ -1327,6 +1677,7 @@ function frame(now) {
     mapDirty = false;
   }
 
+  syncPins();
   syncInspector(secs(simSteps));
   drawInspector();
   updateInspectorReadout();
@@ -1366,6 +1717,7 @@ if (engine) {
     el("valSpeed").textContent = "1.0×";
     stepBudget = 3;
   }
+  engine.setEps(eps);
   sizeInspector();
   commitView();
   requestAnimationFrame(frame);
