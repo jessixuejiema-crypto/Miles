@@ -275,7 +275,7 @@
       </div>
       <div class="row">
         <label>Bounce</label>
-        <input type="range" id="bounce" min="0" max="95" step="1" value="35">
+        <input type="range" id="bounce" min="0" max="100" step="1" value="35">
         <span class="val" id="bounceVal">35</span>
       </div>
       <div class="row">
@@ -480,6 +480,11 @@
   // Returns the index of the magnet it has come to rest on, or -1.
 
   function advance(o, r, strength, fric, rest, dt) {
+    // Bounce stays gentle across most of the slider so balls settle, then
+    // climbs steeply to a perfectly elastic 1 over the last tenth of it.
+    const bodyE = rest < 0.9 ? rest * 0.4 : 0.36 + (rest - 0.9) * 6.4;
+    const stick = 90 * (1 - bodyE);
+    const grip = 1 - (1 - SURFACE_GRIP) * (1 - bodyE);
     let ax = 0, ay = 0;
     for (let i = 0; i < mn; i++) {
       const dx = mx[i] - o.x, dy = my[i] - o.y;
@@ -523,14 +528,20 @@
       // and the ball buzzes forever. The tangential half is scrubbed off by
       // friction against the magnet's surface, which is what finally stops a
       // ball instead of leaving it skimming round and round in orbit.
+      // At the very top of the bounce slider all three of those losses go to
+      // zero: the magnet returns exactly what it was given, and a ball can only
+      // ever come to rest on one by losing speed to friction on the way.
       let vn = o.vx * nx + o.vy * ny;
       let vt = o.vy * nx - o.vx * ny;
-      if (vn < 0) vn = -vn * (-vn > 90 ? rest * 0.4 : 0);
-      vt *= SURFACE_GRIP;
+      if (vn < 0) vn = -vn * (-vn > stick ? bodyE : 0);
+      vt *= grip;
       o.vx = vn * nx - vt * ny;
       o.vy = vn * ny + vt * nx;
-      // Only an attracting magnet can hold anything.
-      if (mp[i] > 0 && Math.sqrt(o.vx * o.vx + o.vy * o.vy) < 30) landed = i;
+      // Only an attracting magnet can hold anything. Whether this contact
+      // counts as landing is decided by how long it lasts, not by how fast the
+      // ball is: a perfectly elastic ball never slows down, it just stops
+      // leaving.
+      if (mp[i] > 0) landed = i;
     }
 
     if (o.x < r) { o.x = r; if (o.vx < 0) o.vx = -o.vx * rest; }
@@ -565,14 +576,22 @@
   // ---------------------------------------------------------------- the map
   // Drop a ball at rest on (x, y) and run the simulation until it settles.
   // Whatever magnet it ends up on is the color this point of the map gets.
+  const CONTACT_STEPS = 30;   // a quarter second of unbroken contact is a landing
   const probe = { x: 0, y: 0, vx: 0, vy: 0 };
 
   function traceFrom(x, y, r, strength, fric, rest) {
     probe.x = x; probe.y = y; probe.vx = 0; probe.vy = 0;
+    let touching = -1, held = 0;
     for (let s = 0; s < TRACE_STEPS; s++) {
       const hit = advance(probe, r, strength, fric, rest, SIM_DT);
-      if (hit >= 0) return mc[hit];
       if (hit === -2) return NEUTRAL;
+      // Grazing a magnet on the way past is not landing on it; staying is.
+      if (hit >= 0 && hit === touching) {
+        if (++held >= CONTACT_STEPS) return mc[hit];
+      } else {
+        touching = hit;
+        held = hit >= 0 ? 1 : 0;
+      }
     }
     return NEUTRAL;
   }
