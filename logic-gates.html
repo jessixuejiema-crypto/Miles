@@ -564,7 +564,7 @@ const DEFS = {
            } },
 
   // --- inputs and outputs -------------------------------------------------
-  SWITCH:{ cat:'io', name:'Switch', ins:0, outs:1, logic: (v, c) => [!!c.q] },
+  SWITCH:{ cat:'io', name:'Switch', ins:0, outs:1, clickToggle:true, logic: (v, c) => [!!c.q] },
   BUTTON:{ cat:'io', name:'Button', ins:0, outs:1, logic: (v, c) => [!!c.q] },
   CLOCK: { cat:'io', name:'Clock',  ins:0, outs:1, logic: (v, c) => [!!c.q] },
   LED:   { cat:'io', name:'LED',    ins:1, outs:0, logic: () => [] },
@@ -669,6 +669,7 @@ let running = true;
 const SETTLE = 8;          // propagation steps per animation frame
 const GRID = 10;           // movement snap
 const PORT_HIT = 13;       // world-space port grab radius for the wire tool
+const BUTTON_PULSE = 220;  // ms a tapped button stays high, so the pulse registers
 
 const stage = document.getElementById('stage');
 const canvas = document.getElementById('board');
@@ -1650,7 +1651,7 @@ canvas.addEventListener('pointerdown', ev => {
   if (hit) {
     if (hit.type === 'BUTTON') {
       hit.q = true;
-      drag = { kind: 'button', comp: hit };
+      drag = { kind: 'button', comp: hit, down: performance.now() };
       return;
     }
     if (!sel.has(hit.id)) {
@@ -1741,7 +1742,11 @@ canvas.addEventListener('pointerup', ev => {
   drag = null;
 
   if (d.kind === 'button') {
-    d.comp.q = false;
+    // a quick tap would otherwise be over before it could be seen, so hold
+    // the pulse briefly; a real press still ends the moment it is released
+    const held = performance.now() - d.down;
+    if (held < BUTTON_PULSE) setTimeout(() => { d.comp.q = false; }, BUTTON_PULSE - held);
+    else d.comp.q = false;
     return;
   }
 
