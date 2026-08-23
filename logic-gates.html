@@ -572,7 +572,7 @@ const DEFS = {
   /* An inline break in a wire. Closed it passes the signal straight
      through; open, nothing gets past and the two halves are on their own. */
   CONNECTOR: { cat:'io', name:'Connector', ins:1, outs:1,
-               clickToggle:true, defaultQ:true, splices:true,
+               clickToggle:true, defaultQ:true, splices:true, bead:true,
                logic: (v, c) => [!!c.q && !!v[0]] }
 };
 
@@ -734,7 +734,7 @@ function sizeOf(c) {
   if (d.cat === 'mem') {
     return { w: 104, h: Math.max(72, Math.max(c.ins, c.outs) * 24 + 32) };
   }
-  if (c.type === 'CONNECTOR') return { w: 48, h: 30 };
+  if (c.type === 'CONNECTOR') return { w: 16, h: 16 };
   if (c.type === 'LED') return { w: 46, h: 42 };
   if (c.type === 'CLOCK') return { w: 62, h: 40 };
   return { w: 58, h: 38 };   // switch, button
@@ -1077,14 +1077,14 @@ function drawComp(c) {
   ctx.strokeStyle = P.line;
   ctx.lineWidth = 1.8;
   ctx.lineCap = 'round';
-  for (let i = 0; i < c.ins; i++) {
+  if (!d.bead) for (let i = 0; i < c.ins; i++) {
     const p = portPos(c, 'in', i);
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
     ctx.lineTo(c.x + (d.cat === 'gate' ? LEAD + 18 : LEAD), p.y);
     ctx.stroke();
   }
-  for (let i = 0; i < c.outs; i++) {
+  if (!d.bead) for (let i = 0; i < c.outs; i++) {
     const p = portPos(c, 'out', i);
     ctx.beginPath();
     ctx.moveTo(p.x - LEAD, p.y);
@@ -1096,8 +1096,10 @@ function drawComp(c) {
   else if (d.cat === 'mem') drawMemBody(c, d, s.w, s.h);
   else drawIoBody(c, d, s.w, s.h);
 
-  for (let i = 0; i < c.ins; i++) drawPort(portPos(c, 'in', i), c.iv[i]);
-  for (let i = 0; i < c.outs; i++) drawPort(portPos(c, 'out', i), c.ov[i]);
+  if (!d.bead) {
+    for (let i = 0; i < c.ins; i++) drawPort(portPos(c, 'in', i), c.iv[i]);
+    for (let i = 0; i < c.outs; i++) drawPort(portPos(c, 'out', i), c.ov[i]);
+  }
 
   if (c.label) {
     ctx.fillStyle = P.muted;
@@ -1241,33 +1243,24 @@ function drawMemBody(c, d, w, h) {
 
 function drawIoBody(c, d, w, h) {
   if (c.type === 'CONNECTOR') {
-    const bx = c.x + 7, bw = w - 14, cy = c.y + h / 2;
-    roundRect(bx, c.y + 2, bw, h - 4, (h - 4) / 2);
-    ctx.fillStyle = P.body;
+    const cx = c.x + w / 2, cy = c.y + h / 2, r = w / 2 - 1;
+    const live = c.ov[0];
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = c.q ? (live ? P.hot : P.cold) : P.body;
     ctx.fill();
-    ctx.strokeStyle = P.line;
+    ctx.strokeStyle = c.q ? P.line : P.danger;
     ctx.lineWidth = 1.8;
     ctx.stroke();
-
-    const lx = bx + 8, rx = bx + bw - 8;
-    const live = c.ov[0];
-
-    // the two contacts it bridges
-    ctx.fillStyle = live ? P.hot : P.cold;
-    for (const x of [lx, rx]) {
+    if (!c.q) {                                   // struck through when open
       ctx.beginPath();
-      ctx.arc(x, cy, 2.6, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(cx - r * 0.6, cy + r * 0.6);
+      ctx.lineTo(cx + r * 0.6, cy - r * 0.6);
+      ctx.strokeStyle = P.danger;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.stroke();
     }
-
-    ctx.strokeStyle = c.q ? (live ? P.hot : P.cold) : P.danger;
-    ctx.lineWidth = 2.6;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(lx, cy);
-    if (c.q) ctx.lineTo(rx, cy);                  // closed: contacts bridged
-    else ctx.lineTo(rx - 3, cy - 9);              // open: the bar swings clear
-    ctx.stroke();
     return;
   }
 
@@ -1643,13 +1636,17 @@ canvas.addEventListener('pointerdown', ev => {
   }
 
   // --- select tool -------------------------------------------------------
-  const near = hitPort(wp.x, wp.y, 9);        // ports stay grabbable in select mode
+  const hit = hitComp(wp.x, wp.y);
+
+  /* Ports stay grabbable in select mode, but a bead is small enough that its
+     own ports would swallow every click on it, so its body wins. Wire one up
+     by hand with the Wire tool if you need to. */
+  const near = (hit && DEFS[hit.type].bead) ? null : hitPort(wp.x, wp.y, 9);
   if (near) {
     drag = { kind: 'wire', from: near, wx: wp.x, wy: wp.y, moved: false };
     return;
   }
 
-  const hit = hitComp(wp.x, wp.y);
   if (hit) {
     if (hit.type === 'BUTTON') {
       hit.q = true;
@@ -1918,9 +1915,8 @@ function glyph(type) {
            '<path ' + s + ' d="M4 6 l3 2 l-3 2"/></svg>';
   }
   if (type === 'CONNECTOR') {
-    return '<svg width="22" height="16" viewBox="0 0 22 16"><path ' + s + ' d="M1 11 h5 M16 11 h5"/>' +
-           '<path ' + s + ' d="M6 11 L16 4"/><circle cx="6" cy="11" r="1.7" fill="currentColor"/>' +
-           '<circle cx="16" cy="11" r="1.7" fill="currentColor"/></svg>';
+    return '<svg width="22" height="16" viewBox="0 0 22 16"><path ' + s + ' d="M1 8 h6 M15 8 h6"/>' +
+           '<circle cx="11" cy="8" r="4" ' + s + ' fill="currentColor"/></svg>';
   }
   if (type === 'LED') {
     return '<svg width="22" height="16" viewBox="0 0 22 16"><circle ' + s + ' cx="12" cy="8" r="5"/><path ' + s + ' d="M2 8 h5"/></svg>';
