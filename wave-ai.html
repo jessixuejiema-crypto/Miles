@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wave AI — Neuroevolution Swarm</title>
+<style>
+  :root{
+    --bg:#05070f;
+    --bg2:#0b1226;
+    --panel:rgba(14,20,40,.82);
+    --border:#1e2c55;
+    --text:#dfe8ff;
+    --muted:#7f8fbd;
+    --cyan:#3fe3ff;
+    --mag:#ff3d9a;
+    --lime:#8dff6b;
+    --amber:#ffc857;
+    --red:#ff5470;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 700px at 20% -10%, #14204a 0%, transparent 60%),
+      radial-gradient(900px 600px at 110% 110%, #2a1040 0%, transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    overflow:hidden;
+  }
+  .app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+  header{
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+    padding:10px 16px;border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg,rgba(10,16,34,.9),rgba(10,16,34,.4));
+  }
+  header h1{
+    margin:0;font-size:16px;letter-spacing:.14em;text-transform:uppercase;
+    background:linear-gradient(90deg,var(--cyan),var(--mag));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  header .tag{color:var(--muted);font-size:11.5px;letter-spacing:.04em}
+  main{display:flex;flex:1;min-height:0}
+  .stage{position:relative;flex:1;min-width:0}
+  canvas#game{display:block;width:100%;height:100%}
+  .hud{
+    position:absolute;left:12px;top:12px;right:12px;
+    display:flex;gap:10px;align-items:center;pointer-events:none;flex-wrap:wrap;
+  }
+  .chip{
+    background:rgba(6,10,24,.72);border:1px solid var(--border);border-radius:999px;
+    padding:4px 11px;font-size:11.5px;letter-spacing:.05em;color:var(--muted);
+    backdrop-filter:blur(6px);
+  }
+  .chip b{color:var(--text);font-weight:600}
+  .chip.hot b{color:var(--cyan)}
+  .bar{
+    position:absolute;left:12px;right:12px;bottom:12px;height:8px;
+    background:rgba(6,10,24,.7);border:1px solid var(--border);border-radius:999px;overflow:hidden;
+  }
+  .bar i{position:absolute;inset:0 auto 0 0;border-radius:999px;transition:width .15s linear}
+  .bar .rec{background:rgba(255,61,154,.45)}
+  .bar .now{background:linear-gradient(90deg,var(--cyan),#7affd6)}
+
+  aside{
+    width:330px;flex:0 0 330px;border-left:1px solid var(--border);
+    background:var(--panel);backdrop-filter:blur(8px);
+    overflow-y:auto;padding:12px 13px 26px;
+  }
+  aside h2{
+    margin:16px 0 7px;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+    border-bottom:1px solid var(--border);padding-bottom:5px;
+  }
+  aside h2:first-child{margin-top:2px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .stat{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:6px 8px}
+  .stat span{display:block;font-size:10px;letter-spacing:.09em;color:var(--muted);text-transform:uppercase}
+  .stat b{font-size:16px;font-weight:600;color:var(--text)}
+  .stat.c b{color:var(--cyan)} .stat.m b{color:var(--mag)} .stat.l b{color:var(--lime)} .stat.a b{color:var(--amber)}
+  canvas.mini{width:100%;height:96px;display:block;border:1px solid var(--border);border-radius:8px;background:rgba(0,0,0,.28)}
+  canvas#brainviz{height:150px}
+  .ctl{margin:9px 0}
+  .ctl label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:3px}
+  .ctl label b{color:var(--text);font-weight:600}
+  input[type=range]{width:100%;accent-color:var(--cyan);height:18px}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+  button{
+    font:inherit;font-size:11.5px;letter-spacing:.05em;cursor:pointer;
+    background:rgba(63,227,255,.08);color:var(--text);
+    border:1px solid var(--border);border-radius:8px;padding:7px 6px;transition:.12s;
+  }
+  button:hover{background:rgba(63,227,255,.2);border-color:var(--cyan)}
+  button.on{background:rgba(255,61,154,.22);border-color:var(--mag)}
+  .toggles{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+  .toggles button{padding:5px 9px}
+  .note{color:var(--muted);font-size:11px;margin-top:10px}
+  .note kbd{background:rgba(255,255,255,.07);border:1px solid var(--border);border-radius:4px;padding:0 4px}
+  @media (max-width:860px){
+    main{flex-direction:column}
+    aside{width:auto;flex:0 0 auto;max-height:46vh;border-left:none;border-top:1px solid var(--border)}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Wave AI</h1>
+    <div class="tag">one synchronized brain &middot; 100 clones at a time &middot; every crash is a gradient</div>
+  </header>
+  <main>
+    <div class="stage">
+      <canvas id="game"></canvas>
+      <div class="hud">
+        <div class="chip hot">GEN <b id="hGen">0</b></div>
+        <div class="chip">ALIVE <b id="hAlive">0</b></div>
+        <div class="chip">RUN <b id="hRun">0%</b></div>
+        <div class="chip">RECORD <b id="hRec">0%</b></div>
+        <div class="chip">AI/SEC <b id="hRate">0</b></div>
+        <div class="chip" id="hMsg" style="color:var(--amber)"></div>
+      </div>
+      <div class="bar"><i class="rec" id="barRec" style="width:0%"></i><i class="now" id="barNow" style="width:0%"></i></div>
+    </div>
+
+    <aside>
+      <h2>Training</h2>
+      <div class="stats">
+        <div class="stat c"><span>Generation</span><b id="sGen">0</b></div>
+        <div class="stat"><span>Lives lived</span><b id="sLives">0</b></div>
+        <div class="stat l"><span>AI / second</span><b id="sRate">0</b></div>
+        <div class="stat l"><span>Swarm cleared</span><b id="sClear">0%</b></div>
+        <div class="stat m"><span>Record</span><b id="sRec">0%</b></div>
+        <div class="stat c"><span>Brain solo</span><b id="sElite">0%</b></div>
+        <div class="stat"><span>Gen avg</span><b id="sAvg">0%</b></div>
+        <div class="stat a"><span>Total clears</span><b id="sWins">0</b></div>
+        <div class="stat"><span>Mutation rate</span><b id="sSigma">0.00</b></div>
+        <div class="stat"><span>Total deaths</span><b id="sDeaths">0</b></div>
+      </div>
+
+      <h2>Progress per generation</h2>
+      <canvas class="mini" id="chart"></canvas>
+
+      <h2>The shared brain (live)</h2>
+      <canvas class="mini" id="brainviz"></canvas>
+
+      <h2>Controls</h2>
+      <div class="ctl">
+        <label>Simulation speed <b id="vSpeed">30&times;</b></label>
+        <input type="range" id="rSpeed" min="1" max="80" step="1" value="30">
+      </div>
+      <div class="ctl">
+        <label>Population per generation <b id="vPop">100</b></label>
+        <input type="range" id="rPop" min="20" max="300" step="10" value="100">
+      </div>
+      <div class="ctl">
+        <label>Mutation &sigma; <b id="vSig">0.15</b></label>
+        <input type="range" id="rSig" min="2" max="30" step="1" value="15">
+      </div>
+      <div class="ctl">
+        <label>Learning rate <b id="vLr">0.080</b></label>
+        <input type="range" id="rLr" min="1" max="30" step="1" value="8">
+      </div>
+
+      <div class="btns">
+        <button id="bPause">Pause</button>
+        <button id="bMax">Max speed</button>
+        <button id="bReset">Reset brain</button>
+        <button id="bLevel">New level</button>
+        <button id="bBest">Restore best</button>
+        <button id="bManual">Play it yourself</button>
+      </div>
+
+      <div class="toggles">
+        <button id="tRays" class="on">Sensors</button>
+        <button id="tHeat" class="on">Death map</button>
+        <button id="tTrail" class="on">Trails</button>
+        <button id="tAdapt" class="on">Auto &sigma;</button>
+      </div>
+
+      <div class="note">
+        <kbd>P</kbd> pause &middot; <kbd>M</kbd> manual &middot; <kbd>N</kbd> new level &middot; <kbd>R</kbd> reset brain &middot;
+        <kbd>&uarr;</kbd><kbd>&darr;</kbd> speed. In manual mode hold <kbd>Space</kbd> or the mouse to fly up.
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   WAVE AI — a swarm of clones learning Geometry Dash's wave gamemode.
+
+   The rules of the world (exactly the wave gamemode):
+     · forward speed is constant and can never stop
+     · the only choice is up or down, always at 45 degrees
+     · touching a spike, a slope, a block, the ceiling or the floor is death
+     · death sends you back to the very start of the level
+
+   The rules of the mind:
+     · there is ONE brain (theta). Every agent on screen is that same brain
+       with a small random perturbation applied.
+     · the whole population runs at once, overlapping, never colliding.
+     · when the generation ends, every crash and every success is folded back
+       into that single brain at once (evolution strategies with rank shaping
+       and mirrored sampling), so all clones literally learn from each other's
+       mistakes and stay synchronized.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────────── small utilities ───────────────────────────── */
+const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+const lerp  = (a,b,t)=> a+(b-a)*t;
+
+function mulberry32(a){
+  return function(){
+    a|=0; a=a+0x6D2B79F5|0;
+    let t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296;
+  };
+}
+let gaussSpare=null;
+function gauss(){
+  if(gaussSpare!==null){ const s=gaussSpare; gaussSpare=null; return s; }
+  let u=0,v=0,s=0;
+  do{ u=Math.random()*2-1; v=Math.random()*2-1; s=u*u+v*v; }while(s>=1||s===0);
+  const m=Math.sqrt(-2*Math.log(s)/s);
+  gaussSpare=v*m; return u*m;
+}
+
+/* ───────────────────────────── world constants ───────────────────────────── */
+const WORLD_H  = 540;      // corridor height in world units
+const VX       = 330;      // constant forward speed (px/s) — never changes
+const DT       = 1/120;    // physics step
+const DEC_EVERY= 6;        // the brain decides 20 times per second
+const CELL     = 6;        // collision/raycast grid resolution
+const RAY_RANGE= 210;
+const RAY_ANGLES = [-90,-70,-50,-30,0,30,50,70,90].map(d=>d*Math.PI/180);
+const NRAYS    = RAY_ANGLES.length;
+const NIN      = NRAYS + 5;          // rays + dir, y, x, prevOut, bias
+const LAYERS   = [NIN,16,1];         // small on purpose: fewer weights, faster evolution
+const SIG_MIN  = 0.015, SIG_MAX = 0.30;
+
+/* ═══════════════════════════ 1. LEVEL GENERATION ═══════════════════════════
+   Levels are built around a guaranteed-solvable centre line: the corridor
+   centre never slopes more than 0.85 (the wave can hold 1.0), and every spike,
+   block and ramp is grown out of the wall *away* from a clear channel. So the
+   level is always beatable — the AI just has to find the channel.            */
+
+const KIND_DECOR = {clean:0, zigzag:24, spikes:44, teeth:54, pillars:58, slopes:52};
+
+function generateLevel(seed){
+  const rnd = mulberry32(seed>>>0);
+  const nodes = [];                       // {x, c, gap, decor}
+  const RUNWAY = 560;
+  nodes.push({x:0,      c:WORLD_H/2, gap:250, decor:0, kind:'clean'});
+  nodes.push({x:RUNWAY, c:WORLD_H/2, gap:215, decor:0, kind:'clean'});
+
+  let x = RUNWAY, c = WORLD_H/2;
+  const TARGET = 12000;
+  const KINDS = ['spikes','teeth','zigzag','pillars','slopes','clean','spikes','teeth','pillars','slopes'];
+
+  while(x < TARGET){
+    const prog  = x/TARGET;
+    const kind  = KINDS[(rnd()*KINDS.length)|0];
+    const decor = KIND_DECOR[kind];
+    const gap   = clamp(lerp(180,82,prog) + (kind==='clean'?-22:0) + rnd()*30 - 12, 74, 195);
+    const subs  = kind==='zigzag' ? 3+((rnd()*3)|0) : 1+((rnd()*2)|0);
+    for(let s=0;s<subs;s++){
+      const w = kind==='zigzag' ? 150+rnd()*120 : 270+rnd()*290;
+      // corridors are always meaningfully sloped, so a fixed-frequency
+      // oscillator can never luck its way through — it has to actually track.
+      let slope = kind==='zigzag' ? (s%2?1:-1)*(0.55+rnd()*0.3)
+                                  : (rnd()<0.5?-1:1)*(0.28+rnd()*0.52);
+      const margin = gap/2 + decor + 16;
+      x += w;
+      c = clamp(c + slope*w, margin, WORLD_H-margin);
+      nodes.push({x,c,gap,decor,kind});
+    }
+  }
+  x += 460;
+  nodes.push({x, c, gap:240, decor:0, kind:'clean'});
+  return nodes;
+}
+
+/* Turn the centre-line nodes into drawable + collidable polygons. */
+function buildGeometry(nodes, seed){
+  const rnd = mulberry32((seed>>>0) ^ 0x9e3779b9);
+  const polys = [];                        // {pts:[x,y,...], kind, edge?}
+  const add = (pts,kind,edge)=> polys.push({pts,kind,edge});
+
+  const topEdgeAt = n => n.c - n.gap/2 - n.decor;
+  const botEdgeAt = n => n.c + n.gap/2 + n.decor;
+
+  for(let i=0;i<nodes.length-1;i++){
+    const a=nodes[i], b=nodes[i+1];
+    const t0=topEdgeAt(a), t1=topEdgeAt(b);
+    const b0=botEdgeAt(a), b1=botEdgeAt(b);
+    const sloped = Math.abs(t1-t0) > 3;
+
+    if(t0>1||t1>1) add([a.x,-40, b.x,-40, b.x,Math.max(t1,0), a.x,Math.max(t0,0)],
+                       sloped?'slope':'block', [a.x,t0,b.x,t1]);
+    if(b0<WORLD_H-1||b1<WORLD_H-1)
+      add([a.x,Math.min(b0,WORLD_H), b.x,Math.min(b1,WORLD_H), b.x,WORLD_H+40, a.x,WORLD_H+40],
+          sloped?'slope':'block', [a.x,b0,b.x,b1]);
+
+    const kind=b.kind, span=b.x-a.x;
+    if(kind==='clean'||span<40) continue;
+
+    /* Everything in this span is measured over the decoration's whole x-extent,
+       never at a single sample point: on a sloped wall the surface moves under
+       the decoration, so a one-point sample can push a spike tip into the free
+       channel and make the level unbeatable. base = deepest point still inside
+       the wall, limit = the channel boundary at its tightest. */
+    const at = px=>{
+      const t=clamp((px-a.x)/span,0,1);
+      return {top:lerp(t0,t1,t), bot:lerp(b0,b1,t), cy:lerp(a.c,b.c,t), gap:lerp(a.gap,b.gap,t)};
+    };
+    const wallAt = (px0,px1)=>{
+      const p=at(px0), q=at(px1);
+      return {
+        topBase : Math.min(p.top,q.top),
+        topLimit: Math.min(p.cy-p.gap/2, q.cy-q.gap/2),
+        botBase : Math.max(p.bot,q.bot),
+        botLimit: Math.max(p.cy+p.gap/2, q.cy+q.gap/2)
+      };
+    };
+
+    if(kind==='spikes'||kind==='teeth'){
+      const step = kind==='spikes' ? 46 : 62;
+      let side = rnd()<0.5;
+      const hw=step*0.38;
+      for(let px=a.x+step*0.6; px<b.x-12; px+=step){
+        const g=wallAt(px-hw,px+hw);
+        const ht=g.topLimit-g.topBase, hb=g.botBase-g.botLimit;
+        const both = kind==='spikes';
+        if((both||side)  && ht>8) add([px-hw,g.topBase, px+hw,g.topBase, px,g.topBase+ht],'spike');
+        if((both||!side) && hb>8) add([px-hw,g.botBase, px+hw,g.botBase, px,g.botBase-hb],'spike');
+        if(!both && rnd()<0.22) side=!side;
+      }
+    } else if(kind==='pillars'){
+      for(let px=a.x+50; px<b.x-40; px+=78+rnd()*46){
+        const w=22+rnd()*12, g=wallAt(px,px+w), f=0.5+rnd()*0.5;
+        if(rnd()<0.5){
+          const h=(g.topLimit-g.topBase)*f;
+          if(h>8) add([px,g.topBase, px+w,g.topBase, px+w,g.topBase+h, px,g.topBase+h],'block');
+        } else {
+          const h=(g.botBase-g.botLimit)*f;
+          if(h>8) add([px,g.botBase, px+w,g.botBase, px+w,g.botBase-h, px,g.botBase-h],'block');
+        }
+      }
+    } else if(kind==='slopes'){
+      let flip=rnd()<0.5;
+      const w=72;
+      for(let px=a.x+30; px<b.x-70; px+=86+rnd()*40){
+        const g=wallAt(px,px+w);
+        const ht=(g.topLimit-g.topBase)*0.95, hb=(g.botBase-g.botLimit)*0.95;
+        if(ht>8){
+          if(flip) add([px,g.topBase, px+w,g.topBase, px+w,g.topBase+ht],'slope');
+          else     add([px,g.topBase, px+w,g.topBase, px,g.topBase+ht],'slope');
+        }
+        if(hb>8){
+          if(flip) add([px,g.botBase, px+w,g.botBase, px,g.botBase-hb],'slope');
+          else     add([px,g.botBase, px+w,g.botBase, px+w,g.botBase-hb],'slope');
+        }
+        flip=!flip;
+      }
+    } else if(kind==='zigzag'){
+      for(let px=a.x+40; px<b.x-20; px+=54){
+        const g=wallAt(px-14,px+14);
+        const ht=g.topLimit-g.topBase, hb=g.botBase-g.botLimit;
+        if(ht>6) add([px-14,g.topBase, px+14,g.topBase, px,g.topBase+ht],'spike');
+        if(hb>6) add([px-14,g.botBase, px+14,g.botBase, px,g.botBase-hb],'spike');
+      }
+    }
+  }
+  return polys;
+}
+
+function pnpoly(p,x,y){
+  let inside=false;
+  for(let i=0,j=p.length-2;i<p.length;j=i,i+=2){
+    const xi=p[i], yi=p[i+1], xj=p[j], yj=p[j+1];
+    if(((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+
+/* ═══════════════════════ 2. COLLISION GRID (fast world) ═══════════════════ */
+let LEN=0, COLS=0, ROWS=0, grid=null, polys=[], bins=[], BIN=400, levelSeed=1;
+
+function rasterize(){
+  ROWS = Math.ceil(WORLD_H/CELL);
+  COLS = Math.ceil(LEN/CELL)+2;
+  grid = new Uint8Array(COLS*ROWS);
+  for(const poly of polys){
+    const p=poly.pts;
+    let minx=Infinity,maxx=-Infinity,miny=Infinity,maxy=-Infinity;
+    for(let i=0;i<p.length;i+=2){
+      if(p[i]<minx)minx=p[i]; if(p[i]>maxx)maxx=p[i];
+      if(p[i+1]<miny)miny=p[i+1]; if(p[i+1]>maxy)maxy=p[i+1];
+    }
+    const c0=Math.max(0,Math.floor(minx/CELL)), c1=Math.min(COLS-1,Math.ceil(maxx/CELL));
+    const r0=Math.max(0,Math.floor(miny/CELL)), r1=Math.min(ROWS-1,Math.ceil(maxy/CELL));
+    for(let r=r0;r<=r1;r++){
+      const cy=(r+0.5)*CELL, row=r*COLS;
+      for(let cc=c0;cc<=c1;cc++){
+        if(grid[row+cc]) continue;
+        if(pnpoly(p,(cc+0.5)*CELL,cy)) grid[row+cc]=1;
+      }
+    }
+  }
+  // render bins
+  bins = new Array(Math.ceil(LEN/BIN)+2);
+  for(let i=0;i<bins.length;i++) bins[i]=[];
+  polys.forEach((poly,idx)=>{
+    const p=poly.pts; let minx=Infinity,maxx=-Infinity;
+    for(let i=0;i<p.length;i+=2){ if(p[i]<minx)minx=p[i]; if(p[i]>maxx)maxx=p[i]; }
+    const b0=Math.max(0,Math.floor(minx/BIN)), b1=Math.min(bins.length-1,Math.floor(maxx/BIN));
+    for(let b=b0;b<=b1;b++) bins[b].push(idx);
+  });
+}
+
+function solidAt(x,y){
+  if(y<0||y>=WORLD_H) return true;          // ceiling and floor kill
+  if(x<0) return false;
+  const cx=(x/CELL)|0;
+  if(cx>=COLS) return false;
+  return grid[((y/CELL)|0)*COLS+cx]===1;
+}
+
+/* Grid DDA raycast — this is what the AI "sees". */
+function rayDist(x,y,dx,dy){
+  if(y<0||y>=WORLD_H) return 0;
+  let cx=(x/CELL)|0, cy=(y/CELL)|0;
+  const sx = dx>0?1:-1, sy = dy>0?1:-1;
+  const adx=Math.abs(dx), ady=Math.abs(dy);
+  const dtx = adx>1e-6 ? CELL/adx : Infinity;
+  const dty = ady>1e-6 ? CELL/ady : Infinity;
+  let tx = adx>1e-6 ? ((dx>0 ? (cx+1)*CELL-x : x-cx*CELL)/adx) : Infinity;
+  let ty = ady>1e-6 ? ((dy>0 ? (cy+1)*CELL-y : y-cy*CELL)/ady) : Infinity;
+  let t=0;
+  while(t<RAY_RANGE){
+    if(tx<ty){ t=tx; cx+=sx; tx+=dtx; } else { t=ty; cy+=sy; ty+=dty; }
+    if(cy<0||cy>=ROWS) return Math.min(t,RAY_RANGE);   // ceiling / floor
+    if(cx<0||cx>=COLS) return RAY_RANGE;
+    if(grid[cy*COLS+cx]) return Math.min(t,RAY_RANGE);
+  }
+  return RAY_RANGE;
+}
+
+/* ═════════════════════════════ 3. THE BRAIN ═══════════════════════════════ */
+let W=0; const OFF=[];
+for(let l=0;l<LAYERS.length-1;l++){ OFF.push(W); W += (LAYERS[l]+1)*LAYERS[l+1]; }
+
+const act = [new Float32Array(LAYERS[0]),new Float32Array(LAYERS[1]),
+             new Float32Array(LAYERS[2]),new Float32Array(LAYERS[3])];
+
+function forward(w,inp){
+  act[0].set(inp);
+  for(let l=0;l<LAYERS.length-1;l++){
+    const nin=LAYERS[l], nout=LAYERS[l+1], a=act[l], o=act[l+1];
+    let p=OFF[l];
+    for(let j=0;j<nout;j++){
+      let s=w[p+nin];
+      for(let i=0;i<nin;i++) s+=a[i]*w[p+i];
+      p+=nin+1;
+      o[j] = (l===LAYERS.length-2) ? 1/(1+Math.exp(-s)) : Math.tanh(s);
+    }
+  }
+  return act[LAYERS.length-1][0];
+}
+
+function randomBrain(){
+  const w=new Float32Array(W);
+  for(let l=0;l<LAYERS.length-1;l++){
+    const nin=LAYERS[l], nout=LAYERS[l+1], sc=1/Math.sqrt(nin);
+    let p=OFF[l];
+    for(let j=0;j<nout;j++){
+      for(let i=0;i<nin;i++) w[p+i]=gauss()*sc;
+      w[p+nin]=gauss()*0.3;
+      p+=nin+1;
+    }
+  }
+  return w;
+}
+
+/* ═══════════════════════════ 4. AGENTS & PHYSICS ══════════════════════════ */
+const INP = new Float32Array(NIN);
+const rayOut = new Float32Array(NRAYS);
+
+function sense(a){
+  for(let i=0;i<NRAYS;i++){
+    const ang=RAY_ANGLES[i];
+    const d=rayDist(a.x,a.y,Math.cos(ang),Math.sin(ang));
+    rayOut[i]=d;
+    INP[i]=1-d/RAY_RANGE;
+  }
+  INP[NRAYS]   = a.hold ? -1 : 1;              // current direction
+  INP[NRAYS+1] = (a.y/WORLD_H)*2-1;            // height in the corridor
+  INP[NRAYS+2] = a.x/LEN;                      // how far into the level
+  INP[NRAYS+3] = a.prevOut*2-1;                // last decision (memory)
+  INP[NRAYS+4] = 1;                            // bias
+}
+
+function makeAgent(w,eps){
+  return {w, eps, x:0, y:spawnY, hold:false, prevOut:0.5, alive:true,
+          finished:false, steps:0, flips:0, xmax:0, safe:0, nSense:0,
+          trail:[], dx:0, dy:0};
+}
+
+function stepAgent(a){
+  a.steps++;
+  if(a.steps%DEC_EVERY===0){
+    sense(a);
+    let mn=RAY_RANGE;
+    for(let i=0;i<NRAYS;i++) if(rayOut[i]<mn) mn=rayOut[i];
+    a.safe+=mn; a.nSense++;                       // how close it flies to death
+    const o=forward(a.w,INP);
+    const h=o>0.5;
+    if(h!==a.hold){ a.flips++; a.hold=h; }
+    a.prevOut=o;
+  }
+  const vy = a.hold ? -VX : VX;                 // hold = up, release = down, always 45°
+  const nx = a.x + VX*DT, ny = a.y + vy*DT;
+  // swept test so nothing is ever tunnelled through
+  for(let s=1;s<=3;s++){
+    const t=s/3;
+    const px=a.x+(nx-a.x)*t, py=a.y+(ny-a.y)*t;
+    if(solidAt(px,py)){ kill(a,px,py); return; }
+  }
+  a.x=nx; a.y=ny; a.dx=VX; a.dy=vy;
+  if(a.x>a.xmax) a.xmax=a.x;
+  if(a.x>=LEN){ a.alive=false; a.finished=true; a.xmax=LEN; alive--; lives++; wins++; }
+}
+
+/* ═══════════════════════════ 5. POPULATION STATE ══════════════════════════ */
+let theta=null, bestTheta=null, sigma=0.15, lr=0.08;
+let popSize=100, agents=[], alive=0, gen=0, lives=0, wins=0, deaths=0;
+let record=0, genBest=0, genAvg=0, genClear=0, genElite=0, history=[], msg='', msgT=0;
+let emaAvg=0, bestAvg=0, eliteEma=0, bestElite=0, badRuns=0, stag=0, clearedOnce=false;
+let spawnY=WORLD_H/2, genSteps=0, maxGenSteps=0;
+let deathBuckets=null, genBuckets=null, BUCKET=25, sparks=[];
+let speed=30, paused=false, manual=null, adaptive=true;
+const show={rays:true, heat:true, trail:true};
+
+function newLevel(seed){
+  levelSeed = seed>>>0;
+  const nodes = generateLevel(levelSeed);
+  polys = buildGeometry(nodes, levelSeed);
+  LEN = nodes[nodes.length-1].x;
+  spawnY = nodes[0].c;
+  rasterize();
+  deathBuckets = new Int32Array(Math.ceil(LEN/BUCKET)+1);
+  genBuckets   = new Int32Array(deathBuckets.length);
+  maxGenSteps  = Math.ceil((LEN/VX)/DT*1.15);
+  record=0; genBest=0; genAvg=0; genClear=0; history=[]; sparks=[]; deaths=0; wins=0;
+  emaAvg=0; bestAvg=0; eliteEma=0; bestElite=0; badRuns=0; stag=0; clearedOnce=false;
+  startGeneration();
+}
+
+function resetBrain(){
+  theta = randomBrain();
+  bestTheta = Float32Array.from(theta);
+  sigma = parseFloat(rSig.value)/100;
+  gen=0; lives=0; wins=0; deaths=0; record=0; history=[];
+  emaAvg=0; bestAvg=0; eliteEma=0; bestElite=0; badRuns=0; stag=0; clearedOnce=false; genClear=0;
+  if(deathBuckets) deathBuckets.fill(0);
+  sparks=[];
+  startGeneration();
+}
+
+/* Spawn the population: agent 0 is the unmutated brain itself, the rest are
+   mirrored pairs (theta+σε, theta−σε) so the noise cancels out in the update. */
+function startGeneration(){
+  agents.length=0;
+  genSteps=0;
+  if(genBuckets) genBuckets.fill(0);
+  const n=popSize;
+  agents.push(makeAgent(theta,null));
+  for(let i=1;i<n;i+=2){
+    const eps=new Float32Array(W);
+    for(let k=0;k<W;k++) eps[k]=gauss();
+    const wp=new Float32Array(W), wm=new Float32Array(W);
+    for(let k=0;k<W;k++){ const d=sigma*eps[k]; wp[k]=theta[k]+d; wm[k]=theta[k]-d; }
+    agents.push(makeAgent(wp,eps));
+    if(agents.length<n){
+      const neg=new Float32Array(W);
+      for(let k=0;k<W;k++) neg[k]=-eps[k];
+      agents.push(makeAgent(wm,neg));
+    }
+  }
+  alive=agents.length;
+}
+
+function kill(a,px,py){
+  a.alive=false; a.x=px; a.y=py;
+  alive--; lives++; deaths++;
+  const b=Math.min(deathBuckets.length-1,(px/BUCKET)|0);
+  deathBuckets[b]++; genBuckets[b]++;
+  if(sparks.length<600) sparks.push({x:px,y:py,t:1});
+}
+
+/* Fold the entire generation — every crash and every success — back into the
+   one shared brain. Rank shaping makes it robust; mirrored pairs kill variance. */
+function evolve(){
+  const n=agents.length;
+  const fits=new Float64Array(n);
+  let cleared=0;
+  for(let i=0;i<n;i++){
+    const a=agents[i];
+    /* Forward speed is constant, so every clone that clears the level does it in
+       exactly the same time: their scores would tie perfectly and the ranking
+       would collapse onto whatever tiny term is left. Separate them by how much
+       clearance they flew with instead — that pressure makes the solution robust
+       enough to survive mutation, rather than eroding it. */
+    const safety = a.nSense ? a.safe/a.nSense : 0;
+    let f = a.finished ? LEN+2000 : a.xmax;
+    f += safety*(a.finished?6:1.5) - 0.05*a.flips;
+    if(a.finished) cleared++;
+    fits[i]=f;
+  }
+
+  /* Rank-shape over the perturbed clones only. The unmutated elite is a probe
+     of theta itself, not a sample of the search distribution, so letting it
+     hold a rank slot would bias the update. */
+  const idx=[];
+  for(let i=0;i<n;i++) if(agents[i].eps) idx.push(i);
+  const m=idx.length;
+  idx.sort((p,q)=>fits[p]-fits[q]);
+  /* If the whole swarm died in the same spot there is nothing to rank: the
+     ordering is then pure tie-breaking noise, and following it would random-walk
+     the brain away from what already works. Sit this generation out instead. */
+  const spread = m>1 ? (fits[idx[m-1]]-fits[idx[0]])/LEN : 0;
+  if(m>1 && spread>0.002){
+    const u=new Float64Array(n);
+    for(let r=0;r<m;r++) u[idx[r]]=r/(m-1)-0.5;
+    const grad=new Float64Array(W);
+    for(let i=0;i<n;i++){
+      const e=agents[i].eps; if(!e) continue;
+      const ui=u[i]; if(ui===0) continue;
+      for(let k=0;k<W;k++) grad[k]+=ui*e[k];
+    }
+    /* The 1/sigma of the ES gradient estimate is bounded: as sigma anneals it
+       would otherwise blow the step size up exactly when the search is meant to
+       be settling down. Steps are clipped per weight for the same reason. */
+    const scale=lr/(m*Math.max(sigma,0.08));
+    for(let k=0;k<W;k++) theta[k]=theta[k]*0.9998+clamp(scale*grad[k],-0.05,0.05);
+  }
+
+  let best=0,sum=0;
+  for(let i=0;i<n;i++){ const p=agents[i].xmax; if(p>best)best=p; sum+=p; }
+  genBest=best/LEN; genAvg=(sum/n)/LEN; genClear=cleared/n;
+  genElite=agents[0].xmax/LEN;                       // theta itself, unmutated
+  gen++;
+  history.push({best:genBest, avg:genAvg, rec:record});
+  if(history.length>400) history.shift();
+
+  emaAvg = emaAvg ? emaAvg*0.8 + genAvg*0.2 : genAvg;
+  if(genBest>record+0.0005){
+    record=genBest;
+    if(record>=1 && !clearedOnce){ clearedOnce=true; flash('LEVEL CLEARED — the brain beat the wave'); }
+  }
+
+  /* Judge the brain by agent 0 — theta itself, unmutated. It is the one
+     noise-free measurement available of what the shared brain actually knows. */
+  eliteEma = eliteEma ? eliteEma*0.7 + genElite*0.3 : genElite;
+  const improved = eliteEma > bestElite+0.002;
+  if(improved){ bestElite=eliteEma; bestTheta=Float32Array.from(theta); stag=0; badRuns=0; }
+  else if(genElite < bestElite-0.12 && bestTheta){
+    if(++badRuns>=3){                                   // it is genuinely losing it
+      theta=Float32Array.from(bestTheta);
+      eliteEma=bestElite*0.9; badRuns=0; stag=0;
+      sigma=Math.min(SIG_MAX,Math.max(sigma*1.5,0.08));
+      flash('rolled back to the best known brain');
+    }
+  } else badRuns=0;
+
+  if(adaptive){
+    if(genClear>0.8)                    sigma=Math.max(SIG_MIN,sigma*0.95); // consolidate
+    else if(eliteEma<bestElite-0.05)    sigma=Math.min(SIG_MAX,sigma*1.15); // losing ground
+    else if(!improved && ++stag>12){ stag=0; sigma=Math.min(SIG_MAX,sigma*1.12); }
+  }
+  rSig.value=Math.max(2,Math.round(sigma*100)); vSig.textContent=sigma.toFixed(2);
+  startGeneration();
+}
+
+function flash(t){ msg=t; msgT=performance.now()+3200; }
+
+/* ═══════════════════════════ 6. SIMULATION LOOP ═══════════════════════════ */
+let rateCount=0, rateTime=performance.now(), rateShown=0;
+
+function simulate(budgetMs){
+  const t0=performance.now();
+  let want=Math.max(1,Math.round(speed*(1/60)/DT));      // game time per frame
+  let done=0;
+  while(done<want){
+    if((done&15)===0 && performance.now()-t0>budgetMs) break;
+    for(let i=0;i<agents.length;i++){ const a=agents[i]; if(a.alive) stepAgent(a); }
+    genSteps++; done++;
+    if(manual&&manual.alive) stepManual();
+    if(alive<=0 || genSteps>=maxGenSteps){
+      rateCount+=agents.length;
+      evolve();
+    }
+  }
+}
+
+function stepManual(){
+  const a=manual;
+  const vy=a.hold?-VX:VX;
+  const nx=a.x+VX*DT, ny=a.y+vy*DT;
+  for(let s=1;s<=3;s++){
+    const t=s/3, px=a.x+(nx-a.x)*t, py=a.y+(ny-a.y)*t;
+    if(solidAt(px,py)){ a.alive=false; a.deadAt=performance.now(); return; }
+  }
+  a.x=nx; a.y=ny;
+  if(a.x>=LEN){ a.alive=false; a.won=true; a.deadAt=performance.now(); }
+}
+
+/* ═══════════════════════════════ 7. RENDER ════════════════════════════════ */
+const cv=document.getElementById('game'), ctx=cv.getContext('2d');
+let VW=1000, scale=1, camX=0, camTarget=0;
+
+function resize(){
+  const r=cv.getBoundingClientRect(), dpr=Math.min(2,devicePixelRatio||1);
+  cv.width=Math.max(320,r.width*dpr); cv.height=Math.max(220,r.height*dpr);
+  scale=cv.height/(WORLD_H+56);
+  VW=cv.width/scale;
+}
+new ResizeObserver(resize).observe(cv);
+
+/* Walls and the things growing out of them need different fills, otherwise an
+   embedded pillar shows up as nothing but its own outline floating in the gap. */
+const COL={
+  wall :'#16224a', wallEdge :'#4a6bd0',
+  deco :'#2b3f7d', decoEdge :'#8fa9f5',
+  spike:'#ff5470', spikeEdge:'#ffd0da'
+};
+
+function leaderAgent(){
+  let best=null;
+  for(const a of agents) if(a.alive && (!best||a.x>best.x)) best=a;
+  if(!best) for(const a of agents) if(!best||a.xmax>best.xmax) best=a;
+  return best;
+}
+
+function draw(){
+  const L=leaderAgent();
+  camTarget=(manual&&manual.alive?manual.x:(L?L.x:0)) - VW*0.30;
+  camX += (camTarget-camX)*0.25;
+  if(camX<-40) camX=-40;
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const g=ctx.createLinearGradient(0,0,0,cv.height);
+  g.addColorStop(0,'#070c1c'); g.addColorStop(1,'#0e0a22');
+  ctx.fillStyle=g; ctx.fillRect(0,0,cv.width,cv.height);
+
+  ctx.setTransform(scale,0,0,scale,-camX*scale,28*scale);
+
+  // parallax grid
+  ctx.strokeStyle='rgba(80,120,220,.10)'; ctx.lineWidth=1/scale;
+  const gx0=Math.floor(camX/60)*60;
+  ctx.beginPath();
+  for(let x=gx0;x<camX+VW+60;x+=60){ ctx.moveTo(x,-20); ctx.lineTo(x,WORLD_H+20); }
+  for(let y=0;y<=WORLD_H;y+=60){ ctx.moveTo(camX-20,y); ctx.lineTo(camX+VW+20,y); }
+  ctx.stroke();
+
+  // ── the level
+  const b0=Math.max(0,Math.floor(camX/BIN)), b1=Math.min(bins.length-1,Math.floor((camX+VW)/BIN)+1);
+  const seen=new Set();
+  for(let b=b0;b<=b1;b++) for(const idx of bins[b]) seen.add(idx);
+  ctx.lineWidth=1.4/scale;
+  for(let pass=0;pass<2;pass++){         // walls first, then what grows out of them
+    for(const idx of seen){
+      const poly=polys[idx];
+      if((pass===0)!==!!poly.edge) continue;
+      const p=poly.pts;
+      ctx.beginPath(); ctx.moveTo(p[0],p[1]);
+      for(let i=2;i<p.length;i+=2) ctx.lineTo(p[i],p[i+1]);
+      ctx.closePath();
+      if(poly.kind==='spike'){ ctx.fillStyle=COL.spike; ctx.strokeStyle=COL.spikeEdge; }
+      else if(poly.edge)     { ctx.fillStyle=COL.wall;  ctx.strokeStyle=COL.wallEdge; }
+      else                   { ctx.fillStyle=COL.deco;  ctx.strokeStyle=COL.decoEdge; }
+      ctx.fill();
+      if(poly.edge){                     // stroke the exposed surface only
+        const e=poly.edge;
+        ctx.beginPath(); ctx.moveTo(e[0],e[1]); ctx.lineTo(e[2],e[3]); ctx.stroke();
+      } else ctx.stroke();
+    }
+  }
+
+  // ── death memory: where the swarm keeps dying
+  if(show.heat){
+    let mx=1;
+    const i0=Math.max(0,(camX/BUCKET)|0), i1=Math.min(deathBuckets.length-1,((camX+VW)/BUCKET)|0);
+    for(let i=i0;i<=i1;i++) if(deathBuckets[i]>mx) mx=deathBuckets[i];
+    for(let i=i0;i<=i1;i++){
+      const v=deathBuckets[i]; if(!v) continue;
+      const n=Math.log(1+v)/Math.log(1+mx);
+      ctx.fillStyle='rgba(255,84,112,'+(n*0.16).toFixed(3)+')';
+      ctx.fillRect(i*BUCKET,-20,BUCKET,WORLD_H+40);
+      ctx.fillStyle='rgba(255,120,150,'+(0.25+n*0.6).toFixed(3)+')';
+      ctx.fillRect(i*BUCKET+1,WORLD_H-2-n*46,BUCKET-2,n*46);
+      if(genBuckets[i]){
+        ctx.fillStyle='rgba(255,220,90,.85)';
+        ctx.fillRect(i*BUCKET+1,WORLD_H-2-n*46,BUCKET-2,3);
+      }
+    }
+  }
+
+  // finish line
+  ctx.fillStyle='rgba(141,255,107,.18)'; ctx.fillRect(LEN,-20,20,WORLD_H+40);
+  ctx.fillStyle='#8dff6b'; ctx.fillRect(LEN,-20,3,WORLD_H+40);
+
+  // ── crash sparks
+  for(let i=sparks.length-1;i>=0;i--){
+    const s=sparks[i]; s.t-=0.02;
+    if(s.t<=0){ sparks.splice(i,1); continue; }
+    if(s.x<camX-40||s.x>camX+VW+40) continue;
+    ctx.fillStyle='rgba(255,90,120,'+s.t.toFixed(2)+')';
+    const r=(1-s.t)*9+2;
+    ctx.beginPath(); ctx.arc(s.x,s.y,r,0,6.283); ctx.fill();
+  }
+
+  // ── the swarm (overlapping, never colliding)
+  ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<agents.length;i++){
+    const a=agents[i];
+    if(!a.alive) continue;
+    if(show.trail){
+      if(a.trail.length>18) a.trail.shift();
+      a.trail.push(a.x,a.y);
+      ctx.strokeStyle='rgba(63,227,255,.055)'; ctx.lineWidth=2.2/scale;
+      ctx.beginPath(); ctx.moveTo(a.trail[0],a.trail[1]);
+      for(let k=2;k<a.trail.length;k+=2) ctx.lineTo(a.trail[k],a.trail[k+1]);
+      ctx.stroke();
+    }
+    drawWave(a,'rgba(63,227,255,.30)');
+  }
+  ctx.globalCompositeOperation='source-over';
+
+  // ── the leader, drawn solid, with its sensors
+  if(L&&L.alive){
+    if(show.rays){
+      sense(L);
+      ctx.lineWidth=1/scale;
+      for(let i=0;i<NRAYS;i++){
+        const ang=RAY_ANGLES[i], d=rayOut[i];
+        const hit=d<RAY_RANGE-1;
+        ctx.strokeStyle=hit?'rgba(255,61,154,.5)':'rgba(120,160,255,.16)';
+        ctx.beginPath(); ctx.moveTo(L.x,L.y);
+        ctx.lineTo(L.x+Math.cos(ang)*d, L.y+Math.sin(ang)*d);
+        ctx.stroke();
+        if(hit){
+          ctx.fillStyle='rgba(255,61,154,.8)';
+          ctx.beginPath(); ctx.arc(L.x+Math.cos(ang)*d,L.y+Math.sin(ang)*d,2.2,0,6.283); ctx.fill();
+        }
+      }
+    }
+    ctx.shadowColor='#3fe3ff'; ctx.shadowBlur=14;
+    drawWave(L,'#eafcff',1.35);
+    ctx.shadowBlur=0;
+  }
+
+  // ── the human, if playing
+  if(manual){
+    ctx.shadowColor='#ffc857'; ctx.shadowBlur=12;
+    drawWave(manual, manual.alive?'#ffc857':'rgba(255,200,87,.3)',1.35);
+    ctx.shadowBlur=0;
+  }
+
+  ctx.setTransform(1,0,0,1,0,0);
+}
+
+function drawWave(a,color,sizeMul){
+  const s=(sizeMul||1)*8;
+  const up=a.hold?-1:1;
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.moveTo(a.x+s, a.y+up*s);          // nose points along travel
+  ctx.lineTo(a.x-s, a.y-up*s*0.15);
+  ctx.lineTo(a.x-s*0.35, a.y-up*s*0.95);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/* ═════════════════════════ 8. SIDE PANEL VISUALS ══════════════════════════ */
+const chart=document.getElementById('chart'), cctx=chart.getContext('2d');
+const bviz=document.getElementById('brainviz'), bctx=bviz.getContext('2d');
+function fitMini(c){
+  const r=c.getBoundingClientRect(), dpr=Math.min(2,devicePixelRatio||1);
+  if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){
+    c.width=Math.max(10,Math.round(r.width*dpr)); c.height=Math.max(10,Math.round(r.height*dpr));
+  }
+}
+
+function drawChart(){
+  fitMini(chart);
+  const w=chart.width,h=chart.height;
+  cctx.clearRect(0,0,w,h);
+  cctx.strokeStyle='rgba(120,150,220,.12)'; cctx.lineWidth=1;
+  for(let i=1;i<4;i++){ const y=h*i/4; cctx.beginPath(); cctx.moveTo(0,y); cctx.lineTo(w,y); cctx.stroke(); }
+  if(history.length<2) return;
+  const n=history.length;
+  const line=(key,style,width)=>{
+    cctx.strokeStyle=style; cctx.lineWidth=width; cctx.beginPath();
+    for(let i=0;i<n;i++){
+      const x=i/(n-1)*w, y=h-history[i][key]*h;
+      i?cctx.lineTo(x,y):cctx.moveTo(x,y);
+    }
+    cctx.stroke();
+  };
+  line('avg','rgba(63,227,255,.45)',1.2);
+  line('best','#3fe3ff',1.6);
+  line('rec','rgba(255,61,154,.9)',1.6);
+  cctx.fillStyle='rgba(223,232,255,.55)'; cctx.font='10px ui-monospace,monospace';
+  cctx.fillText('100%',3,10);
+}
+
+function drawBrain(){
+  fitMini(bviz);
+  const w=bviz.width,h=bviz.height;
+  bctx.clearRect(0,0,w,h);
+  const L=leaderAgent();
+  if(L) { sense(L); forward(L.w,INP); }
+  const pad=12, colW=(w-pad*2)/(LAYERS.length-1);
+  const pos=LAYERS.map((cnt,li)=>{
+    const arr=[];
+    for(let i=0;i<cnt;i++) arr.push([pad+li*colW, h*(i+1)/(cnt+1)]);
+    return arr;
+  });
+  // connections
+  for(let l=0;l<LAYERS.length-1;l++){
+    let p=OFF[l];
+    for(let j=0;j<LAYERS[l+1];j++){
+      for(let i=0;i<LAYERS[l];i++){
+        const v=theta?theta[p+i]:0, m=Math.min(1,Math.abs(v)*0.9);
+        if(m<0.12){ continue; }
+        bctx.strokeStyle=(v>0?'rgba(63,227,255,':'rgba(255,61,154,')+(m*0.25).toFixed(3)+')';
+        bctx.lineWidth=0.6;
+        bctx.beginPath(); bctx.moveTo(pos[l][i][0],pos[l][i][1]); bctx.lineTo(pos[l+1][j][0],pos[l+1][j][1]); bctx.stroke();
+      }
+      p+=LAYERS[l]+1;
+    }
+  }
+  // nodes
+  for(let l=0;l<LAYERS.length;l++){
+    for(let i=0;i<LAYERS[l];i++){
+      const v=act[l][i], m=clamp(Math.abs(v),0,1);
+      bctx.fillStyle = v>=0 ? 'rgba(63,227,255,'+(0.2+m*0.8).toFixed(2)+')'
+                            : 'rgba(255,61,154,'+(0.2+m*0.8).toFixed(2)+')';
+      bctx.beginPath(); bctx.arc(pos[l][i][0],pos[l][i][1], l===LAYERS.length-1?5:3.1, 0, 6.283); bctx.fill();
+    }
+  }
+  bctx.fillStyle='rgba(223,232,255,.5)'; bctx.font='9px ui-monospace,monospace';
+  bctx.fillText('9 rays + state', 2, h-3);
+  bctx.fillText(act[LAYERS.length-1][0]>0.5?'UP':'DOWN', w-32, h-3);
+}
+
+/* ═════════════════════════════ 9. UI WIRING ═══════════════════════════════ */
+const $=id=>document.getElementById(id);
+const rSpeed=$('rSpeed'), rPop=$('rPop'), rSig=$('rSig'), rLr=$('rLr');
+const vSpeed=$('vSpeed'), vPop=$('vPop'), vSig=$('vSig'), vLr=$('vLr');
+
+rSpeed.oninput=()=>{ speed=+rSpeed.value; vSpeed.textContent=speed+'×'; };
+rPop.oninput  =()=>{ popSize=+rPop.value; vPop.textContent=popSize; };
+rSig.oninput  =()=>{ sigma=+rSig.value/100; vSig.textContent=sigma.toFixed(2); };
+rLr.oninput   =()=>{ lr=+rLr.value/100; vLr.textContent=lr.toFixed(3); };
+
+$('bPause').onclick=()=>togglePause();
+$('bMax').onclick  =()=>{ rSpeed.value=80; rSpeed.oninput(); };
+$('bReset').onclick=()=>{ resetBrain(); flash('brain wiped — back to random flailing'); };
+$('bLevel').onclick=()=>{ newLevel((Math.random()*1e9)|0); flash('new level — same brain, fresh mistakes'); };
+$('bBest').onclick =()=>{ if(bestTheta){ theta=Float32Array.from(bestTheta); startGeneration(); flash('restored the best brain'); } };
+$('bManual').onclick=()=>toggleManual();
+
+const tg=(id,key)=>{ const b=$(id); b.onclick=()=>{ show[key]=!show[key]; b.classList.toggle('on',show[key]); }; };
+tg('tRays','rays'); tg('tHeat','heat'); tg('tTrail','trail');
+$('tAdapt').onclick=()=>{ adaptive=!adaptive; $('tAdapt').classList.toggle('on',adaptive); };
+
+function togglePause(){ paused=!paused; $('bPause').textContent=paused?'Resume':'Pause'; $('bPause').classList.toggle('on',paused); }
+function toggleManual(){
+  if(manual){ manual=null; $('bManual').classList.remove('on'); $('bManual').textContent='Play it yourself'; }
+  else { manual={x:0,y:spawnY,hold:false,alive:true,deadAt:0,won:false}; $('bManual').classList.add('on'); $('bManual').textContent='Stop playing'; flash('hold space / mouse to fly up'); }
+}
+
+function setHold(v){ if(manual){ if(!manual.alive && v) manual={x:0,y:spawnY,hold:true,alive:true,deadAt:0,won:false}; else manual.hold=v; } }
+addEventListener('keydown',e=>{
+  if(e.code==='Space'){ e.preventDefault(); setHold(true); return; }
+  if(e.repeat) return;
+  const k=e.key.toLowerCase();
+  if(k==='p') togglePause();
+  else if(k==='m') toggleManual();
+  else if(k==='n') $('bLevel').onclick();
+  else if(k==='r') $('bReset').onclick();
+  else if(e.key==='ArrowUp'){ rSpeed.value=Math.min(80,+rSpeed.value+2); rSpeed.oninput(); }
+  else if(e.key==='ArrowDown'){ rSpeed.value=Math.max(1,+rSpeed.value-2); rSpeed.oninput(); }
+});
+addEventListener('keyup',e=>{ if(e.code==='Space'){ e.preventDefault(); setHold(false); } });
+cv.addEventListener('pointerdown',e=>{ e.preventDefault(); setHold(true); });
+addEventListener('pointerup',()=>setHold(false));
+
+/* ═══════════════════════════ 10. HUD + MAIN LOOP ══════════════════════════ */
+function updateHUD(){
+  const now=performance.now();
+  if(now-rateTime>500){
+    const inst=rateCount/((now-rateTime)/1000);
+    rateShown = rateShown ? rateShown*0.6+inst*0.4 : inst;
+    rateCount=0; rateTime=now;
+  }
+  const L=leaderAgent();
+  const runPct = L ? Math.min(1,L.xmax/LEN) : 0;
+
+  $('hGen').textContent=gen;
+  $('hAlive').textContent=alive;
+  $('hRun').textContent=(runPct*100).toFixed(1)+'%';
+  $('hRec').textContent=(record*100).toFixed(1)+'%';
+  $('hRate').textContent=Math.round(rateShown);
+  $('hMsg').textContent = now<msgT ? msg : '';
+  $('hMsg').style.display = now<msgT ? '' : 'none';
+  $('barNow').style.width=(runPct*100)+'%';
+  $('barRec').style.width=(record*100)+'%';
+
+  $('sGen').textContent=gen;
+  $('sLives').textContent=lives.toLocaleString();
+  $('sRate').textContent=Math.round(rateShown);
+  $('sClear').textContent=(genClear*100).toFixed(0)+'%';
+  $('sRec').textContent=(record*100).toFixed(1)+'%';
+  $('sElite').textContent=(genElite*100).toFixed(1)+'%';
+  $('sAvg').textContent=(genAvg*100).toFixed(1)+'%';
+  $('sWins').textContent=wins;
+  $('sSigma').textContent=sigma.toFixed(2);
+  $('sDeaths').textContent=deaths.toLocaleString();
+}
+
+let lastFrame=0;
+function frame(t){
+  requestAnimationFrame(frame);
+  if(t-lastFrame<8) return;
+  lastFrame=t;
+  if(!paused) simulate(13);
+  draw();
+  updateHUD();
+  drawChart();
+  drawBrain();
+}
+
+/* ═════════════════════════════════ boot ═══════════════════════════════════ */
+resize();
+theta=randomBrain();
+bestTheta=Float32Array.from(theta);
+newLevel((Math.random()*1e9)|0);
+flash('generation 1 — the brain is pure noise. watch it flail.');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
