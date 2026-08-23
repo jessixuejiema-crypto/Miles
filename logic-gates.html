@@ -2012,22 +2012,45 @@ function place(type, wx, wy) {
   const ins = insFor(type);
   const s = sizeOf({ type: type, ins: ins, outs: DEFS[type].outs });
 
-  // a part that splices takes over the wire it was dropped on
-  const onWire = DEFS[type].splices ? hitWire(wx, wy, 16) : null;
+  // a part that splices takes over the nearest wire it was dropped near
+  const onWire = DEFS[type].splices ? hitWire(wx, wy, 46) : null;
 
-  const c = mkComp(type,
-    Math.round((wx - s.w / 2) / GRID) * GRID,
-    Math.round((wy - s.h / 2) / GRID) * GRID,
-    { ins: ins });
+  // sitting on the wire means sitting ON it, so centre it on the wire itself
+  let px, py;
+  if (onWire) {
+    const n = nearestOnWire(onWire, wx, wy);
+    px = Math.round(n.x - s.w / 2);
+    py = Math.round(n.y - s.h / 2);
+  } else {
+    px = Math.round((wx - s.w / 2) / GRID) * GRID;
+    py = Math.round((wy - s.h / 2) / GRID) * GRID;
+  }
+
+  const c = mkComp(type, px, py, { ins: ins });
 
   if (onWire) {
     splice(c, onWire);
-    toast('Dropped into the wire');
+    toast('Spliced into the wire');
+  } else if (DEFS[type].splices) {
+    toast('Not on a wire \u2014 drop it onto one to splice it in');
   }
   sel.clear();
   sel.add(c.id);
   updateInspector();
   save();
+}
+
+/* The point on a wire closest to somewhere, so a spliced part can sit on the
+   line rather than merely near it. */
+function nearestOnWire(w, x, y) {
+  const g = wireGeom(w);
+  if (!g) return { x: x, y: y };
+  let best = { x: x, y: y }, bd = Infinity;
+  for (const pt of samples(g, 40)) {
+    const d = (pt.x - x) ** 2 + (pt.y - y) ** 2;
+    if (d < bd) { bd = d; best = pt; }
+  }
+  return best;
 }
 
 /* Cut the wire and run it through the part instead: source -> part -> target. */
