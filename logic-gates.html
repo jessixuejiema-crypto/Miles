@@ -509,6 +509,15 @@ const DEFS = {
              else if (v[1]) c.q = false;
              return [c.q, !c.q];
            } },
+  GSR:   { cat:'mem', name:'Gated SR Latch', ins:3, outs:2, inNames:['S','E','R'], outNames:['Q','Q̅'],
+           logic: (v, c) => {
+             if (v[1]) {                                                 // only listens while enabled
+               if (v[0] && v[2]) { c.q = false; return [false, false]; } // forbidden state
+               if (v[0]) c.q = true;
+               else if (v[2]) c.q = false;
+             }
+             return [c.q, !c.q];
+           } },
   DLATCH:{ cat:'mem', name:'D Latch', ins:2, outs:2, inNames:['D','E'], outNames:['Q','Q̅'],
            logic: (v, c) => {
              if (v[1]) c.q = !!v[0];                                     // transparent while enabled
@@ -550,7 +559,7 @@ const DEFS = {
 
 const PALETTE = [
   { head:'Gates', wide:false, items:['AND','OR','NOT','NAND','NOR','XOR','XNOR','BUF'] },
-  { head:'Latches & flip-flops', wide:true, items:['SR','DLATCH','DFF','TFF','JKFF'] },
+  { head:'Latches & flip-flops', wide:true, items:['SR','GSR','DLATCH','DFF','TFF','JKFF'] },
   { head:'Inputs & outputs', wide:false, items:['SWITCH','BUTTON','CLOCK','LED'] }
 ];
 
@@ -572,6 +581,12 @@ const INFO = {
     blurb: 'Set drives Q high, Reset drives it low, and with both low it keeps whatever it had. Both high at once is the forbidden combination.',
     cols: ['S', 'R', 'Q next'],
     rows: [['0', '0', 'hold'], ['0', '1', '0'], ['1', '0', '1'], ['1', '1', 'invalid']]
+  },
+  GSR: {
+    blurb: 'An SR latch with a gate on it. Set and Reset only take effect while Enable is high; drop Enable and the latch ignores them and keeps what it has.',
+    cols: ['E', 'S', 'R', 'Q next'],
+    rows: [['0', '-', '-', 'hold'], ['1', '0', '0', 'hold'], ['1', '0', '1', '0'],
+           ['1', '1', '0', '1'], ['1', '1', '1', 'invalid']]
   },
   DLATCH: {
     blurb: 'While Enable is high the output simply follows D. Drop Enable and it freezes the last value it saw.',
@@ -1137,7 +1152,7 @@ function drawMemBody(c, d, w, h) {
   ctx.stroke();
 
   // type name across the top, port names on their own rows
-  const short = { SR: 'SR', DLATCH: 'D', DFF: 'D', TFF: 'T', JKFF: 'JK' }[c.type];
+  const short = { SR: 'SR', GSR: 'SR', DLATCH: 'D', DFF: 'D', TFF: 'T', JKFF: 'JK' }[c.type];
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = P.text;
