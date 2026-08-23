@@ -452,6 +452,7 @@
           <dt>Inputs</dt><dd>AND, OR, NAND, NOR, XOR and XNOR take two to six inputs. Use the &minus; and + next to <em>Inputs</em> in the panel &mdash; on a chip before you place it, or on a gate already on the board. The truth table follows along.</dd>
           <dt>Wire tool</dt><dd>Drag from an output port to an input port. Click-then-click works too. An input accepts several wires and behaves like a wired OR.</dd>
           <dt>Cut tool</dt><dd>Slash a line across every wire you want gone. A plain click cuts just the wire under the cursor.</dd>
+          <dt>Connector</dt><dd>Drop one onto a wire and it splits the wire in two and sits in the middle. Click it to open the break and nothing gets through; click again to join the halves back up. Delete it and the wire heals into one again.</dd>
           <dt>Click a switch</dt><dd>With the Select tool, click a switch to flip it. Buttons stay high only while you hold them down.</dd>
           <dt>Latch</dt><dd>In the gate row, and the simplest way to remember a bit: two inputs, one output. Pulse S and the output turns on and stays on; pulse R and it turns off and stays off.</dd>
           <dt>Latches</dt><dd>The bigger blocks below the gates give you both outputs. SR and D latches are level driven; the D, T and JK flip-flops trigger on a rising clock edge. Cross-coupled NOR gates latch on their own too &mdash; see the examples menu.</dd>
@@ -566,13 +567,20 @@ const DEFS = {
   SWITCH:{ cat:'io', name:'Switch', ins:0, outs:1, logic: (v, c) => [!!c.q] },
   BUTTON:{ cat:'io', name:'Button', ins:0, outs:1, logic: (v, c) => [!!c.q] },
   CLOCK: { cat:'io', name:'Clock',  ins:0, outs:1, logic: (v, c) => [!!c.q] },
-  LED:   { cat:'io', name:'LED',    ins:1, outs:0, logic: () => [] }
+  LED:   { cat:'io', name:'LED',    ins:1, outs:0, logic: () => [] },
+
+  /* An inline break in a wire. Closed it passes the signal straight
+     through; open, nothing gets past and the two halves are on their own. */
+  CONNECTOR: { cat:'io', name:'Connector', ins:1, outs:1,
+               clickToggle:true, defaultQ:true, splices:true,
+               logic: (v, c) => [!!c.q && !!v[0]] }
 };
 
 const PALETTE = [
   { head:'Gates', wide:false, items:['AND','OR','NOT','NAND','NOR','XOR','XNOR','BUF','LATCH'] },
   { head:'Latches & flip-flops', wide:true, items:['SR','GSR','DLATCH','DFF','TFF','JKFF'] },
-  { head:'Inputs & outputs', wide:false, items:['SWITCH','BUTTON','CLOCK','LED'] }
+  { head:'Inputs & outputs', wide:false, items:['SWITCH','BUTTON','CLOCK','LED'] },
+  { head:'Wiring', wide:true, items:['CONNECTOR'] }
 ];
 
 /* How each part behaves, in words. Gates get their truth table generated from
@@ -626,6 +634,11 @@ const INFO = {
     rows: [['0', '0', 'hold'], ['0', '1', '0'], ['1', '0', '1'], ['1', '1', 'toggle']]
   },
 
+  CONNECTOR: {
+    blurb: 'A break you can put in a wire. Drop one onto a wire and the wire splits in two with the connector in the middle. Click it to open the break: nothing gets through and the two halves are separate wires. Click again to join them back up.',
+    cols: ['Connector', 'In', 'Out'],
+    rows: [['open', '-', '0'], ['closed', '0', '0'], ['closed', '1', '1']]
+  },
   SWITCH: { blurb: 'Click it on the board to flip between high and low. It stays where you put it.' },
   BUTTON: { blurb: 'Reads high only while you hold the mouse down on it, then springs back to low.' },
   CLOCK:  { blurb: 'Flips between high and low on its own. Place one and set its rate here.' },
@@ -676,7 +689,7 @@ function mkComp(type, x, y, opt) {
     y: Math.round(y),
     ins: opt.ins != null ? opt.ins : d.ins,
     outs: d.outs,
-    q: !!opt.q,
+    q: opt.q != null ? !!opt.q : !!d.defaultQ,
     pc: false,
     label: opt.label || '',
     hz: opt.hz != null ? opt.hz : 2,
@@ -721,6 +734,7 @@ function sizeOf(c) {
   if (d.cat === 'mem') {
     return { w: 104, h: Math.max(72, Math.max(c.ins, c.outs) * 24 + 32) };
   }
+  if (c.type === 'CONNECTOR') return { w: 48, h: 30 };
   if (c.type === 'LED') return { w: 46, h: 42 };
   if (c.type === 'CLOCK') return { w: 62, h: 40 };
   return { w: 58, h: 38 };   // switch, button
@@ -821,8 +835,8 @@ function distToWire(w, wx, wy) {
   return best;
 }
 
-function hitWire(wx, wy) {
-  let best = null, bestD = 9;
+function hitWire(wx, wy, tol) {
+  let best = null, bestD = tol || 9;
   for (const w of wires) {
     const d = distToWire(w, wx, wy);
     if (d < bestD) { bestD = d; best = w; }
@@ -1226,6 +1240,37 @@ function drawMemBody(c, d, w, h) {
 }
 
 function drawIoBody(c, d, w, h) {
+  if (c.type === 'CONNECTOR') {
+    const bx = c.x + 7, bw = w - 14, cy = c.y + h / 2;
+    roundRect(bx, c.y + 2, bw, h - 4, (h - 4) / 2);
+    ctx.fillStyle = P.body;
+    ctx.fill();
+    ctx.strokeStyle = P.line;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    const lx = bx + 8, rx = bx + bw - 8;
+    const live = c.ov[0];
+
+    // the two contacts it bridges
+    ctx.fillStyle = live ? P.hot : P.cold;
+    for (const x of [lx, rx]) {
+      ctx.beginPath();
+      ctx.arc(x, cy, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = c.q ? (live ? P.hot : P.cold) : P.danger;
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(lx, cy);
+    if (c.q) ctx.lineTo(rx, cy);                  // closed: contacts bridged
+    else ctx.lineTo(rx - 3, cy - 9);              // open: the bar swings clear
+    ctx.stroke();
+    return;
+  }
+
   if (c.type === 'LED') {
     const cx = c.x + LEAD + 18, cy = c.y + h / 2, r = 17;
     const on = c.iv[0];
@@ -1742,7 +1787,7 @@ canvas.addEventListener('pointerup', ev => {
   }
 
   if (d.kind === 'move') {
-    if (!d.moved && d.comp.type === 'SWITCH') {
+    if (!d.moved && DEFS[d.comp.type].clickToggle) {
       snapshot();
       d.comp.q = !d.comp.q;
       updateInspector();
@@ -1812,7 +1857,7 @@ function deleteSelection() {
   let n = 0;
   for (const id of [...sel]) {
     const c = byId(id);
-    if (c) { removeComp(c); n++; continue; }
+    if (c) { heal(c); removeComp(c); n++; continue; }
     const before = wires.length;
     wires = wires.filter(w => w.id !== id);
     if (wires.length !== before) n++;
@@ -1871,6 +1916,11 @@ function glyph(type) {
   if (d.cat === 'mem') {
     return '<svg width="22" height="16" viewBox="0 0 22 16"><rect ' + s + ' x="4" y="2" width="14" height="12" rx="2"/>' +
            '<path ' + s + ' d="M4 6 l3 2 l-3 2"/></svg>';
+  }
+  if (type === 'CONNECTOR') {
+    return '<svg width="22" height="16" viewBox="0 0 22 16"><path ' + s + ' d="M1 11 h5 M16 11 h5"/>' +
+           '<path ' + s + ' d="M6 11 L16 4"/><circle cx="6" cy="11" r="1.7" fill="currentColor"/>' +
+           '<circle cx="16" cy="11" r="1.7" fill="currentColor"/></svg>';
   }
   if (type === 'LED') {
     return '<svg width="22" height="16" viewBox="0 0 22 16"><circle ' + s + ' cx="12" cy="8" r="5"/><path ' + s + ' d="M2 8 h5"/></svg>';
@@ -1961,14 +2011,41 @@ function place(type, wx, wy) {
   snapshot();
   const ins = insFor(type);
   const s = sizeOf({ type: type, ins: ins, outs: DEFS[type].outs });
+
+  // a part that splices takes over the wire it was dropped on
+  const onWire = DEFS[type].splices ? hitWire(wx, wy, 16) : null;
+
   const c = mkComp(type,
     Math.round((wx - s.w / 2) / GRID) * GRID,
     Math.round((wy - s.h / 2) / GRID) * GRID,
     { ins: ins });
+
+  if (onWire) {
+    splice(c, onWire);
+    toast('Dropped into the wire');
+  }
   sel.clear();
   sel.add(c.id);
   updateInspector();
   save();
+}
+
+/* Cut the wire and run it through the part instead: source -> part -> target. */
+function splice(c, w) {
+  const from = w.a, to = w.b;
+  wires = wires.filter(x => x !== w);
+  mkWire(from.c, from.p, c.id, 0);
+  mkWire(c.id, 0, to.c, to.p);
+}
+
+/* The inverse: pulling a spliced part back out joins the wire up again, so
+   removing a connector leaves the circuit as it was before. */
+function heal(c) {
+  if (!DEFS[c.type].splices) return;
+  const feeds = wires.filter(w => w.b.c === c.id);
+  const leaves = wires.filter(w => w.a.c === c.id);
+  if (feeds.length !== 1 || leaves.length !== 1) return;
+  mkWire(feeds[0].a.c, feeds[0].a.p, leaves[0].b.c, leaves[0].b.p);
 }
 
 /* ==========================================================================
@@ -2082,9 +2159,10 @@ function showPart(c) {
     html += '<label>Rate <span class="val" id="insp-hzval">' + c.hz + ' Hz</span></label>' +
       '<input id="insp-hz" type="range" min="0.5" max="12" step="0.5" value="' + c.hz + '">';
   }
-  if (c.type === 'SWITCH') {
+  if (d.clickToggle) {
+    const words = c.type === 'CONNECTOR' ? ['Connected', 'Broken'] : ['High (1)', 'Low (0)'];
     html += '<label>State</label><div class="row"><button data-act="toggle">' +
-      (c.q ? 'High (1)' : 'Low (0)') + '</button></div>';
+      (c.q ? words[0] : words[1]) + '</button></div>';
   }
   if (d.cat === 'mem' || d.stateful) {
     html += '<label>Stored bit</label><div class="row"><button data-act="toggle">Q = ' +
