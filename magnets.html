@@ -341,7 +341,7 @@
   ];
   const NEUTRAL = 0;
   const CELL = 8;              // map resolution, in css pixels
-  const MAX_BALLS = 4000;
+  const MAX_BALLS = 20000;
   const MAX_MAGNETS = 24;
 
   const SIM_DT = 1 / 120;      // one physics step, shared by the sim and the map
@@ -692,6 +692,57 @@
   // One pre-rendered sprite per color. Drawing a few thousand balls as sprites
   // costs a fraction of building a gradient and an arc for each one, and they
   // still look the same.
+  // Past a certain crowd, drawing one sprite per ball is hopeless — sixteen
+  // thousand draw calls a frame will not fit in 16ms. Instead the balls are
+  // rasterised into a quarter-scale layer and that single image is blown up,
+  // which turns thousands of draw calls into a few hundred thousand byte
+  // writes. Dense enough to read as a fluid, which at that count it is.
+  const DENSE_MIN = 1500;
+  const DENSE_SCALE = 4;
+  let denseCv = null, denseCtx = null, denseImg = null, denseStamp = null, denseStampR = -1;
+
+  function denseOffsets(r) {
+    if (denseStampR === r) return denseStamp;
+    const rad = Math.max(1, Math.round(r / DENSE_SCALE));
+    const out = [];
+    for (let y = -rad; y <= rad; y++) {
+      for (let x = -rad; x <= rad; x++) {
+        if (x * x + y * y <= rad * rad + 0.5) out.push(x, y);
+      }
+    }
+    denseStampR = r;
+    denseStamp = out;
+    return out;
+  }
+
+  function drawBallsDense() {
+    const dw = Math.ceil(W / DENSE_SCALE), dh = Math.ceil(H / DENSE_SCALE);
+    if (!denseCv || denseCv.width !== dw || denseCv.height !== dh) {
+      denseCv = document.createElement("canvas");
+      denseCv.width = dw; denseCv.height = dh;
+      denseCtx = denseCv.getContext("2d");
+      denseImg = denseCtx.createImageData(dw, dh);
+    }
+    const d = denseImg.data;
+    d.fill(0);
+    const off = denseOffsets(state.ballSize);
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      const rgb = BALL_RGB[b.c] || BALL_RGB[0];
+      const cx = (b.x / DENSE_SCALE) | 0, cy = (b.y / DENSE_SCALE) | 0;
+      for (let k = 0; k < off.length; k += 2) {
+        const x = cx + off[k], y = cy + off[k + 1];
+        if (x < 0 || y < 0 || x >= dw || y >= dh) continue;
+        const o = (y * dw + x) * 4;
+        d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = 255;
+      }
+    }
+    denseCtx.putImageData(denseImg, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(denseCv, 0, 0, dw, dh, 0, 0, dw * DENSE_SCALE, dh * DENSE_SCALE);
+    ctx.imageSmoothingEnabled = true;
+  }
+
   let spriteR = -1;
   const spriteCache = [];
   function ballSprite(c) {
@@ -756,8 +807,9 @@
       ctx.globalAlpha = 1;
     }
 
-    drawMagnets();
+    // Balls first: a dense drop would otherwise bury every magnet under it.
     drawBalls();
+    drawMagnets();
     drawCursor();
   }
 
@@ -817,6 +869,7 @@
   }
 
   function drawBalls() {
+    if (balls.length > DENSE_MIN) { drawBallsDense(); return; }
     // Building a gradient and an arc per ball does not scale to a full lattice,
     // so past a few hundred they are blitted from pre-rendered sprites instead.
     if (balls.length > 320) {
@@ -1114,14 +1167,34 @@
     eachLatticePoint(function (x, y) { spawnBall(x, y); });
   }
 
-  // The same lattice, keeping only the balls bound for one magnet color: it
-  // leaves that basin standing on its own, holes and filaments and all.
+  // Every traced point of one color gets a ball — the finest the map goes, one
+  // per map pixel rather than one per lattice square. That leaves the basin
+  // standing on its own as a solid body of balls, holes and filaments and all.
   function dropColor(c) {
+    finishMap();
     balls.length = 0;
-    eachLatticePoint(function (x, y) {
-      if (colorFor(x, y) === c) spawnBall(x, y, c);
-    });
+    let stride = 1, count = 0;
+    do {
+      count = 0;
+      for (let cy = 0; cy < gh; cy += stride) {
+        for (let cx = 0; cx < gw; cx += stride) if (grid[idx(cx, cy)] === c) count++;
+      }
+      if (count <= MAX_BALLS) break;
+      stride++;
+    } while (stride < 8);
+    for (let cy = 0; cy < gh; cy += stride) {
+      for (let cx = 0; cx < gw; cx += stride) {
+        if (grid[idx(cx, cy)] === c) spawnBall(cx * CELL + CELL / 2, cy * CELL + CELL / 2, c);
+      }
+    }
     return balls.length;
+  }
+
+  // Selecting cells by color needs a finished map, so run any pending scan out
+  // here and now rather than reading half-refined pixels.
+  function finishMap() {
+    const until = performance.now() + 8000;
+    while (scan.running && performance.now() < until) advanceScan();
   }
   $("clearBalls").addEventListener("click", function () { balls.length = 0; });
   $("clearMagnets").addEventListener("click", function () { magnets.length = 0; requestMap(); });
