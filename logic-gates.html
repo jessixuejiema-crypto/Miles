@@ -189,7 +189,9 @@
 
   #inspector {
     right: 12px; top: 12px;
-    width: 208px;
+    width: 236px;
+    max-height: calc(100% - 76px);
+    overflow-y: auto;
     padding: 10px 11px;
     font-size: 12.5px;
     display: none;
@@ -214,6 +216,65 @@
     border-radius: 6px;
   }
   #inspector input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+  /* the "how it works" table shown for whichever part is in focus */
+  .blurb { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+  .tt-wrap { max-height: 190px; overflow: auto; margin-top: 5px; }
+  table.tt {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  table.tt th {
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 3px 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.tt td { padding: 3px 4px; text-align: center; color: var(--muted); }
+  table.tt td.hi { color: var(--hot); font-weight: 700; }
+  table.tt td.lo { color: var(--cold); }
+  table.tt th.out, table.tt td.out { border-left: 1px solid var(--border); }
+  table.tt tbody tr:hover td { background: var(--panel-2); }
+
+  .chip.sel {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  #viewctl {
+    right: 12px; bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+  }
+  #viewctl button {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 5px 8px;
+    min-width: 30px;
+    font-size: 13px;
+    line-height: 1;
+  }
+  #viewctl button:hover { background: var(--panel-2); border-color: var(--border); }
+  #viewctl button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #vc-zoom {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    min-width: 48px;
+    color: var(--muted);
+  }
   .row { display: flex; align-items: center; gap: 6px; }
   .row button { padding: 4px 9px; }
   .val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; min-width: 46px; text-align: center; }
@@ -305,7 +366,7 @@
     #app { grid-template-columns: 138px 1fr; }
     .pal-grid { grid-template-columns: 1fr; }
     .brand span.name { display: none; }
-    #inspector { width: 178px; }
+    #inspector { width: 196px; }
   }
 </style>
 </head>
@@ -368,8 +429,15 @@
     <div id="hud" class="float">
       <span><b id="hud-parts">0</b> parts</span>
       <span><b id="hud-wires">0</b> wires</span>
-      <span><b id="hud-zoom">100%</b></span>
       <span id="hud-hint"></span>
+    </div>
+
+    <div id="viewctl" class="float">
+      <button id="vc-pan" title="Pan the board by dragging (H)" aria-label="Pan tool">&#9995;</button>
+      <button id="vc-out" title="Zoom out (-)" aria-label="Zoom out">&minus;</button>
+      <button id="vc-zoom" title="Back to 100%" aria-label="Reset zoom">100%</button>
+      <button id="vc-in" title="Zoom in (+)" aria-label="Zoom in">+</button>
+      <button id="vc-fit" title="Fit everything into view (F)" aria-label="Fit to view">&#10530;</button>
     </div>
 
     <div id="toast"></div>
@@ -379,7 +447,9 @@
         <h2>Logic Bench</h2>
         <p class="lead">Drop gates on the board, wire them together and watch the signals light up. High signals glow green, low signals stay grey.</p>
         <dl>
-          <dt>Drag a chip</dt><dd>Pull any part from the left palette onto the board, or just click it to drop one in the middle of the view.</dd>
+          <dt>Click a chip</dt><dd>Clicking a part in the left bar shows what it does and its truth table, and loads it ready to drop &mdash; then click anywhere on the board to place one. Click the chip again to put it down.</dd>
+          <dt>Drag a chip</dt><dd>Or drag a part straight from the bar onto the spot you want it.</dd>
+          <dt>Inputs</dt><dd>AND, OR, NAND, NOR, XOR and XNOR take two to six inputs. Use the &minus; and + next to <em>Inputs</em> in the panel &mdash; on a chip before you place it, or on a gate already on the board. The truth table follows along.</dd>
           <dt>Wire tool</dt><dd>Drag from an output port to an input port. Click-then-click works too. An input accepts several wires and behaves like a wired OR.</dd>
           <dt>Cut tool</dt><dd>Slash a line across every wire you want gone. A plain click cuts just the wire under the cursor.</dd>
           <dt>Click a switch</dt><dd>With the Select tool, click a switch to flip it. Buttons stay high only while you hold them down.</dd>
@@ -394,6 +464,7 @@
           <dt>Ctrl+Z / Ctrl+Shift+Z</dt><dd>Undo / redo</dd>
           <dt>F</dt><dd>Fit everything into view</dd>
           <dt>Wheel</dt><dd>Zoom; middle-drag or right-drag pans</dd>
+          <dt>Bottom right</dt><dd>Pan button, zoom out / in, and fit-to-view. Click the percentage to snap back to 100%.</dd>
         </dl>
         <p class="lead" style="margin-bottom:14px">The board saves itself in this browser, so your circuit is still here next time.</p>
         <button id="help-close">Close</button>
@@ -482,6 +553,59 @@ const PALETTE = [
   { head:'Latches & flip-flops', wide:true, items:['SR','DLATCH','DFF','TFF','JKFF'] },
   { head:'Inputs & outputs', wide:false, items:['SWITCH','BUTTON','CLOCK','LED'] }
 ];
+
+/* How each part behaves, in words. Gates get their truth table generated from
+   their own logic function, so the table can never drift out of step with the
+   simulation. The memory parts depend on the bit they are already holding, so
+   their characteristic tables are spelled out here instead. */
+const INFO = {
+  AND:  { blurb: 'Output goes high only when every input is high.' },
+  OR:   { blurb: 'Output goes high when at least one input is high.' },
+  NOT:  { blurb: 'Output is always the opposite of the input.' },
+  NAND: { blurb: 'An AND gate with the output inverted: low only when every input is high.' },
+  NOR:  { blurb: 'An OR gate with the output inverted: high only when every input is low.' },
+  XOR:  { blurb: 'High when an odd number of inputs are high. With two inputs, that means high when they differ.' },
+  XNOR: { blurb: 'High when an even number of inputs are high. With two inputs, that means high when they match.' },
+  BUF:  { blurb: 'Passes the input straight through, untouched.' },
+
+  SR: {
+    blurb: 'Set drives Q high, Reset drives it low, and with both low it keeps whatever it had. Both high at once is the forbidden combination.',
+    cols: ['S', 'R', 'Q next'],
+    rows: [['0', '0', 'hold'], ['0', '1', '0'], ['1', '0', '1'], ['1', '1', 'invalid']]
+  },
+  DLATCH: {
+    blurb: 'While Enable is high the output simply follows D. Drop Enable and it freezes the last value it saw.',
+    cols: ['E', 'D', 'Q next'],
+    rows: [['0', '-', 'hold'], ['1', '0', '0'], ['1', '1', '1']]
+  },
+  DFF: {
+    blurb: 'Captures whatever D is showing at the instant the clock rises, then holds it until the next rising edge.',
+    cols: ['CLK', 'D', 'Q next'],
+    rows: [['rise', '0', '0'], ['rise', '1', '1'], ['other', '-', 'hold']]
+  },
+  TFF: {
+    blurb: 'Flips its stored bit on every rising clock edge while T is high. Chain a few together to count.',
+    cols: ['CLK', 'T', 'Q next'],
+    rows: [['rise', '0', 'hold'], ['rise', '1', 'toggle'], ['other', '-', 'hold']]
+  },
+  JKFF: {
+    blurb: 'On a rising clock edge J alone sets, K alone clears, both together toggle, and neither holds.',
+    cols: ['J', 'K', 'Q next'],
+    rows: [['0', '0', 'hold'], ['0', '1', '0'], ['1', '0', '1'], ['1', '1', 'toggle']]
+  },
+
+  SWITCH: { blurb: 'Click it on the board to flip between high and low. It stays where you put it.' },
+  BUTTON: { blurb: 'Reads high only while you hold the mouse down on it, then springs back to low.' },
+  CLOCK:  { blurb: 'Flips between high and low on its own. Place one and set its rate here.' },
+  LED:    { blurb: 'Lights up whenever its input is high. Use it to watch any signal on the board.' }
+};
+
+// How many inputs a newly placed gate should get, per type.
+const defaultIns = {};
+
+function insFor(type) {
+  return defaultIns[type] != null ? defaultIns[type] : DEFS[type].ins;
+}
 
 /* ==========================================================================
    Board state
@@ -1385,6 +1509,7 @@ function zoomAt(sx, sy, factor) {
 
 let drag = null;
 let pendingPort = null;    // click-then-click wiring
+let armedType = null;      // part picked in the palette, waiting to be dropped
 let hoverPort = null;
 let spaceDown = false;
 
@@ -1585,6 +1710,8 @@ canvas.addEventListener('pointerup', ev => {
         if (r.x < x2 && r.x + r.w > x1 && r.y < y2 && r.y + r.h > y1) sel.add(c.id);
       }
       updateInspector();
+    } else if (armedType) {
+      place(armedType, d.ox, d.oy);          // palette part waiting to be dropped
     }
   }
 });
@@ -1743,8 +1870,7 @@ function buildPalette() {
           const wp = toWorld(e.clientX - r.left, e.clientY - r.top);
           place(type, wp.x, wp.y);
         } else if (!moved) {
-          const wp = toWorld(r.width / 2, r.height / 2);
-          place(type, wp.x, wp.y);
+          setArmed(armedType === type ? null : type);   // a plain click opens its table
         }
       };
       document.addEventListener('pointermove', move);
@@ -1753,12 +1879,37 @@ function buildPalette() {
   });
 }
 
+/* Picking a chip in the palette shows what that part does and leaves it
+   loaded, so a click on the board drops one. Clicking the same chip again
+   puts it down. */
+function setArmed(type) {
+  armedType = type;
+  document.querySelectorAll('#palette .chip').forEach(chip => {
+    chip.classList.toggle('sel', chip.dataset.type === type);
+  });
+  if (type) {
+    sel.clear();
+    if (tool !== 'select') setTool('select');
+  }
+  updateInspector();
+  refreshHint();
+}
+
+function clearArmed() {
+  if (!armedType) return;
+  armedType = null;
+  document.querySelectorAll('#palette .chip').forEach(chip => chip.classList.remove('sel'));
+  refreshHint();
+}
+
 function place(type, wx, wy) {
   snapshot();
-  const s = sizeOf({ type: type, ins: DEFS[type].ins, outs: DEFS[type].outs });
+  const ins = insFor(type);
+  const s = sizeOf({ type: type, ins: ins, outs: DEFS[type].outs });
   const c = mkComp(type,
     Math.round((wx - s.w / 2) / GRID) * GRID,
-    Math.round((wy - s.h / 2) / GRID) * GRID);
+    Math.round((wy - s.h / 2) / GRID) * GRID,
+    { ins: ins });
   sel.clear();
   sel.add(c.id);
   updateInspector();
@@ -1779,25 +1930,98 @@ function escapeHtml(s) {
   ));
 }
 
+/* Build the truth table for a gate by running its own logic over every
+   combination of inputs, so what you read is what the board will do. */
+function gateTable(type, n) {
+  const d = DEFS[type];
+  const cols = [];
+  for (let i = 0; i < n; i++) cols.push(String.fromCharCode(65 + i));
+  cols.push('Out');
+
+  const rows = [];
+  for (let m = 0; m < (1 << n); m++) {
+    const v = [];
+    for (let i = 0; i < n; i++) v.push(!!(m & (1 << (n - 1 - i))));
+    rows.push(v.map(b => (b ? '1' : '0')).concat(d.logic(v)[0] ? '1' : '0'));
+  }
+  return { cols: cols, rows: rows };
+}
+
+function tableHtml(type, ins) {
+  const inf = INFO[type] || {};
+  const t = inf.rows ? { cols: inf.cols, rows: inf.rows }
+          : (DEFS[type].cat === 'gate' ? gateTable(type, ins) : null);
+  if (!t) return '';
+
+  const last = t.cols.length - 1;
+  const cell = (v, i) => {
+    const cls = (i === last ? 'out ' : '') + (v === '1' ? 'hi' : v === '0' ? 'lo' : '');
+    return '<td class="' + cls.trim() + '">' + escapeHtml(v) + '</td>';
+  };
+  let html = '<div class="tt-wrap"><table class="tt"><thead><tr>';
+  t.cols.forEach((c, i) => {
+    html += '<th' + (i === last ? ' class="out"' : '') + '>' + escapeHtml(c) + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+  for (const row of t.rows) {
+    html += '<tr>' + row.map(cell).join('') + '</tr>';
+  }
+  return html + '</tbody></table></div>';
+}
+
+function arityRow(count) {
+  return '<label>Inputs</label><div class="row">' +
+    '<button data-act="fewer">&minus;</button>' +
+    '<span class="val">' + count + '</span>' +
+    '<button data-act="more">+</button></div>';
+}
+
 function updateInspector() {
   const picked = [...sel].map(id => byId(id)).filter(Boolean);
-  if (picked.length !== 1) {
-    inspector.classList.remove('show');
-    return;
-  }
-  const c = picked[0];
+  if (picked.length === 1) { showPart(picked[0]); return; }
+  if (armedType) { showType(armedType); return; }
+  inspector.classList.remove('show');
+}
+
+/* A type chosen from the palette: what it does, how many inputs the next one
+   gets, and the table that follows from that choice. */
+function showType(type) {
+  const d = DEFS[type];
+  const ins = insFor(type);
+  inspTitle.textContent = d.name;
+
+  let html = '<p class="blurb">' + escapeHtml(INFO[type].blurb) + '</p>';
+  if (d.arity) html += arityRow(ins);
+  html += tableHtml(type, ins);
+  html += '<label>&nbsp;</label><div class="row"><button data-act="drop">Place one</button></div>';
+
+  inspBody.innerHTML = html;
+  inspector.classList.add('show');
+
+  inspBody.querySelectorAll('button[data-act]').forEach(b => {
+    b.addEventListener('click', () => {
+      const act = b.dataset.act;
+      if (act === 'drop') {
+        const r = canvas.getBoundingClientRect();
+        const wp = toWorld(r.width / 2, r.height / 2);
+        place(type, wp.x, wp.y);
+      } else {
+        defaultIns[type] = clampArity(d, ins + (act === 'more' ? 1 : -1));
+        showType(type);
+      }
+    });
+  });
+}
+
+/* A part selected on the board: its own settings, plus the same table. */
+function showPart(c) {
   const d = DEFS[c.type];
   inspTitle.textContent = d.name;
 
   let html = '<label for="insp-label">Label</label>' +
     '<input id="insp-label" type="text" value="' + escapeHtml(c.label) + '" placeholder="optional name">';
 
-  if (d.arity) {
-    html += '<label>Inputs</label><div class="row">' +
-      '<button data-act="fewer">&minus;</button>' +
-      '<span class="val">' + c.ins + '</span>' +
-      '<button data-act="more">+</button></div>';
-  }
+  if (d.arity) html += arityRow(c.ins);
   if (c.type === 'CLOCK') {
     html += '<label>Rate <span class="val" id="insp-hzval">' + c.hz + ' Hz</span></label>' +
       '<input id="insp-hz" type="range" min="0.5" max="12" step="0.5" value="' + c.hz + '">';
@@ -1810,6 +2034,8 @@ function updateInspector() {
     html += '<label>Stored bit</label><div class="row"><button data-act="toggle">Q = ' +
       (c.q ? 1 : 0) + '</button></div>';
   }
+  html += '<label>How it works</label><p class="blurb">' + escapeHtml(INFO[c.type].blurb) + '</p>';
+  html += tableHtml(c.type, c.ins);
   html += '<label>&nbsp;</label><div class="row">' +
     '<button data-act="dup">Duplicate</button>' +
     '<button data-act="del" class="danger">Delete</button></div>';
@@ -1835,10 +2061,7 @@ function updateInspector() {
       const act = b.dataset.act;
       if (act === 'more' || act === 'fewer') {
         snapshot();
-        const n = Math.max(d.arity[0], Math.min(d.arity[1], c.ins + (act === 'more' ? 1 : -1)));
-        if (n < c.ins) wires = wires.filter(w => !(w.b.c === c.id && w.b.p >= n));
-        c.ins = n;
-        c.iv = new Array(n).fill(false);
+        setArity(c, clampArity(d, c.ins + (act === 'more' ? 1 : -1)));
         updateInspector();
         save();
       } else if (act === 'toggle') {
@@ -1853,6 +2076,20 @@ function updateInspector() {
       }
     });
   });
+}
+
+function clampArity(d, n) {
+  return Math.max(d.arity[0], Math.min(d.arity[1], n));
+}
+
+/* Growing a gate is harmless; shrinking one drops the wires that fed the
+   inputs that no longer exist. */
+function setArity(c, n) {
+  if (n === c.ins) return;
+  if (n < c.ins) wires = wires.filter(w => !(w.b.c === c.id && w.b.p >= n));
+  c.ins = n;
+  c.iv = new Array(n).fill(false);
+  defaultIns[c.type] = n;
 }
 
 /* ==========================================================================
@@ -1875,16 +2112,40 @@ const HINTS = {
   pan: 'Drag to move the board'
 };
 
+function refreshHint() {
+  document.getElementById('hud-hint').textContent = armedType
+    ? DEFS[armedType].name + ' ready \u2014 click the board to place it'
+    : HINTS[tool];
+}
+
 function setTool(t) {
   tool = t;
   pendingPort = null;
   hoverPort = null;
+  if (t !== 'select') clearArmed();
   stage.dataset.tool = t;
   document.querySelectorAll('#tools button').forEach(b => {
     b.classList.toggle('on', b.dataset.tool === t);
   });
-  document.getElementById('hud-hint').textContent = HINTS[t];
+  vcPan.classList.toggle('on', t === 'pan');
+  refreshHint();
 }
+
+/* ---- pan and zoom controls ---- */
+
+const vcPan = document.getElementById('vc-pan');
+const vcZoom = document.getElementById('vc-zoom');
+
+function zoomCenter(factor) {
+  const r = canvas.getBoundingClientRect();
+  zoomAt(r.width / 2, r.height / 2, factor);
+}
+
+vcPan.addEventListener('click', () => setTool(tool === 'pan' ? 'select' : 'pan'));
+document.getElementById('vc-in').addEventListener('click', () => zoomCenter(1.2));
+document.getElementById('vc-out').addEventListener('click', () => zoomCenter(1 / 1.2));
+document.getElementById('vc-fit').addEventListener('click', fit);
+vcZoom.addEventListener('click', () => zoomCenter(1 / view.z));   // back to 100%
 
 document.querySelectorAll('#tools button').forEach(b => {
   b.addEventListener('click', () => setTool(b.dataset.tool));
@@ -1958,6 +2219,7 @@ document.addEventListener('keydown', ev => {
     case 'Escape':
       helpEl.classList.remove('show');
       pendingPort = null;
+      clearArmed();
       sel.clear();
       updateInspector();
       break;
@@ -1970,16 +2232,8 @@ document.addEventListener('keydown', ev => {
       if (!spaceDown) setRunning(!running);
       spaceDown = true;
       break;
-    case '+': case '=': {
-      const r = canvas.getBoundingClientRect();
-      zoomAt(r.width / 2, r.height / 2, 1.15);
-      break;
-    }
-    case '-': case '_': {
-      const r = canvas.getBoundingClientRect();
-      zoomAt(r.width / 2, r.height / 2, 1 / 1.15);
-      break;
-    }
+    case '+': case '=': zoomCenter(1.15); break;
+    case '-': case '_': zoomCenter(1 / 1.15); break;
   }
 });
 
@@ -2011,7 +2265,7 @@ window.addEventListener('beforeunload', save);
 
   const hudParts = document.getElementById('hud-parts');
   const hudWires = document.getElementById('hud-wires');
-  const hudZoom = document.getElementById('hud-zoom');
+  const hudZoom = vcZoom;
 
   requestAnimationFrame(function frame(now) {
     if (running) {
