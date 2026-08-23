@@ -453,7 +453,8 @@
           <dt>Wire tool</dt><dd>Drag from an output port to an input port. Click-then-click works too. An input accepts several wires and behaves like a wired OR.</dd>
           <dt>Cut tool</dt><dd>Slash a line across every wire you want gone. A plain click cuts just the wire under the cursor.</dd>
           <dt>Click a switch</dt><dd>With the Select tool, click a switch to flip it. Buttons stay high only while you hold them down.</dd>
-          <dt>Latches</dt><dd>SR and D latches are level driven; the D, T and JK flip-flops trigger on a rising clock edge. Cross-coupled NOR gates latch on their own too &mdash; see the examples menu.</dd>
+          <dt>Latch</dt><dd>In the gate row, and the simplest way to remember a bit: two inputs, one output. Pulse S and the output turns on and stays on; pulse R and it turns off and stays off.</dd>
+          <dt>Latches</dt><dd>The bigger blocks below the gates give you both outputs. SR and D latches are level driven; the D, T and JK flip-flops trigger on a rising clock edge. Cross-coupled NOR gates latch on their own too &mdash; see the examples menu.</dd>
         </dl>
         <dl>
           <dt>V / W / X / H</dt><dd>Select, Wire, Cut, Pan tools</dd>
@@ -500,6 +501,17 @@ const DEFS = {
           logic: v => [v.filter(Boolean).length % 2 === 0] },
   BUF:  { cat:'gate', name:'BUF',  shape:'not', ins:1, outs:1,
           logic: v => [!!v[0]] },
+  /* A latch sized like a gate: two inputs in, one output out. Unlike the
+     other gates it remembers, so its table is written out in INFO rather
+     than enumerated from this function. */
+  LATCH:{ cat:'gate', name:'Latch', shape:'latch', ins:2, outs:1, stateful:true,
+          inNames:['S','R'],
+          logic: (v, c) => {
+            if (v[0] && v[1]) { c.q = false; return [false]; }   // forbidden state
+            if (v[0]) c.q = true;
+            else if (v[1]) c.q = false;
+            return [c.q];
+          } },
 
   // --- latches and flip-flops --------------------------------------------
   SR:    { cat:'mem', name:'SR Latch', ins:2, outs:2, inNames:['S','R'], outNames:['Q','Q̅'],
@@ -558,7 +570,7 @@ const DEFS = {
 };
 
 const PALETTE = [
-  { head:'Gates', wide:false, items:['AND','OR','NOT','NAND','NOR','XOR','XNOR','BUF'] },
+  { head:'Gates', wide:false, items:['AND','OR','NOT','NAND','NOR','XOR','XNOR','BUF','LATCH'] },
   { head:'Latches & flip-flops', wide:true, items:['SR','GSR','DLATCH','DFF','TFF','JKFF'] },
   { head:'Inputs & outputs', wide:false, items:['SWITCH','BUTTON','CLOCK','LED'] }
 ];
@@ -576,6 +588,11 @@ const INFO = {
   XOR:  { blurb: 'High when an odd number of inputs are high. With two inputs, that means high when they differ.' },
   XNOR: { blurb: 'High when an even number of inputs are high. With two inputs, that means high when they match.' },
   BUF:  { blurb: 'Passes the input straight through, untouched.' },
+  LATCH: {
+    blurb: 'Remembers one bit. Send the top input (S) high and the output turns on and stays on, even after that input drops. Send the bottom input (R) high and it turns off and stays off. With both low it just holds.',
+    cols: ['S', 'R', 'Out'],
+    rows: [['0', '0', 'hold'], ['0', '1', '0'], ['1', '0', '1'], ['1', '1', 'invalid']]
+  },
 
   SR: {
     blurb: 'Set drives Q high, Reset drives it low, and with both low it keeps whatever it had. Both high at once is the forbidden combination.',
@@ -1107,6 +1124,8 @@ function drawGateBody(c, d, w, h) {
     ctx.quadraticCurveTo(left + bw * 0.62, bot, left, bot);
     ctx.quadraticCurveTo(left + bw * 0.28, mid, left, top);
     ctx.closePath();
+  } else if (d.shape === 'latch') {
+    roundRect(left, top, bw, h, 5);
   } else {
     ctx.moveTo(left, top);
     ctx.lineTo(right, mid);
@@ -1138,6 +1157,23 @@ function drawGateBody(c, d, w, h) {
   ctx.font = '700 9.5px ui-monospace, SFMono-Regular, Menlo, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+
+  if (d.shape === 'latch') {
+    ctx.fillStyle = c.q ? P.hot : P.muted;
+    ctx.font = '700 9px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillText('LATCH', left + bw / 2, mid - 5);
+    ctx.font = '700 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillText(c.q ? '1' : '0', left + bw / 2, mid + 8);
+
+    ctx.fillStyle = P.muted;                       // which input does what
+    ctx.font = '700 8px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'left';
+    for (let i = 0; i < c.ins; i++) {
+      ctx.fillText(d.inNames[i], left + 3, portPos(c, 'in', i).y);
+    }
+    return;
+  }
+
   if (d.shape !== 'not') ctx.fillText(d.name, left + bw * 0.46, mid);
   else if (c.type === 'BUF') ctx.fillText('1', left + bw * 0.34, mid);
 }
@@ -1823,6 +1859,10 @@ function glyph(type) {
       return '<svg width="22" height="16" viewBox="0 0 22 16"><path ' + s + ' d="M4 2 L15 8 L4 14 z"/>' +
              (d.bubble ? '<circle cx="18" cy="8" r="2" ' + s + '/>' : '') + '</svg>';
     }
+    if (d.shape === 'latch') {
+      return '<svg width="22" height="16" viewBox="0 0 22 16"><rect ' + s + ' x="4" y="2" width="14" height="12" rx="2"/>' +
+             '<path ' + s + ' d="M1 5 h3 M1 11 h3"/></svg>';
+    }
     const extra = d.shape === 'xor' ? '<path ' + s + ' d="M1 2 Q5 8 1 14"/>' : '';
     return '<svg width="22" height="16" viewBox="0 0 22 16">' + extra +
            '<path ' + s + ' d="M4 2 Q13 2 17 8 Q13 14 4 14 Q8 8 4 2 z"/>' +
@@ -1964,8 +2004,9 @@ function gateTable(type, n) {
 
 function tableHtml(type, ins) {
   const inf = INFO[type] || {};
+  const d = DEFS[type];
   const t = inf.rows ? { cols: inf.cols, rows: inf.rows }
-          : (DEFS[type].cat === 'gate' ? gateTable(type, ins) : null);
+          : (d.cat === 'gate' && !d.stateful ? gateTable(type, ins) : null);
   if (!t) return '';
 
   const last = t.cols.length - 1;
@@ -2045,7 +2086,7 @@ function showPart(c) {
     html += '<label>State</label><div class="row"><button data-act="toggle">' +
       (c.q ? 'High (1)' : 'Low (0)') + '</button></div>';
   }
-  if (d.cat === 'mem') {
+  if (d.cat === 'mem' || d.stateful) {
     html += '<label>Stored bit</label><div class="row"><button data-act="toggle">Q = ' +
       (c.q ? 1 : 0) + '</button></div>';
   }
