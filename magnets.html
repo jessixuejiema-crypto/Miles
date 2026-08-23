@@ -257,7 +257,7 @@
     </div>
 
     <div class="section">
-      <div class="title">Next magnet color</div>
+      <div class="title">Color — new magnets &amp; drop</div>
       <div class="swatches" id="swatches"></div>
     </div>
 
@@ -302,10 +302,11 @@
         <button id="newSetup">New setup</button>
         <button id="remap">Redraw map</button>
         <button id="dropGrid">Drop grid</button>
+        <button id="dropColor" title="Drop only the balls that end up on this color">Drop color</button>
         <button id="clearBalls">Clear balls</button>
         <button id="clearMagnets">Clear magnets</button>
-        <button id="pause">Pause</button>
       </div>
+      <button id="pause" style="width:100%; margin-top:6px">Pause</button>
       <div class="row" style="margin-top:9px; gap:12px">
         <label class="check" style="flex:1"><input type="checkbox" id="trails"> Trails</label>
         <label class="check" style="flex:1"><input type="checkbox" id="fields" checked> Field rings</label>
@@ -1026,7 +1027,34 @@
       const own = sws[i].dataset.color ? parseInt(sws[i].dataset.color, 10) : NEUTRAL;
       sws[i].classList.toggle("on", own === c);
     }
+    labelDropColor();
   }
+
+  function labelDropColor() {
+    const btn = $("dropColor");
+    const c = state.color;
+    btn.textContent = c === NEUTRAL ? "Drop color" : "Drop " + PALETTE[c].name.toLowerCase();
+    btn.style.color = c === NEUTRAL ? "" : PALETTE[c].ball;
+  }
+
+  let dropMsgTimer = 0;
+  $("dropColor").addEventListener("click", function () {
+    // With no color picked, take the first magnet's rather than doing nothing.
+    let c = state.color;
+    if (c === NEUTRAL) {
+      if (!magnets.length) return;
+      c = magnets[0].c;
+      pickColor(c);
+    }
+    const n = dropColor(c);
+    clearTimeout(dropMsgTimer);
+    if (n === 0) {
+      this.textContent = "no " + PALETTE[c].name.toLowerCase() + " to drop";
+      dropMsgTimer = setTimeout(labelDropColor, 1600);
+    } else {
+      labelDropColor();
+    }
+  });
 
   let remapTimer = 0;
   function bindSlider(id, key, remaps) {
@@ -1065,8 +1093,7 @@
   // The spacing is a whole number of map cells and the first ball sits on a
   // cell centre, so every ball lands exactly on a point the map traced — the
   // lattice is a true grid and every ball's color is still a real prediction.
-  function dropGrid() {
-    balls.length = 0;
+  function eachLatticePoint(visit) {
     let step = Math.max(CELL * 2, Math.round(state.gap / CELL) * CELL);
     let cols = Math.max(1, Math.floor(W / step));
     let rows = Math.max(1, Math.floor(H / step));
@@ -1078,8 +1105,23 @@
     const ox = snap((W - (cols - 1) * step) / 2);
     const oy = snap((H - (rows - 1) * step) / 2);
     for (let j = 0; j < rows; j++) {
-      for (let i = 0; i < cols; i++) spawnBall(ox + i * step, oy + j * step);
+      for (let i = 0; i < cols; i++) visit(ox + i * step, oy + j * step);
     }
+  }
+
+  function dropGrid() {
+    balls.length = 0;
+    eachLatticePoint(function (x, y) { spawnBall(x, y); });
+  }
+
+  // The same lattice, keeping only the balls bound for one magnet color: it
+  // leaves that basin standing on its own, holes and filaments and all.
+  function dropColor(c) {
+    balls.length = 0;
+    eachLatticePoint(function (x, y) {
+      if (colorFor(x, y) === c) spawnBall(x, y, c);
+    });
+    return balls.length;
   }
   $("clearBalls").addEventListener("click", function () { balls.length = 0; });
   $("clearMagnets").addEventListener("click", function () { magnets.length = 0; requestMap(); });
@@ -1111,6 +1153,7 @@
       case " ": ev.preventDefault(); togglePause(); break;
       case "r": newSetup(); break;
       case "g": dropGrid(); break;
+      case "d": $("dropColor").click(); break;
       case "c": balls.length = 0; break;
       case "m": magnets.length = 0; requestMap(); break;
       case "t": $("trails").checked = !$("trails").checked; $("trails").dispatchEvent(new Event("change")); break;
@@ -1163,6 +1206,7 @@
   window.magnetField = { balls: balls, magnets: magnets, state: state, scan: scan,
     newSetup: newSetup, spawnBall: spawnBall, dropGrid: dropGrid, remap: requestMap };
 
+  labelDropColor();
   resize();
   newSetup();
   requestAnimationFrame(frame);
