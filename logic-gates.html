@@ -1,0 +1,2030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logic Bench</title>
+<style>
+  :root {
+    --bg: #eef1f6;
+    --grid: #c9d2e0;
+    --panel: #ffffff;
+    --panel-2: #f5f7fb;
+    --border: #cbd4e2;
+    --text: #1f2733;
+    --muted: #6b7789;
+    --accent: #2f6fed;
+    --hot: #12a150;
+    --hot-glow: rgba(18, 161, 80, 0.35);
+    --cold: #97a3b4;
+    --danger: #c9453d;
+    --shadow: rgba(24, 34, 51, 0.16);
+    --body: #ffffff;
+    --body-line: #3d4a5c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11161e;
+      --grid: #232d3a;
+      --panel: #182029;
+      --panel-2: #1f2a35;
+      --border: #2d3947;
+      --text: #dfe6ef;
+      --muted: #8492a4;
+      --accent: #5b93ff;
+      --hot: #3ddc84;
+      --hot-glow: rgba(61, 220, 132, 0.35);
+      --cold: #55616f;
+      --danger: #e8695f;
+      --shadow: rgba(0, 0, 0, 0.5);
+      --body: #202b36;
+      --body-line: #93a3b6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11161e;
+    --grid: #232d3a;
+    --panel: #182029;
+    --panel-2: #1f2a35;
+    --border: #2d3947;
+    --text: #dfe6ef;
+    --muted: #8492a4;
+    --accent: #5b93ff;
+    --hot: #3ddc84;
+    --hot-glow: rgba(61, 220, 132, 0.35);
+    --cold: #55616f;
+    --danger: #e8695f;
+    --shadow: rgba(0, 0, 0, 0.5);
+    --body: #202b36;
+    --body-line: #93a3b6;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #app {
+    display: grid;
+    grid-template-columns: 208px 1fr;
+    grid-template-rows: auto 1fr;
+    height: 100%;
+  }
+
+  /* ---------- top bar ---------- */
+  header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .brand {
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 6px;
+  }
+  .brand .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--hot);
+    box-shadow: 0 0 8px var(--hot-glow);
+  }
+  .group { display: flex; align-items: center; gap: 4px; }
+  .sep { width: 1px; height: 24px; background: var(--border); }
+
+  button, select {
+    font: inherit;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 6px 10px;
+    cursor: pointer;
+    line-height: 1.1;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  button:hover, select:hover { border-color: var(--accent); }
+  button.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button.ghost { background: transparent; }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); }
+  button .k {
+    font-size: 10px;
+    opacity: 0.6;
+    margin-left: 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  button.on .k { opacity: 0.85; }
+
+  /* ---------- palette ---------- */
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 10px 10px 40px;
+  }
+  .pal-head {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--muted);
+    margin: 14px 2px 6px;
+    font-weight: 700;
+  }
+  .pal-head:first-child { margin-top: 2px; }
+  .pal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .pal-grid.wide { grid-template-columns: 1fr; }
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 7px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: grab;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    font-weight: 600;
+    user-select: none;
+    touch-action: none;
+    color: var(--text);
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip:active { cursor: grabbing; }
+  .chip svg { flex: none; color: var(--muted); }
+
+  /* ---------- canvas ---------- */
+  main { position: relative; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  main[data-tool="wire"] canvas { cursor: crosshair; }
+  main[data-tool="cut"] canvas { cursor: crosshair; }
+  main[data-tool="pan"] canvas { cursor: grab; }
+
+  .float {
+    position: absolute;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px var(--shadow);
+  }
+
+  #inspector {
+    right: 12px; top: 12px;
+    width: 208px;
+    padding: 10px 11px;
+    font-size: 12.5px;
+    display: none;
+  }
+  #inspector.show { display: block; }
+  #inspector h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  #inspector label { display: block; margin: 9px 0 4px; color: var(--muted); font-size: 11px; }
+  #inspector input[type="text"] {
+    width: 100%;
+    font: inherit;
+    font-size: 12.5px;
+    padding: 5px 7px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  #inspector input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .row { display: flex; align-items: center; gap: 6px; }
+  .row button { padding: 4px 9px; }
+  .val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; min-width: 46px; text-align: center; }
+
+  #hud {
+    left: 12px; bottom: 12px;
+    padding: 7px 11px;
+    font-size: 11.5px;
+    color: var(--muted);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    pointer-events: none;
+  }
+  #hud b { color: var(--text); font-weight: 600; }
+
+  #toast {
+    position: absolute;
+    left: 50%;
+    bottom: 22px;
+    transform: translate(-50%, 12px);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 24px var(--shadow);
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 12.5px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s, transform 0.18s;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  #ghost {
+    position: fixed;
+    z-index: 50;
+    pointer-events: none;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 6px 18px var(--shadow);
+    transform: translate(-50%, -50%);
+    display: none;
+  }
+
+  #help {
+    inset: 0;
+    position: absolute;
+    background: rgba(10, 14, 20, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 40;
+  }
+  #help.show { display: flex; }
+  #help .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 20px 50px var(--shadow);
+    padding: 20px 22px;
+    max-width: 560px;
+    width: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  #help h2 { margin: 0 0 4px; font-size: 17px; }
+  #help p.lead { margin: 0 0 14px; color: var(--muted); }
+  #help dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 14px; align-items: start; }
+  #help dt {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 6px;
+    justify-self: start;
+    white-space: nowrap;
+  }
+  #help dd { margin: 0; color: var(--text); }
+
+  @media (max-width: 720px) {
+    #app { grid-template-columns: 138px 1fr; }
+    .pal-grid { grid-template-columns: 1fr; }
+    .brand span.name { display: none; }
+    #inspector { width: 178px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><span class="dot"></span><span class="name">Logic Bench</span></div>
+
+    <div class="group" id="tools">
+      <button data-tool="select" class="on" title="Select and move parts (V)">Select<span class="k">V</span></button>
+      <button data-tool="wire" title="Drag from a port to lay a wire (W)">Wire<span class="k">W</span></button>
+      <button data-tool="cut" title="Slash across wires to cut them (X)">Cut<span class="k">X</span></button>
+      <button data-tool="pan" title="Pan the board (H)">Pan<span class="k">H</span></button>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="group">
+      <button id="btn-run" class="on" title="Run or pause the simulation (Space)">Pause<span class="k">&#9251;</span></button>
+      <button id="btn-step" title="Advance one propagation step (.)">Step<span class="k">.</span></button>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="group">
+      <button id="btn-undo" class="ghost" title="Undo (Ctrl+Z)">Undo</button>
+      <button id="btn-redo" class="ghost" title="Redo (Ctrl+Shift+Z)">Redo</button>
+      <button id="btn-fit" class="ghost" title="Fit board to view (F)">Fit</button>
+      <button id="btn-clear" class="ghost danger" title="Remove everything">Clear</button>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="group">
+      <select id="examples" title="Load a ready-made circuit">
+        <option value="">Examples&hellip;</option>
+        <option value="starter">Starter</option>
+        <option value="halfAdder">Half adder</option>
+        <option value="fullAdder">Full adder</option>
+        <option value="srNor">SR latch from NOR gates</option>
+        <option value="xorNand">XOR from NAND gates</option>
+        <option value="dff">D flip-flop + clock</option>
+        <option value="counter">3-bit ripple counter</option>
+      </select>
+      <button id="btn-theme" class="ghost" title="Switch light / dark">Theme</button>
+      <button id="btn-help" class="ghost" title="Shortcuts and help (?)">?</button>
+    </div>
+  </header>
+
+  <aside id="palette"></aside>
+
+  <main id="stage" data-tool="select">
+    <canvas id="board"></canvas>
+
+    <div id="inspector" class="float">
+      <h3 id="insp-title">Part</h3>
+      <div id="insp-body"></div>
+    </div>
+
+    <div id="hud" class="float">
+      <span><b id="hud-parts">0</b> parts</span>
+      <span><b id="hud-wires">0</b> wires</span>
+      <span><b id="hud-zoom">100%</b></span>
+      <span id="hud-hint"></span>
+    </div>
+
+    <div id="toast"></div>
+
+    <div id="help">
+      <div class="card">
+        <h2>Logic Bench</h2>
+        <p class="lead">Drop gates on the board, wire them together and watch the signals light up. High signals glow green, low signals stay grey.</p>
+        <dl>
+          <dt>Drag a chip</dt><dd>Pull any part from the left palette onto the board, or just click it to drop one in the middle of the view.</dd>
+          <dt>Wire tool</dt><dd>Drag from an output port to an input port. Click-then-click works too. An input accepts several wires and behaves like a wired OR.</dd>
+          <dt>Cut tool</dt><dd>Slash a line across every wire you want gone. A plain click cuts just the wire under the cursor.</dd>
+          <dt>Click a switch</dt><dd>With the Select tool, click a switch to flip it. Buttons stay high only while you hold them down.</dd>
+          <dt>Latches</dt><dd>SR and D latches are level driven; the D, T and JK flip-flops trigger on a rising clock edge. Cross-coupled NOR gates latch on their own too &mdash; see the examples menu.</dd>
+        </dl>
+        <dl>
+          <dt>V / W / X / H</dt><dd>Select, Wire, Cut, Pan tools</dd>
+          <dt>Space</dt><dd>Run or pause</dd>
+          <dt>.</dt><dd>Single propagation step while paused</dd>
+          <dt>Delete</dt><dd>Remove the selection</dd>
+          <dt>Ctrl+D</dt><dd>Duplicate the selection</dd>
+          <dt>Ctrl+Z / Ctrl+Shift+Z</dt><dd>Undo / redo</dd>
+          <dt>F</dt><dd>Fit everything into view</dd>
+          <dt>Wheel</dt><dd>Zoom; middle-drag or right-drag pans</dd>
+        </dl>
+        <p class="lead" style="margin-bottom:14px">The board saves itself in this browser, so your circuit is still here next time.</p>
+        <button id="help-close">Close</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="ghost"></div>
+
+<script>
+"use strict";
+
+/* ==========================================================================
+   Part definitions
+   ========================================================================== */
+
+const DEFS = {
+  // --- gates -------------------------------------------------------------
+  AND:  { cat:'gate', name:'AND',  shape:'and', ins:2, outs:1, arity:[2,6],
+          logic: v => [v.every(Boolean)] },
+  OR:   { cat:'gate', name:'OR',   shape:'or',  ins:2, outs:1, arity:[2,6],
+          logic: v => [v.some(Boolean)] },
+  NOT:  { cat:'gate', name:'NOT',  shape:'not', ins:1, outs:1, bubble:true,
+          logic: v => [!v[0]] },
+  NAND: { cat:'gate', name:'NAND', shape:'and', ins:2, outs:1, bubble:true, arity:[2,6],
+          logic: v => [!v.every(Boolean)] },
+  NOR:  { cat:'gate', name:'NOR',  shape:'or',  ins:2, outs:1, bubble:true, arity:[2,6],
+          logic: v => [!v.some(Boolean)] },
+  XOR:  { cat:'gate', name:'XOR',  shape:'xor', ins:2, outs:1, arity:[2,6],
+          logic: v => [v.filter(Boolean).length % 2 === 1] },
+  XNOR: { cat:'gate', name:'XNOR', shape:'xor', ins:2, outs:1, bubble:true, arity:[2,6],
+          logic: v => [v.filter(Boolean).length % 2 === 0] },
+  BUF:  { cat:'gate', name:'BUF',  shape:'not', ins:1, outs:1,
+          logic: v => [!!v[0]] },
+
+  // --- latches and flip-flops --------------------------------------------
+  SR:    { cat:'mem', name:'SR Latch', ins:2, outs:2, inNames:['S','R'], outNames:['Q','Q̅'],
+           logic: (v, c) => {
+             if (v[0] && v[1]) { c.q = false; return [false, false]; }   // forbidden state
+             if (v[0]) c.q = true;
+             else if (v[1]) c.q = false;
+             return [c.q, !c.q];
+           } },
+  DLATCH:{ cat:'mem', name:'D Latch', ins:2, outs:2, inNames:['D','E'], outNames:['Q','Q̅'],
+           logic: (v, c) => {
+             if (v[1]) c.q = !!v[0];                                     // transparent while enabled
+             return [c.q, !c.q];
+           } },
+  DFF:   { cat:'mem', name:'D Flip-Flop', ins:2, outs:2, inNames:['D','CLK'], outNames:['Q','Q̅'],
+           logic: (v, c) => {
+             const clk = !!v[1];
+             if (clk && !c.pc && !priming) c.q = !!v[0];
+             c.pc = clk;
+             return [c.q, !c.q];
+           } },
+  TFF:   { cat:'mem', name:'T Flip-Flop', ins:2, outs:2, inNames:['T','CLK'], outNames:['Q','Q̅'],
+           logic: (v, c) => {
+             const clk = !!v[1];
+             if (clk && !c.pc && !priming && v[0]) c.q = !c.q;
+             c.pc = clk;
+             return [c.q, !c.q];
+           } },
+  JKFF:  { cat:'mem', name:'JK Flip-Flop', ins:3, outs:2, inNames:['J','CLK','K'], outNames:['Q','Q̅'],
+           logic: (v, c) => {
+             const clk = !!v[1];
+             if (clk && !c.pc && !priming) {
+               const j = !!v[0], k = !!v[2];
+               if (j && k) c.q = !c.q;
+               else if (j) c.q = true;
+               else if (k) c.q = false;
+             }
+             c.pc = clk;
+             return [c.q, !c.q];
+           } },
+
+  // --- inputs and outputs -------------------------------------------------
+  SWITCH:{ cat:'io', name:'Switch', ins:0, outs:1, logic: (v, c) => [!!c.q] },
+  BUTTON:{ cat:'io', name:'Button', ins:0, outs:1, logic: (v, c) => [!!c.q] },
+  CLOCK: { cat:'io', name:'Clock',  ins:0, outs:1, logic: (v, c) => [!!c.q] },
+  LED:   { cat:'io', name:'LED',    ins:1, outs:0, logic: () => [] }
+};
+
+const PALETTE = [
+  { head:'Gates', wide:false, items:['AND','OR','NOT','NAND','NOR','XOR','XNOR','BUF'] },
+  { head:'Latches & flip-flops', wide:true, items:['SR','DLATCH','DFF','TFF','JKFF'] },
+  { head:'Inputs & outputs', wide:false, items:['SWITCH','BUTTON','CLOCK','LED'] }
+];
+
+/* ==========================================================================
+   Board state
+   ========================================================================== */
+
+let comps = [];
+let wires = [];
+let nextId = 1;
+
+const view = { x: 0, y: 0, z: 1 };
+const sel = new Set();
+
+let tool = 'select';
+let running = true;
+
+const SETTLE = 8;          // propagation steps per animation frame
+const GRID = 10;           // movement snap
+const PORT_HIT = 13;       // world-space port grab radius for the wire tool
+
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+
+function byId(id) {
+  for (const c of comps) if (c.id === id) return c;
+  return null;
+}
+
+function mkComp(type, x, y, opt) {
+  opt = opt || {};
+  const d = DEFS[type];
+  const c = {
+    id: nextId++,
+    type: type,
+    x: Math.round(x),
+    y: Math.round(y),
+    ins: opt.ins != null ? opt.ins : d.ins,
+    outs: d.outs,
+    q: !!opt.q,
+    pc: false,
+    label: opt.label || '',
+    hz: opt.hz != null ? opt.hz : 2,
+    iv: [],
+    ov: [],
+    t0: 0
+  };
+  c.iv = new Array(c.ins).fill(false);
+  c.ov = new Array(c.outs).fill(false);
+  comps.push(c);
+  return c;
+}
+
+function mkWire(aId, aPort, bId, bPort) {
+  // a is always the driving output, b the receiving input
+  for (const w of wires) {
+    if (w.a.c === aId && w.a.p === aPort && w.b.c === bId && w.b.p === bPort) return null;
+  }
+  const w = { id: nextId++, a: { c: aId, p: aPort }, b: { c: bId, p: bPort } };
+  wires.push(w);
+  return w;
+}
+
+function removeComp(c) {
+  comps = comps.filter(o => o !== c);
+  wires = wires.filter(w => w.a.c !== c.id && w.b.c !== c.id);
+  sel.delete(c.id);
+}
+
+/* ==========================================================================
+   Geometry
+   ========================================================================== */
+
+const LEAD = 10;           // stub length between a port and the part body
+
+function sizeOf(c) {
+  const d = DEFS[c.type];
+  if (d.cat === 'gate') {
+    if (d.shape === 'not') return { w: 64, h: 44 };
+    return { w: 74, h: Math.max(48, c.ins * 18 + 14) };
+  }
+  if (d.cat === 'mem') {
+    return { w: 104, h: Math.max(72, Math.max(c.ins, c.outs) * 24 + 32) };
+  }
+  if (c.type === 'LED') return { w: 46, h: 42 };
+  if (c.type === 'CLOCK') return { w: 62, h: 40 };
+  return { w: 58, h: 38 };   // switch, button
+}
+
+function portPos(c, kind, i) {
+  const s = sizeOf(c);
+  const n = kind === 'in' ? c.ins : c.outs;
+  const y = c.y + s.h * (i + 1) / (n + 1);
+  return { x: kind === 'in' ? c.x : c.x + s.w, y: y };
+}
+
+function compRect(c) {
+  const s = sizeOf(c);
+  return { x: c.x, y: c.y, w: s.w, h: s.h };
+}
+
+function hitComp(wx, wy) {
+  for (let i = comps.length - 1; i >= 0; i--) {
+    const r = compRect(comps[i]);
+    if (wx >= r.x && wx <= r.x + r.w && wy >= r.y && wy <= r.y + r.h) return comps[i];
+  }
+  return null;
+}
+
+function hitPort(wx, wy, radius) {
+  const rr = (radius || PORT_HIT) ** 2;
+  let best = null, bestD = rr;
+  for (const c of comps) {
+    for (let i = 0; i < c.ins; i++) {
+      const p = portPos(c, 'in', i);
+      const d = (p.x - wx) ** 2 + (p.y - wy) ** 2;
+      if (d < bestD) { bestD = d; best = { c: c, kind: 'in', i: i, x: p.x, y: p.y }; }
+    }
+    for (let i = 0; i < c.outs; i++) {
+      const p = portPos(c, 'out', i);
+      const d = (p.x - wx) ** 2 + (p.y - wy) ** 2;
+      if (d < bestD) { bestD = d; best = { c: c, kind: 'out', i: i, x: p.x, y: p.y }; }
+    }
+  }
+  return best;
+}
+
+function wireGeom(w) {
+  const a = byId(w.a.c), b = byId(w.b.c);
+  if (!a || !b) return null;
+  const p1 = portPos(a, 'out', w.a.p);
+  const p2 = portPos(b, 'in', w.b.p);
+  return curve(p1.x, p1.y, p2.x, p2.y);
+}
+
+function curve(x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  let d = Math.max(28, Math.abs(dx) * 0.42);
+  if (dx < 0) d += Math.min(150, -dx * 0.55);   // bow outwards on backward runs
+  return { x1: x1, y1: y1, c1x: x1 + d, c1y: y1, c2x: x2 - d, c2y: y2, x2: x2, y2: y2 };
+}
+
+function bezPoint(g, t) {
+  const u = 1 - t;
+  const a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+  return {
+    x: a * g.x1 + b * g.c1x + c * g.c2x + d * g.x2,
+    y: a * g.y1 + b * g.c1y + c * g.c2y + d * g.y2
+  };
+}
+
+function samples(g, n) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) pts.push(bezPoint(g, i / n));
+  return pts;
+}
+
+function segIntersect(p1, p2, p3, p4) {
+  const d = (p4.y - p3.y) * (p2.x - p1.x) - (p4.x - p3.x) * (p2.y - p1.y);
+  if (Math.abs(d) < 1e-9) return false;
+  const ua = ((p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)) / d;
+  const ub = ((p2.x - p1.x) * (p1.y - p3.y) - (p2.y - p1.y) * (p1.x - p3.x)) / d;
+  return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
+}
+
+function distToSeg(px, py, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = dx * dx + dy * dy;
+  let t = len === 0 ? 0 : ((px - a.x) * dx + (py - a.y) * dy) / len;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy));
+}
+
+function distToWire(w, wx, wy) {
+  const g = wireGeom(w);
+  if (!g) return Infinity;
+  const pts = samples(g, 26);
+  let best = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    best = Math.min(best, distToSeg(wx, wy, pts[i], pts[i + 1]));
+  }
+  return best;
+}
+
+function hitWire(wx, wy) {
+  let best = null, bestD = 9;
+  for (const w of wires) {
+    const d = distToWire(w, wx, wy);
+    if (d < bestD) { bestD = d; best = w; }
+  }
+  return best;
+}
+
+/* ==========================================================================
+   Simulation
+   ========================================================================== */
+
+// While priming, edge-triggered parts follow the clock without acting on it.
+// That keeps a freshly loaded board from firing a phantom edge as the outputs
+// settle for the very first time.
+let priming = false;
+
+/* One relaxation pass. Parts are evaluated in order and each one reads the
+   values its neighbours hold right now, so a cross-coupled pair (an SR latch
+   built from raw NOR gates, say) settles into one of its two stable states
+   instead of oscillating the way a strictly simultaneous update would.
+   Returns whether anything moved, which lets the caller stop early. */
+function step() {
+  const idx = new Map();
+  for (const c of comps) idx.set(c.id, c);
+
+  const inbox = new Map();
+  for (const c of comps) inbox.set(c.id, []);
+  for (const w of wires) {
+    const list = inbox.get(w.b.c);
+    if (list) list.push(w);
+  }
+
+  let changed = false;
+  for (const c of comps) {
+    const iv = new Array(c.ins).fill(false);
+    for (const w of inbox.get(c.id)) {
+      const src = idx.get(w.a.c);
+      if (src && w.b.p < iv.length && src.ov[w.a.p]) iv[w.b.p] = true;  // wired OR
+    }
+    const raw = DEFS[c.type].logic(iv, c) || [];
+    c.iv = iv;
+    for (let i = 0; i < c.outs; i++) {
+      const v = !!raw[i];
+      if (c.ov[i] !== v) { c.ov[i] = v; changed = true; }
+    }
+  }
+  return changed;
+}
+
+function settle(passes) {
+  for (let i = 0; i < passes; i++) if (!step()) return;
+}
+
+/* Bring outputs in line with the current inputs without letting flip-flops
+   treat the first settled clock level as an edge. */
+function prime() {
+  priming = true;
+  settle(24);
+  priming = false;
+}
+
+function tickClocks(now) {
+  for (const c of comps) {
+    if (c.type !== 'CLOCK') continue;
+    if (!c.t0) c.t0 = now;
+    const half = 1000 / (Math.max(0.25, c.hz) * 2);
+    if (now - c.t0 >= half) {
+      c.q = !c.q;
+      c.t0 = now;
+    }
+  }
+}
+
+/* ==========================================================================
+   Drawing
+   ========================================================================== */
+
+let dpr = 1;
+
+function palette() {
+  const s = getComputedStyle(document.documentElement);
+  const get = n => s.getPropertyValue(n).trim();
+  return {
+    grid: get('--grid'),
+    text: get('--text'),
+    muted: get('--muted'),
+    accent: get('--accent'),
+    hot: get('--hot'),
+    hotGlow: get('--hot-glow'),
+    cold: get('--cold'),
+    danger: get('--danger'),
+    body: get('--body'),
+    line: get('--body-line'),
+    panel: get('--panel')
+  };
+}
+let P = palette();
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  const r = canvas.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.round(r.width * dpr));
+  canvas.height = Math.max(1, Math.round(r.height * dpr));
+}
+
+function toWorld(sx, sy) {
+  return { x: (sx - view.x) / view.z, y: (sy - view.y) / view.z };
+}
+
+function draw() {
+  const W = canvas.width / dpr, H = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  drawGrid(W, H);
+
+  ctx.setTransform(dpr * view.z, 0, 0, dpr * view.z, dpr * view.x, dpr * view.y);
+
+  for (const w of wires) drawWire(w);
+  if (drag && drag.kind === 'wire') drawPendingWire();
+  for (const c of comps) drawComp(c);
+
+  if (pendingPort) drawPortRing(pendingPort, P.accent);
+  if (hoverPort && (!drag || drag.kind === 'wire')) drawPortRing(hoverPort, P.accent);
+
+  if (drag && drag.kind === 'cut') drawCutPath();
+  if (drag && drag.kind === 'band') drawBand();
+}
+
+function drawGrid(W, H) {
+  const gs = 24 * view.z;
+  if (gs < 7) return;
+  const ox = view.x % gs, oy = view.y % gs;
+  ctx.fillStyle = P.grid;
+  const r = view.z < 0.7 ? 0.8 : 1.1;
+  for (let x = ox; x < W; x += gs) {
+    for (let y = oy; y < H; y += gs) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawWire(w) {
+  const g = wireGeom(w);
+  if (!g) return;
+  const src = byId(w.a.c);
+  const live = !!(src && src.ov[w.a.p]);
+  const picked = sel.has(w.id);
+
+  ctx.beginPath();
+  ctx.moveTo(g.x1, g.y1);
+  ctx.bezierCurveTo(g.c1x, g.c1y, g.c2x, g.c2y, g.x2, g.y2);
+  ctx.lineCap = 'round';
+
+  if (picked) {
+    ctx.strokeStyle = P.accent;
+    ctx.lineWidth = 7;
+    ctx.stroke();
+  } else if (live) {
+    ctx.strokeStyle = P.hotGlow;
+    ctx.lineWidth = 7;
+    ctx.stroke();
+  }
+  ctx.strokeStyle = live ? P.hot : P.cold;
+  ctx.lineWidth = live ? 2.6 : 2;
+  ctx.stroke();
+}
+
+function drawPendingWire() {
+  const a = drag.from;
+  const g = a.kind === 'out'
+    ? curve(a.x, a.y, drag.wx, drag.wy)
+    : curve(drag.wx, drag.wy, a.x, a.y);
+  ctx.beginPath();
+  ctx.moveTo(g.x1, g.y1);
+  ctx.bezierCurveTo(g.c1x, g.c1y, g.c2x, g.c2y, g.x2, g.y2);
+  ctx.strokeStyle = P.accent;
+  ctx.lineWidth = 2.2;
+  ctx.setLineDash([7, 5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawPortRing(p, color) {
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function drawCutPath() {
+  if (drag.path.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(drag.path[0].x, drag.path[0].y);
+  for (let i = 1; i < drag.path.length; i++) ctx.lineTo(drag.path[i].x, drag.path[i].y);
+  ctx.strokeStyle = P.danger;
+  ctx.lineWidth = 2 / view.z + 0.8;
+  ctx.setLineDash([6, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawBand() {
+  const x = Math.min(drag.ox, drag.wx), y = Math.min(drag.oy, drag.wy);
+  const w = Math.abs(drag.wx - drag.ox), h = Math.abs(drag.wy - drag.oy);
+  ctx.fillStyle = hexA(P.accent, 0.12);
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = P.accent;
+  ctx.lineWidth = 1 / view.z;
+  ctx.strokeRect(x, y, w, h);
+}
+
+function hexA(hex, a) {
+  const h = hex.replace('#', '');
+  const n = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const num = parseInt(n, 16);
+  if (isNaN(num)) return 'rgba(90, 140, 240, ' + a + ')';
+  return 'rgba(' + ((num >> 16) & 255) + ',' + ((num >> 8) & 255) + ',' + (num & 255) + ',' + a + ')';
+}
+
+function drawComp(c) {
+  const d = DEFS[c.type];
+  const s = sizeOf(c);
+
+  ctx.save();
+
+  if (sel.has(c.id)) {
+    ctx.strokeStyle = P.accent;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(c.x - 6, c.y - 6, s.w + 12, s.h + 12);
+    ctx.setLineDash([]);
+  }
+
+  // port stubs, drawn first so the body covers their inner ends
+  ctx.strokeStyle = P.line;
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < c.ins; i++) {
+    const p = portPos(c, 'in', i);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(c.x + (d.cat === 'gate' ? LEAD + 18 : LEAD), p.y);
+    ctx.stroke();
+  }
+  for (let i = 0; i < c.outs; i++) {
+    const p = portPos(c, 'out', i);
+    ctx.beginPath();
+    ctx.moveTo(p.x - LEAD, p.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  }
+
+  if (d.cat === 'gate') drawGateBody(c, d, s.w, s.h);
+  else if (d.cat === 'mem') drawMemBody(c, d, s.w, s.h);
+  else drawIoBody(c, d, s.w, s.h);
+
+  for (let i = 0; i < c.ins; i++) drawPort(portPos(c, 'in', i), c.iv[i]);
+  for (let i = 0; i < c.outs; i++) drawPort(portPos(c, 'out', i), c.ov[i]);
+
+  if (c.label) {
+    ctx.fillStyle = P.muted;
+    ctx.font = '600 11px ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(c.label, c.x + s.w / 2, c.y - 8);
+  }
+
+  ctx.restore();
+}
+
+function drawPort(p, live) {
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 3.6, 0, Math.PI * 2);
+  ctx.fillStyle = live ? P.hot : P.cold;
+  ctx.fill();
+}
+
+function drawGateBody(c, d, w, h) {
+  const left = c.x + LEAD;
+  const right = c.x + w - LEAD - (d.bubble ? 9 : 0);
+  const bw = right - left;
+  const top = c.y, bot = c.y + h, mid = c.y + h / 2;
+
+  ctx.beginPath();
+  if (d.shape === 'and') {
+    const r = h / 2;
+    ctx.moveTo(right - r, top);
+    ctx.lineTo(left, top);
+    ctx.lineTo(left, bot);
+    ctx.lineTo(right - r, bot);
+    ctx.arc(right - r, mid, r, Math.PI / 2, -Math.PI / 2, true);   // bulge to the right
+    ctx.closePath();
+  } else if (d.shape === 'or' || d.shape === 'xor') {
+    ctx.moveTo(left, top);
+    ctx.quadraticCurveTo(left + bw * 0.62, top, right, mid);
+    ctx.quadraticCurveTo(left + bw * 0.62, bot, left, bot);
+    ctx.quadraticCurveTo(left + bw * 0.28, mid, left, top);
+    ctx.closePath();
+  } else {
+    ctx.moveTo(left, top);
+    ctx.lineTo(right, mid);
+    ctx.lineTo(left, bot);
+    ctx.closePath();
+  }
+  ctx.fillStyle = P.body;
+  ctx.fill();
+  ctx.strokeStyle = P.line;
+  ctx.lineWidth = 1.9;
+  ctx.stroke();
+
+  if (d.shape === 'xor') {                       // the extra back arc
+    ctx.beginPath();
+    ctx.moveTo(left - 7, top);
+    ctx.quadraticCurveTo(left - 7 + bw * 0.28, mid, left - 7, bot);
+    ctx.stroke();
+  }
+
+  if (d.bubble) {
+    ctx.beginPath();
+    ctx.arc(right + 5, mid, 4.6, 0, Math.PI * 2);
+    ctx.fillStyle = P.body;
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = P.muted;
+  ctx.font = '700 9.5px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (d.shape !== 'not') ctx.fillText(d.name, left + bw * 0.46, mid);
+  else if (c.type === 'BUF') ctx.fillText('1', left + bw * 0.34, mid);
+}
+
+function drawMemBody(c, d, w, h) {
+  const x = c.x + LEAD, bw = w - LEAD * 2;
+  roundRect(x, c.y, bw, h, 6);
+  ctx.fillStyle = P.body;
+  ctx.fill();
+  ctx.strokeStyle = P.line;
+  ctx.lineWidth = 1.9;
+  ctx.stroke();
+
+  // type name across the top, port names on their own rows
+  const short = { SR: 'SR', DLATCH: 'D', DFF: 'D', TFF: 'T', JKFF: 'JK' }[c.type];
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = P.text;
+  ctx.font = '700 11px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(short, x + bw / 2, c.y + 13);
+
+  // the bit it is holding on to
+  ctx.font = '700 15px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillStyle = c.q ? P.hot : P.cold;
+  ctx.fillText(c.q ? '1' : '0', x + bw / 2, c.y + h / 2 + 6);
+
+  ctx.font = '600 9.5px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillStyle = P.muted;
+  ctx.textAlign = 'left';
+  for (let i = 0; i < c.ins; i++) {
+    const p = portPos(c, 'in', i);
+    ctx.fillText(d.inNames[i], x + 5, p.y);
+  }
+  ctx.textAlign = 'right';
+  for (let i = 0; i < c.outs; i++) {
+    const p = portPos(c, 'out', i);
+    ctx.fillText(d.outNames[i], x + bw - 5, p.y);
+  }
+
+  if (c.type === 'DFF' || c.type === 'TFF' || c.type === 'JKFF') {
+    const p = portPos(c, 'in', 1);               // edge-trigger notch
+    ctx.beginPath();
+    ctx.moveTo(x, p.y - 5);
+    ctx.lineTo(x + 7, p.y);
+    ctx.lineTo(x, p.y + 5);
+    ctx.strokeStyle = P.line;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+}
+
+function drawIoBody(c, d, w, h) {
+  if (c.type === 'LED') {
+    const cx = c.x + LEAD + 18, cy = c.y + h / 2, r = 17;
+    const on = c.iv[0];
+    if (on) {
+      const g = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 2);
+      g.addColorStop(0, P.hotGlow);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = on ? P.hot : P.body;
+    ctx.fill();
+    ctx.strokeStyle = P.line;
+    ctx.lineWidth = 1.9;
+    ctx.stroke();
+    return;
+  }
+
+  const x = c.x, bw = w - LEAD;
+  roundRect(x, c.y, bw, h, 7);
+  ctx.fillStyle = P.body;
+  ctx.fill();
+  ctx.strokeStyle = P.line;
+  ctx.lineWidth = 1.9;
+  ctx.stroke();
+
+  if (c.type === 'CLOCK') {
+    ctx.strokeStyle = c.q ? P.hot : P.muted;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const y0 = c.y + h * 0.62, y1 = c.y + h * 0.3;
+    let px = x + 8;
+    ctx.moveTo(px, y0);
+    for (let i = 0; i < 2; i++) {
+      ctx.lineTo(px, y1); ctx.lineTo(px + 9, y1);
+      ctx.lineTo(px + 9, y0); ctx.lineTo(px + 18, y0);
+      px += 18;
+    }
+    ctx.stroke();
+    ctx.fillStyle = P.muted;
+    ctx.font = '600 8px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(c.hz + 'Hz', x + bw - 5, c.y + h - 3);
+    return;
+  }
+
+  if (c.type === 'SWITCH') {
+    const trackW = 30, trackH = 15;
+    const tx = x + (bw - trackW) / 2, ty = c.y + (h - trackH) / 2;
+    roundRect(tx, ty, trackW, trackH, trackH / 2);
+    ctx.fillStyle = c.q ? P.hot : P.cold;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(c.q ? tx + trackW - trackH / 2 : tx + trackH / 2, ty + trackH / 2, trackH / 2 - 2.2, 0, Math.PI * 2);
+    ctx.fillStyle = P.panel;
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(x + bw / 2, c.y + h / 2, 9, 0, Math.PI * 2);
+    ctx.fillStyle = c.q ? P.hot : P.cold;
+    ctx.fill();
+    ctx.strokeStyle = P.line;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/* ==========================================================================
+   Save, load, history
+   ========================================================================== */
+
+const undoStack = [];
+const redoStack = [];
+const STORE_KEY = 'logic-bench.v1';
+
+function serialize() {
+  return JSON.stringify({
+    nextId: nextId,
+    comps: comps.map(c => ({
+      id: c.id, type: c.type, x: c.x, y: c.y, ins: c.ins,
+      q: c.q, label: c.label, hz: c.hz
+    })),
+    wires: wires.map(w => ({ id: w.id, a: w.a, b: w.b })),
+    view: { x: view.x, y: view.y, z: view.z }
+  });
+}
+
+function load(json, keepView) {
+  const data = typeof json === 'string' ? JSON.parse(json) : json;
+  comps = [];
+  wires = [];
+  nextId = data.nextId || 1;
+  for (const s of data.comps || []) {
+    const d = DEFS[s.type];
+    if (!d) continue;
+    const c = {
+      id: s.id, type: s.type, x: s.x, y: s.y,
+      ins: s.ins != null ? s.ins : d.ins,
+      outs: d.outs,
+      q: !!s.q, pc: false,
+      label: s.label || '',
+      hz: s.hz != null ? s.hz : 2,
+      iv: [], ov: [], t0: 0
+    };
+    c.iv = new Array(c.ins).fill(false);
+    c.ov = new Array(c.outs).fill(false);
+    comps.push(c);
+  }
+  for (const s of data.wires || []) {
+    if (byId(s.a.c) && byId(s.b.c)) wires.push({ id: s.id, a: s.a, b: s.b });
+  }
+  sel.clear();
+  if (!keepView && data.view) {
+    view.x = data.view.x; view.y = data.view.y; view.z = data.view.z;
+  }
+  prime();
+}
+
+function snapshot() {
+  undoStack.push(serialize());
+  if (undoStack.length > 80) undoStack.shift();
+  redoStack.length = 0;
+}
+
+function undo() {
+  if (!undoStack.length) { toast('Nothing left to undo'); return; }
+  redoStack.push(serialize());
+  load(undoStack.pop(), true);
+  save();
+}
+
+function redo() {
+  if (!redoStack.length) { toast('Nothing to redo'); return; }
+  undoStack.push(serialize());
+  load(redoStack.pop(), true);
+  save();
+}
+
+function save() {
+  try { localStorage.setItem(STORE_KEY, serialize()); } catch (e) { /* private mode */ }
+}
+
+function restore() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return false;
+    load(raw);
+    return comps.length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ==========================================================================
+   Ready-made circuits
+   ========================================================================== */
+
+function build(fn) {
+  snapshot();
+  comps = [];
+  wires = [];
+  nextId = 1;
+  fn(
+    (type, x, y, opt) => mkComp(type, x, y, opt),
+    (a, ap, b, bp) => mkWire(a.id, ap, b.id, bp)
+  );
+  sel.clear();
+  prime();
+  fit();
+  save();
+}
+
+const EXAMPLES = {
+  starter: (add, link) => {
+    const a = add('SWITCH', 40, 60, { label: 'A', q: true });
+    const b = add('SWITCH', 40, 180, { label: 'B' });
+    const x = add('XOR', 210, 80);
+    const n = add('NOT', 210, 240);
+    const l1 = add('LED', 380, 90, { label: 'A xor B' });
+    const l2 = add('LED', 380, 240, { label: 'not A' });
+    link(a, 0, x, 0);
+    link(b, 0, x, 1);
+    link(a, 0, n, 0);
+    link(x, 0, l1, 0);
+    link(n, 0, l2, 0);
+  },
+
+  halfAdder: (add, link) => {
+    const a = add('SWITCH', 40, 70, { label: 'A', q: true });
+    const b = add('SWITCH', 40, 200, { label: 'B' });
+    const x = add('XOR', 220, 80);
+    const g = add('AND', 220, 210);
+    const s = add('LED', 400, 95, { label: 'Sum' });
+    const c = add('LED', 400, 225, { label: 'Carry' });
+    link(a, 0, x, 0); link(b, 0, x, 1);
+    link(a, 0, g, 0); link(b, 0, g, 1);
+    link(x, 0, s, 0); link(g, 0, c, 0);
+  },
+
+  fullAdder: (add, link) => {
+    const a = add('SWITCH', 40, 40, { label: 'A', q: true });
+    const b = add('SWITCH', 40, 150, { label: 'B', q: true });
+    const ci = add('SWITCH', 40, 330, { label: 'Cin' });
+    const x1 = add('XOR', 210, 60);
+    const x2 = add('XOR', 390, 140);
+    const a1 = add('AND', 210, 410);
+    const a2 = add('AND', 390, 270);
+    const or = add('OR', 570, 340);
+    const sum = add('LED', 580, 150, { label: 'Sum' });
+    const co = add('LED', 750, 350, { label: 'Cout' });
+    link(a, 0, x1, 0); link(b, 0, x1, 1);
+    link(x1, 0, x2, 0); link(ci, 0, x2, 1);
+    link(x2, 0, sum, 0);
+    link(x1, 0, a2, 0); link(ci, 0, a2, 1);
+    link(a, 0, a1, 0); link(b, 0, a1, 1);
+    link(a2, 0, or, 0); link(a1, 0, or, 1);
+    link(or, 0, co, 0);
+  },
+
+  // Q = NOR(Reset, Q-not) and Q-not = NOR(Set, Q): each gate holds the other
+  // one down, so the pair remembers the last button that was pressed.
+  srNor: (add, link) => {
+    const r = add('BUTTON', 40, 60, { label: 'Reset' });
+    const s = add('BUTTON', 40, 290, { label: 'Set' });
+    const gqb = add('NOR', 230, 280);       // added first, so the board powers up reset
+    const gq = add('NOR', 230, 60);
+    const q = add('LED', 420, 65, { label: 'Q' });
+    const qb = add('LED', 420, 285, { label: 'Q not' });
+    link(r, 0, gq, 0);
+    link(gqb, 0, gq, 1);
+    link(gq, 0, gqb, 0);
+    link(s, 0, gqb, 1);
+    link(gq, 0, q, 0);
+    link(gqb, 0, qb, 0);
+  },
+
+  xorNand: (add, link) => {
+    const a = add('SWITCH', 40, 60, { label: 'A', q: true });
+    const b = add('SWITCH', 40, 290, { label: 'B' });
+    const n1 = add('NAND', 210, 170);
+    const n2 = add('NAND', 370, 50);
+    const n3 = add('NAND', 370, 280);
+    const n4 = add('NAND', 540, 165);
+    const l = add('LED', 710, 175, { label: 'A xor B' });
+    link(a, 0, n1, 0); link(b, 0, n1, 1);
+    link(a, 0, n2, 0); link(n1, 0, n2, 1);
+    link(n1, 0, n3, 0); link(b, 0, n3, 1);
+    link(n2, 0, n4, 0); link(n3, 0, n4, 1);
+    link(n4, 0, l, 0);
+  },
+
+  dff: (add, link) => {
+    const d = add('SWITCH', 40, 60, { label: 'D', q: true });
+    const clk = add('CLOCK', 40, 190, { label: 'clock', hz: 1 });
+    const ff = add('DFF', 240, 70);
+    const q = add('LED', 440, 70, { label: 'Q' });
+    const qb = add('LED', 440, 150, { label: 'Q not' });
+    link(d, 0, ff, 0);
+    link(clk, 0, ff, 1);
+    link(ff, 0, q, 0);
+    link(ff, 1, qb, 0);
+  },
+
+  counter: (add, link) => {
+    const clk = add('CLOCK', 40, 70, { label: 'clock', hz: 3 });
+    const one = add('SWITCH', 40, 200, { label: 'T = 1', q: true });
+    const bits = [];
+    for (let i = 0; i < 3; i++) {
+      const ff = add('TFF', 230 + i * 210, 60, { label: 'bit ' + i });
+      const led = add('LED', 230 + i * 210 + 120, 62);
+      link(one, 0, ff, 0);
+      link(ff, 0, led, 0);
+      bits.push(ff);
+    }
+    link(clk, 0, bits[0], 1);
+    link(bits[0], 1, bits[1], 1);      // Q-not into the next clock counts upwards
+    link(bits[1], 1, bits[2], 1);
+  }
+};
+
+/* ==========================================================================
+   View helpers
+   ========================================================================== */
+
+function fit() {
+  const r = canvas.getBoundingClientRect();
+  if (!comps.length) {
+    view.x = r.width / 2 - 200;
+    view.y = r.height / 2 - 150;
+    view.z = 1;
+    return;
+  }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const c of comps) {
+    const b = compRect(c);
+    minX = Math.min(minX, b.x - 30);
+    minY = Math.min(minY, b.y - 40);
+    maxX = Math.max(maxX, b.x + b.w + 30);
+    maxY = Math.max(maxY, b.y + b.h + 30);
+  }
+  const z = Math.min(r.width / (maxX - minX), r.height / (maxY - minY));
+  view.z = Math.max(0.25, Math.min(1.6, z * 0.94));
+  view.x = r.width / 2 - ((minX + maxX) / 2) * view.z;
+  view.y = r.height / 2 - ((minY + maxY) / 2) * view.z;
+}
+
+function zoomAt(sx, sy, factor) {
+  const z2 = Math.max(0.25, Math.min(2.8, view.z * factor));
+  view.x = sx - (sx - view.x) * (z2 / view.z);
+  view.y = sy - (sy - view.y) * (z2 / view.z);
+  view.z = z2;
+}
+
+/* ==========================================================================
+   Pointer interaction
+   ========================================================================== */
+
+let drag = null;
+let pendingPort = null;    // click-then-click wiring
+let hoverPort = null;
+let spaceDown = false;
+
+function localPoint(ev) {
+  const r = canvas.getBoundingClientRect();
+  return { sx: ev.clientX - r.left, sy: ev.clientY - r.top };
+}
+
+canvas.addEventListener('contextmenu', ev => ev.preventDefault());
+
+canvas.addEventListener('pointerdown', ev => {
+  const pt = localPoint(ev);
+  const wp = toWorld(pt.sx, pt.sy);
+  canvas.setPointerCapture(ev.pointerId);
+
+  if (ev.button === 1 || ev.button === 2 || tool === 'pan' || spaceDown) {
+    drag = { kind: 'pan', sx: pt.sx, sy: pt.sy, vx: view.x, vy: view.y };
+    return;
+  }
+  if (ev.button !== 0) return;
+
+  if (tool === 'cut') {
+    drag = { kind: 'cut', path: [wp], moved: false };
+    return;
+  }
+
+  if (tool === 'wire') {
+    const port = hitPort(wp.x, wp.y);
+    if (port) drag = { kind: 'wire', from: port, wx: wp.x, wy: wp.y, moved: false };
+    else {
+      pendingPort = null;
+      drag = { kind: 'pan', sx: pt.sx, sy: pt.sy, vx: view.x, vy: view.y };
+    }
+    return;
+  }
+
+  // --- select tool -------------------------------------------------------
+  const near = hitPort(wp.x, wp.y, 9);        // ports stay grabbable in select mode
+  if (near) {
+    drag = { kind: 'wire', from: near, wx: wp.x, wy: wp.y, moved: false };
+    return;
+  }
+
+  const hit = hitComp(wp.x, wp.y);
+  if (hit) {
+    if (hit.type === 'BUTTON') {
+      hit.q = true;
+      drag = { kind: 'button', comp: hit };
+      return;
+    }
+    if (!sel.has(hit.id)) {
+      if (!ev.shiftKey) sel.clear();
+      sel.add(hit.id);
+    } else if (ev.shiftKey) {
+      sel.delete(hit.id);
+    }
+    updateInspector();
+    drag = {
+      kind: 'move',
+      comp: hit,
+      moved: false,
+      snapped: false,
+      ox: wp.x,
+      oy: wp.y,
+      start: [...sel].map(id => byId(id)).filter(Boolean).map(c => ({ c: c, x: c.x, y: c.y }))
+    };
+    return;
+  }
+
+  const wire = hitWire(wp.x, wp.y);
+  if (wire) {
+    sel.clear();
+    sel.add(wire.id);
+    updateInspector();
+    drag = { kind: 'wireSel' };
+    return;
+  }
+
+  if (!ev.shiftKey) sel.clear();
+  updateInspector();
+  drag = { kind: 'band', ox: wp.x, oy: wp.y, wx: wp.x, wy: wp.y, add: ev.shiftKey };
+});
+
+canvas.addEventListener('pointermove', ev => {
+  const pt = localPoint(ev);
+  const wp = toWorld(pt.sx, pt.sy);
+
+  if (!drag) {
+    hoverPort = (tool === 'wire') ? hitPort(wp.x, wp.y) : null;
+    return;
+  }
+
+  if (drag.kind === 'pan') {
+    view.x = drag.vx + (pt.sx - drag.sx);
+    view.y = drag.vy + (pt.sy - drag.sy);
+    return;
+  }
+  if (drag.kind === 'wire') {
+    drag.wx = wp.x;
+    drag.wy = wp.y;
+    drag.moved = true;
+    hoverPort = hitPort(wp.x, wp.y);
+    return;
+  }
+  if (drag.kind === 'cut') {
+    const last = drag.path[drag.path.length - 1];
+    if (Math.hypot(wp.x - last.x, wp.y - last.y) > 3 / view.z) {
+      drag.path.push(wp);
+      drag.moved = true;
+    }
+    return;
+  }
+  if (drag.kind === 'move') {
+    const dx = wp.x - drag.ox, dy = wp.y - drag.oy;
+    if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+    if (!drag.snapped) { snapshot(); drag.snapped = true; }
+    drag.moved = true;
+    for (const s of drag.start) {
+      const nx = s.x + dx, ny = s.y + dy;
+      s.c.x = ev.altKey ? Math.round(nx) : Math.round(nx / GRID) * GRID;
+      s.c.y = ev.altKey ? Math.round(ny) : Math.round(ny / GRID) * GRID;
+    }
+    return;
+  }
+  if (drag.kind === 'band') {
+    drag.wx = wp.x;
+    drag.wy = wp.y;
+  }
+});
+
+canvas.addEventListener('pointerup', ev => {
+  if (!drag) return;
+  const pt = localPoint(ev);
+  const wp = toWorld(pt.sx, pt.sy);
+  const d = drag;
+  drag = null;
+
+  if (d.kind === 'button') {
+    d.comp.q = false;
+    return;
+  }
+
+  if (d.kind === 'wire') {
+    const target = hitPort(wp.x, wp.y);
+    if (d.moved && target && target !== d.from) {
+      connect(d.from, target);
+      pendingPort = null;
+      return;
+    }
+    if (!d.moved) {                                   // click-then-click wiring
+      if (pendingPort && pendingPort.c !== d.from.c && pendingPort.kind !== d.from.kind) {
+        connect(pendingPort, d.from);
+        pendingPort = null;
+      } else {
+        pendingPort = d.from;
+        toast('Now click ' + (d.from.kind === 'out' ? 'an input' : 'an output') + ' port');
+      }
+    }
+    return;
+  }
+
+  if (d.kind === 'cut') {
+    let doomed;
+    if (!d.moved) {
+      const w = hitWire(wp.x, wp.y);
+      doomed = w ? [w] : [];
+    } else {
+      doomed = wires.filter(w => crossesPath(w, d.path));
+    }
+    if (doomed.length) {
+      snapshot();
+      wires = wires.filter(w => doomed.indexOf(w) === -1);
+      toast('Cut ' + doomed.length + ' wire' + (doomed.length > 1 ? 's' : ''));
+      save();
+    } else if (d.moved) {
+      toast('Nothing crossed that cut');
+    }
+    return;
+  }
+
+  if (d.kind === 'move') {
+    if (!d.moved && d.comp.type === 'SWITCH') {
+      snapshot();
+      d.comp.q = !d.comp.q;
+      updateInspector();
+    }
+    save();
+    return;
+  }
+
+  if (d.kind === 'band') {
+    const x1 = Math.min(d.ox, d.wx), x2 = Math.max(d.ox, d.wx);
+    const y1 = Math.min(d.oy, d.wy), y2 = Math.max(d.oy, d.wy);
+    if (x2 - x1 > 4 || y2 - y1 > 4) {
+      if (!d.add) sel.clear();
+      for (const c of comps) {
+        const r = compRect(c);
+        if (r.x < x2 && r.x + r.w > x1 && r.y < y2 && r.y + r.h > y1) sel.add(c.id);
+      }
+      updateInspector();
+    }
+  }
+});
+
+canvas.addEventListener('pointercancel', () => { drag = null; });
+
+canvas.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  const pt = localPoint(ev);
+  zoomAt(pt.sx, pt.sy, ev.deltaY < 0 ? 1.12 : 1 / 1.12);
+}, { passive: false });
+
+function connect(p1, p2) {
+  let src = null, dst = null;
+  if (p1.kind === 'out' && p2.kind === 'in') { src = p1; dst = p2; }
+  else if (p1.kind === 'in' && p2.kind === 'out') { src = p2; dst = p1; }
+  else { toast('A wire runs from an output to an input'); return; }
+  if (src.c === dst.c) { toast('A part cannot drive itself directly'); return; }
+  snapshot();
+  if (!mkWire(src.c.id, src.i, dst.c.id, dst.i)) {
+    undoStack.pop();
+    toast('That wire already exists');
+    return;
+  }
+  save();
+}
+
+function crossesPath(w, path) {
+  const g = wireGeom(w);
+  if (!g) return false;
+  const pts = samples(g, 26);
+  for (let i = 0; i < path.length - 1; i++) {
+    for (let j = 0; j < pts.length - 1; j++) {
+      if (segIntersect(path[i], path[i + 1], pts[j], pts[j + 1])) return true;
+    }
+  }
+  return false;
+}
+
+/* ==========================================================================
+   Deleting and duplicating
+   ========================================================================== */
+
+function deleteSelection() {
+  if (!sel.size) return;
+  snapshot();
+  let n = 0;
+  for (const id of [...sel]) {
+    const c = byId(id);
+    if (c) { removeComp(c); n++; continue; }
+    const before = wires.length;
+    wires = wires.filter(w => w.id !== id);
+    if (wires.length !== before) n++;
+  }
+  sel.clear();
+  updateInspector();
+  save();
+  if (n) toast('Deleted ' + n + ' item' + (n > 1 ? 's' : ''));
+}
+
+function duplicateSelection() {
+  const picked = [...sel].map(id => byId(id)).filter(Boolean);
+  if (!picked.length) return;
+  snapshot();
+  const map = new Map();
+  for (const c of picked) {
+    const copy = mkComp(c.type, c.x + 30, c.y + 30, { ins: c.ins, q: c.q, label: c.label, hz: c.hz });
+    map.set(c.id, copy.id);
+  }
+  for (const w of [...wires]) {
+    if (map.has(w.a.c) && map.has(w.b.c)) mkWire(map.get(w.a.c), w.a.p, map.get(w.b.c), w.b.p);
+  }
+  sel.clear();
+  for (const id of map.values()) sel.add(id);
+  updateInspector();
+  save();
+}
+
+/* ==========================================================================
+   Palette
+   ========================================================================== */
+
+const ghost = document.getElementById('ghost');
+
+function glyph(type) {
+  const d = DEFS[type];
+  const s = 'stroke="currentColor" fill="none" stroke-width="1.5" stroke-linejoin="round"';
+  if (d.cat === 'gate') {
+    if (d.shape === 'and') {
+      return '<svg width="22" height="16" viewBox="0 0 22 16"><path ' + s + ' d="M3 2 h6 a6 6 0 0 1 0 12 h-6 z"/>' +
+             (d.bubble ? '<circle cx="18" cy="8" r="2" ' + s + '/>' : '') + '</svg>';
+    }
+    if (d.shape === 'not') {
+      return '<svg width="22" height="16" viewBox="0 0 22 16"><path ' + s + ' d="M4 2 L15 8 L4 14 z"/>' +
+             (d.bubble ? '<circle cx="18" cy="8" r="2" ' + s + '/>' : '') + '</svg>';
+    }
+    const extra = d.shape === 'xor' ? '<path ' + s + ' d="M1 2 Q5 8 1 14"/>' : '';
+    return '<svg width="22" height="16" viewBox="0 0 22 16">' + extra +
+           '<path ' + s + ' d="M4 2 Q13 2 17 8 Q13 14 4 14 Q8 8 4 2 z"/>' +
+           (d.bubble ? '<circle cx="19.5" cy="8" r="2" ' + s + '/>' : '') + '</svg>';
+  }
+  if (d.cat === 'mem') {
+    return '<svg width="22" height="16" viewBox="0 0 22 16"><rect ' + s + ' x="4" y="2" width="14" height="12" rx="2"/>' +
+           '<path ' + s + ' d="M4 6 l3 2 l-3 2"/></svg>';
+  }
+  if (type === 'LED') {
+    return '<svg width="22" height="16" viewBox="0 0 22 16"><circle ' + s + ' cx="12" cy="8" r="5"/><path ' + s + ' d="M2 8 h5"/></svg>';
+  }
+  if (type === 'CLOCK') {
+    return '<svg width="22" height="16" viewBox="0 0 22 16"><path ' + s + ' d="M2 12 v-8 h5 v8 h5 v-8 h5 v8 h3"/></svg>';
+  }
+  if (type === 'BUTTON') {
+    return '<svg width="22" height="16" viewBox="0 0 22 16"><circle ' + s + ' cx="9" cy="8" r="5"/><path ' + s + ' d="M14 8 h6"/></svg>';
+  }
+  return '<svg width="22" height="16" viewBox="0 0 22 16"><rect ' + s + ' x="2" y="4" width="14" height="8" rx="4"/>' +
+         '<circle cx="12" cy="8" r="2.2" fill="currentColor"/><path ' + s + ' d="M16 8 h4"/></svg>';
+}
+
+function buildPalette() {
+  const aside = document.getElementById('palette');
+  let html = '';
+  for (const group of PALETTE) {
+    html += '<div class="pal-head">' + group.head + '</div>';
+    html += '<div class="pal-grid' + (group.wide ? ' wide' : '') + '">';
+    for (const t of group.items) {
+      html += '<div class="chip" data-type="' + t + '" title="Drag onto the board">' +
+              glyph(t) + '<span>' + DEFS[t].name + '</span></div>';
+    }
+    html += '</div>';
+  }
+  aside.innerHTML = html;
+
+  aside.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('pointerdown', ev => {
+      ev.preventDefault();
+      const type = chip.dataset.type;
+      let moved = false;
+      ghost.textContent = DEFS[type].name;
+      ghost.style.display = 'block';
+      ghost.style.left = ev.clientX + 'px';
+      ghost.style.top = ev.clientY + 'px';
+
+      const move = e => {
+        moved = true;
+        ghost.style.left = e.clientX + 'px';
+        ghost.style.top = e.clientY + 'px';
+      };
+      const up = e => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        ghost.style.display = 'none';
+        const r = canvas.getBoundingClientRect();
+        const inside = e.clientX >= r.left && e.clientX <= r.right &&
+                       e.clientY >= r.top && e.clientY <= r.bottom;
+        if (moved && inside) {
+          const wp = toWorld(e.clientX - r.left, e.clientY - r.top);
+          place(type, wp.x, wp.y);
+        } else if (!moved) {
+          const wp = toWorld(r.width / 2, r.height / 2);
+          place(type, wp.x, wp.y);
+        }
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+  });
+}
+
+function place(type, wx, wy) {
+  snapshot();
+  const s = sizeOf({ type: type, ins: DEFS[type].ins, outs: DEFS[type].outs });
+  const c = mkComp(type,
+    Math.round((wx - s.w / 2) / GRID) * GRID,
+    Math.round((wy - s.h / 2) / GRID) * GRID);
+  sel.clear();
+  sel.add(c.id);
+  updateInspector();
+  save();
+}
+
+/* ==========================================================================
+   Inspector
+   ========================================================================== */
+
+const inspector = document.getElementById('inspector');
+const inspTitle = document.getElementById('insp-title');
+const inspBody = document.getElementById('insp-body');
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+function updateInspector() {
+  const picked = [...sel].map(id => byId(id)).filter(Boolean);
+  if (picked.length !== 1) {
+    inspector.classList.remove('show');
+    return;
+  }
+  const c = picked[0];
+  const d = DEFS[c.type];
+  inspTitle.textContent = d.name;
+
+  let html = '<label for="insp-label">Label</label>' +
+    '<input id="insp-label" type="text" value="' + escapeHtml(c.label) + '" placeholder="optional name">';
+
+  if (d.arity) {
+    html += '<label>Inputs</label><div class="row">' +
+      '<button data-act="fewer">&minus;</button>' +
+      '<span class="val">' + c.ins + '</span>' +
+      '<button data-act="more">+</button></div>';
+  }
+  if (c.type === 'CLOCK') {
+    html += '<label>Rate <span class="val" id="insp-hzval">' + c.hz + ' Hz</span></label>' +
+      '<input id="insp-hz" type="range" min="0.5" max="12" step="0.5" value="' + c.hz + '">';
+  }
+  if (c.type === 'SWITCH') {
+    html += '<label>State</label><div class="row"><button data-act="toggle">' +
+      (c.q ? 'High (1)' : 'Low (0)') + '</button></div>';
+  }
+  if (d.cat === 'mem') {
+    html += '<label>Stored bit</label><div class="row"><button data-act="toggle">Q = ' +
+      (c.q ? 1 : 0) + '</button></div>';
+  }
+  html += '<label>&nbsp;</label><div class="row">' +
+    '<button data-act="dup">Duplicate</button>' +
+    '<button data-act="del" class="danger">Delete</button></div>';
+
+  inspBody.innerHTML = html;
+  inspector.classList.add('show');
+
+  const labelInput = document.getElementById('insp-label');
+  labelInput.addEventListener('input', () => { c.label = labelInput.value; save(); });
+
+  const hz = document.getElementById('insp-hz');
+  if (hz) {
+    hz.addEventListener('input', () => {
+      c.hz = parseFloat(hz.value);
+      c.t0 = 0;
+      document.getElementById('insp-hzval').textContent = c.hz + ' Hz';
+      save();
+    });
+  }
+
+  inspBody.querySelectorAll('button[data-act]').forEach(b => {
+    b.addEventListener('click', () => {
+      const act = b.dataset.act;
+      if (act === 'more' || act === 'fewer') {
+        snapshot();
+        const n = Math.max(d.arity[0], Math.min(d.arity[1], c.ins + (act === 'more' ? 1 : -1)));
+        if (n < c.ins) wires = wires.filter(w => !(w.b.c === c.id && w.b.p >= n));
+        c.ins = n;
+        c.iv = new Array(n).fill(false);
+        updateInspector();
+        save();
+      } else if (act === 'toggle') {
+        snapshot();
+        c.q = !c.q;
+        updateInspector();
+        save();
+      } else if (act === 'dup') {
+        duplicateSelection();
+      } else if (act === 'del') {
+        deleteSelection();
+      }
+    });
+  });
+}
+
+/* ==========================================================================
+   Toolbar, keys, toast
+   ========================================================================== */
+
+let toastTimer = 0;
+const toastEl = document.getElementById('toast');
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1700);
+}
+
+const HINTS = {
+  select: 'Drag parts around, click a switch to flip it',
+  wire: 'Drag from an output port to an input port',
+  cut: 'Slash across the wires you want gone',
+  pan: 'Drag to move the board'
+};
+
+function setTool(t) {
+  tool = t;
+  pendingPort = null;
+  hoverPort = null;
+  stage.dataset.tool = t;
+  document.querySelectorAll('#tools button').forEach(b => {
+    b.classList.toggle('on', b.dataset.tool === t);
+  });
+  document.getElementById('hud-hint').textContent = HINTS[t];
+}
+
+document.querySelectorAll('#tools button').forEach(b => {
+  b.addEventListener('click', () => setTool(b.dataset.tool));
+});
+
+const runBtn = document.getElementById('btn-run');
+function setRunning(v) {
+  running = v;
+  runBtn.textContent = running ? 'Pause' : 'Run';
+  runBtn.classList.toggle('on', running);
+  if (running) for (const c of comps) c.t0 = 0;   // clocks resume from now
+}
+runBtn.addEventListener('click', () => setRunning(!running));
+
+document.getElementById('btn-step').addEventListener('click', () => step());
+document.getElementById('btn-undo').addEventListener('click', () => { undo(); updateInspector(); });
+document.getElementById('btn-redo').addEventListener('click', () => { redo(); updateInspector(); });
+document.getElementById('btn-fit').addEventListener('click', fit);
+document.getElementById('btn-clear').addEventListener('click', () => {
+  if (!comps.length) return;
+  snapshot();
+  comps = [];
+  wires = [];
+  sel.clear();
+  updateInspector();
+  save();
+  toast('Board cleared, Ctrl+Z brings it back');
+});
+
+document.getElementById('examples').addEventListener('change', ev => {
+  const key = ev.target.value;
+  ev.target.value = '';
+  if (!key || !EXAMPLES[key]) return;
+  build(EXAMPLES[key]);
+  updateInspector();
+});
+
+document.getElementById('btn-theme').addEventListener('click', () => {
+  const root = document.documentElement;
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const cur = root.getAttribute('data-theme') || (dark ? 'dark' : 'light');
+  root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  try { localStorage.setItem('logic-bench.theme', root.getAttribute('data-theme')); } catch (e) {}
+  P = palette();
+});
+
+const helpEl = document.getElementById('help');
+document.getElementById('btn-help').addEventListener('click', () => helpEl.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', () => helpEl.classList.remove('show'));
+helpEl.addEventListener('click', ev => { if (ev.target === helpEl) helpEl.classList.remove('show'); });
+
+document.addEventListener('keydown', ev => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
+
+  if (ev.ctrlKey || ev.metaKey) {
+    const k = ev.key.toLowerCase();
+    if (k === 'z') { ev.preventDefault(); ev.shiftKey ? redo() : undo(); updateInspector(); }
+    else if (k === 'y') { ev.preventDefault(); redo(); updateInspector(); }
+    else if (k === 'd') { ev.preventDefault(); duplicateSelection(); }
+    return;
+  }
+
+  switch (ev.key) {
+    case 'v': case 'V': setTool('select'); break;
+    case 'w': case 'W': setTool('wire'); break;
+    case 'x': case 'X': setTool('cut'); break;
+    case 'h': case 'H': setTool('pan'); break;
+    case 'f': case 'F': fit(); break;
+    case '.': step(); break;
+    case '?': helpEl.classList.toggle('show'); break;
+    case 'Escape':
+      helpEl.classList.remove('show');
+      pendingPort = null;
+      sel.clear();
+      updateInspector();
+      break;
+    case 'Delete': case 'Backspace':
+      ev.preventDefault();
+      deleteSelection();
+      break;
+    case ' ':
+      ev.preventDefault();
+      if (!spaceDown) setRunning(!running);
+      spaceDown = true;
+      break;
+    case '+': case '=': {
+      const r = canvas.getBoundingClientRect();
+      zoomAt(r.width / 2, r.height / 2, 1.15);
+      break;
+    }
+    case '-': case '_': {
+      const r = canvas.getBoundingClientRect();
+      zoomAt(r.width / 2, r.height / 2, 1 / 1.15);
+      break;
+    }
+  }
+});
+
+document.addEventListener('keyup', ev => { if (ev.key === ' ') spaceDown = false; });
+
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { P = palette(); });
+window.addEventListener('resize', resize);
+window.addEventListener('beforeunload', save);
+
+/* ==========================================================================
+   Boot
+   ========================================================================== */
+
+(function boot() {
+  try {
+    const t = localStorage.getItem('logic-bench.theme');
+    if (t) document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+  P = palette();
+
+  buildPalette();
+  resize();
+  setTool('select');
+
+  if (!restore()) {
+    build(EXAMPLES.starter);
+    undoStack.length = 0;
+  }
+
+  const hudParts = document.getElementById('hud-parts');
+  const hudWires = document.getElementById('hud-wires');
+  const hudZoom = document.getElementById('hud-zoom');
+
+  requestAnimationFrame(function frame(now) {
+    if (running) {
+      tickClocks(now);
+      settle(SETTLE);
+    }
+    hudParts.textContent = comps.length;
+    hudWires.textContent = wires.length;
+    hudZoom.textContent = Math.round(view.z * 100) + '%';
+    draw();
+    requestAnimationFrame(frame);
+  });
+})();
+</script>
+</body>
+</html>
