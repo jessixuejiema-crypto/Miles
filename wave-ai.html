@@ -56,13 +56,14 @@
   }
   .chip b{color:var(--text);font-weight:600}
   .chip.hot b{color:var(--cyan)}
-  .bar{
-    position:absolute;left:12px;right:12px;bottom:12px;height:8px;
-    background:rgba(6,10,24,.7);border:1px solid var(--border);border-radius:999px;overflow:hidden;
+  .mmap{
+    position:absolute;left:12px;right:12px;bottom:12px;height:46px;
+    width:calc(100% - 24px);display:block;cursor:ew-resize;
+    background:rgba(6,10,24,.76);border:1px solid var(--border);border-radius:9px;
+    backdrop-filter:blur(6px);
   }
-  .bar i{position:absolute;inset:0 auto 0 0;border-radius:999px;transition:width .15s linear}
-  .bar .rec{background:rgba(255,61,154,.45)}
-  .bar .now{background:linear-gradient(90deg,var(--cyan),#7affd6)}
+  canvas#game{cursor:grab}
+  canvas#game.grabbing{cursor:grabbing}
 
   aside{
     width:330px;flex:0 0 330px;border-left:1px solid var(--border);
@@ -107,7 +108,7 @@
 <div class="app">
   <header>
     <h1>Wave AI</h1>
-    <div class="tag">one synchronized brain &middot; 100 clones at a time &middot; every crash is a gradient</div>
+    <div class="tag">one synchronized brain &middot; a swarm of clones spread across the level &middot; every crash is a gradient</div>
   </header>
   <main>
     <div class="stage">
@@ -118,9 +119,10 @@
         <div class="chip">RUN <b id="hRun">0%</b></div>
         <div class="chip">RECORD <b id="hRec">0%</b></div>
         <div class="chip">AI/SEC <b id="hRate">0</b></div>
+        <div class="chip" id="hCam" style="display:none;color:var(--amber)">FREE CAM &mdash; dbl-click to follow</div>
         <div class="chip" id="hMsg" style="color:var(--amber)"></div>
       </div>
-      <div class="bar"><i class="rec" id="barRec" style="width:0%"></i><i class="now" id="barNow" style="width:0%"></i></div>
+      <canvas class="mmap" id="minimap" title="Drag to scrub along the level"></canvas>
     </div>
 
     <aside>
@@ -176,11 +178,14 @@
         <button id="tHeat" class="on">Death map</button>
         <button id="tTrail" class="on">Trails</button>
         <button id="tAdapt" class="on">Auto &sigma;</button>
+        <button id="tStag" class="on">Spread starts</button>
       </div>
 
       <div class="note">
+        <b>Drag the level</b> to look anywhere, or drag the strip below it to scrub.
+        Double-click or <kbd>F</kbd> to follow the leader again.<br>
         <kbd>P</kbd> pause &middot; <kbd>M</kbd> manual &middot; <kbd>N</kbd> new level &middot; <kbd>R</kbd> reset brain &middot;
-        <kbd>&uarr;</kbd><kbd>&darr;</kbd> speed. In manual mode hold <kbd>Space</kbd> or the mouse to fly up.
+        <kbd>&uarr;</kbd><kbd>&darr;</kbd> speed. In manual mode hold <kbd>Space</kbd> or tap to fly up.
       </div>
     </aside>
   </main>
@@ -231,10 +236,11 @@ function gauss(){
 /* ───────────────────────────── world constants ───────────────────────────── */
 const WORLD_H  = 540;      // corridor height in world units
 const VX       = 330;      // constant forward speed (px/s) — never changes
-const DT       = 1/120;    // physics step
-const DEC_EVERY= 6;        // the brain decides 20 times per second
+const DT       = 1/60;     // physics step — the rate the real game runs at
+const DEC_EVERY= 1;        // decide EVERY frame: the wave turns the instant it
+                           // wants to, at any height, with no minimum leg
 const CELL     = 6;        // collision/raycast grid resolution
-const RAY_RANGE= 210;
+const RAY_RANGE= 170;
 const RAY_ANGLES = [-90,-70,-50,-30,0,30,50,70,90].map(d=>d*Math.PI/180);
 const NRAYS    = RAY_ANGLES.length;
 const NIN      = NRAYS + 5;          // rays + dir, y, x, prevOut, bias
@@ -504,7 +510,7 @@ function sense(a){
 }
 
 function makeAgent(w,eps){
-  return {w, eps, x:0, y:spawnY, hold:false, prevOut:0.5, alive:true,
+  return {w, eps, x:0, y:spawnY, hold:false, prevOut:0.5, alive:true, delay:0, launched:false,
           finished:false, steps:0, flips:0, xmax:0, safe:0, nSense:0,
           trail:[], dx:0, dy:0};
 }
@@ -524,8 +530,8 @@ function stepAgent(a){
   const vy = a.hold ? -VX : VX;                 // hold = up, release = down, always 45°
   const nx = a.x + VX*DT, ny = a.y + vy*DT;
   // swept test so nothing is ever tunnelled through
-  for(let s=1;s<=3;s++){
-    const t=s/3;
+  for(let s=1;s<=4;s++){
+    const t=s/4;
     const px=a.x+(nx-a.x)*t, py=a.y+(ny-a.y)*t;
     if(solidAt(px,py)){ kill(a,px,py); return; }
   }
@@ -540,8 +546,8 @@ let popSize=100, agents=[], alive=0, gen=0, lives=0, wins=0, deaths=0;
 let record=0, genBest=0, genAvg=0, genClear=0, genElite=0, history=[], msg='', msgT=0;
 let emaAvg=0, bestAvg=0, eliteEma=0, bestElite=0, badRuns=0, stag=0, clearedOnce=false;
 let spawnY=WORLD_H/2, genSteps=0, maxGenSteps=0;
-let deathBuckets=null, genBuckets=null, BUCKET=25, sparks=[];
-let speed=30, paused=false, manual=null, adaptive=true;
+let deathBuckets=null, genBuckets=null, BUCKET=25, sparks=[], deadMarks=[];
+let speed=30, paused=false, manual=null, adaptive=true, stagger=true, launchGap=0;
 const show={rays:true, heat:true, trail:true};
 
 function newLevel(seed){
@@ -553,7 +559,6 @@ function newLevel(seed){
   rasterize();
   deathBuckets = new Int32Array(Math.ceil(LEN/BUCKET)+1);
   genBuckets   = new Int32Array(deathBuckets.length);
-  maxGenSteps  = Math.ceil((LEN/VX)/DT*1.15);
   record=0; genBest=0; genAvg=0; genClear=0; history=[]; sparks=[]; deaths=0; wins=0;
   emaAvg=0; bestAvg=0; eliteEma=0; bestElite=0; badRuns=0; stag=0; clearedOnce=false;
   startGeneration();
@@ -574,7 +579,14 @@ function resetBrain(){
    mirrored pairs (theta+σε, theta−σε) so the noise cancels out in the update. */
 function startGeneration(){
   agents.length=0;
+  deadMarks.length=0;
   genSteps=0;
+  /* Forward speed is constant, so clones launched together stay locked to the
+     same x forever — they'd only ever differ in height. Staggering the launches
+     spreads the swarm across the whole level instead, so at any moment there are
+     clones at every point of it, each one somewhere different in its own run. */
+  const levelSteps=Math.ceil((LEN/VX)/DT);
+  launchGap = stagger ? clamp(Math.floor(levelSteps/popSize),2,24) : 0;
   if(genBuckets) genBuckets.fill(0);
   const n=popSize;
   agents.push(makeAgent(theta,null));
@@ -590,6 +602,8 @@ function startGeneration(){
       agents.push(makeAgent(wm,neg));
     }
   }
+  for(let i=0;i<agents.length;i++) agents[i].delay=i*launchGap;
+  maxGenSteps=Math.ceil((LEN/VX)/DT*1.15)+agents.length*launchGap;
   alive=agents.length;
 }
 
@@ -599,6 +613,7 @@ function kill(a,px,py){
   const b=Math.min(deathBuckets.length-1,(px/BUCKET)|0);
   deathBuckets[b]++; genBuckets[b]++;
   if(sparks.length<600) sparks.push({x:px,y:py,t:1});
+  deadMarks.push(px,py);          // this generation's graveyard, for the map
 }
 
 /* Fold the entire generation — every crash and every success — back into the
@@ -616,7 +631,7 @@ function evolve(){
        enough to survive mutation, rather than eroding it. */
     const safety = a.nSense ? a.safe/a.nSense : 0;
     let f = a.finished ? LEN+2000 : a.xmax;
-    f += safety*(a.finished?6:1.5) - 0.05*a.flips;
+    f += safety*(a.finished?6:1.5) - 0.01*a.flips;
     if(a.finished) cleared++;
     fits[i]=f;
   }
@@ -696,7 +711,10 @@ function simulate(budgetMs){
   let done=0;
   while(done<want){
     if((done&15)===0 && performance.now()-t0>budgetMs) break;
-    for(let i=0;i<agents.length;i++){ const a=agents[i]; if(a.alive) stepAgent(a); }
+    for(let i=0;i<agents.length;i++){
+      const a=agents[i];
+      if(a.alive && genSteps>=a.delay){ a.launched=true; stepAgent(a); }
+    }
     genSteps++; done++;
     if(manual&&manual.alive) stepManual();
     if(alive<=0 || genSteps>=maxGenSteps){
@@ -710,8 +728,8 @@ function stepManual(){
   const a=manual;
   const vy=a.hold?-VX:VX;
   const nx=a.x+VX*DT, ny=a.y+vy*DT;
-  for(let s=1;s<=3;s++){
-    const t=s/3, px=a.x+(nx-a.x)*t, py=a.y+(ny-a.y)*t;
+  for(let s=1;s<=4;s++){
+    const t=s/4, px=a.x+(nx-a.x)*t, py=a.y+(ny-a.y)*t;
     if(solidAt(px,py)){ a.alive=false; a.deadAt=performance.now(); return; }
   }
   a.x=nx; a.y=ny;
@@ -721,6 +739,7 @@ function stepManual(){
 /* ═══════════════════════════════ 7. RENDER ════════════════════════════════ */
 const cv=document.getElementById('game'), ctx=cv.getContext('2d');
 let VW=1000, scale=1, camX=0, camTarget=0;
+let camFree=false, dragging=false, dragX0=0, dragCam0=0, dragMoved=false;
 
 function resize(){
   const r=cv.getBoundingClientRect(), dpr=Math.min(2,devicePixelRatio||1);
@@ -740,16 +759,18 @@ const COL={
 
 function leaderAgent(){
   let best=null;
-  for(const a of agents) if(a.alive && (!best||a.x>best.x)) best=a;
+  for(const a of agents) if(a.alive && a.launched && (!best||a.x>best.x)) best=a;
   if(!best) for(const a of agents) if(!best||a.xmax>best.xmax) best=a;
   return best;
 }
 
 function draw(){
   const L=leaderAgent();
-  camTarget=(manual&&manual.alive?manual.x:(L?L.x:0)) - VW*0.30;
-  camX += (camTarget-camX)*0.25;
-  if(camX<-40) camX=-40;
+  if(!camFree){
+    camTarget=(manual&&manual.alive?manual.x:(L?L.x:0)) - VW*0.30;
+    camX += (camTarget-camX)*0.25;
+  }
+  camX = clamp(camX, -60, Math.max(-60, LEN+260-VW));
 
   ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,cv.width,cv.height);
@@ -824,11 +845,22 @@ function draw(){
     ctx.beginPath(); ctx.arc(s.x,s.y,r,0,6.283); ctx.fill();
   }
 
+  // ── where this generation's clones died
+  ctx.strokeStyle='rgba(255,84,112,.45)'; ctx.lineWidth=1.6/scale;
+  ctx.beginPath();
+  for(let i=0;i<deadMarks.length;i+=2){
+    const dx=deadMarks[i], dy=deadMarks[i+1];
+    if(dx<camX-20||dx>camX+VW+20) continue;
+    ctx.moveTo(dx-4,dy-4); ctx.lineTo(dx+4,dy+4);
+    ctx.moveTo(dx+4,dy-4); ctx.lineTo(dx-4,dy+4);
+  }
+  ctx.stroke();
+
   // ── the swarm (overlapping, never colliding)
   ctx.globalCompositeOperation='lighter';
   for(let i=0;i<agents.length;i++){
     const a=agents[i];
-    if(!a.alive) continue;
+    if(!a.alive||!a.launched) continue;
     if(show.trail){
       if(a.trail.length>18) a.trail.shift();
       a.trail.push(a.x,a.y);
@@ -884,6 +916,39 @@ function drawWave(a,color,sizeMul){
   ctx.lineTo(a.x-s*0.35, a.y-up*s*0.95);
   ctx.closePath();
   ctx.fill();
+}
+
+/* The whole level squeezed into one strip: where every clone currently is, where
+   they have been dying, and which slice of it the main view is looking at. */
+const mm=document.getElementById('minimap'), mctx=mm.getContext('2d');
+function drawMinimap(){
+  fitMini(mm);
+  const w=mm.width, h=mm.height, dpr=w/mm.clientWidth;
+  mctx.clearRect(0,0,w,h);
+  const X = wx => (wx/LEN)*w;
+
+  // all-time death histogram along the floor of the strip
+  let mx=1;
+  for(let i=0;i<deathBuckets.length;i++) if(deathBuckets[i]>mx) mx=deathBuckets[i];
+  const bw=Math.max(1,X(BUCKET));
+  for(let i=0;i<deathBuckets.length;i++){
+    const v=deathBuckets[i]; if(!v) continue;
+    const n=Math.log(1+v)/Math.log(1+mx);
+    mctx.fillStyle='rgba(255,84,112,'+(0.15+n*0.5).toFixed(3)+')';
+    mctx.fillRect(X(i*BUCKET),h-n*h*0.55,bw,n*h*0.55);
+  }
+
+  // this generation's dead, then the living, each at its own position
+  mctx.fillStyle='rgba(255,84,112,.5)';
+  for(let i=0;i<deadMarks.length;i+=2) mctx.fillRect(X(deadMarks[i]),h*0.5,1.5*dpr,h*0.28);
+  mctx.fillStyle='rgba(63,227,255,.85)';
+  for(const a of agents) if(a.alive&&a.launched) mctx.fillRect(X(a.x),h*0.12,1.8*dpr,h*0.42);
+
+  // record, finish, and the slice the main view is showing
+  mctx.fillStyle='rgba(255,61,154,.9)'; mctx.fillRect(X(record*LEN)-dpr,0,2*dpr,h);
+  mctx.fillStyle='rgba(141,255,107,.9)'; mctx.fillRect(w-2*dpr,0,2*dpr,h);
+  mctx.strokeStyle='rgba(223,232,255,.75)'; mctx.lineWidth=1.5*dpr;
+  mctx.strokeRect(X(camX)+dpr, dpr, Math.max(3*dpr,X(VW)), h-2*dpr);
 }
 
 /* ═════════════════════════ 8. SIDE PANEL VISUALS ══════════════════════════ */
@@ -979,6 +1044,7 @@ $('bManual').onclick=()=>toggleManual();
 const tg=(id,key)=>{ const b=$(id); b.onclick=()=>{ show[key]=!show[key]; b.classList.toggle('on',show[key]); }; };
 tg('tRays','rays'); tg('tHeat','heat'); tg('tTrail','trail');
 $('tAdapt').onclick=()=>{ adaptive=!adaptive; $('tAdapt').classList.toggle('on',adaptive); };
+$('tStag').onclick=()=>{ stagger=!stagger; $('tStag').classList.toggle('on',stagger); startGeneration(); };
 
 function togglePause(){ paused=!paused; $('bPause').textContent=paused?'Resume':'Pause'; $('bPause').classList.toggle('on',paused); }
 function toggleManual(){
@@ -993,14 +1059,39 @@ addEventListener('keydown',e=>{
   const k=e.key.toLowerCase();
   if(k==='p') togglePause();
   else if(k==='m') toggleManual();
+  else if(k==='f') follow();
   else if(k==='n') $('bLevel').onclick();
   else if(k==='r') $('bReset').onclick();
   else if(e.key==='ArrowUp'){ rSpeed.value=Math.min(80,+rSpeed.value+2); rSpeed.oninput(); }
   else if(e.key==='ArrowDown'){ rSpeed.value=Math.max(1,+rSpeed.value-2); rSpeed.oninput(); }
 });
 addEventListener('keyup',e=>{ if(e.code==='Space'){ e.preventDefault(); setHold(false); } });
-cv.addEventListener('pointerdown',e=>{ e.preventDefault(); setHold(true); });
-addEventListener('pointerup',()=>setHold(false));
+function follow(){ camFree=false; }
+cv.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  cv.setPointerCapture(e.pointerId);
+  dragging=true; dragMoved=false; dragX0=e.clientX; dragCam0=camX;
+  if(manual) setHold(true);                 // a tap is still "fly up"
+});
+cv.addEventListener('pointermove',e=>{
+  if(!dragging) return;
+  const dx=e.clientX-dragX0;
+  if(!dragMoved && Math.abs(dx)>5){         // ...until it becomes a drag
+    dragMoved=true; camFree=true; setHold(false); cv.classList.add('grabbing');
+  }
+  if(dragMoved) camX = dragCam0 - dx*(VW/cv.clientWidth);
+});
+cv.addEventListener('dblclick',follow);
+addEventListener('pointerup',()=>{ dragging=false; cv.classList.remove('grabbing'); setHold(false); });
+
+// scrub anywhere on the level by dragging the minimap
+function scrub(e){
+  const r=mm.getBoundingClientRect();
+  camFree=true;
+  camX=((e.clientX-r.left)/r.width)*LEN - VW/2;
+}
+mm.addEventListener('pointerdown',e=>{ e.preventDefault(); mm.setPointerCapture(e.pointerId); scrub(e); });
+mm.addEventListener('pointermove',e=>{ if(e.buttons) scrub(e); });
 
 /* ═══════════════════════════ 10. HUD + MAIN LOOP ══════════════════════════ */
 function updateHUD(){
@@ -1020,8 +1111,7 @@ function updateHUD(){
   $('hRate').textContent=Math.round(rateShown);
   $('hMsg').textContent = now<msgT ? msg : '';
   $('hMsg').style.display = now<msgT ? '' : 'none';
-  $('barNow').style.width=(runPct*100)+'%';
-  $('barRec').style.width=(record*100)+'%';
+  $('hCam').style.display = camFree ? '' : 'none';
 
   $('sGen').textContent=gen;
   $('sLives').textContent=lives.toLocaleString();
@@ -1045,6 +1135,7 @@ function frame(t){
   updateHUD();
   drawChart();
   drawBrain();
+  drawMinimap();
 }
 
 /* ═════════════════════════════════ boot ═══════════════════════════════════ */

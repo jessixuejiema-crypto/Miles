@@ -21,10 +21,19 @@ Exactly the wave gamemode, and nothing more:
 
 * forward speed is constant — it can never slow down or stop
 * the only input is up or down, always at **45°**
+* it reverses **the instant** it decides to, at any height. The brain decides
+  every physics frame (60Hz, the rate the real game runs at), so there is no
+  minimum leg and no lag — back-to-back frames can hold opposite directions
 * touching a spike, block, slope, ceiling or floor is instant death
 * death restarts the run at the very beginning of the level
 
 Agents overlap freely and never collide with each other.
+
+Because forward speed is constant, clones launched on the same frame would stay
+locked to the same x for their whole run and could only ever differ in height.
+So the swarm launches **staggered**, spread across one full level traversal —
+at any moment there are clones at every point of the level, each somewhere
+different in its own run. ("Spread starts" turns this off for raw throughput.)
 
 ### The learning
 
@@ -72,7 +81,12 @@ channel and quietly makes the level impossible.
 
 ### Controls
 
-`P` pause · `M` play it yourself (hold space/mouse to fly up) · `N` new level ·
+**Drag the level** to look anywhere in it, or drag the strip along the bottom to
+scrub. That strip is the whole level at a glance: every living clone as a tick at
+its own position, the death histogram beneath, and a box showing the slice you're
+looking at. Double-click or `F` to follow the leader again.
+
+`P` pause · `M` play it yourself (hold space/tap to fly up) · `N` new level ·
 `R` wipe the brain · `↑`/`↓` simulation speed.
 
 Sliders cover simulation speed, population size, mutation σ and learning rate.
