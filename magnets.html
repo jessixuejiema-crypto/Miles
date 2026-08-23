@@ -342,7 +342,7 @@
   const MAX_ACC = 9000;        // px/s^2, keeps the 1/d^2 core finite
   const MAX_SPEED = 2600;      // px/s
   const SURFACE_GRIP = 0.96;   // drag on a ball sliding along a magnet's surface
-  const TRACE_STEPS = 1600;    // ~13s of simulated time before a point gives up
+  const TRACE_STEPS = 6400;    // ~53s of simulated time before a point gives up
   const SCAN_BUDGET = 9;       // ms per frame spent computing the map
 
   const state = {
@@ -402,12 +402,22 @@
   // between two magnets — so a ball starts where its color was measured.
   function snap(v) { return Math.floor(v / CELL) * CELL + CELL / 2; }
 
+  // A ball's color is a promise about where it will end up, so it is read off
+  // the map only while the map is up to date. Mid-scan, or just after something
+  // changed, the ball is traced on the spot instead of trusting a stale pixel.
+  function colorFor(x, y) {
+    if (mapFresh) return cellAt(x, y);
+    packMagnets();
+    return traceFrom(snap(x), snap(y), state.ballSize,
+      state.strength * 640000, state.friction / 100 * 5.5, state.bounce / 100);
+  }
+
   function spawnBall(x, y, colorIdx) {
     if (balls.length >= MAX_BALLS) return null;
     const b = {
       x: snap(x), y: snap(y), vx: 0, vy: 0, asleep: false,
       r: state.ballSize,
-      c: colorIdx === undefined ? cellAt(x, y) : colorIdx,
+      c: colorIdx === undefined ? colorFor(x, y) : colorIdx,
       hist: []
     };
     balls.push(b);
@@ -463,20 +473,13 @@
   // One physics step for a single ball, identical for a live ball and for the
   // probe balls the map is made of — that is what makes the map trustworthy.
   // Returns the index of the magnet it has come to rest on, or -1.
-  // Nearest attracting magnet and the runner-up, filled in by advance().
-  let nearI = -1, nearD = Infinity, nextD = Infinity;
 
   function advance(o, r, strength, fric, rest, dt) {
     let ax = 0, ay = 0;
-    nearI = -1; nearD = Infinity; nextD = Infinity;
     for (let i = 0; i < mn; i++) {
       const dx = mx[i] - o.x, dy = my[i] - o.y;
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2) || 0.0001;
-      if (mp[i] > 0) {
-        if (d < nearD) { nextD = nearD; nearD = d; nearI = i; }
-        else if (d < nextD) { nextD = d; }
-      }
       const soft = d > mr[i] * 1.6 ? d : mr[i] * 1.6;
       const f = (strength * mp[i]) / (soft * soft);
       ax += (dx / d) * f;
@@ -557,7 +560,6 @@
   // ---------------------------------------------------------------- the map
   // Drop a ball at rest on (x, y) and run the simulation until it settles.
   // Whatever magnet it ends up on is the color this point of the map gets.
-  const BOUND_R = 210;       // close enough to a magnet for the capture test below
   const probe = { x: 0, y: 0, vx: 0, vy: 0 };
 
   function traceFrom(x, y, r, strength, fric, rest) {
@@ -566,14 +568,6 @@
       const hit = advance(probe, r, strength, fric, rest, SIM_DT);
       if (hit >= 0) return mc[hit];
       if (hit === -2) return NEUTRAL;
-      // Don't wait out the whole spiral-in. Once the ball is this deep in one
-      // magnet's well, with this little speed and no rival magnet near enough
-      // to argue, it cannot climb back out — friction only ever takes energy
-      // away — so the outcome is already settled.
-      if (nearI >= 0 && nearD < BOUND_R && nearD * 3 < nextD) {
-        const v2 = probe.vx * probe.vx + probe.vy * probe.vy;
-        if (v2 * nearD < 0.3 * strength) return mc[nearI];
-      }
     }
     return NEUTRAL;
   }
@@ -582,15 +576,18 @@
   // almost at once and then sharpens, instead of the app freezing.
   const STRIDES = [8, 4, 2, 1];
   const scan = { running: false, pass: 0, i: 0 };
+  let mapFresh = false;      // false while the map is behind the current setup
 
   function requestMap() {
     wakeBalls();
+    mapFresh = false;
     scan.running = true;
     scan.pass = 0;
     scan.i = 0;
     if (!magnets.length) {
       grid.fill(NEUTRAL);
       scan.running = false;
+      mapFresh = true;
       terrainDirty = true;
     }
   }
@@ -625,6 +622,7 @@
       if (performance.now() - t0 > SCAN_BUDGET) return;
     }
     scan.running = false;
+    mapFresh = true;
   }
 
   // Progress by traced points, not by area: each pass costs about four times
@@ -1024,6 +1022,11 @@
   bindSlider("friction", "friction", true);
   bindSlider("bounce", "bounce", true);
   bindSlider("ballSize", "ballSize", true);
+  $("ballSize").addEventListener("input", function () {
+    // Balls already on the field have to take the new size too, otherwise they
+    // are no longer the ball the map was traced with.
+    for (let i = 0; i < balls.length; i++) { balls[i].r = state.ballSize; balls[i].asleep = false; }
+  });
   bindSlider("gap", "gap", false);
 
   $("trails").addEventListener("change", function () {
@@ -1133,7 +1136,8 @@
   }
   window.addEventListener("resize", resize);
 
-  window.magnetField = { balls: balls, magnets: magnets, state: state, scan: scan, newSetup: newSetup };
+  window.magnetField = { balls: balls, magnets: magnets, state: state, scan: scan,
+    newSetup: newSetup, spawnBall: spawnBall, dropGrid: dropGrid, remap: requestMap };
 
   resize();
   newSetup();
