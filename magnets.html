@@ -93,6 +93,9 @@
     border-radius: 8px;
     padding: 7px 8px;
     cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: background 0.12s, border-color 0.12s, transform 0.06s;
   }
   button:hover { background: #262e42; }
@@ -341,7 +344,7 @@
   ];
   const NEUTRAL = 0;
   const CELL = 8;              // map resolution, in css pixels
-  const MAX_BALLS = 20000;
+  const MAX_BALLS = 45000;
   const MAX_MAGNETS = 24;
 
   const SIM_DT = 1 / 120;      // one physics step, shared by the sim and the map
@@ -416,6 +419,14 @@
     packMagnets();
     return traceFrom(snap(x), snap(y), state.ballSize,
       state.strength * 640000, state.friction / 100 * 5.5, state.bounce / 100);
+  }
+
+  // Placed exactly where asked, with a color already known to be right.
+  function addBall(x, y, c) {
+    if (balls.length >= MAX_BALLS) return null;
+    const b = { x: x, y: y, vx: 0, vy: 0, asleep: false, r: state.ballSize, c: c, hist: [] };
+    balls.push(b);
+    return b;
   }
 
   function spawnBall(x, y, colorIdx) {
@@ -942,6 +953,7 @@
     }
 
     advanceScan();
+    advanceDrop();
     render();
 
     fpsAcc += dt; fpsFrames++;
@@ -1099,14 +1111,10 @@
       c = magnets[0].c;
       pickColor(c);
     }
-    const n = dropColor(c);
+    const step = startDropColor(c);
     clearTimeout(dropMsgTimer);
-    if (n === 0) {
-      this.textContent = "no " + PALETTE[c].name.toLowerCase() + " to drop";
-      dropMsgTimer = setTimeout(labelDropColor, 1600);
-    } else {
-      labelDropColor();
-    }
+    this.textContent = step === 0 ? "none on the map" : step + "px apart";
+    dropMsgTimer = setTimeout(labelDropColor, 1800);
   });
 
   let remapTimer = 0;
@@ -1163,31 +1171,68 @@
   }
 
   function dropGrid() {
+    drop.active = false;
     balls.length = 0;
     eachLatticePoint(function (x, y) { spawnBall(x, y); });
   }
 
-  // Every traced point of one color gets a ball — the finest the map goes, one
-  // per map pixel rather than one per lattice square. That leaves the basin
-  // standing on its own as a solid body of balls, holes and filaments and all.
-  function dropColor(c) {
+  // Packing one color's basin with balls as tightly as the budget allows —
+  // a pixel apart where the basin is small enough, thinning out where it is
+  // not. Deep inside the basin the map's answer stands; anywhere a cell of a
+  // different color is within reach, each candidate is traced on its own,
+  // because between map pixels a couple of px can decide between two magnets.
+  const DROP_BUDGET = 10;      // ms per frame spent filling
+  const drop = { active: false, c: 0, step: 1, x: 0, y: 0 };
+
+  function startDropColor(c) {
     finishMap();
     balls.length = 0;
-    let stride = 1, count = 0;
-    do {
-      count = 0;
-      for (let cy = 0; cy < gh; cy += stride) {
-        for (let cx = 0; cx < gw; cx += stride) if (grid[idx(cx, cy)] === c) count++;
+    let cells = 0;
+    for (let i = 0; i < grid.length; i++) if (grid[i] === c) cells++;
+    if (!cells) return 0;
+    // Tightest whole-pixel spacing whose ball count still fits.
+    const area = cells * CELL * CELL;
+    let step = 1;
+    while (area / (step * step) > MAX_BALLS) step++;
+    drop.active = true;
+    drop.c = c;
+    drop.step = step;
+    drop.x = 0;
+    drop.y = 0;
+    return step;
+  }
+
+  function advanceDrop() {
+    if (!drop.active) return;
+    const t0 = performance.now();
+    const c = drop.c, step = drop.step, r = state.ballSize;
+    const strength = state.strength * 640000;
+    const fric = state.friction / 100 * 5.5;
+    const rest = state.bounce / 100;
+    packMagnets();
+    while (drop.y < H) {
+      const x = drop.x, y = drop.y;
+      drop.x += step;
+      if (drop.x >= W) { drop.x = 0; drop.y += step; }
+
+      const cx = Math.min(gw - 1, Math.max(0, Math.floor(x / CELL)));
+      const cy = Math.min(gh - 1, Math.max(0, Math.floor(y / CELL)));
+      const own = grid[idx(cx, cy)];
+      let near = own === c, mixed = false;
+      for (let j = -1; j <= 1; j++) {
+        for (let i = -1; i <= 1; i++) {
+          const g = grid[idx(Math.min(gw - 1, Math.max(0, cx + i)), Math.min(gh - 1, Math.max(0, cy + j)))];
+          if (g === c) near = true; else mixed = true;
+        }
       }
-      if (count <= MAX_BALLS) break;
-      stride++;
-    } while (stride < 8);
-    for (let cy = 0; cy < gh; cy += stride) {
-      for (let cx = 0; cx < gw; cx += stride) {
-        if (grid[idx(cx, cy)] === c) spawnBall(cx * CELL + CELL / 2, cy * CELL + CELL / 2, c);
+      if (near) {
+        if (!mixed) addBall(x, y, c);                                  // deep inside
+        else if (traceFrom(x, y, r, strength, fric, rest) === c) addBall(x, y, c);
       }
+      if (balls.length >= MAX_BALLS) break;
+      if (performance.now() - t0 > DROP_BUDGET) return;
     }
-    return balls.length;
+    drop.active = false;
   }
 
   // Selecting cells by color needs a finished map, so run any pending scan out
@@ -1196,7 +1241,7 @@
     const until = performance.now() + 8000;
     while (scan.running && performance.now() < until) advanceScan();
   }
-  $("clearBalls").addEventListener("click", function () { balls.length = 0; });
+  $("clearBalls").addEventListener("click", function () { drop.active = false; balls.length = 0; });
   $("clearMagnets").addEventListener("click", function () { magnets.length = 0; requestMap(); });
   $("remap").addEventListener("click", requestMap);
   $("newSetup").addEventListener("click", function () { newSetup(); });
@@ -1277,7 +1322,7 @@
   window.addEventListener("resize", resize);
 
   window.magnetField = { balls: balls, magnets: magnets, state: state, scan: scan,
-    newSetup: newSetup, spawnBall: spawnBall, dropGrid: dropGrid, remap: requestMap };
+    newSetup: newSetup, spawnBall: spawnBall, dropGrid: dropGrid, remap: requestMap, drop: drop };
 
   labelDropColor();
   resize();
