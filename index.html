@@ -18,6 +18,7 @@
     --prey: #4fd8a4;
     --pred: #ff6f4d;
     --accent: #5ab8ff;
+    --warn: #ffc76b;
     --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --font-data: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
@@ -100,6 +101,22 @@
 
   .count.prey b { color: var(--prey); }
   .count.pred b { color: var(--pred); }
+
+  #truce {
+    display: none;
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-family: var(--font-data);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--warn);
+    background: rgba(255, 199, 107, 0.12);
+    border: 1px solid rgba(255, 199, 107, 0.3);
+  }
+
+  #truce.on { display: block; }
 
   #graph {
     display: block;
@@ -314,6 +331,7 @@
     <div class="count prey"><b id="nPrey">0</b><span>Prey</span></div>
     <div class="count pred"><b id="nPred">0</b><span>Predators</span></div>
   </div>
+  <div id="truce">Truce</div>
   <canvas id="graph"></canvas>
   <div class="ticker">
     <div>clock <i id="tClock">0:00</i></div>
@@ -354,6 +372,12 @@
       <li>A touch eats the prey and the hunter immediately spawns 2&ndash;3 cubs.</li>
       <li>30s without a meal and a predator starves into nothing.</li>
       <li>Prey that survive 10&ndash;20s split off 2 offspring.</li>
+      <li>Once the herd falls to the last 10, hunters stand down for 25s and leave it alone
+          &mdash; so the collapse becomes a cycle, not an ending.</li>
+      <li>The truce is shorter than the starve clock, so the best-fed few outlast it and start
+          the next boom while the rest die off.</li>
+      <li>The last handful of hunters hold on through an empty spell rather than starving out,
+          which is what keeps the cycle from ever stopping.</li>
       <li>The world wraps at the edges; crowding past the population cap suppresses births.</li>
     </ul>
   </div>
@@ -386,6 +410,9 @@
     preyLitter: 2,
     cubsMin: 2,
     cubsMax: 3,
+    refuge: 10,
+    recovery: 25,
+    predFloor: 4,
     maxPop: 5000
   };
 
@@ -404,6 +431,9 @@
     { key: "preyLitter", label: "Offspring per prey", min: 1, max: 5, step: 1 },
     { key: "cubsMin", label: "Cubs per kill", min: 0, max: 5, step: 1 },
     { key: "cubsMax", label: "…up to", min: 0, max: 6, step: 1 },
+    { key: "refuge", label: "Hunting pauses below", min: 0, max: 300, step: 1, unit: " prey" },
+    { key: "recovery", label: "…for a recovery window of", min: 5, max: 150, step: 5, unit: " s" },
+    { key: "predFloor", label: "Last hunters cling on", min: 0, max: 50, step: 1 },
     { key: "maxPop", label: "Population cap", min: 200, max: 12000, step: 100 }
   ];
 
@@ -413,13 +443,16 @@
   var PRESETS = {
     "Textbook": { startPrey: 990, startPred: 10, preySpeed: 62, predSpeed: 74, preyVision: 85,
                   predVision: 150, reach: 7, starve: 30, breedMin: 10, breedMax: 20,
-                  preyLitter: 2, cubsMin: 2, cubsMax: 3 },
+                  preyLitter: 2, cubsMin: 2, cubsMax: 3, refuge: 10, recovery: 25, predFloor: 4 },
+    "One hunter": { startPrey: 1000, startPred: 1, preySpeed: 62, predSpeed: 74, preyVision: 85,
+                    predVision: 150, reach: 7, starve: 30, breedMin: 10, breedMax: 20,
+                    preyLitter: 2, cubsMin: 2, cubsMax: 3, refuge: 10, recovery: 25, predFloor: 4 },
     "Long cycles": { startPrey: 600, startPred: 30, preySpeed: 62, predSpeed: 68, preyVision: 130,
                      predVision: 120, reach: 5, starve: 20, breedMin: 20, breedMax: 30,
-                     preyLitter: 1, cubsMin: 0, cubsMax: 2 },
+                     preyLitter: 1, cubsMin: 0, cubsMax: 2, refuge: 10, recovery: 25, predFloor: 4 },
     "Boom & bust": { startPrey: 600, startPred: 30, preySpeed: 70, predSpeed: 76, preyVision: 120,
                      predVision: 150, reach: 6, starve: 22, breedMin: 14, breedMax: 22,
-                     preyLitter: 1, cubsMin: 0, cubsMax: 2 }
+                     preyLitter: 1, cubsMin: 0, cubsMax: 2, refuge: 10, recovery: 25, predFloor: 4 }
   };
 
   // ------------------------------------------------------------------
@@ -504,6 +537,8 @@
   var brush = "prey";
   var clock = 0;
   var stats = { eaten: 0, starved: 0, preyBorn: 0, cubBorn: 0 };
+  var truce = false;
+  var truceLeft = 0;
   var history = [];
   var sampleAt = 0;
   var lastPreyCount = 0, lastPredCount = 0;
@@ -551,6 +586,8 @@
     for (var i = 0; i < cfg.startPrey; i++) prey.push(makePrey(Math.random() * W, Math.random() * H));
     for (var j = 0; j < cfg.startPred; j++) preds.push(makePred(Math.random() * W, Math.random() * H));
     clock = 0;
+    truce = false;
+    truceLeft = 0;
     stats.eaten = stats.starved = stats.preyBorn = stats.cubBorn = 0;
     history.length = 0;
     sampleAt = 0;
@@ -651,6 +688,13 @@
   }
 
   function updatePreds(dt) {
+    // The herd has a refuge, so the hunters get the mirror of it: the last few
+    // hold on through an empty spell instead of starving out. Without this the
+    // grind of repeated truces eventually takes the species to zero and the
+    // cycle stops for good.
+    var alive = 0;
+    for (var a = 0; a < preds.length; a++) if (preds[a].alive) alive++;
+
     var vision = cfg.predVision;
     var vision2 = vision * vision;
     var drop2 = vision2 * 2.25;
@@ -663,10 +707,22 @@
       if (!p.alive) continue;
 
       p.hunger += dt;
-      if (p.hunger >= cfg.starve) {
+      if (p.hunger >= cfg.starve && alive > cfg.predFloor) {
         p.alive = false;
+        alive--;
         stats.starved++;
         puff(p.x, p.y, 7, "pred");
+        continue;
+      }
+
+      if (truce) {
+        p.target = null;
+        p.heading += (Math.random() - 0.5) * 4 * dt;
+        steer(p, Math.cos(p.heading) * top * 0.4, Math.sin(p.heading) * top * 0.4, 2, dt);
+        var wsp = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+        if (wsp > 0.001) p.heading = Math.atan2(p.vy, p.vx);
+        if (wsp > top) { p.vx = p.vx / wsp * top; p.vy = p.vy / wsp * top; }
+        move(p, dt);
         continue;
       }
 
@@ -763,8 +819,27 @@
   }
 
   function step(dt) {
-    var room = 1 - (prey.length + preds.length) / cfg.maxPop;
+    // Crowding is measured against the herd alone, not the combined population:
+    // prey compete with each other for grazing, and a world packed with hunters
+    // must not be the thing that stops the herd rebuilding.
+    var room = 1 - prey.length / cfg.maxPop;
     if (room < 0) room = 0;
+
+    // Hunters ignore the last few prey and stand down for a fixed window. A
+    // window, rather than a headcount, is what makes the cycle wide: the herd
+    // gets the same head start every time instead of one that shrinks as the
+    // surviving hunters grow, which is what pins prey to the floor forever.
+    if (truce) {
+      truceLeft -= dt;
+      if (truceLeft <= 0) {
+        truce = false;
+        say("The herd is back to " + prey.length + ". The hunt is on again.");
+      }
+    } else if (cfg.refuge > 0 && prey.length <= cfg.refuge) {
+      truce = true;
+      truceLeft = cfg.recovery;
+      say("Only " + prey.length + " prey left — the hunters back off for " + cfg.recovery + "s.");
+    }
 
     updatePrey(dt, room);
     updatePreds(dt);
@@ -924,7 +999,7 @@
   // ------------------------------------------------------------------
 
   var el = {};
-  ["nPrey", "nPred", "tClock", "tFps", "tEaten", "tStarved", "tPreyBorn", "tCubBorn"].forEach(function (id) {
+  ["nPrey", "nPred", "tClock", "tFps", "tEaten", "tStarved", "tPreyBorn", "tCubBorn", "truce"].forEach(function (id) {
     el[id] = document.getElementById(id);
   });
 
@@ -943,6 +1018,8 @@
     el.tStarved.textContent = stats.starved;
     el.tPreyBorn.textContent = stats.preyBorn;
     el.tCubBorn.textContent = stats.cubBorn;
+    el.truce.classList.toggle("on", truce);
+    if (truce) el.truce.textContent = "Truce — herd rebuilding, " + Math.ceil(truceLeft) + "s";
   }
 
   var banner = document.getElementById("banner");
