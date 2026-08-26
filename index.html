@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Predator &amp; Prey Sandbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
   :root {
     --bg: #070c11;
@@ -15,6 +18,8 @@
     --prey: #4fd8a4;
     --pred: #ff6f4d;
     --accent: #5ab8ff;
+    --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-data: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
 
   * { box-sizing: border-box; }
@@ -25,7 +30,7 @@
     overflow: hidden;
     background: var(--bg);
     color: var(--text);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--font-ui);
     font-size: 14px;
     -webkit-font-smoothing: antialiased;
   }
@@ -62,7 +67,8 @@
 
   #stats h1 {
     margin: 0 0 10px;
-    font-size: 13px;
+    font-family: var(--font-data);
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -77,6 +83,7 @@
 
   .count b {
     display: block;
+    font-family: var(--font-data);
     font-size: 26px;
     line-height: 1.05;
     font-variant-numeric: tabular-nums;
@@ -84,6 +91,7 @@
   }
 
   .count span {
+    font-family: var(--font-data);
     font-size: 11px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -106,6 +114,7 @@
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 3px 12px;
+    font-family: var(--font-data);
     font-size: 11.5px;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
@@ -136,6 +145,7 @@
   }
 
   #panelHead strong {
+    font-family: var(--font-data);
     font-size: 12px;
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -177,6 +187,7 @@
 
   .group {
     margin: 14px 0 6px;
+    font-family: var(--font-data);
     font-size: 11px;
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -197,6 +208,7 @@
 
   .ctl label i {
     font-style: normal;
+    font-family: var(--font-data);
     color: var(--text);
     font-variant-numeric: tabular-nums;
   }
