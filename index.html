@@ -3,1654 +3,1093 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>My Little Garden</title>
+<title>Magnetic Balls</title>
 <style>
   :root {
-    --bg: #f3efe4;
-    --bg-glow: #e2ecd4;
-    --panel: #fbf9f2;
-    --border: #ddd6c2;
-    --text: #2d3a2e;
-    --muted: #77836f;
-    --accent: #3e8e4f;
-    --gold: #b07f10;
-    --soil: #7a5230;
-    --soil-hi: #916440;
-    --soil-dark: #5d3d24;
-    --frame: #8a5a33;
-    --ripe-glow: rgba(217, 165, 32, 0.55);
-    --chip-on: #e3f0e0;
-    --shadow: rgba(61, 48, 32, 0.18);
-    --overlay: rgba(40, 34, 24, 0.55);
+    --bg: #eaeef5;
+    --bg-glow: #dbe6f6;
+    --panel: #ffffff;
+    --panel-2: #f4f7fb;
+    --border: #d3dae6;
+    --text: #1d2531;
+    --muted: #6d7889;
+    --accent: #3568d4;
+    --accent-soft: #dfe8fb;
+    --shadow: rgba(29, 42, 66, 0.16);
+    --north: #d8483a;
+    --south: #2f6fd0;
+    --metal: #9aa6b8;
+    --cv-bg: #f7f9fc;
+    --cv-wall: #ccd5e2;
+    --cv-link: rgba(53, 104, 212, 0.30);
+    --cv-field: 53, 104, 212;
     --danger: #b3443c;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #121a12;
-      --bg-glow: #1c2b1e;
-      --panel: #1c261c;
-      --border: #32402f;
-      --text: #dfe9d9;
-      --muted: #93a189;
-      --accent: #6fce84;
-      --gold: #e2b13c;
-      --soil: #4a3325;
-      --soil-hi: #5d4130;
-      --soil-dark: #33231a;
-      --frame: #5d3f26;
-      --ripe-glow: rgba(226, 177, 60, 0.5);
-      --chip-on: #28402b;
-      --shadow: rgba(0, 0, 0, 0.5);
-      --overlay: rgba(0, 0, 0, 0.65);
+    :root:not([data-theme="light"]) {
+      --bg: #0c1017;
+      --bg-glow: #16202f;
+      --panel: #151c27;
+      --panel-2: #1b2431;
+      --border: #2a3543;
+      --text: #dde5f0;
+      --muted: #8b98ab;
+      --accent: #6ea4ff;
+      --accent-soft: #1e2c44;
+      --shadow: rgba(0, 0, 0, 0.55);
+      --north: #ff6f5c;
+      --south: #5da2ff;
+      --metal: #6a7789;
+      --cv-bg: #0f151e;
+      --cv-wall: #26303d;
+      --cv-link: rgba(110, 164, 255, 0.28);
+      --cv-field: 110, 164, 255;
       --danger: #e07a72;
     }
   }
-  :root[data-theme="light"] {
-    --bg: #f3efe4;
-    --bg-glow: #e2ecd4;
-    --panel: #fbf9f2;
-    --border: #ddd6c2;
-    --text: #2d3a2e;
-    --muted: #77836f;
-    --accent: #3e8e4f;
-    --gold: #b07f10;
-    --soil: #7a5230;
-    --soil-hi: #916440;
-    --soil-dark: #5d3d24;
-    --frame: #8a5a33;
-    --ripe-glow: rgba(217, 165, 32, 0.55);
-    --chip-on: #e3f0e0;
-    --shadow: rgba(61, 48, 32, 0.18);
-    --overlay: rgba(40, 34, 24, 0.55);
-    --danger: #b3443c;
-  }
   :root[data-theme="dark"] {
-    --bg: #121a12;
-    --bg-glow: #1c2b1e;
-    --panel: #1c261c;
-    --border: #32402f;
-    --text: #dfe9d9;
-    --muted: #93a189;
-    --accent: #6fce84;
-    --gold: #e2b13c;
-    --soil: #4a3325;
-    --soil-hi: #5d4130;
-    --soil-dark: #33231a;
-    --frame: #5d3f26;
-    --ripe-glow: rgba(226, 177, 60, 0.5);
-    --chip-on: #28402b;
-    --shadow: rgba(0, 0, 0, 0.5);
-    --overlay: rgba(0, 0, 0, 0.65);
+    --bg: #0c1017;
+    --bg-glow: #16202f;
+    --panel: #151c27;
+    --panel-2: #1b2431;
+    --border: #2a3543;
+    --text: #dde5f0;
+    --muted: #8b98ab;
+    --accent: #6ea4ff;
+    --accent-soft: #1e2c44;
+    --shadow: rgba(0, 0, 0, 0.55);
+    --north: #ff6f5c;
+    --south: #5da2ff;
+    --metal: #6a7789;
+    --cv-bg: #0f151e;
+    --cv-wall: #26303d;
+    --cv-link: rgba(110, 164, 255, 0.28);
+    --cv-field: 110, 164, 255;
     --danger: #e07a72;
   }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     min-height: 100vh;
-    background: radial-gradient(1100px 520px at 50% -8%, var(--bg-glow) 0%, var(--bg) 62%);
+    background: radial-gradient(1200px 560px at 50% -10%, var(--bg-glow) 0%, var(--bg) 64%);
     color: var(--text);
     font-family: "SF Pro Rounded", ui-rounded, "Segoe UI", system-ui, -apple-system, sans-serif;
     display: flex;
     justify-content: center;
-    padding: 26px 16px 40px;
+    padding: 20px 14px 34px;
   }
-  .game { width: 100%; max-width: 520px; text-align: center; }
+  .app { width: 100%; max-width: 820px; }
 
   header {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
   }
-  h1 { font-size: 1.5rem; letter-spacing: 0.3px; text-wrap: balance; }
-  .money { text-align: right; }
-  .coins {
-    font-size: 1.05rem;
-    font-weight: 800;
-    color: var(--gold);
-    font-variant-numeric: tabular-nums;
+  h1 { font-size: 1.42rem; letter-spacing: 0.2px; }
+  h1 .sub { font-size: 0.78rem; font-weight: 500; color: var(--muted); margin-left: 8px; }
+  .theme {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
     white-space: nowrap;
   }
-  .coins.tokens { color: #9d7ae8; font-size: 0.92rem; }
-  .s-buy.tok {
-    background: #9d7ae8;
-    margin-left: 4px;
-  }
+  .theme:hover { color: var(--text); }
 
-  .actions {
+  .stats {
     display: flex;
     flex-wrap: wrap;
-    gap: 7px;
-    justify-content: center;
-    margin-bottom: 12px;
+    gap: 6px;
+    margin-bottom: 10px;
   }
-  .act {
+  .stat {
     background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 9px 14px;
-    font-size: 0.88rem;
-    font-weight: 700;
-    color: var(--text);
-    cursor: pointer;
-    font-family: inherit;
-    transition: transform 0.1s, border-color 0.15s;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 5px 10px;
+    font-size: 0.74rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
-  .act:hover { transform: translateY(-2px); border-color: var(--accent); }
-  .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .act.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+  .stat b { color: var(--text); font-weight: 800; margin-left: 4px; }
+
+  .stage {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 10px 26px -18px var(--shadow);
+    background: var(--cv-bg);
+    line-height: 0;
+  }
+  canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+  .badge {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 4px 9px;
+    font-size: 0.7rem;
+    line-height: 1.3;
+    pointer-events: none;
+    opacity: 0.92;
   }
 
-  /* Seed toolbar (owned seeds) */
-  .shop {
+  .tools {
     display: flex;
     flex-wrap: wrap;
-    gap: 7px;
-    justify-content: center;
-    margin-bottom: 8px;
-    min-height: 30px;
+    gap: 6px;
+    margin: 12px 0 10px;
   }
   .chip {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
+    border: 1px solid var(--border);
     background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 6px 10px 5px;
-    min-width: 62px;
-    cursor: pointer;
-    color: var(--text);
-    transition: border-color 0.15s, background 0.15s, transform 0.1s;
-    font-family: inherit;
-  }
-  .chip:hover { transform: translateY(-2px); }
-  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .chip.on {
-    border-color: var(--accent);
-    background: var(--chip-on);
-    box-shadow: 0 3px 10px var(--shadow);
-  }
-  .chip .c-emoji { font-size: 1.3rem; line-height: 1.2; }
-  .chip .c-name { font-size: 0.7rem; font-weight: 700; }
-  .chip .c-meta {
-    font-size: 0.65rem;
     color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .msg {
-    min-height: 1.3em;
-    font-size: 0.88rem;
-    color: var(--muted);
-    margin-bottom: 12px;
-  }
-
-  /* Weather banner */
-  .weather {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-left: 5px solid var(--accent);
-    border-radius: 12px;
-    padding: 8px 12px;
-    margin-bottom: 12px;
-    font-size: 0.82rem;
-    text-align: left;
-    line-height: 1.4;
-  }
-  .weather b { font-size: 0.92rem; }
-  .weather .w-time {
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+    border-radius: 999px;
+    padding: 7px 13px;
+    font-size: 0.8rem;
     font-weight: 700;
-  }
-  .stack .st-val { font-size: 0.62rem; color: var(--gold); font-weight: 800; }
-  .stack .st-name { max-width: 86px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  /* Plot */
-  .plot-wrap { position: relative; margin: 0 auto 8px; max-width: 460px; }
-  .ruler-top {
-    color: var(--muted);
-    font-size: 0.72rem;
-    letter-spacing: 1px;
-    font-variant-numeric: tabular-nums;
-    margin-bottom: 4px;
-  }
-  .plot-viewport {
-    overflow: auto;
-    max-height: min(70vh, 520px);
-    border-radius: 16px;
-    cursor: grab;
-  }
-  .plot-viewport.dragging { cursor: grabbing; }
-  .plot-viewport::-webkit-scrollbar { width: 9px; height: 9px; }
-  .plot-viewport::-webkit-scrollbar-thumb { background: var(--frame); border-radius: 5px; }
-  .plot-viewport::-webkit-scrollbar-track { background: transparent; }
-  .pan-hint {
-    color: var(--muted);
-    font-size: 0.78rem;
-    margin-top: 6px;
-  }
-  #plot {
-    display: grid;
-    gap: 2px;
-    width: max-content;
-    margin: 0 auto;
-    background: var(--soil-dark);
-    border: 9px solid var(--frame);
-    border-radius: 14px;
-    padding: 2px;
-    box-shadow: 0 14px 30px var(--shadow);
-    user-select: none;
-  }
-  .cell {
-    position: relative;
-    aspect-ratio: 1;
-    border: none;
-    background: radial-gradient(circle at 35% 30%, var(--soil-hi), var(--soil) 75%);
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    overflow: visible;
-    font-size: inherit;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
-  /* dashed meter lines splitting the plot into 1 m squares */
-  .cell.m-r { border-right: 2px dashed rgba(255, 244, 214, 0.5); }
-  .cell.m-b { border-bottom: 2px dashed rgba(255, 244, 214, 0.5); }
-  .cell:hover { filter: brightness(1.15); }
-  .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
-  .cell .plant {
-    font-size: 0.56em;
-    line-height: 1;
-    transition: transform 0.25s, opacity 0.25s;
-    pointer-events: none;
-  }
-  .cell.ripe { box-shadow: inset 0 0 12px var(--ripe-glow); }
-  .cell.ripe .plant { animation: sway 1.6s ease-in-out infinite; }
-  @keyframes sway {
-    0%, 100% { transform: scale(1) rotate(-5deg); }
-    50%      { transform: scale(1.08) rotate(5deg); }
-  }
-  .cell .bar {
-    position: absolute;
-    left: 12%;
-    right: 12%;
-    bottom: 7%;
-    height: 3px;
-    background: rgba(0, 0, 0, 0.35);
-    border-radius: 2px;
-    overflow: hidden;
-    pointer-events: none;
-  }
-  .cell .bar i {
-    display: block;
-    height: 100%;
-    width: 0%;
-    background: var(--accent);
-    border-radius: 2px;
-  }
-  .cell .badge {
-    position: absolute;
-    top: 2%;
-    right: 3%;
-    font-size: 0.28em;
-    pointer-events: none;
-  }
-  .pop {
-    position: absolute;
-    left: 50%;
-    top: 10%;
-    transform: translateX(-50%);
-    font-size: 0.34em;
-    font-weight: 800;
-    color: var(--gold);
-    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
-    pointer-events: none;
-    animation: rise 0.9s ease-out forwards;
-    z-index: 5;
-    white-space: nowrap;
-  }
-  @keyframes rise {
-    from { opacity: 1; translate: 0 0; }
-    to   { opacity: 0; translate: 0 -26px; }
-  }
-
-  .legend {
-    color: var(--muted);
-    font-size: 0.82rem;
-    line-height: 1.55;
-    max-width: 450px;
-    margin: 10px auto 0;
-  }
-  .legend b { color: var(--text); }
-
-  /* Shop modals */
-  .overlay[hidden] { display: none; }
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--overlay);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 18px;
-    z-index: 50;
-  }
-  .modal {
-    background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-radius: 18px;
-    width: 100%;
-    max-width: 430px;
-    max-height: 86vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 20px 50px var(--shadow);
-    text-align: left;
-    overflow: hidden;
-  }
-  .m-head {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    padding: 16px 16px 12px;
-    border-bottom: 1.5px solid var(--border);
-  }
-  .m-face { font-size: 2.1rem; line-height: 1; }
-  .m-bubble {
-    flex: 1;
-    background: var(--chip-on);
-    border-radius: 12px;
-    padding: 9px 12px;
-    font-size: 0.9rem;
-    line-height: 1.45;
-    min-height: 2.4em;
-  }
-  .m-close {
-    background: none;
-    border: none;
-    font-size: 1.1rem;
-    cursor: pointer;
-    color: var(--muted);
-    padding: 4px 6px;
-    font-family: inherit;
-  }
-  .m-close:hover { color: var(--text); }
-  .m-sub {
-    padding: 8px 16px;
-    font-size: 0.78rem;
-    color: var(--muted);
-    border-bottom: 1.5px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    font-variant-numeric: tabular-nums;
-  }
-  .m-body { overflow-y: auto; padding: 8px 12px 12px; }
-
-  .srow {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 7px 6px;
-    border-bottom: 1px solid var(--border);
-  }
-  .srow:last-child { border-bottom: none; }
-  .srow .s-emoji { font-size: 1.4rem; width: 30px; text-align: center; }
-  .srow .s-info { flex: 1; min-width: 0; }
-  .srow .s-name { font-size: 0.85rem; font-weight: 700; }
-  .srow .s-tags { font-size: 0.7rem; color: var(--muted); }
-  .srow .s-stock {
-    font-size: 0.72rem;
-    font-weight: 800;
+  .chip:hover { color: var(--text); }
+  .chip.on {
+    background: var(--accent-soft);
+    border-color: var(--accent);
     color: var(--accent);
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
   }
-  .srow.oos .s-stock { color: var(--danger); }
-  .srow.oos .s-emoji, .srow.oos .s-info { opacity: 0.45; }
-  .srow .s-buy {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 9px;
-    padding: 6px 10px;
-    font-size: 0.78rem;
-    font-weight: 800;
-    cursor: pointer;
-    font-family: inherit;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .srow .s-buy:disabled { opacity: 0.35; cursor: not-allowed; }
 
-  .inv-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    padding: 4px 2px 10px;
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
   }
-  .stack {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    background: var(--bg);
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 7px 10px;
-    min-width: 62px;
-    cursor: pointer;
-    font-family: inherit;
+  .sliders {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+    gap: 9px 18px;
+  }
+  .row { display: flex; align-items: center; gap: 9px; }
+  .row label {
+    font-size: 0.76rem;
+    color: var(--muted);
+    font-weight: 700;
+    width: 88px;
+    flex: none;
+  }
+  .row input[type=range] {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--accent);
+    height: 18px;
+  }
+  .row .val {
+    font-size: 0.72rem;
     color: var(--text);
+    font-variant-numeric: tabular-nums;
+    width: 50px;
+    text-align: right;
+    flex: none;
   }
-  .stack.held { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
-  .stack .st-emoji { font-size: 1.3rem; }
-  .stack .st-count { font-size: 0.72rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .stack .st-name { font-size: 0.62rem; color: var(--muted); }
-  .sell-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    padding: 4px 2px 6px;
-  }
-  .sell-actions .act { flex: 1 1 auto; font-size: 0.8rem; padding: 8px 8px; }
-  .act.gold { background: var(--gold); border-color: var(--gold); color: #fff; }
-  .act.quiet { color: var(--muted); }
 
-  @media (prefers-reduced-motion: reduce) {
-    .cell .plant, .chip, .act { transition: none; }
-    .cell.ripe .plant { animation: none; }
-    .pop { animation-duration: 0.01s; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    border-radius: 9px;
+    padding: 7px 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.warn:hover { border-color: var(--danger); color: var(--danger); }
+  .group-title {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--muted);
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+  .note {
+    font-size: 0.74rem;
+    color: var(--muted);
+    line-height: 1.55;
+    margin-top: 12px;
+  }
+  .note code {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 4px;
+    font-size: 0.92em;
+  }
+  @media (max-width: 560px) {
+    .row label { width: 74px; font-size: 0.72rem; }
+    h1 .sub { display: none; }
   }
 </style>
-
-<div class="game">
+</head>
+<body>
+<div class="app">
   <header>
-    <h1>🌻 My Little Garden</h1>
-    <div class="money">
-      <div class="coins" id="coins">🪙 20¢</div>
-      <div class="coins tokens" id="tokens">🎟️ 0</div>
-    </div>
+    <h1>Magnetic Balls<span class="sub">dipole–dipole physics sandbox</span></h1>
+    <button class="theme" id="theme" type="button">Theme: Auto</button>
   </header>
 
-  <div class="actions">
-    <button class="act primary" id="btn-seedshop">🌱 Seed Shop</button>
-    <button class="act primary" id="btn-gearshop">🛠️ Gear Shop</button>
-    <button class="act primary" id="btn-sellshop">🧺 Sell Shop</button>
-    <button class="act" id="btn-expand">📐 Expand Garden (100¢)</button>
+  <div class="stats" id="stats"></div>
+
+  <div class="stage" id="stage">
+    <canvas id="cv"></canvas>
+    <div class="badge" id="badge">Drag a ball to fling it</div>
   </div>
 
-  <div class="weather" id="weather-banner">
-    <span id="w-info"></span>
-    <span class="w-time" id="w-time"></span>
+  <div class="tools" id="tools"></div>
+
+  <div class="panel">
+    <div class="group-title">Physics</div>
+    <div class="sliders" id="sliders"></div>
   </div>
 
-  <div class="shop" id="shop"></div>
-  <p class="msg" id="msg">Visit the Seed Shop to buy your first seeds!</p>
-
-  <div class="plot-wrap">
-    <div class="ruler-top" id="ruler">⟵&nbsp;&nbsp;3 m&nbsp;&nbsp;⟶</div>
-    <div class="plot-viewport" id="plot-viewport">
-      <div id="plot"></div>
-    </div>
-    <p class="pan-hint" id="pan-hint" hidden>🖐️ Drag to look around your garden</p>
+  <div class="panel">
+    <div class="group-title">Layouts</div>
+    <div class="actions" id="presets"></div>
   </div>
 
-  <p class="legend">
-    Seeds marked <b>♻️</b> are multi-harvest: pick them when ripe and the <b>stem stays behind</b> and regrows a new crop, forever.
-    Single-harvest crops leave the soil empty. Harvests go in your <b>🧺 basket</b> — sell them at the Sell Shop.
-    The <b>🛠️ Gear Shop</b> sells tools — pick a targeted tool (like the watering can) and click a plant to use it; instant tools fire the moment you click them in the toolbar.
-    The <b>weather</b> changes every ~3 minutes (139 kinds, including the Grow&nbsp;a&nbsp;Garden set!) and several can strike at once — 50% chance of 2, 25% of 3, and so on. Every 10 seconds each active weather may <b>✨ mutate</b> a plant, and mutations stack for multiplied value — but harvesting takes them with the crop, so a regrown stem starts fresh.
-    You also earn <b>🎟️ tokens</b>: digging up a single-harvest plant pays 1–4, harvesting common–rare multi-harvest crops pays 4–10, and legendary or better pays 50–1000 — spend them in any shop with the purple price button.
-    The <b>token shop stocks separately</b> from the sheckle shop, and its restock odds are multiplied by the active weather multipliers — a ×3 and a ×5 weather together mean ×15 token-stock luck!
-    Both shops <b>restock every 10 seconds</b>; rare items are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
+  <div class="panel">
+    <div class="group-title">View &amp; run</div>
+    <div class="actions" id="viewActions"></div>
+  </div>
+
+  <p class="note">
+    Every ball is a magnetic <b>dipole</b>, not a monopole: it has a north half and a south half,
+    it is free to spin, and it feels the field of every other ball. Because of that the classic
+    behaviour falls out on its own — dipoles attract end-to-end and repel side-by-side, so they
+    snap into <b>chains</b> and then curl those chains into <b>rings</b>. Nothing choreographs
+    that; it is just the force law.
   </p>
-</div>
-
-<!-- Seed shop -->
-<div class="overlay" id="ov-seed" hidden>
-  <div class="modal" role="dialog" aria-label="Seed shop">
-    <div class="m-head">
-      <div class="m-face">🧑‍🌾</div>
-      <div class="m-bubble" id="seed-bubble">These are the seeds that are in stock!</div>
-      <button class="m-close" id="close-seed" aria-label="Close seed shop">✖</button>
-    </div>
-    <div class="m-sub">
-      <span id="seed-luck">Seller's stock</span>
-      <span id="restock">Restock in 0:10</span>
-    </div>
-    <div class="m-body" id="seedlist"></div>
-  </div>
-</div>
-
-<!-- Gear shop -->
-<div class="overlay" id="ov-gear" hidden>
-  <div class="modal" role="dialog" aria-label="Gear shop">
-    <div class="m-head">
-      <div class="m-face">🤖</div>
-      <div class="m-bubble" id="gear-bubble">Beep boop! This is the gear that is in stock!</div>
-      <button class="m-close" id="close-gear" aria-label="Close gear shop">✖</button>
-    </div>
-    <div class="m-sub">
-      <span id="gear-luck">Gear in stock</span>
-      <span id="restock2">Restock in 0:10</span>
-    </div>
-    <div class="m-body" id="gearlist"></div>
-  </div>
-</div>
-
-<!-- Sell shop -->
-<div class="overlay" id="ov-sell" hidden>
-  <div class="modal" role="dialog" aria-label="Sell shop">
-    <div class="m-head">
-      <div class="m-face">🤠</div>
-      <div class="m-bubble" id="sell-bubble">Howdy! Whatcha got in that basket for me?</div>
-      <button class="m-close" id="close-sell" aria-label="Close sell shop">✖</button>
-    </div>
-    <div class="m-body">
-      <div class="inv-grid" id="invlist"></div>
-      <div class="sell-actions" id="held-actions" hidden>
-        <button class="act" id="btn-worth">💰 How much is this worth?</button>
-        <button class="act primary" id="btn-sellthis">✅ I want to sell this</button>
-        <button class="act quiet" id="btn-nevermind">🙅 Nevermind</button>
-      </div>
-      <div class="sell-actions">
-        <button class="act gold" id="btn-sellall">💸 Sell All</button>
-      </div>
-    </div>
-  </div>
+  <p class="note">
+    The force falls off as <code>1/r⁴</code>, which is brutally short-ranged: balls more than a
+    couple of diameters apart barely feel each other, so a spread-out <code>Scatter</code> mostly
+    sits there in pairs. That is honest physics, not a bug — use <code>Attract</code> to sweep them
+    together and watch the structures build. The uniform <code>Field</code> applies torque but no
+    net force, so it turns every ball like a compass needle without dragging it anywhere.
+  </p>
 </div>
 
 <script>
 (function () {
-  // name, emoji, price¢, stock range, % chance in stock each restock, multi?, grow s, regrow s, sell¢ per harvest
-  var SEEDS = [
-    { key: 'carrot',          name: 'Carrot',           emoji: '🥕', price: 10,    stock: [10, 20], chance: 100,  multi: false, grow: 15,   sell: 25 },
-    { key: 'strawberry',      name: 'Strawberry',       emoji: '🍓', price: 50,    stock: [2, 4],   chance: 99,   multi: true,  grow: 30,   regrow: 15,  sell: 30 },
-    { key: 'blueberry',       name: 'Blueberry',        emoji: '🫐', price: 75,    stock: [1, 2],   chance: 80,   multi: true,  grow: 40,   regrow: 20,  sell: 45 },
-    { key: 'buttercup',       name: 'Buttercup',        emoji: '🌼', price: 100,   stock: [1, 2],   chance: 50,   multi: false, grow: 35,   sell: 250 },
-    { key: 'tomato',          name: 'Tomato',           emoji: '🍅', price: 200,   stock: [1, 3],   chance: 40,   multi: true,  grow: 60,   regrow: 25,  sell: 120 },
-    { key: 'corn',            name: 'Corn',             emoji: '🌽', price: 250,   stock: [1, 2],   chance: 20,   multi: true,  grow: 80,   regrow: 30,  sell: 150 },
-    { key: 'daffodil',        name: 'Daffodil',         emoji: '🌷', price: 300,   stock: [1, 2],   chance: 18,   multi: false, grow: 45,   sell: 750 },
-    { key: 'watermelon',      name: 'Watermelon',       emoji: '🍉', price: 500,   stock: [1, 2],   chance: 15,   multi: false, grow: 90,   sell: 1300 },
-    { key: 'pumpkin',         name: 'Pumpkin',          emoji: '🎃', price: 800,   stock: [1, 2],   chance: 12,   multi: false, grow: 120,  sell: 2100 },
-    { key: 'apple',           name: 'Apple',            emoji: '🍎', price: 1250,  stock: [1, 2],   chance: 10,   multi: true,  grow: 100,  regrow: 40,  sell: 750 },
-    { key: 'bamboo',          name: 'Bamboo',           emoji: '🎍', price: 2000,  stock: [1, 2],   chance: 9,    multi: false, grow: 60,   sell: 5000 },
-    { key: 'coconut',         name: 'Coconut',          emoji: '🥥', price: 3000,  stock: [1, 1],   chance: 7,    multi: true,  grow: 150,  regrow: 60,  sell: 1800 },
-    { key: 'cactus',          name: 'Cactus',           emoji: '🌵', price: 5000,  stock: [1, 1],   chance: 6,    multi: true,  grow: 120,  regrow: 50,  sell: 3000 },
-    { key: 'dragonfruit',     name: 'Dragon Fruit',     emoji: '🐉', price: 8000,  stock: [1, 1],   chance: 5,    multi: true,  grow: 180,  regrow: 70,  sell: 4800 },
-    { key: 'mango',           name: 'Mango',            emoji: '🥭', price: 12000, stock: [1, 1],   chance: 4.5,  multi: true,  grow: 200,  regrow: 80,  sell: 7200 },
-    { key: 'grape',           name: 'Grape',            emoji: '🍇', price: 20000, stock: [1, 1],   chance: 4,    multi: true,  grow: 240,  regrow: 90,  sell: 12000 },
-    { key: 'mushroom',        name: 'Mushroom',         emoji: '🍄', price: 40000, stock: [1, 1],   chance: 3.5,  multi: false, grow: 150,  sell: 100000 },
-    { key: 'pepper',          name: 'Pepper',           emoji: '🌶️', price: 75000, stock: [1, 1],  chance: 3,    multi: true,  grow: 300,  regrow: 100, sell: 45000 },
-    { key: 'cacao',           name: 'Cacao',            emoji: '🍫', price: 125000, stock: [1, 1],  chance: 2.5,  multi: true,  grow: 350,  regrow: 120, sell: 75000 },
-    { key: 'sunflower',       name: 'Sunflower',        emoji: '🌻', price: 250000, stock: [1, 1],  chance: 2,    multi: true,  grow: 400,  regrow: 150, sell: 150000 },
-    { key: 'beanstalk',       name: 'Beanstalk',        emoji: '🫛', price: 500000, stock: [1, 1],  chance: 1.5,  multi: true,  grow: 500,  regrow: 180, sell: 300000 },
-    { key: 'emberlily',       name: 'Ember Lily',       emoji: '🪷', price: 1e6,   stock: [1, 1],   chance: 1,    multi: true,  grow: 600,  regrow: 200, sell: 600000 },
-    { key: 'sugarapple',      name: 'Sugar Apple',      emoji: '🍏', price: 2.5e6, stock: [1, 1],   chance: 0.8,  multi: true,  grow: 700,  regrow: 240, sell: 1.5e6 },
-    { key: 'burningbud',      name: 'Burning Bud',      emoji: '🥀', price: 5e6,   stock: [1, 1],   chance: 0.6,  multi: true,  grow: 800,  regrow: 280, sell: 3e6 },
-    { key: 'giantpinecone',   name: 'Giant Pinecone',   emoji: '🌰', price: 1e7,   stock: [1, 1],   chance: 0.4,  multi: true,  grow: 900,  regrow: 300, sell: 6e6 },
-    { key: 'elderstrawberry', name: 'Elder Strawberry', emoji: '🍒', price: 2.5e7, stock: [1, 1],   chance: 0.3,  multi: true,  grow: 1000, regrow: 330, sell: 1.5e7 },
-    { key: 'romanesco',       name: 'Romanesco',        emoji: '🥦', price: 5e7,   stock: [1, 1],   chance: 0.2,  multi: true,  grow: 1100, regrow: 360, sell: 3e7 },
-    { key: 'crimsonthorn',    name: 'Crimson Thorn',    emoji: '🌹', price: 1e8,   stock: [1, 1],   chance: 0.1,  multi: true,  grow: 1200, regrow: 400, sell: 6e7 },
-    { key: 'zebrazinkle',     name: 'Zebra Zinkle',     emoji: '🦓', price: 2.5e8, stock: [1, 1],   chance: 0.05, multi: true,  grow: 1300, regrow: 430, sell: 1.5e8 },
-    { key: 'octobloom',       name: 'Octobloom',        emoji: '🐙', price: 5e8,   stock: [1, 1],   chance: 0.025, multi: true, grow: 1400, regrow: 460, sell: 3e8 },
-    { key: 'alienapple',      name: 'Alien Apple',      emoji: '👽', price: 1e15,  stock: [1, 1],   chance: 0.01, multi: true,  grow: 1500, regrow: 500, sell: 6e14 }
-  ];
-  var CROPS = {};
-  SEEDS.forEach(function (s) { CROPS[s.key] = s; });
+  'use strict';
 
-  // Gear: target=true means select it, then click a plant; target=false is used instantly
-  var GEAR = [
-    { key: 'wateringcan', name: 'Watering Can', emoji: '🫗', price: 10,   stock: [1, 3], chance: 100, target: true,  desc: 'Water one plant — halves its remaining grow time' },
-    { key: 'fertilizer',  name: 'Fertilizer',   emoji: '🧪', price: 50,   stock: [1, 2], chance: 80,  target: true,  desc: 'Instantly ripens one growing plant' },
-    { key: 'goldscythe',  name: 'Golden Scythe', emoji: '🌾', price: 500,  stock: [1, 1], chance: 50,  target: false, desc: 'Harvests every ripe crop in one sweep' },
-    { key: 'luckycharm',  name: 'Lucky Charm',  emoji: '🍀', price: 1000, stock: [1, 1], chance: 30,  target: false, desc: 'Forces the shops to restock right now' },
-    { key: 'timecrystal', name: 'Time Crystal', emoji: '⏳', price: 5000, stock: [1, 1], chance: 10,  target: false, desc: 'Instantly ripens every plant in the garden' }
-  ];
-  var GEARMAP = {};
-  GEAR.forEach(function (g) { GEARMAP[g.key] = g; });
+  var TAU = Math.PI * 2;
 
-  // Rarity tiers (drive token rewards) and token prices for every shop item
-  var TIERS = {
-    carrot: 'common', strawberry: 'common',
-    blueberry: 'uncommon', buttercup: 'uncommon', tomato: 'uncommon', corn: 'uncommon',
-    daffodil: 'rare', watermelon: 'rare', pumpkin: 'rare', apple: 'rare', bamboo: 'rare',
-    coconut: 'legendary', cactus: 'legendary', dragonfruit: 'legendary', mango: 'legendary', grape: 'legendary',
-    mushroom: 'mythical', pepper: 'mythical', cacao: 'mythical', sunflower: 'mythical', beanstalk: 'mythical',
-    emberlily: 'divine', sugarapple: 'divine', burningbud: 'divine', giantpinecone: 'divine', elderstrawberry: 'divine',
-    romanesco: 'transcendental', crimsonthorn: 'transcendental', zebrazinkle: 'transcendental', octobloom: 'transcendental', alienapple: 'transcendental'
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d');
+  var stage = document.getElementById('stage');
+  var badge = document.getElementById('badge');
+
+  // ---------- tuning ----------
+  var K = 2.4e7;          // magnetic constant, chosen so pixel-scale forces feel right
+  var SUB = 4;            // physics substeps per frame
+  var ANG_DAMP = 7;       // rotational damping (1/s)
+  var MAXV = 2200;        // speed clamp (px/s)
+  var MAXW = 60;          // spin clamp (rad/s)
+  var MAXBALLS = 140;
+  var PTR_K = 3.5e5;      // pointer attract/repel strength
+  var PTR_SOFT = 70;      // softened falloff, so the cursor still has reach across the canvas
+  var LINK_F = 1.3;       // contact factor that counts as "linked" for chain stats
+
+  var CFG = {
+    strength: 1,
+    gravity: 0,
+    damp: 0.6,
+    rest: 0.42,
+    ext: 0,
+    extAng: 0,
+    speed: 1,
+    showField: false,
+    showPoles: true,
+    showLinks: true,
+    trails: false,
+    paused: false
   };
-  var LOW_TIERS = { common: 1, uncommon: 1, rare: 1 }; // 4-10 tokens; higher tiers pay 50-1000
-  var TOK_SEED = {
-    carrot: 10, strawberry: 25, blueberry: 35, buttercup: 50, tomato: 100, corn: 200,
-    daffodil: 250, watermelon: 350, pumpkin: 500, apple: 650, bamboo: 800,
-    coconut: 1000, cactus: 1200, dragonfruit: 1500, mango: 1800, grape: 2200,
-    mushroom: 2800, pepper: 3500, cacao: 4200, sunflower: 5000, beanstalk: 6000,
-    emberlily: 7000, sugarapple: 7500, burningbud: 8000, giantpinecone: 8500, elderstrawberry: 9000,
-    romanesco: 9500, crimsonthorn: 9800, zebrazinkle: 10000, octobloom: 12000, alienapple: 50000
-  };
-  var TOK_GEAR = { wateringcan: 10, fertilizer: 40, goldscythe: 300, luckycharm: 500, timecrystal: 1500 };
-  SEEDS.forEach(function (s) { s.tier = TIERS[s.key] || 'common'; s.tok = TOK_SEED[s.key] || 10; });
-  GEAR.forEach(function (g) { g.tok = TOK_GEAR[g.key] || 10; });
 
-  // Weather: [name, emoji, mutation, value multiplier, weight, growth speed, mutation chance per 10s, color]
-  // Average duration is 3 minutes (2-4 min roll). Higher weight = more common.
-  var WEATHERS = [
-    // common skies
-    ['Sun', '☀️', 'Sundried', 1.5, 15, 1, 0.03, '#f5c542'],
-    ['Raining', '🌧️', 'Wet', 2, 12, 1.5, 0.2, '#4d8fd1'],
-    ['Cloudy', '☁️', 'Shaded', 1.3, 10, 1, 0.2, '#9aa5b1'],
-    ['Night', '🌙', 'Moonlit', 2.5, 10, 1, 0.2, '#7d8fd6'],
-    ['Drizzle', '🌦️', 'Dewy', 1.6, 8, 1.2, 0.2, '#6fa8d6'],
-    ['Breeze', '🍃', 'Windswept', 1.4, 8, 1, 0.2, '#79c98b'],
-    ['Fog', '🌫️', 'Misty', 1.8, 8, 1, 0.2, '#aeb8c2'],
-    ['Overcast', '🌥️', 'Dim', 1.4, 7, 1, 0.2, '#8f9aa6'],
-    ['Morning Dew', '💧', 'Glistening', 1.7, 7, 1, 0.2, '#63c6d8'],
-    ['Sunset', '🌇', 'Amber', 1.6, 7, 1, 0.2, '#f08c42'],
-    ['Sunrise', '🌅', 'Golden', 1.8, 7, 1, 0.2, '#f3b13f'],
-    ['Warm Front', '🌤️', 'Cozy', 1.5, 6, 1.1, 0.2, '#f0a35e'],
-    ['Cold Front', '🌬️', 'Crisp', 1.6, 6, 1, 0.2, '#6db3d1'],
-    ['Humid Day', '💦', 'Sticky', 1.5, 6, 1.1, 0.2, '#5bb8a5'],
-    ['Gentle Rain', '☔', 'Rinsed', 1.8, 6, 1.3, 0.2, '#5a86c9'],
-    // uncommon
-    ['Thunderstorm', '⛈️', 'Shocked', 3, 5, 1.4, 0.2, '#f7e463'],
-    ['Hail', '🧊', 'Dented', 2.5, 4, 1, 0.2, '#bfe3f0'],
-    ['Snow', '❄️', 'Frozen', 3, 4, 1, 0.2, '#cfe8f5'],
-    ['Windstorm', '💨', 'Tousled', 2.2, 4, 1, 0.2, '#9fb8ac'],
-    ['Rainbow', '🌈', 'Prismatic', 4, 3, 1, 0.2, '#d06bd6'],
-    ['Heatwave', '🥵', 'Scorched', 2.8, 4, 1, 0.2, '#e8683e'],
-    ['Cold Snap', '🥶', 'Chilled', 2.8, 4, 1, 0.2, '#6fc3e8'],
-    ['Downpour', '🌊', 'Soaked', 2.6, 4, 1.6, 0.2, '#3f74c4'],
-    ['Mud Rain', '🟤', 'Muddy', 2.2, 3, 1.2, 0.2, '#8a6a45'],
-    ['Pollen Storm', '🌼', 'Sneezy', 2.4, 3, 1.2, 0.2, '#e5d05a'],
-    ['Frost', '🍂', 'Frosted', 2.6, 4, 1, 0.2, '#a8d8e8'],
-    ['Sleet', '🌨️', 'Slushy', 2.3, 3, 1, 0.2, '#9fc4d8'],
-    ['Gale', '🍥', 'Gusty', 2.5, 3, 1, 0.2, '#85a8a0'],
-    ['Monsoon', '🌀', 'Drenched', 2.8, 3, 1.7, 0.2, '#3f86c4'],
-    ['Dust Devil', '🌪️', 'Dusty', 2.4, 3, 1, 0.2, '#c4a25e'],
-    ['Sandstorm', '🏜️', 'Sandy', 2.6, 3, 1, 0.2, '#d1b06b'],
-    ['Full Moon', '🌕', 'Lunar', 3, 3, 1, 0.2, '#e8e3c4'],
-    ['New Moon', '🌑', 'Shadowed', 3, 3, 1, 0.2, '#4a4a5e'],
-    ['Harvest Moon', '🌾', 'Bountiful', 3.5, 3, 1, 0.2, '#e0a83f'],
-    ['Starry Night', '✨', 'Starlit', 3, 3, 1, 0.2, '#8f9fe8'],
-    ['Shooting Star', '🌠', 'Starstruck', 4, 2, 1, 0.2, '#b9a8f0'],
-    ['Static Storm', '⚡', 'Charged', 3.2, 3, 1, 0.2, '#f0e05a'],
-    ['Thundersnow', '🌩️', 'Thunderfrost', 4, 2, 1, 0.2, '#9fd0f0'],
-    ['Spring Shower', '🌷', 'Blooming', 2.5, 3, 1.3, 0.2, '#e88fb8'],
-    ['Autumn Wind', '🍁', 'Rustic', 2.4, 3, 1, 0.2, '#d1793f'],
-    ['Summer Haze', '😎', 'Hazy', 2.2, 3, 1, 0.2, '#e8c46b'],
-    // rare
-    ['Earthquake', '🪨', 'Cracked', 5, 2, 1, 0.2, '#8a7a63'],
-    ['Tornado', '🌪', 'Twisted', 6, 1.5, 1, 0.2, '#7a8f8a'],
-    ['Hurricane', '🛟', 'Cyclonic', 6, 1.5, 1.3, 0.2, '#4f7ac4'],
-    ['Blizzard', '⛄', 'Frostbitten', 6, 1.5, 1, 0.2, '#b8dff0'],
-    ['Aurora', '🌌', 'Aurora', 8, 1.5, 1, 0.25, '#6be8c8'],
-    ['Eclipse', '🌒', 'Eclipsed', 8, 1.2, 1, 0.2, '#5e5a8f'],
-    ['Solar Eclipse', '🕶️', 'Corona', 9, 1, 1, 0.2, '#f0b83f'],
-    ['Lunar Eclipse', '🌘', 'Umbral', 9, 1, 1, 0.2, '#8f6bd6'],
-    ['Meteor Shower', '☄️', 'Celestial', 10, 1, 1, 0.25, '#e8955a'],
-    ['Blood Moon', '🔴', 'Bloodlit', 10, 1, 1, 0.25, '#d64545'],
-    ['Volcanic Ash', '🌋', 'Ashen', 7, 1.2, 1, 0.2, '#6b5e5a'],
-    ['Lava Rain', '🔥', 'Molten', 9, 1, 1, 0.2, '#e86038'],
-    ['Flood', '🚣', 'Waterlogged', 6, 1.3, 1.5, 0.2, '#3f6ac4'],
-    ['Firestorm', '🎆', 'Charred', 8, 1, 1, 0.2, '#e0703f'],
-    ['Ice Storm', '🥌', 'Glazed', 7, 1.2, 1, 0.2, '#a0d8f0'],
-    ['Acid Rain', '☣️', 'Corroded', 8, 1, 1.2, 0.2, '#9fd63f'],
-    ['Ball Lightning', '🔮', 'Orbed', 9, 1, 1, 0.2, '#c46be8'],
-    ['Heat Lightning', '🌡️', 'Flickering', 6, 1.3, 1, 0.2, '#e8a53f'],
-    ['Waterspout', '⛲', 'Whirled', 7, 1.1, 1.2, 0.2, '#55a0c9'],
-    ['Sun Halo', '😇', 'Haloed', 8, 1, 1, 0.2, '#f0d75a'],
-    ['Moonbow', '🌉', 'Opalescent', 9, 1, 1, 0.2, '#a8c4e8'],
-    ['Fire Rainbow', '🎨', 'Radiant', 9, 1, 1, 0.2, '#e88f5a'],
-    ['Polar Vortex', '🧭', 'Polar', 8, 1, 1, 0.2, '#6bc4e8'],
-    ['Mirage', '🏝️', 'Illusory', 7, 1.1, 1, 0.2, '#d8c46b'],
-    ['Heat Dome', '⛱️', 'Baked', 6, 1.2, 1, 0.2, '#e09553'],
-    ['Sun Shower', '🌂', 'Sprinkled', 6, 1.3, 1.3, 0.2, '#8fc9a8'],
-    ['Freezing Rain', '🧣', 'Icebound', 7, 1.1, 1, 0.2, '#7ab8d8'],
-    ['Graupel', '🫧', 'Peppered', 6, 1.2, 1, 0.2, '#c4d0d8'],
-    ['Rime', '🕸️', 'Silverfrost', 7, 1.1, 1, 0.2, '#c8d8e0'],
-    ['Cloudburst', '💥', 'Bursting', 7, 1.1, 1.5, 0.2, '#5a86d1'],
-    ['Jet Stream', '✈️', 'Streamlined', 6, 1.2, 1.2, 0.2, '#8fa8c4'],
-    ['Microburst', '🎐', 'Flattened', 7, 1, 1, 0.2, '#a0b8b0'],
-    ['Derecho', '🚩', 'Leveled', 8, 0.9, 1, 0.2, '#b8926b'],
-    ['Bomb Cyclone', '💣', 'Stormforged', 10, 0.8, 1.2, 0.2, '#5e6a8f'],
-    ['Dust Bowl', '🥣', 'Parched', 7, 1, 1, 0.2, '#c4a05a'],
-    ['Whiteout', '📄', 'Blanked', 8, 0.9, 1, 0.2, '#e8eef0'],
-    ['Green Flash', '🟢', 'Verdant', 9, 0.8, 1, 0.2, '#4fc46b'],
-    ['Fogbow', '⚪', 'Ghostly', 8, 0.9, 1, 0.2, '#d0d8e0'],
-    ['Zodiacal Light', '💫', 'Zodiac', 10, 0.8, 1, 0.2, '#b89fe8'],
-    ['Noctilucent Clouds', '🌃', 'Noctilucent', 10, 0.8, 1, 0.2, '#6b8fd6'],
-    // mythic
-    ['Meteor Strike', '☄', 'Meteoric', 15, 0.5, 1, 0.3, '#e07a45'],
-    ['Solar Storm', '🌞', 'Sunfire', 15, 0.5, 1, 0.3, '#f0a03f'],
-    ['Gamma Burst', '☢️', 'Irradiated', 18, 0.4, 1, 0.3, '#9fe83f'],
-    ['Cosmic Rays', '📡', 'Cosmic', 16, 0.4, 1, 0.3, '#6bd6e8'],
-    ['Stardust', '🌟', 'Stardusted', 15, 0.5, 1, 0.3, '#f0e08f'],
-    ['Nebula Sky', '🪻', 'Nebular', 18, 0.4, 1, 0.3, '#b86be8'],
-    ['Galaxy Night', '🪐', 'Galactic', 20, 0.4, 1, 0.3, '#7a6be8'],
-    ['Black Hole', '🕳️', 'Voidtouched', 50, 0.15, 1, 0.3, '#3a3a4a'],
-    ['Supernova', '🧨', 'Nova', 40, 0.2, 1, 0.3, '#f0d05a'],
-    ['Alien Rain', '👽', 'Alien', 60, 0.15, 1, 0.3, '#6be86b'],
-    ['UFO Sighting', '🛸', 'Beamed', 45, 0.2, 1, 0.3, '#8fe8d6'],
-    ['Rainbow Meteor', '🎏', 'Chromatic', 35, 0.2, 1, 0.3, '#d66bc4'],
-    ['Time Storm', '⏰', 'Temporal', 30, 0.25, 1, 0.3, '#c4b86b'],
-    ['Gravity Flux', '🎈', 'Weightless', 25, 0.3, 1, 0.3, '#a8c46b'],
-    ['Magnetic Storm', '🧲', 'Magnetized', 22, 0.3, 1, 0.3, '#d67a6b'],
-    ['Plasma Storm', '🔆', 'Ionized', 25, 0.3, 1, 0.3, '#e8926b'],
-    ['Void Fog', '🖤', 'Void', 35, 0.2, 1, 0.3, '#4a3a5e'],
-    ['Dream Mist', '😴', 'Dreamy', 20, 0.3, 1, 0.3, '#b8a8e8'],
-    ['Fairy Dust', '🧚', 'Fae', 25, 0.3, 1, 0.3, '#e8a8d6'],
-    ['Dragon Breath', '🐲', 'Dragonfire', 30, 0.25, 1, 0.3, '#e86b4a'],
-    ['Phoenix Wind', '🎇', 'Phoenix', 35, 0.2, 1, 0.3, '#f0854a'],
-    ['Spirit Rain', '👻', 'Spectral', 22, 0.3, 1, 0.3, '#a8d0d8'],
-    ['Golden Hour', '🏆', 'Gilded', 20, 0.3, 1, 0.3, '#f0c43f'],
-    ['Diamond Dust', '💎', 'Diamond', 30, 0.25, 1, 0.3, '#c4e8f0'],
-    ['Sakura Wind', '🌸', 'Blossomed', 18, 0.35, 1, 0.3, '#f0a8c4'],
-    ['Honey Rain', '🍯', 'Honeyed', 18, 0.35, 1, 0.3, '#e8b53f'],
-    ['Chocolate Rain', '🍩', 'Chocolatey', 16, 0.35, 1, 0.3, '#8a5e3f'],
-    ['Candy Storm', '🍬', 'Sugared', 18, 0.35, 1, 0.3, '#e88fb0'],
-    ['Confetti Storm', '🎉', 'Festive', 16, 0.35, 1, 0.3, '#d66b8f'],
-    ['Bubble Storm', '🛁', 'Bubbly', 15, 0.4, 1, 0.3, '#a8d6e8'],
-    ['Glitter Storm', '💖', 'Glittered', 20, 0.3, 1, 0.3, '#e8d08f'],
-    ['Moonquake', '🌖', 'Moonstruck', 25, 0.3, 1, 0.3, '#b8b8d6'],
-    // Grow a Garden weathers
-    ['Bee Swarm', '🐝', 'Pollinated', 3, 2, 1, 0.25, '#f0c33f'],
-    ['Working Bee Swarm', '🍯', 'Honey Glazed', 5, 1, 1, 0.25, '#e8a53f'],
-    ['Disco', '🪩', 'Disco', 15, 0.5, 1, 0.3, '#d65ad6'],
-    ['DJ Party', '🎧', 'Remixed', 12, 0.5, 1, 0.3, '#8f5ad6'],
-    ['Windy', '🎋', 'Windstruck', 2, 4, 1, 0.2, '#9fc4a8'],
-    ['Tropical Rain', '🌴', 'Tropical', 3, 2, 1.5, 0.2, '#4fb88a'],
-    ['Drought', '🦴', 'Withered', 2.5, 2, 1, 0.2, '#c9a06b'],
-    ['Summer Harvest', '🍑', 'Sunkissed', 3, 2, 1, 0.2, '#f0925e'],
-    ['Alien Invasion', '👾', 'Alienlike', 30, 0.2, 1, 0.3, '#7ae86b'],
-    ['Space Travel', '🚀', 'Astro', 20, 0.3, 1, 0.3, '#6b8fe8'],
-    ['Crystal Beams', '🔷', 'Crystalline', 25, 0.3, 1, 0.3, '#6bd0e8'],
-    ['Volcano', '🗻', 'Magma', 12, 0.6, 1, 0.25, '#d65a3f'],
-    ['Zen Aura', '🧘', 'Tranquil', 10, 0.8, 1, 0.25, '#8fd6b8'],
-    ['Corrupt Zen Aura', '👹', 'Corrupt', 18, 0.4, 1, 0.3, '#b84a6b'],
-    ['Laser Storm', '🔦', 'Plasma', 15, 0.5, 1, 0.3, '#e85ad6'],
-    ['Sheckle Rain', '🪙', 'Sheckled', 10, 0.6, 1, 0.25, '#e8c43f'],
-    ['Chicken Rain', '🐔', 'Feathered', 8, 0.8, 1, 0.25, '#f0e0c4'],
-    ['Zombie Invasion', '🧟', 'Zombified', 25, 0.3, 1, 0.3, '#7a9f4a'],
-    ['Sun God', '👑', 'Dawnbound', 150, 0.1, 1, 0.3, '#f0d75a'],
-    ['Armageddon', '💀', 'Apocalyptic', 40, 0.15, 1, 0.3, '#6b4a4a'],
-    ['Pool Party', '🏊', 'Splashed', 4, 1.5, 1.2, 0.2, '#5aa0d6'],
-    ['Under the Sea', '🐠', 'Oceanic', 8, 0.8, 1, 0.25, '#4a8fd6'],
-    ['Obby', '🏁', 'Bouncy', 6, 0.8, 1, 0.25, '#d6b84a'],
-    ['Jandel Storm', '🃏', 'Jandeled', 20, 0.3, 1, 0.3, '#d64a8f'],
-    ['Starfall', '⭐', 'Starfallen', 12, 0.6, 1, 0.25, '#f0e05a'],
-    ['Frost Dawn', '🌁', 'Frostproof', 14, 0.5, 1, 0.25, '#b8d8e8']
-  ].map(function (r) {
+  var balls = [];
+  var W = 0, H = 0, DPR = 1;
+
+  // ---------- colors pulled from CSS so the canvas follows the theme ----------
+  var COL = {};
+  function readColors() {
+    var cs = getComputedStyle(document.documentElement);
+    function v(n) { return cs.getPropertyValue(n).trim(); }
+    COL.bg = v('--cv-bg');
+    COL.wall = v('--cv-wall');
+    COL.link = v('--cv-link');
+    COL.field = v('--cv-field');
+    COL.north = v('--north');
+    COL.south = v('--south');
+    COL.metal = v('--metal');
+    COL.accent = v('--accent');
+    COL.muted = v('--muted');
+  }
+
+  // ---------- balls ----------
+  function mkBall(x, y, opt) {
+    opt = opt || {};
+    var r = opt.r || 11;
     return {
-      key: r[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
-      name: r[0], emoji: r[1], mutName: r[2], mult: r[3],
-      weight: r[4], speed: r[5], mutChance: r[6], color: r[7]
+      x: x, y: y,
+      vx: opt.vx || 0, vy: opt.vy || 0,
+      th: opt.th == null ? Math.random() * TAU : opt.th,
+      w: 0,
+      r: r,
+      m: (r * r) / 121,
+      mom: opt.mom == null ? 1 : opt.mom,
+      pin: !!opt.pin,
+      fx: 0, fy: 0, tq: 0,
+      grab: false
     };
-  });
-  var WMAP = {};
-  WEATHERS.forEach(function (w) { WMAP[w.key] = w; });
-
-  var SPOTS_PER_M = 3;         // 3x3 planting spots per square meter
-  var EXPAND_COST = 100;       // always 100¢, forever
-  var RESTOCK_MS = 10 * 1000;
-  var SAVE_KEY = 'garden-game-v2';
-
-  var sheckles = 20;
-  var tokens = 0;
-  var meters = 3;
-  var cols = meters * SPOTS_PER_M;
-  var grid = new Array(cols * cols).fill(null); // {t, state:'grow'|'ripe'|'regrow', end}
-  var seedsOwned = {};  // key -> count of seeds in your bag
-  var gearOwned = {};   // key -> count of gear in your shed
-  var basket = {};      // key -> count of harvested crops
-  var stock = {};       // key -> count in the sheckle shop right now (seeds and gear)
-  var stockTok = {};    // key -> count in the token shop — rolled independently,
-                        // with the chance boosted by the active weather multipliers
-  var nextRestock = 0;
-  var sel = 'hand';
-  var held = null;       // basket stack key selected in the sell shop
-  var weather = null;    // {key, until}
-  var lastMutRoll = 0;   // last 10-second mutation roll
-
-  var coinsEl = document.getElementById('coins');
-  var tokensEl = document.getElementById('tokens');
-  var shopEl = document.getElementById('shop');
-  var msgEl = document.getElementById('msg');
-  var plotEl = document.getElementById('plot');
-  var rulerEl = document.getElementById('ruler');
-  var seedBubble = document.getElementById('seed-bubble');
-  var gearBubble = document.getElementById('gear-bubble');
-  var sellBubble = document.getElementById('sell-bubble');
-  var seedListEl = document.getElementById('seedlist');
-  var gearListEl = document.getElementById('gearlist');
-  var invListEl = document.getElementById('invlist');
-  var heldActions = document.getElementById('held-actions');
-  var restockEl = document.getElementById('restock');
-  var restock2El = document.getElementById('restock2');
-  var seedLuckEl = document.getElementById('seed-luck');
-  var gearLuckEl = document.getElementById('gear-luck');
-  var weatherEl = document.getElementById('weather-banner');
-  var wInfoEl = document.getElementById('w-info');
-  var wTimeEl = document.getElementById('w-time');
-  var plotVp = document.getElementById('plot-viewport');
-  var panHintEl = document.getElementById('pan-hint');
-  var ovSeed = document.getElementById('ov-seed');
-  var ovGear = document.getElementById('ov-gear');
-  var ovSell = document.getElementById('ov-sell');
-  var cellEls = [];
-
-  function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
-
-  function money(n) {
-    if (n >= 1e15) return trim(n / 1e15) + 'Q¢';
-    if (n >= 1e12) return trim(n / 1e12) + 'T¢';
-    if (n >= 1e9)  return trim(n / 1e9)  + 'B¢';
-    if (n >= 1e6)  return trim(n / 1e6)  + 'M¢';
-    if (n >= 1e4)  return trim(n / 1e3)  + 'k¢';
-    return n + '¢';
-  }
-  function trim(x) {
-    return (Math.round(x * 100) / 100).toString();
-  }
-  function tokFmt(n) {
-    if (n >= 1e6) return trim(n / 1e6) + 'M';
-    if (n >= 1e4) return trim(n / 1e3) + 'k';
-    return String(n);
   }
 
-  // ---------- persistence ----------
-  function save() {
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({
-        sheckles: sheckles, tokens: tokens, meters: meters, grid: grid,
-        seedsOwned: seedsOwned, gearOwned: gearOwned, basket: basket,
-        stock: stock, stockTok: stockTok, nextRestock: nextRestock, weather: weather
-      }));
-    } catch (e) { /* storage unavailable — play without saving */ }
+  function addBall(x, y, opt) {
+    if (balls.length >= MAXBALLS) return null;
+    var b = mkBall(x, y, opt);
+    balls.push(b);
+    return b;
   }
-  function load() {
-    try {
-      var raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return;
-      var d = JSON.parse(raw);
-      if (typeof d.sheckles === 'number') sheckles = d.sheckles;
-      if (typeof d.tokens === 'number') tokens = d.tokens;
-      if (typeof d.meters === 'number' && d.meters >= 3) meters = d.meters;
-      cols = meters * SPOTS_PER_M;
-      if (Array.isArray(d.grid) && d.grid.length === cols * cols) {
-        grid = d.grid.map(function (p) { return p && CROPS[p.t] ? p : null; });
+
+  function ballAt(x, y, slack) {
+    slack = slack || 6;
+    for (var i = balls.length - 1; i >= 0; i--) {
+      var b = balls[i];
+      var dx = x - b.x, dy = y - b.y;
+      if (dx * dx + dy * dy <= (b.r + slack) * (b.r + slack)) return b;
+    }
+    return null;
+  }
+
+  // ---------- field sampling (scratch globals, no allocation per sample) ----------
+  var fbx = 0, fby = 0;
+  function fieldAt(px, py, skip) {
+    var s = CFG.strength;
+    fbx = CFG.ext * Math.cos(CFG.extAng);
+    fby = CFG.ext * Math.sin(CFG.extAng);
+    for (var i = 0; i < balls.length; i++) {
+      var b = balls[i];
+      if (b === skip) continue;
+      var rx = px - b.x, ry = py - b.y;
+      var d2 = rx * rx + ry * ry;
+      var min2 = b.r * b.r;
+      if (d2 < min2) d2 = min2;
+      var d = Math.sqrt(d2);
+      var ux = rx / d, uy = ry / d;
+      var mx = Math.cos(b.th) * b.mom * s;
+      var my = Math.sin(b.th) * b.mom * s;
+      var mdotr = mx * ux + my * uy;
+      var c = K / (d2 * d);
+      fbx += c * (3 * mdotr * ux - mx);
+      fby += c * (3 * mdotr * uy - my);
+    }
+    return fbx;
+  }
+
+  // ---------- integration ----------
+  var ptr = { down: false, x: 0, y: 0, mode: null };
+
+  function step(dt) {
+    var n = balls.length, i, j, b, o;
+    var s = CFG.strength;
+
+    for (i = 0; i < n; i++) { b = balls[i]; b.fx = 0; b.fy = 0; b.tq = 0; }
+
+    // pairwise dipole-dipole force and mutual torque
+    for (i = 0; i < n; i++) {
+      b = balls[i];
+      var m1x = Math.cos(b.th) * b.mom * s, m1y = Math.sin(b.th) * b.mom * s;
+      for (j = i + 1; j < n; j++) {
+        o = balls[j];
+        var m2x = Math.cos(o.th) * o.mom * s, m2y = Math.sin(o.th) * o.mom * s;
+
+        var rx = b.x - o.x, ry = b.y - o.y;         // vector from o to b
+        var d = Math.sqrt(rx * rx + ry * ry);
+        if (d < 1e-6) { d = 1e-6; rx = 1e-6; ry = 0; }
+        var ux = rx / d, uy = ry / d;
+
+        // collisions keep them apart, so softening at contact only tames the singularity
+        var minD = (b.r + o.r) * 0.9;
+        var dc = d < minD ? minD : d;
+
+        var m1r = m1x * ux + m1y * uy;
+        var m2r = m2x * ux + m2y * uy;
+        var m12 = m1x * m2x + m1y * m2y;
+
+        var c = 3 * K / (dc * dc * dc * dc);
+        var fx = c * (m1r * m2x + m2r * m1x + m12 * ux - 5 * m1r * m2r * ux);
+        var fy = c * (m1r * m2y + m2r * m1y + m12 * uy - 5 * m1r * m2r * uy);
+        b.fx += fx; b.fy += fy;
+        o.fx -= fx; o.fy -= fy;
+
+        // torque = m x B, with B the neighbour's dipole field at this ball
+        var cb = K / (dc * dc * dc);
+        var b1x = cb * (3 * m2r * ux - m2x), b1y = cb * (3 * m2r * uy - m2y);
+        b.tq += m1x * b1y - m1y * b1x;
+        var b2x = cb * (3 * m1r * ux - m1x), b2y = cb * (3 * m1r * uy - m1y);
+        o.tq += m2x * b2y - m2y * b2x;
+      }
+    }
+
+    var ebx = CFG.ext * Math.cos(CFG.extAng), eby = CFG.ext * Math.sin(CFG.extAng);
+    var pull = ptr.down && (ptr.mode === 'attract' || ptr.mode === 'repel');
+    var pullSign = ptr.mode === 'repel' ? -1 : 1;
+
+    for (i = 0; i < n; i++) {
+      b = balls[i];
+      var mx = Math.cos(b.th) * b.mom * s, my = Math.sin(b.th) * b.mom * s;
+
+      // a uniform field twists a dipole but does not push it
+      b.tq += mx * eby - my * ebx;
+
+      if (pull && !b.pin && !b.grab) {
+        var px = ptr.x - b.x, py = ptr.y - b.y;
+        var pd = Math.sqrt(px * px + py * py);
+        if (pd < 1) pd = 1;
+        var pf = PTR_K / (pd + PTR_SOFT);
+        b.fx += pullSign * pf * (px / pd) * b.m;
+        b.fy += pullSign * pf * (py / pd) * b.m;
+      }
+
+      if (b.pin || b.grab) {
+        if (b.pin) { b.vx = 0; b.vy = 0; b.w = 0; }
       } else {
-        grid = new Array(cols * cols).fill(null);
+        b.vx += (b.fx / b.m) * dt;
+        b.vy += (b.fy / b.m + CFG.gravity) * dt;
+        var dmp = Math.exp(-CFG.damp * dt);
+        b.vx *= dmp; b.vy *= dmp;
+        var sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+        if (sp > MAXV) { b.vx = b.vx / sp * MAXV; b.vy = b.vy / sp * MAXV; }
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
       }
-      if (d.seedsOwned) seedsOwned = d.seedsOwned;
-      if (d.gearOwned) gearOwned = d.gearOwned;
-      if (d.basket) basket = d.basket;
-      if (d.stock) stock = d.stock;
-      if (d.stockTok) stockTok = d.stockTok;
-      if (typeof d.nextRestock === 'number') nextRestock = d.nextRestock;
-      if (d.weather) {
-        var wkeys = d.weather.keys || (d.weather.key ? [d.weather.key] : []);
-        wkeys = wkeys.filter(function (k) { return WMAP[k]; });
-        if (wkeys.length) weather = { keys: wkeys, until: d.weather.until };
+
+      if (!b.pin) {
+        var I = 0.5 * b.m * b.r * b.r;
+        b.w += (b.tq / I) * dt;
+        b.w *= Math.exp(-ANG_DAMP * dt);
+        if (b.w > MAXW) b.w = MAXW; else if (b.w < -MAXW) b.w = -MAXW;
+        b.th += b.w * dt;
       }
-    } catch (e) { /* corrupt save — start fresh */ }
-  }
 
-  // ---------- seed shop stock ----------
-  // Product of all active weather multipliers, e.g. a 3x and a 5x weather = 15x
-  function weatherLuck() {
-    if (!weather) return 1;
-    return activeWeathers().reduce(function (a, w) { return a * w.mult; }, 1);
-  }
-  function doRestock() {
-    var luck = weatherLuck();
-    SEEDS.concat(GEAR).forEach(function (s) {
-      stock[s.key] = (Math.random() * 100 < s.chance) ? randInt(s.stock[0], s.stock[1]) : 0;
-      // token shop rolls separately, with weather-boosted odds
-      stockTok[s.key] = (Math.random() * 100 < s.chance * luck) ? randInt(s.stock[0], s.stock[1]) : 0;
-    });
-    nextRestock = Date.now() + RESTOCK_MS;
-    if (!ovSeed.hidden) {
-      seedBubble.textContent = 'Fresh delivery! These are the seeds that are in stock!';
-      renderSeedShop();
+      if (!isFinite(b.x) || !isFinite(b.y)) { b.x = W / 2; b.y = H / 2; b.vx = 0; b.vy = 0; }
+      if (!isFinite(b.th)) { b.th = 0; b.w = 0; }
     }
-    if (!ovGear.hidden) {
-      gearBubble.textContent = 'Beep boop! Restock complete! This is the gear that is in stock!';
-      renderGearShop();
-    }
-    save();
+
+    collide();
+    walls();
   }
 
-  function renderSeedShop() {
-    seedListEl.innerHTML = '';
-    var luck = weatherLuck();
-    seedLuckEl.textContent = luck > 1 ? 'Token-stock luck ×' + trim(luck) : 'Seller’s stock';
-    SEEDS.forEach(function (s) {
-      var sc = stock[s.key] || 0, tc = stockTok[s.key] || 0;
-      var row = document.createElement('div');
-      row.className = 'srow' + (sc < 1 && tc < 1 ? ' oos' : '');
-      row.innerHTML =
-        '<span class="s-emoji">' + s.emoji + '</span>' +
-        '<span class="s-info"><span class="s-name">' + s.name + '</span><br>' +
-        '<span class="s-tags">' + (s.multi ? '♻️ multi-harvest' : '🚫 single harvest') +
-        ' · grows in ' + s.grow + 's</span></span>' +
-        '<span class="s-stock">' + (sc < 1 && tc < 1 ? 'NO STOCK' : '') + '</span>';
-      var buy = document.createElement('button');
-      buy.className = 's-buy';
-      buy.textContent = money(s.price) + (sc > 0 ? ' ×' + sc : '');
-      buy.disabled = sc < 1 || sheckles < s.price;
-      buy.title = sc < 1 ? 'Out of stock in the sheckle shop' : 'Buy with sheckles';
-      buy.addEventListener('click', function () { buySeed(s.key, false); });
-      row.appendChild(buy);
-      var buyT = document.createElement('button');
-      buyT.className = 's-buy tok';
-      buyT.textContent = '🎟️' + tokFmt(s.tok) + (tc > 0 ? ' ×' + tc : '');
-      buyT.disabled = tc < 1 || tokens < s.tok;
-      buyT.title = tc < 1 ? 'Out of stock in the token shop' : 'Buy with tokens';
-      buyT.addEventListener('click', function () { buySeed(s.key, true); });
-      row.appendChild(buyT);
-      seedListEl.appendChild(row);
-    });
-  }
+  function collide() {
+    var n = balls.length;
+    for (var pass = 0; pass < 2; pass++) {
+      for (var i = 0; i < n; i++) {
+        var a = balls[i];
+        for (var j = i + 1; j < n; j++) {
+          var b = balls[j];
+          var rx = b.x - a.x, ry = b.y - a.y;
+          var d = Math.sqrt(rx * rx + ry * ry);
+          var min = a.r + b.r;
+          if (d >= min || d === 0) continue;
 
-  function buySeed(key, useTok) {
-    var s = CROPS[key];
-    var pool = useTok ? stockTok : stock;
-    if ((pool[key] || 0) < 1) { seedBubble.textContent = 'Sorry, no ' + s.name.toLowerCase() + ' seeds in the ' + (useTok ? 'token' : 'sheckle') + ' stock right now!'; return; }
-    if (useTok) {
-      if (tokens < s.tok) { seedBubble.textContent = 'That one costs ' + tokFmt(s.tok) + ' tokens — go dig and harvest some more!'; return; }
-      tokens -= s.tok;
-    } else {
-      if (sheckles < s.price) { seedBubble.textContent = 'That one costs ' + money(s.price) + ' — come back with more sheckles!'; return; }
-      sheckles -= s.price;
-    }
-    pool[key]--;
-    seedsOwned[key] = (seedsOwned[key] || 0) + 1;
-    seedBubble.textContent = 'One ' + s.name.toLowerCase() + ' seed, all yours! Anything else?';
-    if (sel === 'dig' || sel === 'hand') sel = key;
-    renderSeedShop();
-    refresh();
-  }
+          var ia = (a.pin || a.grab) ? 0 : 1 / a.m;
+          var ib = (b.pin || b.grab) ? 0 : 1 / b.m;
+          var it = ia + ib;
+          if (it === 0) continue;
 
-  // ---------- gear shop ----------
-  function renderGearShop() {
-    gearListEl.innerHTML = '';
-    var luck = weatherLuck();
-    gearLuckEl.textContent = luck > 1 ? 'Token-stock luck ×' + trim(luck) : 'Gear in stock';
-    GEAR.forEach(function (g) {
-      var sc = stock[g.key] || 0, tc = stockTok[g.key] || 0;
-      var row = document.createElement('div');
-      row.className = 'srow' + (sc < 1 && tc < 1 ? ' oos' : '');
-      row.innerHTML =
-        '<span class="s-emoji">' + g.emoji + '</span>' +
-        '<span class="s-info"><span class="s-name">' + g.name + '</span><br>' +
-        '<span class="s-tags">' + g.desc + '</span></span>' +
-        '<span class="s-stock">' + (sc < 1 && tc < 1 ? 'NO STOCK' : '') + '</span>';
-      var buy = document.createElement('button');
-      buy.className = 's-buy';
-      buy.textContent = money(g.price) + (sc > 0 ? ' ×' + sc : '');
-      buy.disabled = sc < 1 || sheckles < g.price;
-      buy.title = sc < 1 ? 'Out of stock in the sheckle shop' : 'Buy with sheckles';
-      buy.addEventListener('click', function () { buyGear(g.key, false); });
-      row.appendChild(buy);
-      var buyT = document.createElement('button');
-      buyT.className = 's-buy tok';
-      buyT.textContent = '🎟️' + tokFmt(g.tok) + (tc > 0 ? ' ×' + tc : '');
-      buyT.disabled = tc < 1 || tokens < g.tok;
-      buyT.title = tc < 1 ? 'Out of stock in the token shop' : 'Buy with tokens';
-      buyT.addEventListener('click', function () { buyGear(g.key, true); });
-      row.appendChild(buyT);
-      gearListEl.appendChild(row);
-    });
-  }
+          var ux = rx / d, uy = ry / d;
+          var pen = min - d;
+          a.x -= ux * pen * (ia / it); a.y -= uy * pen * (ia / it);
+          b.x += ux * pen * (ib / it); b.y += uy * pen * (ib / it);
 
-  function buyGear(key, useTok) {
-    var g = GEARMAP[key];
-    var pool = useTok ? stockTok : stock;
-    if ((pool[key] || 0) < 1) { gearBubble.textContent = 'Beep! No ' + g.name.toLowerCase() + ' in the ' + (useTok ? 'token' : 'sheckle') + ' stock right now!'; return; }
-    if (useTok) {
-      if (tokens < g.tok) { gearBubble.textContent = 'Beep boop — that costs ' + tokFmt(g.tok) + ' tokens. Insufficient tokens detected!'; return; }
-      tokens -= g.tok;
-    } else {
-      if (sheckles < g.price) { gearBubble.textContent = 'Beep boop — that costs ' + money(g.price) + '. Insufficient sheckles detected!'; return; }
-      sheckles -= g.price;
-    }
-    pool[key]--;
-    gearOwned[key] = (gearOwned[key] || 0) + 1;
-    gearBubble.textContent = 'One ' + g.name.toLowerCase() + ', dispensed! ' + (g.target ? 'Select it, then click a plant.' : 'Click it in your toolbar to use it.');
-    renderGearShop();
-    refresh();
-  }
-
-  // Instant-use gear (no plant target)
-  function useGlobalGear(key) {
-    var g = GEARMAP[key];
-    if (key === 'goldscythe') {
-      var reaped = 0;
-      for (var i = 0; i < grid.length; i++) {
-        var p = grid[i];
-        if (p && p.state !== 'ripe' && Date.now() >= p.end) p.state = 'ripe';
-        if (p && p.state === 'ripe') { harvest(i); reaped++; }
-      }
-      if (!reaped) { setMsg('Nothing is ripe — the scythe stays in the shed.'); return; }
-      setMsg('🌾 Scythed ' + reaped + ' crop' + (reaped > 1 ? 's' : '') + ' into your basket!');
-    } else if (key === 'luckycharm') {
-      doRestock();
-      setMsg('🍀 The lucky charm made the shops restock!');
-    } else if (key === 'timecrystal') {
-      var sped = 0;
-      grid.forEach(function (p) {
-        if (p && p.state !== 'ripe' && Date.now() < p.end) { p.end = Date.now(); sped++; }
-      });
-      if (!sped) { setMsg('Nothing is growing — the time crystal stays put.'); return; }
-      setMsg('⏳ Time warped! ' + sped + ' plant' + (sped > 1 ? 's' : '') + ' ripened instantly.');
-    }
-    gearOwned[key]--;
-    refresh();
-  }
-
-  // Targeted gear, applied to the plant at cell i
-  function useTargetedGear(key, i) {
-    var p = grid[i], c = CROPS[p.t], now = Date.now();
-    if (key === 'wateringcan') {
-      p.end = now + Math.max(0, p.end - now) / 2;
-      setMsg('🫗 Watered the ' + c.name.toLowerCase() + ' — remaining time halved!');
-    } else if (key === 'fertilizer') {
-      p.end = now;
-      setMsg('🧪 Fertilized the ' + c.name.toLowerCase() + ' — ripe right now!');
-    }
-    gearOwned[key]--;
-    refresh();
-  }
-
-  // ---------- owned-seed toolbar ----------
-  function renderToolbar() {
-    shopEl.innerHTML = '';
-    var owned = SEEDS.filter(function (s) { return (seedsOwned[s.key] || 0) > 0; });
-    // Out of the selected seed/gear? Fall back to another seed or an empty
-    // hand — never to Dig, so clicking a ripe plant still harvests it.
-    var selValid = sel === 'dig' || sel === 'hand' || seedsOwned[sel] > 0 || (GEARMAP[sel] && gearOwned[sel] > 0);
-    if (!selValid) sel = owned.length ? owned[0].key : 'hand';
-    owned.forEach(function (s) {
-      var b = document.createElement('button');
-      b.className = 'chip' + (sel === s.key ? ' on' : '');
-      b.innerHTML =
-        '<span class="c-emoji">' + s.emoji + '</span>' +
-        '<span class="c-name">' + s.name + '</span>' +
-        '<span class="c-meta">×' + seedsOwned[s.key] + (s.multi ? ' ♻️' : '') + '</span>';
-      b.title = s.name + ' seed — click soil to plant';
-      b.addEventListener('click', function () {
-        if (sel === s.key) {
-          // clicking the selected chip again puts it away
-          sel = 'hand';
-          setMsg('Put the ' + s.name.toLowerCase() + ' seeds away.');
-        } else {
-          sel = s.key;
-          setMsg(s.name + ' seed selected — click an empty spot of soil to plant.');
-        }
-        renderToolbar();
-      });
-      shopEl.appendChild(b);
-    });
-    GEAR.filter(function (g) { return (gearOwned[g.key] || 0) > 0; }).forEach(function (g) {
-      var b = document.createElement('button');
-      b.className = 'chip' + (sel === g.key ? ' on' : '');
-      b.innerHTML =
-        '<span class="c-emoji">' + g.emoji + '</span>' +
-        '<span class="c-name">' + g.name + '</span>' +
-        '<span class="c-meta">×' + gearOwned[g.key] + ' 🛠️</span>';
-      b.title = g.desc;
-      b.addEventListener('click', function () {
-        if (g.target) {
-          if (sel === g.key) {
-            sel = 'hand';
-            setMsg('Put the ' + g.name.toLowerCase() + ' away.');
-          } else {
-            sel = g.key;
-            setMsg(g.name + ' ready — click a growing plant to use it.');
+          var vn = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy;
+          if (vn < 0) {
+            var jn = -(1 + CFG.rest) * vn / it;
+            a.vx -= ux * jn * ia; a.vy -= uy * jn * ia;
+            b.vx += ux * jn * ib; b.vy += uy * jn * ib;
           }
-          renderToolbar();
-        } else {
-          useGlobalGear(g.key);
         }
-      });
-      shopEl.appendChild(b);
-    });
-    var dig = document.createElement('button');
-    dig.className = 'chip' + (sel === 'dig' ? ' on' : '');
-    dig.innerHTML = '<span class="c-emoji">⛏️</span><span class="c-name">Dig</span><span class="c-meta">clear</span>';
-    dig.title = 'Dig up a plant (no refund)';
-    dig.addEventListener('click', function () {
-      if (sel === 'dig') {
-        sel = 'hand';
-        setMsg('Put the pickaxe away.');
-      } else {
-        sel = 'dig';
-        setMsg('Dig mode: click a plant to remove it.');
-      }
-      renderToolbar();
-    });
-    shopEl.appendChild(dig);
-  }
-
-  var msgTimer = null;
-  function setMsg(text) {
-    msgEl.textContent = text;
-    if (msgTimer) clearTimeout(msgTimer);
-    msgTimer = setTimeout(function () { msgEl.textContent = ' '; }, 4000);
-  }
-
-  // ---------- plot ----------
-  function buildPlot() {
-    cols = meters * SPOTS_PER_M;
-    plotEl.innerHTML = '';
-    cellEls = [];
-    plotEl.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
-    for (var i = 0; i < cols * cols; i++) {
-      var col = i % cols, row = (i / cols) | 0;
-      var b = document.createElement('button');
-      b.className = 'cell' +
-        (col % SPOTS_PER_M === SPOTS_PER_M - 1 && col !== cols - 1 ? ' m-r' : '') +
-        (row % SPOTS_PER_M === SPOTS_PER_M - 1 && row !== cols - 1 ? ' m-b' : '');
-      b.innerHTML = '<span class="plant"></span><span class="bar" hidden><i></i></span><span class="badge" hidden></span>';
-      (function (idx) {
-        b.addEventListener('click', function () { clickCell(idx); });
-      })(i);
-      plotEl.appendChild(b);
-      cellEls.push(b);
-    }
-    rulerEl.innerHTML = '⟵&nbsp;&nbsp;' + meters + ' m&nbsp;&nbsp;⟶';
-    sizeCells();
-  }
-  // Cells keep a fixed size; a bigger garden pans inside the viewport
-  // instead of zooming out to fit.
-  function sizeCells() {
-    var avail = plotVp.clientWidth - 22; // frame + padding
-    var px = Math.max(24, Math.min(46, Math.floor(avail / (3 * SPOTS_PER_M))));
-    plotEl.style.gridTemplateColumns = 'repeat(' + cols + ', ' + px + 'px)';
-    plotEl.style.fontSize = px + 'px';
-    panHintEl.hidden = !(plotVp.scrollWidth > plotVp.clientWidth + 4 || plotVp.scrollHeight > plotVp.clientHeight + 4);
-  }
-  window.addEventListener('resize', sizeCells);
-
-  // Mouse drag-to-pan (touch devices pan natively via scrolling)
-  var panDrag = null, panMoved = false;
-  plotVp.addEventListener('pointerdown', function (e) {
-    if (e.pointerType !== 'mouse') return;
-    panDrag = { x: e.clientX, y: e.clientY, sl: plotVp.scrollLeft, st: plotVp.scrollTop };
-    panMoved = false;
-  });
-  window.addEventListener('pointermove', function (e) {
-    if (!panDrag) return;
-    var dx = e.clientX - panDrag.x, dy = e.clientY - panDrag.y;
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) panMoved = true;
-    if (panMoved) {
-      plotVp.scrollLeft = panDrag.sl - dx;
-      plotVp.scrollTop = panDrag.st - dy;
-      plotVp.classList.add('dragging');
-    }
-  });
-  window.addEventListener('pointerup', function () {
-    panDrag = null;
-    plotVp.classList.remove('dragging');
-  });
-  // After a drag, swallow the click so it doesn't plant/harvest a cell
-  plotVp.addEventListener('click', function (e) {
-    if (panMoved) {
-      e.stopPropagation();
-      e.preventDefault();
-      panMoved = false;
-    }
-  }, true);
-
-  function expandGarden() {
-    if (sheckles < EXPAND_COST) {
-      setMsg('Expanding costs ' + money(EXPAND_COST) + ' — you have ' + money(sheckles) + '.');
-      return;
-    }
-    sheckles -= EXPAND_COST;
-    var oldCols = cols, oldGrid = grid;
-    meters++;
-    cols = meters * SPOTS_PER_M;
-    grid = new Array(cols * cols).fill(null);
-    for (var r = 0; r < oldCols; r++) {
-      for (var c = 0; c < oldCols; c++) {
-        grid[r * cols + c] = oldGrid[r * oldCols + c];
       }
     }
-    buildPlot();
-    setMsg('Garden expanded to ' + meters + ' m × ' + meters + ' m! (' + (cols * cols) + ' spots)');
-    refresh();
   }
 
-  function clickCell(i) {
-    var p = grid[i];
-    if (sel === 'dig') {
-      if (!p) { setMsg('Nothing to dig here.'); return; }
-      grid[i] = null;
-      var digC = CROPS[p.t];
-      if (!digC.multi) {
-        // digging up single-harvest plants pays out a few tokens
-        var digTk = randInt(1, 4);
-        tokens += digTk;
-        popup(i, '+' + digTk + '🎟️');
-        setMsg('Dug up the ' + digC.name.toLowerCase() + ' — found ' + digTk + ' token' + (digTk > 1 ? 's' : '') + '!');
-      } else {
-        setMsg('Dug up the ' + digC.name.toLowerCase() + '.');
+  function walls() {
+    var e = CFG.rest;
+    for (var i = 0; i < balls.length; i++) {
+      var b = balls[i];
+      if (b.pin) continue;
+      if (b.x - b.r < 0) { b.x = b.r; if (b.vx < 0) b.vx = -b.vx * e; }
+      else if (b.x + b.r > W) { b.x = W - b.r; if (b.vx > 0) b.vx = -b.vx * e; }
+      if (b.y - b.r < 0) { b.y = b.r; if (b.vy < 0) b.vy = -b.vy * e; }
+      else if (b.y + b.r > H) { b.y = H - b.r; if (b.vy > 0) b.vy = -b.vy * e; }
+    }
+  }
+
+  // ---------- cluster / chain stats ----------
+  function clusters() {
+    var n = balls.length, i;
+    var parent = new Array(n);
+    for (i = 0; i < n; i++) parent[i] = i;
+    function find(a) { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; }
+    function uni(a, b) { a = find(a); b = find(b); if (a !== b) parent[b] = a; }
+
+    for (i = 0; i < n; i++) {
+      for (var j = i + 1; j < n; j++) {
+        var a = balls[i], b = balls[j];
+        var dx = b.x - a.x, dy = b.y - a.y;
+        var lim = (a.r + b.r) * LINK_F;
+        if (dx * dx + dy * dy <= lim * lim) uni(i, j);
       }
-      refresh();
-      return;
     }
-    if (p) {
-      if (p.state === 'ripe') { harvest(i); refresh(); return; }
-      if (GEARMAP[sel] && GEARMAP[sel].target) {
-        if (!(gearOwned[sel] > 0)) { setMsg('No ' + GEARMAP[sel].name.toLowerCase() + ' left — buy more at the Gear Shop.'); return; }
-        useTargetedGear(sel, i);
-        return;
-      }
-      if (p.state === 'regrow') setMsg('The stem is regrowing a new ' + CROPS[p.t].name.toLowerCase() + '…');
-      else setMsg('Still growing — give it a moment.');
-      return;
+    var size = {}, biggest = 0, groups = 0;
+    for (i = 0; i < n; i++) {
+      var r = find(i);
+      size[r] = (size[r] || 0) + 1;
+      if (size[r] > biggest) biggest = size[r];
     }
-    if (GEARMAP[sel]) { setMsg('Use the ' + GEARMAP[sel].name.toLowerCase() + ' on a planted spot, not empty soil.'); return; }
-    var c = CROPS[sel];
-    if (!c) { setMsg('Buy seeds at the Seed Shop first!'); return; }
-    if (!(seedsOwned[sel] > 0)) { setMsg('No ' + c.name.toLowerCase() + ' seeds left — buy more at the Seed Shop.'); return; }
-    seedsOwned[sel]--;
-    grid[i] = { t: sel, state: 'grow', end: Date.now() + c.grow * 1000 };
-    refresh();
+    for (var k in size) if (size.hasOwnProperty(k)) groups++;
+    return { biggest: biggest, groups: groups };
   }
 
-  // ---------- weather ----------
-  function pickWeather(excludeKeys) {
-    var pool = WEATHERS.filter(function (w) { return excludeKeys.indexOf(w.key) < 0; });
-    var total = 0;
-    pool.forEach(function (w) { total += w.weight; });
-    var r = Math.random() * total;
-    for (var i = 0; i < pool.length; i++) {
-      r -= pool[i].weight;
-      if (r <= 0) return pool[i];
+  function energy() {
+    var e = 0;
+    for (var i = 0; i < balls.length; i++) {
+      var b = balls[i];
+      e += 0.5 * b.m * (b.vx * b.vx + b.vy * b.vy);
+      e += 0.5 * (0.5 * b.m * b.r * b.r) * b.w * b.w;
     }
-    return pool[pool.length - 1];
-  }
-  function activeWeathers() {
-    return weather.keys.map(function (k) { return WMAP[k]; }).filter(Boolean);
-  }
-  function newWeather(announce) {
-    // 50% chance of 2 simultaneous weathers, 25% of 3, 12.5% of 4, and so on
-    var count = 1;
-    while (Math.random() < 0.5 && count < 6) count++;
-    var keys = [];
-    for (var i = 0; i < count; i++) {
-      var w = pickWeather(keys);
-      if (w) keys.push(w.key);
-    }
-    // 2-4 minutes, averaging 3
-    weather = { keys: keys, until: Date.now() + (120 + Math.random() * 120) * 1000 };
-    renderWeather();
-    if (announce) {
-      setMsg('The weather changed: ' + keys.map(function (k) { return WMAP[k].emoji + ' ' + WMAP[k].name; }).join(' + ') + '!');
-    }
-    save();
-  }
-  function renderWeather() {
-    var ws = activeWeathers();
-    var speed = ws.reduce(function (a, w) { return a * w.speed; }, 1);
-    var parts = ws.map(function (w) {
-      return '<b>' + w.emoji + ' ' + w.name + '</b> (' + w.mutName + ' ×' + w.mult + ')';
-    });
-    var fx = speed > 1 ? ' — plants grow ' + (Math.round(speed * 100) / 100) + '× faster' : '';
-    wInfoEl.innerHTML = parts.join(' + ') + fx;
-    weatherEl.style.borderLeftColor = ws.length ? ws[0].color : 'var(--accent)';
-  }
-  function tryMutate(w) {
-    var idxs = [];
-    for (var i = 0; i < grid.length; i++) {
-      var p = grid[i];
-      if (p && (p.muts || []).indexOf(w.key) < 0) idxs.push(i);
-    }
-    if (!idxs.length) return;
-    var hit = idxs[randInt(0, idxs.length - 1)];
-    var p2 = grid[hit];
-    p2.muts = p2.muts || [];
-    p2.muts.push(w.key);
-    popup(hit, '✨ ' + w.mutName + '!');
-    setMsg('✨ Your ' + CROPS[p2.t].name.toLowerCase() + ' mutated: ' + w.mutName + ' (value ×' + w.mult + ')!');
-    save();
-  }
-  function mutNames(p) {
-    return (p.muts || []).map(function (k) { return WMAP[k] ? WMAP[k].mutName : k; });
+    return e;
   }
 
-  function harvest(i) {
-    var p = grid[i], c = CROPS[p.t];
-    // mutations travel with the crop into the basket
-    var stackKey = p.t + (p.muts && p.muts.length ? '|' + p.muts.join('+') : '');
-    basket[stackKey] = (basket[stackKey] || 0) + 1;
-    // multi-harvest crops pay tokens: common-rare 4-10, legendary+ 50-1000
-    var tk = 0;
-    if (c.multi) {
-      tk = LOW_TIERS[c.tier] ? randInt(4, 10) : randInt(50, 1000);
-      tokens += tk;
-    }
-    popup(i, '+1 ' + c.emoji + (p.muts && p.muts.length ? '✨' : '') + (tk ? ' +' + tk + '🎟️' : ''));
-    if (c.multi) {
-      // the stem stays behind and regrows, forever — but the mutations left
-      // with the harvested crop, so the regrown one starts fresh
-      p.state = 'regrow';
-      p.end = Date.now() + c.regrow * 1000;
-      p.muts = [];
-      setMsg('Picked a ' + c.name.toLowerCase() + '! The stem will regrow another.');
+  // ---------- drawing ----------
+  function draw() {
+    if (CFG.trails) {
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = COL.bg;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
     } else {
-      grid[i] = null;
-      setMsg('Harvested the ' + c.name.toLowerCase() + '! It went into your basket.');
+      ctx.fillStyle = COL.bg;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    if (CFG.showField) drawField();
+    if (CFG.showLinks) drawLinks();
+
+    for (var i = 0; i < balls.length; i++) drawBall(balls[i]);
+
+    if (aim.active) {
+      ctx.strokeStyle = COL.accent;
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(aim.x, aim.y);
+      ctx.lineTo(ptr.x, ptr.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    if (ptr.down && (ptr.mode === 'attract' || ptr.mode === 'repel')) {
+      ctx.strokeStyle = ptr.mode === 'repel' ? COL.north : COL.south;
+      ctx.globalAlpha = 0.75;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ptr.x, ptr.y, 22, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      ctx.arc(ptr.x, ptr.y, 38, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
   }
 
-  function popup(i, text) {
-    var s = document.createElement('span');
-    s.className = 'pop';
-    s.textContent = text;
-    cellEls[i].appendChild(s);
-    setTimeout(function () { s.remove(); }, 900);
+  function drawField() {
+    var gap = 30;
+    var half = gap * 0.42;
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = 'round';
+    for (var y = gap / 2; y < H; y += gap) {
+      for (var x = gap / 2; x < W; x += gap) {
+        fieldAt(x, y, null);
+        var mag = Math.sqrt(fbx * fbx + fby * fby);
+        if (mag < 1e-9) continue;
+        var ux = fbx / mag, uy = fby / mag;
+        var a = Math.log(1 + mag / 40) * 0.17;
+        if (a > 0.5) a = 0.5;
+        if (a < 0.05) continue;
+        ctx.strokeStyle = 'rgba(' + COL.field + ',' + a.toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.moveTo(x - ux * half, y - uy * half);
+        ctx.lineTo(x + ux * half, y + uy * half);
+        ctx.stroke();
+        // arrow head so the direction of the field reads
+        ctx.beginPath();
+        ctx.moveTo(x + ux * half, y + uy * half);
+        ctx.lineTo(x + ux * half * 0.45 - uy * 3, y + uy * half * 0.45 + ux * 3);
+        ctx.lineTo(x + ux * half * 0.45 + uy * 3, y + uy * half * 0.45 - ux * 3);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(' + COL.field + ',' + a.toFixed(3) + ')';
+        ctx.fill();
+      }
+    }
   }
 
-  // ---------- sell shop ----------
-  // Basket stacks are keyed "crop" or "crop|mut1+mut2" so mutated crops sell separately
-  function stackInfo(k) {
-    var parts = k.split('|');
-    var c = CROPS[parts[0]];
-    var muts = parts[1] ? parts[1].split('+') : [];
-    var mult = 1;
-    var names = muts.map(function (m) {
-      if (WMAP[m]) { mult *= WMAP[m].mult; return WMAP[m].mutName; }
-      return m;
-    });
-    return {
-      crop: c,
-      muts: muts,
-      value: Math.max(1, Math.round(c.sell * mult)),
-      label: (names.length ? names.join(' ') + ' ' : '') + c.name
-    };
+  function drawLinks() {
+    ctx.strokeStyle = COL.link;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (var i = 0; i < balls.length; i++) {
+      var a = balls[i];
+      for (var j = i + 1; j < balls.length; j++) {
+        var b = balls[j];
+        var dx = b.x - a.x, dy = b.y - a.y;
+        var lim = (a.r + b.r) * LINK_F;
+        if (dx * dx + dy * dy > lim * lim) continue;
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
+    }
+    ctx.stroke();
   }
 
-  function renderSellShop() {
-    invListEl.innerHTML = '';
-    var keys = Object.keys(basket).filter(function (k) {
-      return basket[k] > 0 && CROPS[k.split('|')[0]];
-    });
-    keys.sort(function (a, b) { return stackInfo(b).value - stackInfo(a).value; });
-    if (held && !(basket[held] > 0)) held = null;
-    if (!keys.length) {
+  function drawBall(b) {
+    var c = Math.cos(b.th), s = Math.sin(b.th);
+
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, TAU);
+
+    if (CFG.showPoles) {
+      var g = ctx.createLinearGradient(b.x - c * b.r, b.y - s * b.r, b.x + c * b.r, b.y + s * b.r);
+      g.addColorStop(0, COL.south);
+      g.addColorStop(0.44, COL.south);
+      g.addColorStop(0.5, COL.metal);
+      g.addColorStop(0.56, COL.north);
+      g.addColorStop(1, COL.north);
+      ctx.fillStyle = g;
+    } else {
+      ctx.fillStyle = COL.metal;
+    }
+    ctx.fill();
+
+    // specular highlight
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.34, b.r * 0.34, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    if (b.pin) {
+      ctx.strokeStyle = COL.accent;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 3.5, 0, TAU);
+      ctx.stroke();
+    }
+  }
+
+  // ---------- pointer ----------
+  var tool = 'drag';
+  var aim = { active: false, x: 0, y: 0 };
+  var held = null;
+  var lastPtr = { x: 0, y: 0, t: 0 };
+
+  function ptrPos(ev) {
+    var rect = cv.getBoundingClientRect();
+    ptr.x = (ev.clientX - rect.left) * (W / rect.width);
+    ptr.y = (ev.clientY - rect.top) * (H / rect.height);
+  }
+
+  cv.addEventListener('pointerdown', function (ev) {
+    ev.preventDefault();
+    cv.setPointerCapture(ev.pointerId);
+    ptrPos(ev);
+    ptr.down = true;
+    ptr.mode = tool;
+    lastPtr.x = ptr.x; lastPtr.y = ptr.y; lastPtr.t = performance.now();
+
+    if (tool === 'drag') {
+      held = ballAt(ptr.x, ptr.y);
+      if (held) { held.grab = true; held.vx = 0; held.vy = 0; }
+    } else if (tool === 'add') {
+      aim.active = true; aim.x = ptr.x; aim.y = ptr.y;
+    } else if (tool === 'pin') {
+      var p = ballAt(ptr.x, ptr.y);
+      if (p) { p.pin = !p.pin; if (p.pin) { p.vx = 0; p.vy = 0; p.w = 0; } }
+    } else if (tool === 'erase') {
+      eraseAt();
+    }
+  });
+
+  cv.addEventListener('pointermove', function (ev) {
+    if (!ptr.down) { ptrPos(ev); return; }
+    ev.preventDefault();
+    ptrPos(ev);
+    if (tool === 'drag' && held) {
+      var now = performance.now();
+      var dt = (now - lastPtr.t) / 1000;
+      if (dt > 0.001) {
+        held.vx = (ptr.x - lastPtr.x) / dt;
+        held.vy = (ptr.y - lastPtr.y) / dt;
+      }
+      held.x = ptr.x; held.y = ptr.y;
+      lastPtr.x = ptr.x; lastPtr.y = ptr.y; lastPtr.t = now;
+    } else if (tool === 'erase') {
+      eraseAt();
+    }
+  });
+
+  function endPtr(ev) {
+    if (!ptr.down) return;
+    if (ev) ptrPos(ev);
+    ptr.down = false;
+    ptr.mode = null;
+
+    if (tool === 'drag' && held) {
+      var sp = Math.sqrt(held.vx * held.vx + held.vy * held.vy);
+      if (sp > MAXV) { held.vx = held.vx / sp * MAXV; held.vy = held.vy / sp * MAXV; }
+      held.grab = false;
       held = null;
-      var empty = document.createElement('p');
-      empty.style.cssText = 'color:var(--muted);font-size:0.85rem;padding:6px 2px 10px;';
-      empty.textContent = 'Your basket is empty. Go harvest something!';
-      invListEl.appendChild(empty);
+    } else if (tool === 'add' && aim.active) {
+      var dx = aim.x - ptr.x, dy = aim.y - ptr.y;
+      addBall(aim.x, aim.y, { vx: dx * 2.4, vy: dy * 2.4 });
+      aim.active = false;
     }
-    keys.forEach(function (k) {
-      var info = stackInfo(k);
-      var b = document.createElement('button');
-      b.className = 'stack' + (held === k ? ' held' : '');
-      b.innerHTML =
-        '<span class="st-emoji">' + info.crop.emoji + (info.muts.length ? '✨' : '') + '</span>' +
-        '<span class="st-count">×' + basket[k] + '</span>' +
-        '<span class="st-name">' + info.label + '</span>' +
-        '<span class="st-val">' + money(info.value) + '</span>';
-      b.title = info.label + ' — worth ' + money(info.value) + ' each';
-      b.addEventListener('click', function () {
-        held = k;
-        sellBubble.textContent = 'You’re holding a ' + info.label.toLowerCase() + '. What would you like to do?';
-        renderSellShop();
-      });
-      invListEl.appendChild(b);
-    });
-    heldActions.hidden = !held;
+  }
+  cv.addEventListener('pointerup', endPtr);
+  cv.addEventListener('pointercancel', endPtr);
+  cv.addEventListener('pointerleave', function (ev) { if (tool !== 'attract' && tool !== 'repel') endPtr(ev); });
+
+  function eraseAt() {
+    var b = ballAt(ptr.x, ptr.y, 2);
+    if (!b) return;
+    var i = balls.indexOf(b);
+    if (i >= 0) balls.splice(i, 1);
+    if (held === b) held = null;
   }
 
-  function basketTotal() {
-    var total = 0;
-    Object.keys(basket).forEach(function (k) {
-      if (basket[k] > 0 && CROPS[k.split('|')[0]]) total += basket[k] * stackInfo(k).value;
-    });
-    return total;
+  // ---------- layouts ----------
+  function clear() { balls.length = 0; held = null; }
+
+  function scatter(n) {
+    clear();
+    n = n || 26;
+    for (var i = 0; i < n; i++) {
+      var r = 9 + Math.random() * 5;
+      addBall(r + Math.random() * (W - 2 * r), r + Math.random() * (H - 2 * r), { r: r });
+    }
   }
 
-  document.getElementById('btn-worth').addEventListener('click', function () {
-    if (!held) return;
-    var info = stackInfo(held);
-    sellBubble.textContent = 'Lemme see… a ' + info.label.toLowerCase() + ' like this is worth ' + money(info.value) + '.';
-  });
-  document.getElementById('btn-sellthis').addEventListener('click', function () {
-    if (!held) return;
-    var info = stackInfo(held);
-    basket[held]--;
-    sheckles += info.value;
-    sellBubble.textContent = 'Sold! One ' + info.label.toLowerCase() + ' for ' + money(info.value) + '. Pleasure doin’ business!';
-    if (!(basket[held] > 0)) { delete basket[held]; held = null; }
-    renderSellShop();
-    refresh();
-  });
-  document.getElementById('btn-nevermind').addEventListener('click', function () {
-    held = null;
-    sellBubble.textContent = 'No worries. Anything else catch your eye?';
-    renderSellShop();
-  });
-  document.getElementById('btn-sellall').addEventListener('click', function () {
-    var total = basketTotal();
-    if (total <= 0) { sellBubble.textContent = 'Your basket’s empty, friend — nothin’ to sell!'; return; }
-    sheckles += total;
-    basket = {};
-    held = null;
-    sellBubble.textContent = 'The whole basket! That’ll be ' + money(total) + '. Come back soon!';
-    renderSellShop();
-    refresh();
-  });
-
-  // ---------- modals ----------
-  function openSeedShop() {
-    seedBubble.textContent = 'These are the seeds that are in stock!';
-    renderSeedShop();
-    ovSeed.hidden = false;
-  }
-  function openGearShop() {
-    gearBubble.textContent = 'Beep boop! This is the gear that is in stock!';
-    renderGearShop();
-    ovGear.hidden = false;
-  }
-  function openSellShop() {
-    held = null;
-    sellBubble.textContent = 'Howdy! Whatcha got in that basket for me?';
-    renderSellShop();
-    ovSell.hidden = false;
-  }
-  document.getElementById('btn-seedshop').addEventListener('click', openSeedShop);
-  document.getElementById('btn-gearshop').addEventListener('click', openGearShop);
-  document.getElementById('btn-sellshop').addEventListener('click', openSellShop);
-  document.getElementById('btn-expand').addEventListener('click', expandGarden);
-  document.getElementById('close-seed').addEventListener('click', function () { ovSeed.hidden = true; });
-  document.getElementById('close-gear').addEventListener('click', function () { ovGear.hidden = true; });
-  document.getElementById('close-sell').addEventListener('click', function () { ovSell.hidden = true; });
-  ovSeed.addEventListener('click', function (e) { if (e.target === ovSeed) ovSeed.hidden = true; });
-  ovGear.addEventListener('click', function (e) { if (e.target === ovGear) ovGear.hidden = true; });
-  ovSell.addEventListener('click', function (e) { if (e.target === ovSell) ovSell.hidden = true; });
-
-  // ---------- render ----------
-  function updateCell(i) {
-    var el = cellEls[i];
-    var plant = el.firstChild, bar = plant.nextSibling, badge = bar.nextSibling;
-    var p = grid[i];
-    el.classList.remove('ripe');
-    if (!p) {
-      plant.textContent = '';
-      bar.hidden = true;
-      badge.hidden = true;
-      el.style.outline = '';
-      el.title = 'Empty soil — click to plant';
-      return;
-    }
-    var c = CROPS[p.t], now = Date.now();
-    if (p.state !== 'ripe' && now >= p.end) p.state = 'ripe';
-
-    // mutation glow + tooltip suffix
-    var muts = p.muts || [];
-    var mutSuffix = '';
-    if (muts.length) {
-      var lastMut = WMAP[muts[muts.length - 1]];
-      el.style.outline = '2px solid ' + (lastMut ? lastMut.color : '#fff');
-      el.style.outlineOffset = '-2px';
-      mutSuffix = ' ✨ ' + mutNames(p).join(', ');
-    } else {
-      el.style.outline = '';
-    }
-
-    if (p.state === 'ripe') {
-      plant.textContent = c.emoji;
-      plant.style.transform = 'scale(1)';
-      plant.style.opacity = '1';
-      plant.style.filter = 'none';
-      bar.hidden = true;
-      el.classList.add('ripe');
-      badge.hidden = !c.multi;
-      if (c.multi) badge.textContent = '♻️';
-      el.title = c.name + ' — ripe! Click to harvest' + (c.multi ? ' (stem regrows)' : '') + mutSuffix;
-      return;
-    }
-
-    var dur = (p.state === 'regrow' ? c.regrow : c.grow) * 1000;
-    var pr = Math.min(1, Math.max(0, 1 - (p.end - now) / dur));
-    badge.hidden = true;
-    bar.hidden = false;
-    bar.firstChild.style.width = (pr * 100).toFixed(0) + '%';
-
-    if (p.state === 'regrow') {
-      // the stem left behind after harvest
-      plant.textContent = '🌿';
-      plant.style.transform = 'scale(0.68)';
-      plant.style.opacity = '0.6';
-      plant.style.filter = 'none';
-      el.title = c.name + ' stem — regrowing (' + Math.ceil((p.end - now) / 1000) + 's)' + mutSuffix;
-      return;
-    }
-    if (pr < 0.3) {
-      plant.textContent = '🌱';
-      plant.style.transform = 'scale(0.55)';
-      plant.style.opacity = '0.95';
-      plant.style.filter = 'none';
-    } else if (pr < 0.65) {
-      plant.textContent = '🌿';
-      plant.style.transform = 'scale(0.72)';
-      plant.style.opacity = '1';
-      plant.style.filter = 'none';
-    } else {
-      plant.textContent = c.emoji;
-      plant.style.transform = 'scale(0.82)';
-      plant.style.opacity = '0.85';
-      plant.style.filter = 'grayscale(0.55)';
-    }
-    el.title = c.name + ' — growing (' + Math.ceil((p.end - now) / 1000) + 's to ripe)' + mutSuffix;
-  }
-
-  function tick() {
-    var now = Date.now();
-    if (now >= nextRestock) doRestock();
-
-    // weather cycle (possibly several at once)
-    if (!weather || now >= weather.until) newWeather(!!weather);
-    var ws = activeWeathers();
-    // growth speed boosts multiply (e.g. rain 1.5x + monsoon 1.7x = 2.55x)
-    var speed = ws.reduce(function (a, x) { return a * x.speed; }, 1);
-    if (speed > 1) {
-      var boost = (speed - 1) * 250;
-      for (var b = 0; b < grid.length; b++) {
-        if (grid[b] && grid[b].state !== 'ripe') grid[b].end -= boost;
+  // A dense clump. The dipole force falls off as 1/r^4, so balls only find each
+  // other when they start within a couple of diameters -- this is the layout that
+  // actually shows chains and rings assembling on their own.
+  function cloud(n) {
+    clear();
+    n = n || 34;
+    var r = 10;
+    var rw = Math.min(300, W * 0.5), rh = Math.min(200, H * 0.5);
+    var placed = [];
+    for (var i = 0; i < n; i++) {
+      for (var tries = 0; tries < 60; tries++) {
+        var x = W / 2 + (Math.random() - 0.5) * rw;
+        var y = H / 2 + (Math.random() - 0.5) * rh;
+        var clash = false;
+        for (var j = 0; j < placed.length; j++) {
+          var dx = x - placed[j].x, dy = y - placed[j].y;
+          if (dx * dx + dy * dy < (r * 2.15) * (r * 2.15)) { clash = true; break; }
+        }
+        if (!clash) { var nb = addBall(x, y, { r: r }); if (nb) placed.push(nb); break; }
       }
     }
-    // every 10 seconds: each active weather rolls its own mutation chance
-    if (now - lastMutRoll >= 10000) {
-      lastMutRoll = now;
-      ws.forEach(function (x) {
-        if (Math.random() < x.mutChance) tryMutate(x);
-      });
-    }
-    var wLeft = Math.max(0, weather.until - now);
-    wTimeEl.textContent = ((wLeft / 60000) | 0) + ':' + ('0' + (Math.ceil(wLeft / 1000) % 60)).slice(-2);
+  }
 
-    for (var i = 0; i < grid.length; i++) updateCell(i);
-    coinsEl.textContent = '🪙 ' + money(sheckles);
-    tokensEl.textContent = '🎟️ ' + tokFmt(tokens);
-    if (!ovSeed.hidden || !ovGear.hidden) {
-      var left = Math.max(0, nextRestock - Date.now());
-      var m = (left / 60000) | 0, s = Math.ceil((left % 60000) / 1000);
-      if (s === 60) { m++; s = 0; }
-      var txt = 'Restock in ' + m + ':' + (s < 10 ? '0' : '') + s;
-      restockEl.textContent = txt;
-      restock2El.textContent = txt;
+  function chain(n) {
+    clear();
+    n = n || 16;
+    var r = 11, gap = r * 2 + 0.5;
+    var x0 = W / 2 - (n - 1) * gap / 2;
+    for (var i = 0; i < n; i++) {
+      addBall(x0 + i * gap, H / 2, { r: r, th: 0 });
     }
   }
 
-  function refresh() {
-    // Soft-lock rescue: broke, seedless, and nothing growing or in the basket
-    var anyPlant = grid.some(Boolean);
-    var anySeed = Object.keys(seedsOwned).some(function (k) { return seedsOwned[k] > 0; });
-    var anyCrop = Object.keys(basket).some(function (k) { return basket[k] > 0; });
-    if (!anyPlant && !anySeed && !anyCrop && sheckles < 10) {
-      sheckles = 20;
-      setMsg('A kind neighbor gifted you 🪙20¢ to start over!');
+  function ring(n) {
+    clear();
+    n = n || 18;
+    var r = 11;
+    var rad = (n * r * 2.05) / TAU;
+    if (rad > Math.min(W, H) / 2 - r - 6) rad = Math.min(W, H) / 2 - r - 6;
+    for (var i = 0; i < n; i++) {
+      var a = (i / n) * TAU;
+      addBall(W / 2 + Math.cos(a) * rad, H / 2 + Math.sin(a) * rad, { r: r, th: a + Math.PI / 2 });
     }
-    renderToolbar();
-    if (!ovSeed.hidden) renderSeedShop();
-    if (!ovGear.hidden) renderGearShop();
-    tick();
-    save();
+  }
+
+  function grid(cols, rows) {
+    clear();
+    cols = cols || 8; rows = rows || 5;
+    var r = 10, gapx = W / (cols + 1), gapy = H / (rows + 1);
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) {
+        addBall(gapx * (x + 1), gapy * (y + 1), { r: r, th: Math.random() * TAU });
+      }
+    }
+  }
+
+  function compass(n) {
+    clear();
+    n = n || 20;
+    addBall(W / 2, H / 2, { r: 16, mom: 5, th: 0, pin: true });
+    for (var i = 0; i < n; i++) {
+      var a = (i / n) * TAU;
+      var rad = Math.min(W, H) * 0.36;
+      addBall(W / 2 + Math.cos(a) * rad, H / 2 + Math.sin(a) * rad, { r: 9, th: Math.random() * TAU });
+    }
+  }
+
+  // ---------- UI ----------
+  var TOOLS = [
+    { id: 'drag', label: 'Drag', hint: 'Grab a ball and fling it' },
+    { id: 'add', label: 'Add', hint: 'Press and drag back to slingshot a new ball' },
+    { id: 'pin', label: 'Pin', hint: 'Click a ball to lock it in place as a fixed magnet' },
+    { id: 'erase', label: 'Erase', hint: 'Click or sweep to remove balls' },
+    { id: 'attract', label: 'Attract', hint: 'Hold to pull every ball toward the cursor' },
+    { id: 'repel', label: 'Repel', hint: 'Hold to push every ball away from the cursor' }
+  ];
+
+  var toolsEl = document.getElementById('tools');
+  TOOLS.forEach(function (t) {
+    var el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'chip' + (t.id === tool ? ' on' : '');
+    el.textContent = t.label;
+    el.setAttribute('data-tool', t.id);
+    el.addEventListener('click', function () {
+      tool = t.id;
+      badge.textContent = t.hint;
+      var chips = toolsEl.querySelectorAll('.chip');
+      for (var i = 0; i < chips.length; i++) {
+        chips[i].classList.toggle('on', chips[i].getAttribute('data-tool') === tool);
+      }
+    });
+    toolsEl.appendChild(el);
+  });
+  badge.textContent = TOOLS[0].hint;
+
+  var SLIDERS = [
+    { key: 'strength', label: 'Magnetism', min: 0, max: 2, stepv: 0.05, fmt: pct },
+    { key: 'gravity', label: 'Gravity', min: 0, max: 1400, stepv: 20, fmt: function (v) { return Math.round(v / 14) + '%'; } },
+    { key: 'damp', label: 'Drag', min: 0, max: 3, stepv: 0.05, fmt: two },
+    { key: 'rest', label: 'Bounce', min: 0, max: 0.95, stepv: 0.01, fmt: two },
+    { key: 'ext', label: 'Field', min: 0, max: 2500, stepv: 25, fmt: function (v) { return Math.round(v / 25) + '%'; } },
+    { key: 'extAng', label: 'Field angle', min: 0, max: 6.28, stepv: 0.02, fmt: deg },
+    { key: 'speed', label: 'Sim speed', min: 0.1, max: 3, stepv: 0.1, fmt: function (v) { return v.toFixed(1) + '×'; } }
+  ];
+  function pct(v) { return Math.round(v * 100) + '%'; }
+  function two(v) { return v.toFixed(2); }
+  function deg(v) { return Math.round(v * 180 / Math.PI) + '°'; }
+
+  var slidersEl = document.getElementById('sliders');
+  SLIDERS.forEach(function (s) {
+    var row = document.createElement('div');
+    row.className = 'row';
+    var lab = document.createElement('label');
+    lab.textContent = s.label;
+    var inp = document.createElement('input');
+    inp.type = 'range';
+    inp.min = s.min; inp.max = s.max; inp.step = s.stepv;
+    inp.value = CFG[s.key];
+    var val = document.createElement('span');
+    val.className = 'val';
+    val.textContent = s.fmt(CFG[s.key]);
+    inp.addEventListener('input', function () {
+      CFG[s.key] = parseFloat(inp.value);
+      val.textContent = s.fmt(CFG[s.key]);
+    });
+    lab.setAttribute('for', 'sl-' + s.key);
+    inp.id = 'sl-' + s.key;
+    row.appendChild(lab); row.appendChild(inp); row.appendChild(val);
+    slidersEl.appendChild(row);
+  });
+
+  var presetsEl = document.getElementById('presets');
+  [
+    { label: 'Cloud', fn: function () { cloud(34); } },
+    { label: 'Scatter', fn: function () { scatter(26); } },
+    { label: 'Chain', fn: function () { chain(16); } },
+    { label: 'Ring', fn: function () { ring(18); } },
+    { label: 'Grid', fn: function () { grid(8, 5); } },
+    { label: 'Compass rose', fn: function () { compass(20); } },
+    { label: 'Clear', fn: clear, warn: true }
+  ].forEach(function (p) {
+    var el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'btn' + (p.warn ? ' warn' : '');
+    el.textContent = p.label;
+    el.addEventListener('click', function () { p.fn(); });
+    presetsEl.appendChild(el);
+  });
+
+  var viewEl = document.getElementById('viewActions');
+  var TOGGLES = [
+    { key: 'paused', on: 'Resume', off: 'Pause' },
+    { key: 'showField', on: 'Field lines: on', off: 'Field lines: off' },
+    { key: 'showPoles', on: 'Poles: on', off: 'Poles: off' },
+    { key: 'showLinks', on: 'Links: on', off: 'Links: off' },
+    { key: 'trails', on: 'Trails: on', off: 'Trails: off' }
+  ];
+  TOGGLES.forEach(function (t) {
+    var el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'btn';
+    function sync() { el.textContent = CFG[t.key] ? t.on : t.off; }
+    sync();
+    el.addEventListener('click', function () { CFG[t.key] = !CFG[t.key]; sync(); });
+    viewEl.appendChild(el);
+  });
+
+  // ---------- stats ----------
+  var statsEl = document.getElementById('stats');
+  var statDefs = ['Balls', 'Pinned', 'Longest chain', 'Clusters', 'Energy', 'FPS'];
+  var statNodes = {};
+  statDefs.forEach(function (name) {
+    var el = document.createElement('div');
+    el.className = 'stat';
+    el.appendChild(document.createTextNode(name));
+    var b = document.createElement('b');
+    b.textContent = '0';
+    el.appendChild(b);
+    statsEl.appendChild(el);
+    statNodes[name] = b;
+  });
+
+  var fps = 60, statTick = 0;
+  function refreshStats() {
+    var pinned = 0;
+    for (var i = 0; i < balls.length; i++) if (balls[i].pin) pinned++;
+    var cl = clusters();
+    statNodes['Balls'].textContent = balls.length;
+    statNodes['Pinned'].textContent = pinned;
+    statNodes['Longest chain'].textContent = balls.length ? cl.biggest : 0;
+    statNodes['Clusters'].textContent = cl.groups;
+    statNodes['Energy'].textContent = Math.round(energy());
+    statNodes['FPS'].textContent = Math.round(fps);
+  }
+
+  // ---------- theme ----------
+  var themeBtn = document.getElementById('theme');
+  var themes = ['auto', 'light', 'dark'];
+  var themeIx = 0;
+  function applyTheme() {
+    var t = themes[themeIx];
+    if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', t);
+    themeBtn.textContent = 'Theme: ' + t.charAt(0).toUpperCase() + t.slice(1);
+    readColors();
+  }
+  themeBtn.addEventListener('click', function () {
+    themeIx = (themeIx + 1) % themes.length;
+    applyTheme();
+  });
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.addEventListener) mq.addEventListener('change', readColors);
+    else if (mq.addListener) mq.addListener(readColors);
+  }
+
+  // ---------- sizing ----------
+  function resize() {
+    var wCss = stage.clientWidth;
+    var hCss = Math.max(320, Math.min(560, Math.round(wCss * 0.66)));
+    stage.style.height = hCss + 'px';
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(wCss * DPR);
+    cv.height = Math.round(hCss * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    var oldW = W, oldH = H;
+    W = wCss; H = hCss;
+    if (oldW > 0 && oldH > 0 && (oldW !== W || oldH !== H)) {
+      var sx = W / oldW, sy = H / oldH;
+      for (var i = 0; i < balls.length; i++) {
+        balls[i].x *= sx;
+        balls[i].y *= sy;
+      }
+      walls();
+    }
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- loop ----------
+  var last = performance.now();
+  function frame(now) {
+    var raw = (now - last) / 1000;
+    last = now;
+    if (raw > 0.05) raw = 0.05;          // never let a stalled tab explode the sim
+    if (raw > 0) fps = fps * 0.9 + (1 / raw) * 0.1;
+
+    if (!CFG.paused) {
+      var dt = (raw * CFG.speed) / SUB;
+      for (var i = 0; i < SUB; i++) step(dt);
+    } else if (held) {
+      collide();
+      walls();
+    }
+
+    draw();
+    if (++statTick % 10 === 0) refreshStats();
+    requestAnimationFrame(frame);
   }
 
   // ---------- boot ----------
-  load();
-  buildPlot();
-  // weather first: the token shop's restock odds depend on it
-  if (!weather || Date.now() >= weather.until) newWeather(false); else renderWeather();
-  if (!nextRestock || !Object.keys(stock).length) doRestock();
-  lastMutRoll = Date.now();
-  refresh();
-  setInterval(tick, 250);
-  setInterval(save, 5000);
+  applyTheme();
+  resize();
+  cloud(34);
+  refreshStats();
+  requestAnimationFrame(frame);
 
   // small debug/test handle
-  window.__g = {
-    grid: function () { return grid; },
-    sheckles: function () { return sheckles; },
-    tokens: function () { return tokens; },
-    giveTok: function (n) { tokens += n; refresh(); },
-    stock: function () { return stock; },
-    stockTok: function () { return stockTok; },
-    luck: weatherLuck,
-    basket: function () { return basket; },
-    seeds: function () { return seedsOwned; },
-    gear: function () { return gearOwned; },
-    weather: function () { return weather; },
-    weathers: function () { return WEATHERS; },
-    setWeather: function (k) {
-      var keys = (Array.isArray(k) ? k : [k]).filter(function (x) { return WMAP[x]; });
-      if (keys.length) { weather = { keys: keys, until: Date.now() + 180000 }; renderWeather(); }
-    },
-    mutate: function (k) { tryMutate(WMAP[k || weather.keys[0]]); },
-    meters: function () { return meters; },
-    give: function (n) { sheckles += n; refresh(); },
-    restock: doRestock
+  window.__m = {
+    balls: function () { return balls; },
+    cfg: CFG,
+    size: function () { return { w: W, h: H }; },
+    add: addBall,
+    clear: clear,
+    cloud: cloud,
+    scatter: scatter,
+    chain: chain,
+    ring: ring,
+    grid: grid,
+    compass: compass,
+    step: step,
+    energy: energy,
+    clusters: clusters,
+    fieldAt: function (x, y) { fieldAt(x, y, null); return { x: fbx, y: fby }; },
+    setTool: function (t) { tool = t; },
+    fps: function () { return fps; }
   };
 })();
 </script>
-
+</body>
 </html>
