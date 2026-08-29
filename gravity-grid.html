@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Grid — 2D N-Body Sandbox</title>
+<style>
+  :root {
+    --bg: #06080f;
+    --panel: #10141f;
+    --panel-2: #161c2b;
+    --border: #232c42;
+    --text: #dde5f5;
+    --muted: #7f8db0;
+    --accent: #5ea0ff;
+    --accent-2: #ff9b4a;
+    --hot: #ff5f5f;
+    --ok: #4fd18b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { display: flex; height: 100%; width: 100%; }
+
+  /* ---------- canvas stage ---------- */
+  #stage { position: relative; flex: 1 1 auto; min-width: 0; }
+  #view { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+  #view.dragging { cursor: grabbing; }
+
+  #hud {
+    position: absolute; top: 12px; left: 12px;
+    display: flex; gap: 8px; flex-wrap: wrap;
+    pointer-events: none;
+  }
+  .pill {
+    background: rgba(12, 16, 26, 0.72);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 11px;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--muted);
+    backdrop-filter: blur(6px);
+  }
+  .pill b { color: var(--text); font-weight: 600; }
+
+  #hint {
+    position: absolute; bottom: 12px; left: 12px;
+    font-size: 11.5px; color: var(--muted);
+    background: rgba(12, 16, 26, 0.62);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 10px;
+    pointer-events: none;
+  }
+
+  #empty {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px;
+    pointer-events: none; text-align: center; padding: 24px;
+  }
+  #empty h1 { margin: 0; font-size: 26px; letter-spacing: -0.4px; font-weight: 650; }
+  #empty p { margin: 0; color: var(--muted); max-width: 440px; }
+  #empty.hidden { display: none; }
+
+  /* ---------- side panel ---------- */
+  #panel {
+    flex: 0 0 288px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    padding: 16px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  #panel h2 {
+    margin: 0; font-size: 15px; letter-spacing: -0.2px;
+  }
+  #panel h2 span { color: var(--muted); font-weight: 400; font-size: 12px; display: block; margin-top: 2px; }
+
+  .group {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-2);
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .group > .label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--muted); font-weight: 600;
+  }
+
+  button {
+    font: inherit; color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: background .12s, border-color .12s, transform .06s;
+  }
+  button:hover { background: #1e2740; border-color: #33406090; }
+  button:active { transform: translateY(1px); }
+  button.primary {
+    background: linear-gradient(180deg, #3f7ede, #2f63b9);
+    border-color: #4d8bea;
+    font-weight: 650;
+    font-size: 14px;
+    padding: 13px 12px;
+    letter-spacing: 0.02em;
+  }
+  button.primary:hover { background: linear-gradient(180deg, #4a8bec, #356ec7); }
+  button.primary small { display: block; font-weight: 400; font-size: 11px; opacity: .82; margin-top: 2px; letter-spacing: 0; }
+  button.on { border-color: var(--accent); background: #1c2d4d; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1 1 0; min-width: 0; }
+
+  label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+  label.field .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  label.field .top span { color: var(--muted); }
+  label.field .top b { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 11.5px; }
+
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 4px; border-radius: 3px;
+    background: #2b3550; outline: none; margin: 4px 0 0;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+    border: 2px solid #0d1220;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: 2px solid #0d1220;
+  }
+  select {
+    font: inherit; color: var(--text); background: #0f1524;
+    border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; width: 100%;
+  }
+  .note { font-size: 11px; color: var(--muted); }
+  .note code { color: #9fb4dd; background: #0d1424; padding: 1px 4px; border-radius: 4px; }
+  .legend { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; color: var(--muted); }
+  .legend div { display: flex; align-items: center; gap: 7px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: 0 0 7px currentColor; background: currentColor; }
+
+  @media (max-width: 860px) {
+    #app { flex-direction: column; }
+    #panel { flex: 0 0 auto; max-height: 47%; border-left: none; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <div id="hud">
+      <div class="pill">balls <b id="statN">0</b></div>
+      <div class="pill">fps <b id="statFps">–</b></div>
+      <div class="pill">physics <b id="statMs">–</b></div>
+      <div class="pill">t <b id="statT">0.0</b></div>
+    </div>
+    <div id="empty">
+      <h1>Gravity Grid</h1>
+      <p>A flat 2D n-body sandbox. Every ball pulls on every other ball — no friction, no collisions, nothing but gravity. Press <b>Spawn Big Grid</b> to drop 16,384 of them and watch the lattice fall apart.</p>
+    </div>
+    <div id="hint">drag to pan &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; space = pause &nbsp;·&nbsp; F = fit &nbsp;·&nbsp; R = respawn</div>
+  </div>
+
+  <div id="panel">
+    <h2>Gravity Grid<span>2D n-body · Barnes–Hut</span></h2>
+
+    <button id="btnSpawn" class="primary">SPAWN BIG GRID<small id="spawnSub">128 × 128 = 16,384 balls</small></button>
+
+    <div class="group">
+      <div class="label">Grid</div>
+      <label class="field">
+        <div class="top"><span>Size</span></div>
+        <select id="selSize">
+          <option value="32">32 × 32 — 1,024 balls</option>
+          <option value="64">64 × 64 — 4,096 balls</option>
+          <option value="128" selected>128 × 128 — 16,384 balls</option>
+          <option value="192">192 × 192 — 36,864 balls (heavy)</option>
+          <option value="256">256 × 256 — 65,536 balls (very heavy)</option>
+        </select>
+      </label>
+      <label class="field">
+        <div class="top"><span>Gravity spread</span><b id="vSpread">0.60</b></div>
+        <input id="spread" type="range" min="0" max="1" step="0.01" value="0.6">
+      </label>
+      <div class="note">How lumpy the masses are. At 0 every ball pulls the same; higher values sprinkle in rare heavyweights up to ~100× a normal ball.</div>
+      <label class="field">
+        <div class="top"><span>Initial swirl</span><b id="vSwirl">0.00</b></div>
+        <input id="swirl" type="range" min="0" max="1" step="0.01" value="0">
+      </label>
+      <div class="row">
+        <button id="btnRespawn">Respawn</button>
+        <button id="btnClear">Clear</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="label">Physics</div>
+      <label class="field">
+        <div class="top"><span>Gravity strength G</span><b id="vG">1.00</b></div>
+        <input id="gval" type="range" min="0" max="4" step="0.01" value="1">
+      </label>
+      <label class="field">
+        <div class="top"><span>Time step</span><b id="vDt">0.010</b></div>
+        <input id="dt" type="range" min="0.001" max="0.04" step="0.001" value="0.01">
+      </label>
+      <label class="field">
+        <div class="top"><span>Softening</span><b id="vEps">0.40</b></div>
+        <input id="eps" type="range" min="0.05" max="3" step="0.05" value="0.4">
+      </label>
+      <div class="note">Softening blurs gravity at very short range. Balls pass straight through each other — there is no collision — so without it a near-miss would fling a ball to infinity.</div>
+      <label class="field">
+        <div class="top"><span>Accuracy</span></div>
+        <select id="selTheta">
+          <option value="1.2">Fast — θ 1.2</option>
+          <option value="0.75" selected>Balanced — θ 0.75</option>
+          <option value="0.5">Accurate — θ 0.5</option>
+          <option value="0.3">Very accurate — θ 0.3 (slow)</option>
+        </select>
+      </label>
+      <div class="row">
+        <button id="btnPause">Pause</button>
+        <button id="btnStep">Step</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="label">View</div>
+      <div class="row">
+        <button id="btnTrails" class="on">Trails</button>
+        <button id="btnFit">Fit</button>
+      </div>
+      <div class="legend">
+        <div><i class="dot" style="color:#4682ff"></i> light ball — weak pull</div>
+        <div><i class="dot" style="color:#ffe8b4"></i> mid mass</div>
+        <div><i class="dot" style="color:#ff5f3c"></i> heavyweight — strong pull</div>
+      </div>
+    </div>
+
+    <div class="note">No friction and no collisions: momentum is conserved forever and balls fly straight through one another. Forces use a Barnes–Hut quadtree, so 16k balls stay interactive.</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   State
+   ===================================================================== */
+const canvas = document.getElementById("view");
+const ctx = canvas.getContext("2d", { alpha: false });
+
+let W = 0, H = 0, DPR = 1;
+
+// Bodies (structure-of-arrays for speed)
+let N = 0;
+let px, py, vx, vy, mass, colR, colG, colB, rad;
+
+// Camera: world point at screen centre, plus pixels-per-world-unit
+let camX = 0, camY = 0, camScale = 1;
+
+let running = true;
+let simTime = 0;
+let worldExtent = 128;   // rough world size at spawn, used by Fit
+
+// Controls
+const ui = {
+  size:    document.getElementById("selSize"),
+  spread:  document.getElementById("spread"),
+  swirl:   document.getElementById("swirl"),
+  g:       document.getElementById("gval"),
+  dt:      document.getElementById("dt"),
+  eps:     document.getElementById("eps"),
+  theta:   document.getElementById("selTheta"),
+};
+let trailsOn = true;
+
+/* =====================================================================
+   Canvas sizing + offscreen particle buffer
+   ===================================================================== */
+const off = document.createElement("canvas");
+const offCtx = off.getContext("2d");
+let img = null, buf32 = null;
+
+function resize() {
+  // The glow splats are soft, so a full retina buffer costs 4x the fill for
+  // no visible gain. 1.5 keeps dots crisp without swamping the render budget.
+  DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+  const r = canvas.getBoundingClientRect();
+  W = Math.max(1, Math.round(r.width * DPR));
+  H = Math.max(1, Math.round(r.height * DPR));
+  canvas.width = W; canvas.height = H;
+  off.width = W; off.height = H;
+  img = offCtx.createImageData(W, H);
+  buf32 = new Uint32Array(img.data.buffer);
+  ctx.fillStyle = "#06080f";
+  ctx.fillRect(0, 0, W, H);
+}
+window.addEventListener("resize", resize);
+
+/* =====================================================================
+   Spawning
+   ===================================================================== */
+function massColor(m) {
+  // t maps mass (log scale) onto a blue → white → orange → red ramp.
+  const t = Math.max(0, Math.min(1, (Math.log2(m) + 2) / 8));
+  const stops = [
+    [0.00,  70, 130, 255],
+    [0.35, 150, 220, 255],
+    [0.60, 255, 240, 200],
+    [0.80, 255, 170,  70],
+    [1.00, 255,  90,  60],
+  ];
+  let i = 0;
+  while (i < stops.length - 2 && t > stops[i + 1][0]) i++;
+  const a = stops[i], b = stops[i + 1];
+  const f = (t - a[0]) / (b[0] - a[0]);
+  return [
+    a[1] + (b[1] - a[1]) * f,
+    a[2] + (b[2] - a[2]) * f,
+    a[3] + (b[3] - a[3]) * f,
+    t,
+  ];
+}
+
+function spawnGrid(side) {
+  const count = side * side;
+  N = count;
+  px = new Float32Array(N); py = new Float32Array(N);
+  vx = new Float32Array(N); vy = new Float32Array(N);
+  mass = new Float32Array(N);
+  colR = new Uint8Array(N); colG = new Uint8Array(N); colB = new Uint8Array(N);
+  rad = new Float32Array(N);
+
+  const spread = parseFloat(ui.spread.value);
+  const spacing = 1;
+  const half = (side - 1) * spacing * 0.5;
+
+  // Mass: a sea of near-identical light balls plus a rare heavy population.
+  const heavyChance = 0.006 * spread;
+  let total = 0;
+  for (let i = 0; i < N; i++) {
+    let m;
+    if (Math.random() < heavyChance) {
+      const u = Math.random();
+      m = (8 + u * u * 160) * (0.35 + spread);
+    } else {
+      m = 0.45 + Math.random() * 1.1 * (0.3 + spread);
+    }
+    mass[i] = m;
+    total += m;
+  }
+  // Normalise so the mean mass is 1 — keeps G meaningful at any spread.
+  const k = N / total;
+  for (let i = 0; i < N; i++) mass[i] *= k;
+
+  const swirl = parseFloat(ui.swirl.value);
+  let idx = 0;
+  for (let gy = 0; gy < side; gy++) {
+    for (let gx = 0; gx < side; gx++, idx++) {
+      // A whisper of jitter breaks the perfect lattice symmetry so the
+      // collapse develops structure instead of a single dead-centre pile.
+      const x = gx * spacing - half + (Math.random() - 0.5) * 0.02;
+      const y = gy * spacing - half + (Math.random() - 0.5) * 0.02;
+      px[idx] = x; py[idx] = y;
+      vx[idx] = -y * swirl * 0.09;
+      vy[idx] =  x * swirl * 0.09;
+
+      const [r, g, b, t] = massColor(mass[idx]);
+      colR[idx] = r | 0; colG[idx] = g | 0; colB[idx] = b | 0;
+      // World-space radius, so zooming in shows actual balls rather than
+      // specks. Grid spacing is 1, so even a heavyweight stays clear of its
+      // neighbours at spawn.
+      rad[idx] = 0.10 + 0.55 * t * t;
+    }
+  }
+
+  worldExtent = side * spacing;
+  simTime = 0;
+  sortCounter = 0;
+  allocTree(N);
+  allocSort(N);
+  fitView();
+  document.getElementById("empty").classList.add("hidden");
+}
+
+function clearAll() {
+  N = 0;
+  simTime = 0;
+  document.getElementById("empty").classList.remove("hidden");
+}
+
+/* =====================================================================
+   Barnes–Hut quadtree
+
+   Every node occupies 8 consecutive slots of one buffer, viewed as both
+   float and int, so a single cache line carries everything the force walk
+   needs:
+
+     [0] centre-of-mass x      (mass-weighted sum during build)
+     [1] centre-of-mass y
+     [2] total mass
+     [3] opening threshold, size² / θ²   — compare straight against d²
+     [4..7] child node ids
+
+   Slot 4 doubles as the leaf marker: a negative value is -(head + 1) of a
+   linked list of bodies (chained through bodyNext). Nodes are only ever
+   created with a body in them, so a node that exists is never empty.
+   ===================================================================== */
+const MAX_DEPTH = 24;
+const STRIDE = 8;
+let nodeCap = 0;
+let T = null, Ti = null;     // same buffer, float view and int view
+let nCount = null;           // bodies per node — build-time only
+let bodyNext = new Int32Array(1024);
+let numNodes = 0;
+let treeFull = false;
+let invTheta2 = 1;
+let rootCX = 0, rootCY = 0, rootHalf = 1;
+
+function allocTree(n) {
+  const cap = Math.max(2048, n * 3 + 1024);
+  if (cap > nodeCap) growTree(cap);
+  if (bodyNext.length < n) bodyNext = new Int32Array(n);
+}
+
+function growTree(cap) {
+  nodeCap = cap;
+  const buf = new ArrayBuffer(cap * STRIDE * 4);
+  T = new Float32Array(buf);
+  Ti = new Int32Array(buf);
+  nCount = new Int32Array(cap);
+}
+
+function newNode(size) {
+  if (numNodes >= nodeCap) { treeFull = true; return -1; }
+  const n = numNodes++, b = n * STRIDE;
+  T[b] = 0; T[b + 1] = 0; T[b + 2] = 0;
+  T[b + 3] = size * size * invTheta2;
+  Ti[b + 4] = 0; Ti[b + 5] = 0; Ti[b + 6] = 0; Ti[b + 7] = 0;
+  nCount[n] = 0;
+  return n;
+}
+
+function buildTree() {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < N; i++) {
+    const x = px[i], y = py[i];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  if (!isFinite(minX) || !isFinite(maxX)) { minX = maxX = minY = maxY = 0; }
+  const size = Math.max(maxX - minX, maxY - minY) * 1.02 + 1e-3;
+  rootCX = (minX + maxX) * 0.5;
+  rootCY = (minY + maxY) * 0.5;
+  rootHalf = size * 0.5;
+
+  for (;;) {
+    numNodes = 0;
+    treeFull = false;
+    newNode(size);
+    for (let i = 0; i < N; i++) {
+      insert(i);
+      if (treeFull) break;
+    }
+    if (!treeFull) break;
+    growTree(nodeCap * 2);           // deep clustering: retry with more room
+  }
+
+  // Turn the mass-weighted sums into actual centres of mass.
+  for (let n = 0, b = 0; n < numNodes; n++, b += STRIDE) {
+    const m = T[b + 2];
+    if (m > 0) { T[b] /= m; T[b + 1] /= m; }
+  }
+}
+
+// Move body j from a leaf that is being subdivided down into its child.
+function pushDown(node, j, cx, cy, half) {
+  const q = (px[j] > cx ? 1 : 0) | (py[j] > cy ? 2 : 0);
+  const b = node * STRIDE;
+  let c = Ti[b + 4 + q];
+  if (c === 0) {
+    c = newNode(half);
+    if (c < 0) return;
+    Ti[b + 4 + q] = c;
+  }
+  const cb = c * STRIDE, m = mass[j];
+  T[cb] += m * px[j]; T[cb + 1] += m * py[j]; T[cb + 2] += m;
+  // Two siblings can land in the same child; chain them.
+  bodyNext[j] = nCount[c]++ === 0 ? -1 : -Ti[cb + 4] - 1;
+  Ti[cb + 4] = -(j + 1);
+}
+
+function insert(i) {
+  let node = 0, depth = 0;
+  let cx = rootCX, cy = rootCY, half = rootHalf;
+  const m = mass[i], x = px[i], y = py[i];
+
+  for (;;) {
+    const b = node * STRIDE;
+    T[b] += m * x; T[b + 1] += m * y; T[b + 2] += m;
+
+    if (nCount[node]++ === 0) {        // fresh node becomes a leaf holding i
+      Ti[b + 4] = -(i + 1); bodyNext[i] = -1;
+      return;
+    }
+
+    const head = Ti[b + 4];
+    if (head < 0) {                    // occupied leaf — subdivide it
+      if (depth >= MAX_DEPTH) {        // effectively coincident: bucket here
+        bodyNext[i] = -head - 1;
+        Ti[b + 4] = -(i + 1);
+        return;
+      }
+      let j = -head - 1;
+      Ti[b + 4] = 0;
+      while (j !== -1) {
+        const nx = bodyNext[j];
+        pushDown(node, j, cx, cy, half);
+        if (treeFull) return;
+        j = nx;
+      }
+    }
+
+    const q = (x > cx ? 1 : 0) | (y > cy ? 2 : 0);
+    const ch = half * 0.5;
+    let c = Ti[b + 4 + q];
+    if (c === 0) {
+      c = newNode(half);               // a child spans half the parent's box
+      if (c < 0) return;
+      Ti[b + 4 + q] = c;
+    }
+    cx += (q & 1 ? ch : -ch);
+    cy += (q & 2 ? ch : -ch);
+    half = ch;
+    node = c;
+    depth++;
+  }
+}
+
+/* =====================================================================
+   Spatial re-sort
+
+   Bodies keep their spawn order, which starts out cache-friendly and stops
+   being so once the grid collapses and neighbours in memory end up on
+   opposite sides of the field. Re-sorting into Morton (Z-curve) order every
+   so often puts spatial neighbours back next to each other, which is worth
+   roughly 15% of the force walk for a fraction of a millisecond per step
+   once amortised.
+   ===================================================================== */
+const SORT_EVERY = 32;
+let sortCounter = 0;
+let sortKey = null, sortSrc = null, sortDst = null, tmpF32 = null, tmpU8 = null;
+const sortCnt = new Uint32Array(256);
+
+function allocSort(n) {
+  if (sortKey && sortKey.length >= n) return;
+  sortKey = new Uint32Array(n);
+  sortSrc = new Uint32Array(n);
+  sortDst = new Uint32Array(n);
+  tmpF32 = new Float32Array(n);
+  tmpU8 = new Uint8Array(n);
+}
+
+// Spread the low 16 bits of v out into every other bit.
+function part1by1(v) {
+  v = (v | (v << 8)) & 0x00FF00FF;
+  v = (v | (v << 4)) & 0x0F0F0F0F;
+  v = (v | (v << 2)) & 0x33333333;
+  v = (v | (v << 1)) & 0x55555555;
+  return v;
+}
+
+function spatialSort() {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < N; i++) {
+    if (px[i] < minX) minX = px[i];
+    if (px[i] > maxX) maxX = px[i];
+    if (py[i] < minY) minY = py[i];
+    if (py[i] > maxY) maxY = py[i];
+  }
+  if (!isFinite(minX) || !isFinite(maxX)) return;
+
+  const sx = 65535 / Math.max(1e-9, maxX - minX);
+  const sy = 65535 / Math.max(1e-9, maxY - minY);
+  for (let i = 0; i < N; i++) {
+    let gx = (px[i] - minX) * sx, gy = (py[i] - minY) * sy;
+    gx = gx < 0 ? 0 : gx > 65535 ? 65535 : gx;
+    gy = gy < 0 ? 0 : gy > 65535 ? 65535 : gy;
+    sortKey[i] = (part1by1(gx | 0) | (part1by1(gy | 0) << 1)) >>> 0;
+    sortSrc[i] = i;
+  }
+
+  let src = sortSrc, dst = sortDst;
+  for (let shift = 0; shift < 32; shift += 8) {       // LSD radix, 8 bits a pass
+    sortCnt.fill(0);
+    for (let i = 0; i < N; i++) sortCnt[(sortKey[src[i]] >>> shift) & 255]++;
+    let s = 0;
+    for (let d = 0; d < 256; d++) { const c = sortCnt[d]; sortCnt[d] = s; s += c; }
+    for (let i = 0; i < N; i++) {
+      const v = src[i];
+      dst[sortCnt[(sortKey[v] >>> shift) & 255]++] = v;
+    }
+    const t = src; src = dst; dst = t;
+  }
+
+  const pf = (a) => { for (let i = 0; i < N; i++) tmpF32[i] = a[src[i]]; a.set(tmpF32.subarray(0, N)); };
+  const pu = (a) => { for (let i = 0; i < N; i++) tmpU8[i] = a[src[i]]; a.set(tmpU8.subarray(0, N)); };
+  pf(px); pf(py); pf(vx); pf(vy); pf(mass); pf(rad);
+  pu(colR); pu(colG); pu(colB);
+}
+
+/* =====================================================================
+   Forces + integration
+   ===================================================================== */
+const stack = new Int32Array(4 * MAX_DEPTH + 64);
+
+function stepSim(dt) {
+  const G = parseFloat(ui.g.value);
+  const eps = parseFloat(ui.eps.value);
+  const eps2 = eps * eps;
+  const theta = parseFloat(ui.theta.value);
+  invTheta2 = 1 / (theta * theta);
+
+  if (sortCounter++ % SORT_EVERY === 0) spatialSort();
+  buildTree();
+
+  for (let i = 0; i < N; i++) {
+    const xi = px[i], yi = py[i];
+    let ax = 0, ay = 0;
+    let sp = 1;
+    stack[0] = 0;
+
+    while (sp > 0) {
+      const b = stack[--sp] * STRIDE;
+      const c0 = Ti[b + 4];
+
+      if (c0 < 0) {
+        // Leaf — sum its bodies exactly.
+        let j = -c0 - 1;
+        do {
+          if (j !== i) {
+            const dx = px[j] - xi, dy = py[j] - yi;
+            const d2 = dx * dx + dy * dy + eps2;
+            const f = G * mass[j] / (d2 * Math.sqrt(d2));
+            ax += dx * f; ay += dy * f;
+          }
+          j = bodyNext[j];
+        } while (j !== -1);
+        continue;
+      }
+
+      const dx = T[b] - xi, dy = T[b + 1] - yi;
+      const d2 = dx * dx + dy * dy + eps2;
+      if (T[b + 3] < d2) {              // far enough: treat the cell as one mass
+        const f = G * T[b + 2] / (d2 * Math.sqrt(d2));
+        ax += dx * f; ay += dy * f;
+      } else {
+        const c1 = Ti[b + 5], c2 = Ti[b + 6], c3 = Ti[b + 7];
+        if (c0) stack[sp++] = c0;
+        if (c1) stack[sp++] = c1;
+        if (c2) stack[sp++] = c2;
+        if (c3) stack[sp++] = c3;
+      }
+    }
+
+    // Semi-implicit Euler. No drag term anywhere: the balls never slow down.
+    vx[i] += ax * dt;
+    vy[i] += ay * dt;
+  }
+
+  for (let i = 0; i < N; i++) {
+    px[i] += vx[i] * dt;
+    py[i] += vy[i] * dt;
+  }
+  simTime += dt;
+}
+
+/* =====================================================================
+   Rendering — additive splats into an ImageData, composited over a
+   slowly fading backdrop so motion leaves trails.
+   ===================================================================== */
+const BG_OPAQUE = (255 << 24 | 0x0f << 16 | 0x08 << 8 | 0x06) >>> 0;
+
+function render() {
+  if (N === 0) {
+    ctx.fillStyle = "#06080f";
+    ctx.fillRect(0, 0, W, H);
+    return;
+  }
+
+  // Trails need the particle layer composited over a partly-faded backdrop,
+  // which costs two extra full-canvas passes. Without them the buffer can go
+  // straight to the visible canvas.
+  if (trailsOn) {
+    ctx.fillStyle = "rgba(6, 8, 15, 0.30)";
+    ctx.fillRect(0, 0, W, H);
+    buf32.fill(0);
+  } else {
+    buf32.fill(BG_OPAQUE);
+  }
+
+  const s = camScale * DPR;
+  const cx = W * 0.5, cy = H * 0.5;
+
+  for (let i = 0; i < N; i++) {
+    const sx = (px[i] - camX) * s + cx;
+    const sy = (py[i] - camY) * s + cy;
+    // Capped so an extreme zoom can't turn one ball into a screen-sized fill.
+    const r = Math.min(48, rad[i] * s);
+    const ir = r < 0.75 ? 0 : Math.round(r);
+    if (sx < -ir - 1 || sy < -ir - 1 || sx > W + ir || sy > H + ir) continue;
+
+    const bx = sx | 0, by = sy | 0;
+    const cr = colR[i], cg = colG[i], cb = colB[i];
+
+    if (ir === 0) {           // smaller than a pixel: one dot, full strength
+      addPixel(bx, by, cr, cg, cb, 255);
+      continue;
+    }
+    const rr = (r + 0.5) * (r + 0.5);
+    for (let dy = -ir; dy <= ir; dy++) {
+      const yy = by + dy;
+      if (yy < 0 || yy >= H) continue;
+      for (let dx = -ir; dx <= ir; dx++) {
+        const xx = bx + dx;
+        if (xx < 0 || xx >= W) continue;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > rr) continue;
+        const w = 1 - d2 / rr;
+        const g = w * w;
+        addPixel(xx, yy, cr * g, cg * g, cb * g, 255 * g);
+      }
+    }
+  }
+
+  if (trailsOn) {
+    offCtx.putImageData(img, 0, 0);
+    ctx.drawImage(off, 0, 0);
+  } else {
+    ctx.putImageData(img, 0, 0);
+  }
+}
+
+function addPixel(x, y, r, g, b, a) {
+  if (x < 0 || y < 0 || x >= W || y >= H) return;
+  const idx = y * W + x;
+  const p = buf32[idx];
+  let nr = (p & 255) + r;
+  let ng = ((p >>> 8) & 255) + g;
+  let nb = ((p >>> 16) & 255) + b;
+  let na = ((p >>> 24) & 255) + a;
+  if (nr > 255) nr = 255;
+  if (ng > 255) ng = 255;
+  if (nb > 255) nb = 255;
+  if (na > 255) na = 255;
+  buf32[idx] = ((na << 24) | (nb << 16) | (ng << 8) | nr) >>> 0;
+}
+
+/* =====================================================================
+   Camera
+   ===================================================================== */
+function fitView() {
+  if (N === 0) {
+    camX = camY = 0;
+    camScale = Math.min(W, H) / DPR / (worldExtent * 1.15);
+    return;
+  }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < N; i++) {
+    if (px[i] < minX) minX = px[i];
+    if (px[i] > maxX) maxX = px[i];
+    if (py[i] < minY) minY = py[i];
+    if (py[i] > maxY) maxY = py[i];
+  }
+  camX = (minX + maxX) * 0.5;
+  camY = (minY + maxY) * 0.5;
+  const ext = Math.max(maxX - minX, maxY - minY, 1e-3);
+  camScale = Math.min(W, H) / DPR / (ext * 1.15);
+}
+
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const mx = e.clientX - r.left - r.width * 0.5;
+  const my = e.clientY - r.top - r.height * 0.5;
+  const wx = camX + mx / camScale;
+  const wy = camY + my / camScale;
+  const f = Math.exp(-e.deltaY * 0.0015);
+  camScale = Math.max(1e-4, Math.min(1e5, camScale * f));
+  camX = wx - mx / camScale;
+  camY = wy - my / camScale;
+}, { passive: false });
+
+let dragging = false, lastX = 0, lastY = 0;
+canvas.addEventListener("pointerdown", (e) => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+  canvas.classList.add("dragging");
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  camX -= (e.clientX - lastX) / camScale;
+  camY -= (e.clientY - lastY) / camScale;
+  lastX = e.clientX; lastY = e.clientY;
+});
+function endDrag() { dragging = false; canvas.classList.remove("dragging"); }
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+canvas.addEventListener("dblclick", fitView);
+
+/* =====================================================================
+   Wiring
+   ===================================================================== */
+const btnPause = document.getElementById("btnPause");
+const btnTrails = document.getElementById("btnTrails");
+
+function bindSlider(id, out, digits) {
+  const el = document.getElementById(id);
+  const lbl = document.getElementById(out);
+  const sync = () => { lbl.textContent = parseFloat(el.value).toFixed(digits); };
+  el.addEventListener("input", sync);
+  sync();
+}
+bindSlider("spread", "vSpread", 2);
+bindSlider("swirl", "vSwirl", 2);
+bindSlider("gval", "vG", 2);
+bindSlider("dt", "vDt", 3);
+bindSlider("eps", "vEps", 2);
+
+function updateSpawnLabel() {
+  const s = parseInt(ui.size.value, 10);
+  document.getElementById("spawnSub").textContent =
+    `${s} × ${s} = ${(s * s).toLocaleString()} balls`;
+}
+ui.size.addEventListener("change", updateSpawnLabel);
+updateSpawnLabel();
+
+function doSpawn() {
+  spawnGrid(parseInt(ui.size.value, 10));
+  running = true;
+  btnPause.textContent = "Pause";
+}
+document.getElementById("btnSpawn").addEventListener("click", doSpawn);
+document.getElementById("btnRespawn").addEventListener("click", doSpawn);
+document.getElementById("btnClear").addEventListener("click", clearAll);
+document.getElementById("btnFit").addEventListener("click", fitView);
+
+btnPause.addEventListener("click", () => {
+  running = !running;
+  btnPause.textContent = running ? "Pause" : "Resume";
+});
+document.getElementById("btnStep").addEventListener("click", () => {
+  running = false;
+  btnPause.textContent = "Resume";
+  if (N > 0) stepSim(parseFloat(ui.dt.value));
+});
+btnTrails.addEventListener("click", () => {
+  trailsOn = !trailsOn;
+  btnTrails.classList.toggle("on", trailsOn);
+});
+
+window.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  const k = e.key.toLowerCase();
+  if (k === " " || e.code === "Space") {
+    e.preventDefault();
+    running = !running;
+    btnPause.textContent = running ? "Pause" : "Resume";
+  } else if (k === "f") fitView();
+  else if (k === "r") doSpawn();
+  else if (k === "c") clearAll();
+  else if (k === "t") btnTrails.click();
+});
+
+/* =====================================================================
+   Main loop
+   ===================================================================== */
+const elN = document.getElementById("statN");
+const elFps = document.getElementById("statFps");
+const elMs = document.getElementById("statMs");
+const elT = document.getElementById("statT");
+
+let lastFrame = performance.now();
+let fpsAvg = 0, msAvg = 0, statTimer = 0;
+
+function frame(now) {
+  const wall = now - lastFrame;
+  lastFrame = now;
+
+  let physMs = 0;
+  if (running && N > 0) {
+    const t0 = performance.now();
+    stepSim(parseFloat(ui.dt.value));
+    physMs = performance.now() - t0;
+  }
+  render();
+
+  const fps = 1000 / Math.max(1, wall);
+  fpsAvg = fpsAvg ? fpsAvg * 0.92 + fps * 0.08 : fps;
+  if (physMs > 0) msAvg = msAvg * 0.9 + physMs * 0.1;   // hold the last real
+                                                        // reading while paused
+  statTimer += wall;
+  if (statTimer > 200) {
+    statTimer = 0;
+    elN.textContent = N.toLocaleString();
+    elFps.textContent = fpsAvg.toFixed(0);
+    elMs.textContent = msAvg.toFixed(1) + " ms";
+    elT.textContent = simTime.toFixed(1);
+  }
+  requestAnimationFrame(frame);
+}
+
+resize();
+fitView();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
