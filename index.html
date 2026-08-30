@@ -109,6 +109,25 @@
     width:12px;height:12px;border-radius:50%;background:var(--accent);
     cursor:pointer;border:2px solid #0b1020;
   }
+  .check{
+    display:flex;align-items:center;gap:9px;cursor:pointer;
+    padding:7px 9px;border-radius:9px;border:1px solid var(--border);
+    background:rgba(30,38,62,0.45);transition:background .13s,border-color .13s;
+  }
+  .check:hover{background:rgba(46,60,98,0.6);border-color:rgba(140,170,255,0.4)}
+  .check input{
+    appearance:none;-webkit-appearance:none;margin:0;flex:0 0 16px;
+    width:16px;height:16px;border-radius:5px;cursor:pointer;
+    border:1.5px solid rgba(150,175,225,0.55);background:rgba(10,14,26,0.8);
+    display:grid;place-content:center;transition:background .13s,border-color .13s;
+  }
+  .check input:checked{background:var(--accent);border-color:var(--accent)}
+  .check input:checked::after{
+    content:'';width:9px;height:5px;margin-top:-2px;
+    border:2px solid #06101f;border-top:0;border-right:0;
+    transform:rotate(-45deg);
+  }
+  .check span{font-size:12px;user-select:none}
   .seg{display:flex;gap:5px;flex-wrap:wrap}
   .seg button{flex:1;padding:6px 4px;font-size:11.5px;min-width:56px}
   .hint{color:var(--muted);font-size:11px;margin-top:8px;line-height:1.5}
@@ -209,9 +228,16 @@
 
     <div class="row"><label>Speed</label><input type="range" id="sSpeed" min="0.1" max="3" step="0.05" value="1"><div class="val" id="vSpeed">1.0×</div></div>
     <div class="row"><label>Gravity</label><input type="range" id="sG" min="0" max="6" step="0.1" value="2"><div class="val" id="vG">2.0</div></div>
-    <div class="row"><label>Bounce</label><input type="range" id="sRest" min="0" max="0.6" step="0.02" value="0.16"><div class="val" id="vRest">0.16</div></div>
+    <div class="row" title="How much of a head-on impact is returned as bounce rather than absorbed as heat."><label>Bounce</label><input type="range" id="sRest" min="0" max="0.6" step="0.02" value="0.16"><div class="val" id="vRest">0.16</div></div>
+    <div class="row" title="Grip between touching balls. Cold rubble holds a lumpy shape when this is high and slides around forever at zero; molten material flows regardless."><label>Friction</label><input type="range" id="sFric" min="0" max="1.5" step="0.05" value="0.55"><div class="val" id="vFric">0.55</div></div>
     <div class="row"><label>Impact heat</label><input type="range" id="sHeat" min="0" max="3" step="0.05" value="1"><div class="val" id="vHeat">1.0</div></div>
     <div class="row"><label>Cooling</label><input type="range" id="sCool" min="0" max="3" step="0.05" value="1"><div class="val" id="vCool">1.0</div></div>
+
+    <label class="check" style="margin-top:10px">
+      <input type="checkbox" id="cBorder">
+      <span>Border — nothing escapes</span>
+    </label>
+    <div class="hint" id="borderHint" style="margin-top:6px">Off: balls thrown clear of the system drift away forever.</div>
 
     <div class="divider"></div>
 
@@ -383,11 +409,15 @@ function clearAll(){
 
 /* ---------------------------------------------------------- world config */
 const cfg = {
-  count: 900, size: 1.15, speed: 1, G: 2, rest: 0.16,
+  count: 900, size: 1.15, speed: 1, G: 2, rest: 0.16, friction: 0.55,
   heat: 1, cool: 1, brush: 90,
-  glow: true, labels: true, cull: true,
+  glow: true, labels: true, cull: true, border: false,
   view: 'natural', tool: 'pan'
 };
+
+// Radius of the optional wall, centred on the origin where every scenario
+// is built. Sized from the scenario so orbits still fit inside it.
+let worldR = 400;
 
 let running = false;
 let simTime = 0;
@@ -534,6 +564,7 @@ function buildPreset(name){
     }
   }
   relaxSpawn();
+  sizeBorder();
   if (n > 0){ buildGrid(); findPairs(); }
   computeClumps();
   fitView();
@@ -790,7 +821,7 @@ function solveContacts(dt, collectHeat){
     // relax into spheres while cold rubble keeps its lumpy shape
     const melt = Math.max(meltOf(i), meltOf(j));
     const e  = cfg.rest * (1 - melt) + 0.015;
-    const mu = 0.55 * (1 - melt) + 0.03;
+    const mu = cfg.friction * (1 - melt) + 0.03;
 
     const bias = Math.min(MAXBIAS, BETA * Math.max(0, pen - rs * SLOP) * invH);
     const approach = vn < 0 ? vn : 0;
@@ -859,6 +890,37 @@ function relaxSpawn(){
     }
     if (moved < n * 0.005) break;
   }
+}
+
+// A circular wall. Balls keep their tangential motion and lose a little
+// speed head-on, so a bounded system settles instead of ringing forever.
+function applyBorder(){
+  if (!cfg.border) return;
+  const e = 0.4;
+  for (let i = 0; i < n; i++){
+    const x = p.x[i], y = p.y[i];
+    const lim = worldR - p.r[i];
+    const d2 = x * x + y * y;
+    if (d2 <= lim * lim || d2 < 1e-8) continue;
+    const d = Math.sqrt(d2);
+    const nx = x / d, ny = y / d;
+    p.x[i] = nx * lim; p.y[i] = ny * lim;
+    const vn = p.vx[i] * nx + p.vy[i] * ny;
+    if (vn > 0){
+      p.vx[i] -= (1 + e) * vn * nx;
+      p.vy[i] -= (1 + e) * vn * ny;
+    }
+  }
+}
+
+// Big enough that the scenario's own orbits stay clear of it.
+function sizeBorder(){
+  let far = 0;
+  for (let i = 0; i < n; i++){
+    const d = Math.hypot(p.x[i], p.y[i]) + p.r[i];
+    if (d > far) far = d;
+  }
+  worldR = Math.max(200, far * 2.6);
 }
 
 /* ================================================================
@@ -1092,6 +1154,7 @@ function simulate(){
     buildGrid();
     findPairs();
     solveContacts(h, s === 0);
+    applyBorder();
   }
 
   if ((frameNo & 1) === 0) computeClumps();
@@ -1103,7 +1166,7 @@ function simulate(){
   impactBest = 0;
   flash *= 0.86;
 
-  if (cfg.cull && (frameNo & 31) === 0 && n > 40) cullEscapees();
+  if (cfg.cull && !cfg.border && (frameNo & 31) === 0 && n > 40) cullEscapees();
 
   simTime += dt;
   frameNo++;
@@ -1365,6 +1428,27 @@ function render(){
 
   const sc = cam.scale;
   const pad = 60;
+
+  // -------- border
+  if (cfg.border){
+    const bx = w2sx(0), by = w2sy(0), br = worldR * sc;
+    if (br > 2){
+      ctx.save();
+      ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(110,150,220,0.35)';
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([7, 7]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // a soft inner falloff so the wall reads as a container, not a hoop
+      const g = ctx.createRadialGradient(bx, by, br * 0.93, bx, by, br);
+      g.addColorStop(0, 'rgba(90,130,205,0)');
+      g.addColorStop(1, 'rgba(90,130,205,0.16)');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.restore();
+    }
+  }
 
   // -------- bodies
   const c = _col;
@@ -1730,6 +1814,7 @@ bindSlider('sSize',  'vSize',  'size',  v => v.toFixed(2));
 bindSlider('sSpeed', 'vSpeed', 'speed', v => v.toFixed(2) + '×');
 bindSlider('sG',     'vG',     'G',     v => v.toFixed(1));
 bindSlider('sRest',  'vRest',  'rest',  v => v.toFixed(2));
+bindSlider('sFric',  'vFric',  'friction', v => v.toFixed(2));
 bindSlider('sHeat',  'vHeat',  'heat',  v => v.toFixed(2));
 bindSlider('sCool',  'vCool',  'cool',  v => v.toFixed(2));
 bindSlider('sBrush', 'vBrush', 'brush', v => v);
@@ -1790,6 +1875,24 @@ function bindToggle(id, key, label){
     toast(label + (cfg[key] ? ' on' : ' off'));
   });
 }
+$('cBorder').addEventListener('change', e => {
+  cfg.border = e.target.checked;
+  if (cfg.border){
+    // widen the wall to whatever is already out there, so switching it on
+    // never yanks a distant ball back across the screen
+    let far = 0;
+    for (let i = 0; i < n; i++){
+      const d = Math.hypot(p.x[i], p.y[i]) + p.r[i];
+      if (d > far) far = d;
+    }
+    worldR = Math.max(worldR, far + maxR * 4);
+  }
+  $('borderHint').textContent = cfg.border
+    ? 'On: balls bounce off the wall, so the system keeps all its material.'
+    : 'Off: balls thrown clear of the system drift away forever.';
+  toast(cfg.border ? 'Border on — nothing escapes' : 'Border off');
+});
+
 bindToggle('glowBtn', 'glow', 'Glow');
 bindToggle('labelBtn', 'labels', 'Labels');
 bindToggle('cullBtn', 'cull', 'Escapee culling');
