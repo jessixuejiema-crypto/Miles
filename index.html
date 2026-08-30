@@ -220,9 +220,9 @@
 <aside class="panel" id="left">
   <h3>Controls</h3>
   <div class="body">
-    <div class="row"><label>Balls</label><input type="range" id="sCount" min="150" max="3000" step="50" value="900"><div class="val" id="vCount">900</div></div>
+    <div class="row"><label>Balls</label><input type="range" id="sCount" min="0" max="1000" step="1" value="0"><div class="val" id="vCount">900</div></div>
     <div class="row"><label>Ball size</label><input type="range" id="sSize" min="0.6" max="2.2" step="0.05" value="1.15"><div class="val" id="vSize">1.15</div></div>
-    <div class="hint" style="margin:-2px 0 10px">Ball count &amp; size apply on <b>Reset</b>.</div>
+    <div class="hint" id="countHint" style="margin:-2px 0 10px">Ball count &amp; size apply on <b>Reset</b>.</div>
 
     <div class="divider"></div>
 
@@ -341,7 +341,7 @@ window.addEventListener('resize', resize);
 resize();
 
 /* ------------------------------------------------------------ constants */
-const CAP = 6200;                 // hard ceiling on simulated balls
+let CAP = 2048;                   // current allocation; grows on demand
 const MAT_ROCK = 0, MAT_IRON = 1, MAT_ICE = 2, MAT_GAS = 3;
 const MAT_DENSITY = [1.0, 2.75, 0.55, 0.2];   // iron sinks, gas floats
 const MAT_RSCALE  = [1.0, 0.88, 1.06, 1.34];
@@ -374,8 +374,26 @@ const p = {
 let n = 0;
 let maxR = 1;
 
+// Every per-ball array grows geometrically, so there is no ceiling on how
+// many balls a scenario can hold — only how many the machine can keep up with.
+function growCapacity(need){
+  if (need <= CAP) return;
+  const old = CAP;
+  let cap = CAP;
+  while (cap < need) cap = Math.ceil(cap * 1.6);
+  CAP = cap;
+  const live = Math.min(old, n);
+  for (const k in p){
+    const src = p[k];
+    const dst = new src.constructor(cap);
+    dst.set(src.subarray(0, live));
+    p[k] = dst;
+  }
+  allocScratch();
+}
+
 function addBall(x, y, vx, vy, mat, size, T){
-  if (n >= CAP) return -1;
+  growCapacity(n + 1);
   const i = n++;
   const r = size * MAT_RSCALE[mat];
   p.x[i]=x; p.y[i]=y; p.vx[i]=vx; p.vy[i]=vy;
@@ -414,6 +432,27 @@ const cfg = {
   glow: true, labels: true, cull: true, border: false,
   view: 'natural', tool: 'pan'
 };
+
+// The slider is logarithmic: fine control down in the hundreds, and reach up
+// to counts that only a fast machine will enjoy. The engine itself has no
+// ceiling — the spawn and impactor tools can push past the slider's top.
+const COUNT_MIN = 50, COUNT_MAX = 20000;
+const COUNT_LO = Math.log(COUNT_MIN), COUNT_SPAN = Math.log(COUNT_MAX) - COUNT_LO;
+
+function countFromPos(t){
+  const v = Math.exp(COUNT_LO + COUNT_SPAN * (t / 1000));
+  const step = v < 300 ? 10 : v < 2000 ? 50 : v < 6000 ? 100 : 500;
+  return Math.max(COUNT_MIN, Math.min(COUNT_MAX, Math.round(v / step) * step));
+}
+function posFromCount(c){
+  c = Math.max(COUNT_MIN, Math.min(COUNT_MAX, c));
+  return Math.round(1000 * (Math.log(c) - COUNT_LO) / COUNT_SPAN);
+}
+function fmtCount(c){
+  if (c >= 10000) return Math.round(c / 1000) + 'k';
+  if (c >= 1000) return (c / 1000).toFixed(1) + 'k';
+  return String(c);
+}
 
 // Radius of the optional wall, centred on the origin where every scenario
 // is built. Sized from the scenario so orbits still fit inside it.
@@ -495,7 +534,7 @@ function buildPreset(name){
   if (need && cfg.count < need){
     cfg.count = need;
     const el = document.getElementById('sCount');
-    if (el){ el.value = need; document.getElementById('vCount').textContent = need; }
+    if (el){ el.value = posFromCount(need); syncCountLabel(); }
   }
   const N = cfg.count;
   const s = cfg.size;
@@ -570,19 +609,49 @@ function buildPreset(name){
   fitView();
 }
 
+// Scratch buffers are rebuilt from scratch every frame, so growing them is
+// just a reallocation — nothing needs copying. Stale clump ids are dropped
+// so nothing reads the new, empty accumulators before the next clump pass.
+function allocScratch(){
+  NCAP  = CAP * 8;
+  nChild = new Int32Array(NCAP * 4);
+  nMass  = new Float32Array(NCAP);
+  nSx    = new Float32Array(NCAP);
+  nSy    = new Float32Array(NCAP);
+  nCx    = new Float32Array(NCAP);
+  nCy    = new Float32Array(NCAP);
+  nHalf  = new Float32Array(NCAP);
+  nBody  = new Int32Array(NCAP);
+  nLeaf  = new Uint8Array(NCAP);
+
+  cellX = new Int32Array(CAP);
+  cellY = new Int32Array(CAP);
+  cellItems = new Int32Array(CAP);
+
+  PAIRCAP = CAP * 14;
+  pairA = new Int32Array(PAIRCAP);
+  pairB = new Int32Array(PAIRCAP);
+  pairN = 0;
+
+  cMass = new Float32Array(CAP); cCount = new Int32Array(CAP);
+  cCx = new Float32Array(CAP);   cCy = new Float32Array(CAP);
+  cVx = new Float32Array(CAP);   cVy = new Float32Array(CAP);
+  cR  = new Float32Array(CAP);   cRvis = new Float32Array(CAP);
+  cRsum = new Float32Array(CAP);
+  cCoreT = new Float32Array(CAP); cSurfT = new Float32Array(CAP);
+  cSurfN = new Float32Array(CAP); cCoreN = new Float32Array(CAP);
+  cPeakT = new Float32Array(CAP);
+  cFrac = new Float32Array(CAP * 4);
+  cStar = new Uint8Array(CAP);
+  roots.length = 0;
+
+  fitDist = new Float64Array(CAP);
+}
+
 /* ================================================================
    Barnes-Hut quadtree — O(n log n) gravity
    ================================================================ */
-const NCAP = CAP * 8;
-const nChild = new Int32Array(NCAP * 4);
-const nMass  = new Float32Array(NCAP);
-const nSx    = new Float32Array(NCAP);
-const nSy    = new Float32Array(NCAP);
-const nCx    = new Float32Array(NCAP);
-const nCy    = new Float32Array(NCAP);
-const nHalf  = new Float32Array(NCAP);
-const nBody  = new Int32Array(NCAP);
-const nLeaf  = new Uint8Array(NCAP);
+let NCAP, nChild, nMass, nSx, nSy, nCx, nCy, nHalf, nBody, nLeaf;
 let nodeCount = 0;
 let rootX = 0, rootY = 0, rootHalf = 1;
 
@@ -712,15 +781,12 @@ function computeGravity(){
 // impact ends up thousands of units from the planets, and a dense grid over
 // that bounding box costs millions of cells to clear every step.
 let cellSize = 4;
-const cellX = new Int32Array(CAP), cellY = new Int32Array(CAP);
+let cellX, cellY, cellItems;
 let hashMask = 1023;
 let cellStart = new Int32Array(1025);
 let cellCursor = new Int32Array(1024);
-let cellItems = new Int32Array(CAP);
 
-const PAIRCAP = CAP * 14;
-const pairA = new Int32Array(PAIRCAP);
-const pairB = new Int32Array(PAIRCAP);
+let PAIRCAP, pairA, pairB;
 let pairN = 0;
 
 function cellHash(cx, cy){
@@ -732,7 +798,7 @@ function buildGrid(){
   cellSize = Math.max(maxR * 2.2, 0.5);
 
   let buckets = 1024;
-  while (buckets < n * 2 && buckets < 65536) buckets <<= 1;
+  while (buckets < n * 2 && buckets < 262144) buckets <<= 1;
   if (buckets - 1 !== hashMask){
     hashMask = buckets - 1;
     cellStart = new Int32Array(buckets + 1);
@@ -926,16 +992,8 @@ function sizeBorder(){
 /* ================================================================
    Clump detection (union-find over the contact graph)
    ================================================================ */
-const cMass = new Float32Array(CAP), cCount = new Int32Array(CAP);
-const cCx = new Float32Array(CAP), cCy = new Float32Array(CAP);
-const cVx = new Float32Array(CAP), cVy = new Float32Array(CAP);
-const cR  = new Float32Array(CAP), cRvis = new Float32Array(CAP);
-const cRsum = new Float32Array(CAP);
-const cCoreT = new Float32Array(CAP), cSurfT = new Float32Array(CAP);
-const cSurfN = new Float32Array(CAP), cCoreN = new Float32Array(CAP);
-const cPeakT = new Float32Array(CAP);
-const cFrac = new Float32Array(CAP * 4);
-const cStar = new Uint8Array(CAP);
+let cMass, cCount, cCx, cCy, cVx, cVy, cR, cRvis, cRsum;
+let cCoreT, cSurfT, cSurfN, cCoreN, cPeakT, cFrac, cStar;
 let roots = [];
 
 function find(a){
@@ -1334,7 +1392,7 @@ function s2wy(sy){ return (sy - H / 2) / cam.scale + cam.y; }
 // Frame the bulk of the system rather than its outliers: after a big impact a
 // handful of fragments end up thousands of units away, and fitting to those
 // shrinks everything worth looking at down to a few pixels.
-const fitDist = new Float64Array(CAP);
+let fitDist;
 
 function fitView(){
   if (n === 0){ cam.tx = 0; cam.ty = 0; cam.tscale = 1; return; }
@@ -1727,11 +1785,11 @@ function endDrag(e){
   if (drag.mode === 'spawn'){
     const R = cfg.brush * 0.5;
     const target = Math.max(6, Math.round(cfg.brush * cfg.brush * 0.02 / (cfg.size * cfg.size)));
-    const cnt = Math.min(target, CAP - n);
+    const cnt = target;
     spawnCloud(wx0, wy0, cnt, R, vx, vy, 0, CLOUD_MIX, 55, 0.4);
     toast(`Spawned ${cnt} balls`);
   } else if (drag.mode === 'throw'){
-    const cnt = Math.min(Math.max(8, Math.round(cfg.brush * 0.55)), CAP - n);
+    const cnt = Math.max(8, Math.round(cfg.brush * 0.55));
     const speed = Math.max(18, Math.hypot(vx, vy));
     const a = Math.atan2(vy, vx);
     spawnPacked(wx0, wy0, cnt, Math.cos(a) * speed, Math.sin(a) * speed, 0, ROCK_MIX, 500);
@@ -1809,7 +1867,19 @@ function bindSlider(id, vid, key, format){
   el.addEventListener('input', apply);
   apply();
 }
-bindSlider('sCount', 'vCount', 'count', v => v);
+function syncCountLabel(){
+  $('vCount').textContent = fmtCount(cfg.count);
+  $('countHint').innerHTML = 'Ball count &amp; size apply on <b>Reset</b>.' +
+    (cfg.count > 5000
+      ? ' <span style="color:var(--hot)">Counts this high need a fast machine.</span>'
+      : '');
+}
+$('sCount').addEventListener('input', e => {
+  cfg.count = countFromPos(+e.target.value);
+  syncCountLabel();
+});
+$('sCount').value = posFromCount(cfg.count);
+syncCountLabel();
 bindSlider('sSize',  'vSize',  'size',  v => v.toFixed(2));
 bindSlider('sSpeed', 'vSpeed', 'speed', v => v.toFixed(2) + '×');
 bindSlider('sG',     'vG',     'G',     v => v.toFixed(1));
@@ -1939,6 +2009,7 @@ function loop(now){
   if (hudTimer > 0.2){ hudTimer = 0; updateHUD(); }
 }
 
+allocScratch();
 setTool('pan');
 buildPreset('blob');
 updateHUD();
