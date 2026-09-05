@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Life, Rewound</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+:root{
+  --ground:#e9e6f1; --panel:#faf9fd; --panel-2:#f1eff8; --panel-3:#e8e5f2;
+  --ink:#191631; --ink-2:#3d3860; --muted:#6d6890;
+  --line:#d8d4e6; --line-soft:#e5e2f0;
+  --past:#5232d4; --past-2:#7358ea; --past-soft:#ded6ff; --past-dim:#b3a2f2;
+  --present:#a35d0c; --present-2:#c47a18; --present-soft:#f6e2c4;
+  --void:#bd2a56; --void-soft:#fadfe6;
+  --dead:#e2ddef; --dead-2:#d4cee6;
+  --shadow:0 1px 1px rgba(25,22,49,.05), 0 10px 26px -16px rgba(25,22,49,.35);
+  --focus:#2f6fe0;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#100f1d; --panel:#191830; --panel-2:#211f3c; --panel-3:#2a2749;
+    --ink:#ece9fb; --ink-2:#c6c1e2; --muted:#8f89b0;
+    --line:#2f2b4c; --line-soft:#272443;
+    --past:#a992ff; --past-2:#8f74f5; --past-soft:#2f2760; --past-dim:#5c4ba0;
+    --present:#f0a83c; --present-2:#d38f28; --present-soft:#4a3312;
+    --void:#ff6f92; --void-soft:#4a1526;
+    --dead:#221f3a; --dead-2:#2c2848;
+    --shadow:0 1px 1px rgba(0,0,0,.3), 0 10px 30px -18px rgba(0,0,0,.9);
+    --focus:#7fa7ff;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#100f1d; --panel:#191830; --panel-2:#211f3c; --panel-3:#2a2749;
+  --ink:#ece9fb; --ink-2:#c6c1e2; --muted:#8f89b0;
+  --line:#2f2b4c; --line-soft:#272443;
+  --past:#a992ff; --past-2:#8f74f5; --past-soft:#2f2760; --past-dim:#5c4ba0;
+  --present:#f0a83c; --present-2:#d38f28; --present-soft:#4a3312;
+  --void:#ff6f92; --void-soft:#4a1526;
+  --dead:#221f3a; --dead-2:#2c2848;
+  --shadow:0 1px 1px rgba(0,0,0,.3), 0 10px 30px -18px rgba(0,0,0,.9);
+  --focus:#7fa7ff;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"Instrument Sans","Helvetica Neue",Arial,sans-serif;
+  font-size:14.5px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{font-family:"Familjen Grotesk","Helvetica Neue",Arial,sans-serif;margin:0;text-wrap:balance;font-weight:600}
+.mono{font-family:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+
+.shell{max-width:1220px;margin:0 auto;padding:22px 20px 72px}
+
+/* ---------- header ---------- */
+.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;
+  padding-bottom:14px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:11px}
+.brand h1{font-size:25px;letter-spacing:-.015em;line-height:1}
+.mark{width:26px;height:26px;flex:none;display:block}
+.spec{display:flex;gap:0;align-items:stretch;font-size:11px}
+.spec div{padding:2px 12px;border-left:1px solid var(--line)}
+.spec div:first-child{border-left:0}
+.spec dt{color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-size:9.5px;margin:0}
+.spec dd{margin:1px 0 0;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink-2)}
+.lede{max-width:63ch;color:var(--ink-2);margin:16px 0 22px;font-size:15px}
+.lede b{color:var(--ink);font-weight:600}
+
+/* ---------- layout ---------- */
+.work{display:grid;grid-template-columns:352px minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:920px){.work{grid-template-columns:minmax(0,1fr)}}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:5px;box-shadow:var(--shadow)}
+.panel > .head{display:flex;align-items:baseline;gap:8px;padding:11px 15px;border-bottom:1px solid var(--line-soft)}
+.eyebrow{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+.eyebrow .t{color:var(--present);font-weight:700;text-transform:none}
+.eyebrow .p{color:var(--past);font-weight:700;text-transform:none}
+.panel .body{padding:15px}
+
+/* ---------- timeline ---------- */
+.timeline{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:0 0 13px}
+.tl-btn{font-family:"JetBrains Mono",monospace;font-size:11px;padding:3px 8px;border-radius:3px;
+  border:1px solid var(--line);background:var(--panel-2);color:var(--ink-2);cursor:pointer}
+.tl-btn.now{background:var(--present-soft);border-color:var(--present);color:var(--present);font-weight:700;cursor:default}
+.tl-arrow{color:var(--muted);font-size:11px}
+
+/* ---------- editor ---------- */
+.stage{position:relative;background:var(--panel-2);border:1px solid var(--line-soft);border-radius:4px;padding:10px}
+canvas{display:block;width:100%;height:auto;touch-action:none}
+#editor{cursor:crosshair;border-radius:2px}
+#editor:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+.hint{margin:9px 0 0;font-size:12px;color:var(--muted)}
+.hint kbd{font-family:"JetBrains Mono",monospace;font-size:10.5px;border:1px solid var(--line);
+  border-bottom-width:2px;border-radius:3px;padding:0 4px;background:var(--panel);color:var(--ink-2)}
+
+/* ---------- controls ---------- */
+.ctl{margin-top:15px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.ctl:first-child{margin-top:0;padding-top:0;border-top:0}
+.ctl-label{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.ctl-label span{text-transform:none;letter-spacing:0;font-size:11px}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+button{font-family:inherit;font-size:12.5px;color:var(--ink-2);background:var(--panel-2);
+  border:1px solid var(--line);border-radius:3px;padding:5px 10px;cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+button:hover:not(:disabled){background:var(--panel-3);color:var(--ink)}
+button:disabled{opacity:.42;cursor:not-allowed}
+button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.chip[aria-pressed="true"]{background:var(--past-soft);border-color:var(--past);color:var(--past);font-weight:600}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:var(--panel-2)}
+.stepper button{border:0;border-radius:0;padding:4px 9px;background:transparent;font-size:14px;line-height:1}
+.stepper .val{font-family:"JetBrains Mono",monospace;font-size:12.5px;min-width:52px;text-align:center;color:var(--ink);
+  border-left:1px solid var(--line);border-right:1px solid var(--line);padding:4px 0}
+.dims{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.dims .lab{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted)}
+
+.rewind{width:100%;margin-top:15px;padding:10px;font-size:14px;font-weight:600;font-family:"Familjen Grotesk",sans-serif;
+  background:var(--past);border-color:var(--past);color:#fff;letter-spacing:.01em}
+:root[data-theme="dark"] .rewind,
+:root:not([data-theme="light"]) .rewind{color:#15122b}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .rewind{color:#fff}}
+.rewind:hover:not(:disabled){background:var(--past-2);border-color:var(--past-2);color:#fff}
+:root[data-theme="dark"] .rewind:hover:not(:disabled){color:#15122b}
+.rewind[data-stale="1"]{animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{box-shadow:0 0 0 0 rgba(114,88,234,.0)}50%{box-shadow:0 0 0 5px rgba(114,88,234,.16)}}
+@media (prefers-reduced-motion:reduce){.rewind[data-stale="1"]{animation:none}}
+
+/* ---------- verdict ---------- */
+.verdict{padding:18px 15px 16px;border-bottom:1px solid var(--line-soft)}
+.count{font-family:"JetBrains Mono",monospace;font-weight:700;letter-spacing:-.02em;color:var(--past);
+  font-size:clamp(30px,5.4vw,48px);line-height:1.02;overflow-wrap:anywhere}
+.count.small{font-size:clamp(21px,3.4vw,30px)}
+.count.void{color:var(--void)}
+.count-sub{font-size:14px;color:var(--ink-2);margin-top:5px}
+.count-sci{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);margin-top:3px}
+.note{font-size:12.5px;color:var(--muted);margin-top:9px;max-width:66ch}
+.banner{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border-radius:4px;font-size:13px;
+  background:var(--void-soft);border:1px solid var(--void);color:var(--ink);margin-top:11px}
+.banner.plain{background:var(--panel-2);border-color:var(--line)}
+.banner b{font-weight:600}
+
+/* ---------- feature cards ---------- */
+.features{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:15px;border-bottom:1px solid var(--line-soft)}
+@media (max-width:560px){.features{grid-template-columns:minmax(0,1fr)}}
+.feat{display:flex;flex-direction:column;gap:8px}
+.feat .cap{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.feat .val{font-size:12.5px;color:var(--ink-2);margin-top:-4px}
+.feat .val b{font-family:"JetBrains Mono",monospace;color:var(--ink);font-weight:700}
+.feat canvas{background:var(--panel-2);border:1px solid var(--line-soft);border-radius:3px}
+
+/* ---------- gallery ---------- */
+.gal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:13px 15px 0}
+.pager{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.pager .pos{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted);padding:0 4px}
+.pager input{font-family:"JetBrains Mono",monospace;font-size:12px;width:88px;padding:4px 7px;border-radius:3px;
+  border:1px solid var(--line);background:var(--panel-2);color:var(--ink)}
+.pager input:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:11px;padding:14px 15px 16px}
+.card{display:flex;flex-direction:column;gap:5px;padding:7px;border:1px solid var(--line-soft);border-radius:4px;
+  background:var(--panel-2);cursor:pointer;text-align:left;transition:border-color .12s,transform .12s}
+.card:hover{border-color:var(--past);transform:translateY(-1px)}
+.card:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.card .meta{display:flex;justify-content:space-between;font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted)}
+.card .meta .ix{color:var(--ink-2)}
+.empty{padding:30px 15px 38px;text-align:center;color:var(--muted);font-size:13.5px}
+
+/* ---------- inspector ---------- */
+.scrim{position:fixed;inset:0;background:rgba(16,14,32,.62);display:flex;align-items:center;justify-content:center;
+  padding:18px;z-index:40;backdrop-filter:blur(2px)}
+.sheet{background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 26px 70px -20px rgba(0,0,0,.55);
+  width:min(660px,100%);max-height:min(92vh,900px);overflow:auto}
+.sheet .head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 15px;border-bottom:1px solid var(--line-soft)}
+.sheet .body{padding:15px}
+.pair{display:grid;grid-template-columns:1fr 34px 1fr;gap:10px;align-items:center}
+@media (max-width:520px){.pair{grid-template-columns:1fr;gap:8px}.pair .arrow{transform:rotate(90deg);justify-self:center}}
+.pair .arrow{color:var(--muted);display:flex;justify-content:center}
+.slot{display:flex;flex-direction:column;gap:6px}
+.slot .cap{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+.slot .cap.past{color:var(--past)}
+.slot .cap.present{color:var(--present)}
+.slot canvas{background:var(--panel-2);border:1px solid var(--line-soft);border-radius:3px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:13px;padding-top:12px;border-top:1px solid var(--line-soft);
+  font-size:11.5px;color:var(--muted)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.sheet .actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px;padding-top:13px;border-top:1px solid var(--line-soft)}
+.close-x{border:0;background:transparent;font-size:19px;line-height:1;padding:2px 6px;color:var(--muted)}
+
+.foot{margin-top:26px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;max-width:74ch}
+.foot code{font-family:"JetBrains Mono",monospace;font-size:11.5px;background:var(--panel-2);border:1px solid var(--line-soft);
+  border-radius:3px;padding:.5px 4px}
+.busy{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--panel) 78%,transparent);
+  font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--past);border-radius:5px;z-index:5}
+.past-panel{position:relative}
+.past-panel.stale .verdict,.past-panel.stale .features,.past-panel.stale .grid,.past-panel.stale .gal-head{opacity:.42;transition:opacity .15s}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1" y="1" width="22" height="22" rx="2" fill="none" stroke="currentColor" stroke-opacity=".25"/>
+        <rect x="4" y="4" width="5" height="5" rx="1" fill="var(--past)"/>
+        <rect x="9.5" y="9.5" width="5" height="5" rx="1" fill="var(--past)" fill-opacity=".45"/>
+        <rect x="15" y="15" width="5" height="5" rx="1" fill="var(--present)"/>
+        <path d="M8 18.5 L4.5 15 L8 11.5" fill="none" stroke="var(--past)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h1>Life, Rewound</h1>
+    </div>
+    <dl class="spec">
+      <div><dt>rule</dt><dd>B3 / S23</dd></div>
+      <div><dt>direction</dt><dd>t &rarr; t&minus;1</dd></div>
+      <div><dt>method</dt><dd>exact enumeration</dd></div>
+    </dl>
+  </header>
+
+  <p class="lede">Conway's Game of Life only runs forwards. This runs it <b>backwards</b>: draw a pattern as it
+  exists <b>now</b>, and every configuration that would have produced it one tick later gets counted &mdash; exactly,
+  not sampled &mdash; and laid out for you to page through.</p>
+
+  <div class="work">
+
+    <!-- ======================= PRESENT ======================= -->
+    <section class="panel">
+      <div class="head">
+        <span class="eyebrow">Generation <span class="t" id="nowGen">t</span> &middot; the present</span>
+      </div>
+      <div class="body">
+        <div class="timeline" id="timeline"></div>
+
+        <div class="stage">
+          <canvas id="editor" tabindex="0" role="img"
+                  aria-label="Editable Game of Life grid. Arrow keys move the cursor, space toggles a cell."></canvas>
+        </div>
+        <p class="hint">Drag to draw &middot; <kbd>shift</kbd>-drag to erase &middot; keyboard: <kbd>&larr;&uarr;&darr;&rarr;</kbd> then <kbd>space</kbd></p>
+
+        <div class="ctl">
+          <div class="ctl-label">Board <span id="dimNote" class="mono"></span></div>
+          <div class="dims">
+            <span class="lab">w</span>
+            <span class="stepper"><button type="button" data-dim="w" data-d="-1" aria-label="Narrower">&minus;</button><span class="val mono" id="wVal">5</span><button type="button" data-dim="w" data-d="1" aria-label="Wider">+</button></span>
+            <span class="lab">h</span>
+            <span class="stepper"><button type="button" data-dim="h" data-d="-1" aria-label="Shorter">&minus;</button><span class="val mono" id="hVal">5</span><button type="button" data-dim="h" data-d="1" aria-label="Taller">+</button></span>
+          </div>
+        </div>
+
+        <div class="ctl">
+          <div class="ctl-label">Search window</div>
+          <div class="row" id="padRow">
+            <button type="button" class="chip" data-pad="0">Tight</button>
+            <button type="button" class="chip" data-pad="1">+1 ring</button>
+            <button type="button" class="chip" data-pad="2">+2 rings</button>
+          </div>
+          <p class="hint" id="padNote"></p>
+        </div>
+
+        <div class="ctl">
+          <div class="ctl-label">Patterns</div>
+          <div class="row" id="presetRow"></div>
+        </div>
+
+        <div class="ctl">
+          <div class="ctl-label">Edit</div>
+          <div class="row">
+            <button type="button" id="btnClear">Clear</button>
+            <button type="button" id="btnInvert">Invert</button>
+            <button type="button" id="btnRandom">Scatter</button>
+            <button type="button" id="btnEden">Hunt an Eden</button>
+          </div>
+        </div>
+
+        <button type="button" class="rewind" id="btnRewind" data-stale="1">Rewind one generation</button>
+      </div>
+    </section>
+
+    <!-- ======================= PAST ======================= -->
+    <section class="panel past-panel">
+      <div class="head">
+        <span class="eyebrow">Generation <span class="p" id="pastGen">t&minus;1</span> &middot; every possible past</span>
+      </div>
+
+      <div class="verdict">
+        <div class="count mono" id="countBig">&mdash;</div>
+        <div class="count-sub" id="countSub">Press rewind to count.</div>
+        <div class="count-sci mono" id="countSci"></div>
+        <div id="verdictExtra"></div>
+      </div>
+
+      <div class="features" id="features"></div>
+
+      <div class="gal-head">
+        <span class="eyebrow">Browse them</span>
+        <div class="pager" id="pager"></div>
+      </div>
+      <div class="grid" id="gallery"></div>
+      <div class="empty" id="galleryEmpty" hidden></div>
+    </section>
+  </div>
+
+  <p class="foot">
+    A <b>past</b> here is any configuration confined to the search window that becomes your drawing exactly &mdash;
+    every live cell in place, and nothing alive anywhere else on the plane. The window matters: on an unbounded board
+    you could always park a lone cell a mile away, watch it die of loneliness, and call that a different past, so the
+    count would be infinite. Widen the window and the count grows; a pattern with none at all is a
+    <b>Garden of Eden</b>. Counting uses an exact row-by-row transfer DP over <code>B3/S23</code>, so the totals are
+    complete, not estimated, and the browser lists the n-th past without ever building the other n&minus;1.
+  </p>
+</div>
+
+<div id="inspector"></div>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   1. THE SOLVER  —  exact predecessor enumeration for B3/S23
+   ============================================================
+   A "past" is an R x C configuration (R = H+2p, C = W+2p) whose next
+   generation, computed on the open plane, equals the target embedded at
+   inset p and is dead everywhere else. Rows are scanned one at a time;
+   the DP state is the pair (previous row, current row), which is enough
+   to decide every cell of the row between them. Counts are exact BigInts,
+   and any single past can be recovered by unranking, so the browser can
+   show past #918,244 without materialising the 918,243 before it.
+============================================================ */
+function popcount(x){var c=0;while(x){x&=x-1;c++;}return c;}
+
+function buildSolver(Tin,Hin,Win,pad,limits){
+  var budget=limits.budget, deadline=limits.deadline, ops=0;
+  function guard(){ if((++ops&1023)===0 && Date.now()>deadline) throw new Error("TIME"); }
+
+  var T=Tin,H=Hin,W=Win,transposed=false;
+  if(Win>Hin){                                   // scan along the long axis: fewer states
+    var T2=new Uint8Array(Hin*Win);
+    for(var i=0;i<Hin;i++) for(var j=0;j<Win;j++) T2[j*Hin+i]=Tin[i*Win+j];
+    T=T2; H=Win; W=Hin; transposed=true;
+  }
+  var R=H+2*pad, C=W+2*pad, CB=1<<C, MASK=CB-1;
+
+  var wants=new Int32Array(R+2);                 // desired next-generation row masks, index r+1
+  for(var r=-1;r<=R;r++){
+    var m=0;
+    if(r>=pad && r<pad+H){ var ii=r-pad; for(var jj=0;jj<W;jj++) if(T[ii*W+jj]) m|=1<<(jj+pad); }
+    wants[r+1]=m;
+  }
+  function bit(x,k){ return (k<0||k>=C)?0:((x>>k)&1); }
+  function colOK(ri,a,b,c,col){
+    var n=bit(a,col-1)+bit(a,col)+bit(a,col+1)
+         +bit(b,col-1)          +bit(b,col+1)
+         +bit(c,col-1)+bit(c,col)+bit(c,col+1);
+    var nxt=(n===3||(n===2&&bit(b,col)))?1:0;
+    var want=(col<0||col>=C)?0:((wants[ri+1]>>col)&1);
+    return nxt===want;
+  }
+  function validCs(ri,a,b,zeroOnly){             // every next row consistent with rows a,b
+    var out=[];
+    (function go(k,c){
+      var hi=(k<C&&!zeroOnly)?1:0;
+      for(var v=0;v<=hi;v++){
+        var nc=c|(v<<k);
+        if(!colOK(ri,a,b,nc,k-1)) continue;
+        if(k>=C+1) out.push(nc); else go(k+1,nc);
+      }
+    })(0,0);
+    return out;
+  }
+
+  var memo=[],t;
+  for(t=0;t<=R+2;t++) memo.push(new Map());
+  var entries=0;
+  function KEY(a,b){ return a*CB+b; }
+  function count(t,a,b){
+    if(t===R+2) return 1n;
+    var m=memo[t], k=KEY(a,b), v=m.get(k);
+    if(v!==undefined) return v;
+    if(++entries>budget) throw new Error("BUDGET");
+    guard();
+    var cs=validCs(t-1,a,b,t>=R), tot=0n;
+    for(var i=0;i<cs.length;i++) tot+=count(t+1,b,cs[i]);
+    m.set(k,tot);
+    return tot;
+  }
+  function unrank(idx){
+    var a=0,b=0,rows=[];
+    for(var t=0;t<R;t++){
+      var cs=validCs(t-1,a,b,false), chosen=-1;
+      for(var i=0;i<cs.length;i++){
+        var n=count(t+1,b,cs[i]);
+        if(idx<n){ chosen=cs[i]; break; }
+        idx-=n;
+      }
+      if(chosen<0) return null;
+      rows.push(chosen); a=b; b=chosen;
+    }
+    return rows;
+  }
+
+  var emin=[],emax=[];
+  for(t=0;t<=R+2;t++){ emin.push(new Map()); emax.push(new Map()); }
+  function ext(t,a,b){                            // [min,max] live cells over rows t..R-1
+    if(t===R+2) return [0,0];
+    var k=KEY(a,b);
+    if(emin[t].has(k)){ var mn0=emin[t].get(k); return mn0===null?null:[mn0,emax[t].get(k)]; }
+    guard();
+    var cs=validCs(t-1,a,b,t>=R), mn=Infinity, mx=-Infinity;
+    for(var i=0;i<cs.length;i++){
+      var rr=ext(t+1,b,cs[i]); if(!rr) continue;
+      var w=t<R?popcount(cs[i]):0;
+      if(rr[0]+w<mn) mn=rr[0]+w;
+      if(rr[1]+w>mx) mx=rr[1]+w;
+    }
+    if(mn===Infinity){ emin[t].set(k,null); return null; }
+    emin[t].set(k,mn); emax[t].set(k,mx);
+    return [mn,mx];
+  }
+  function extremeRows(wantMin){
+    var a=0,b=0,rows=[];
+    for(var t=0;t<R;t++){
+      var cs=validCs(t-1,a,b,false), best=null, bestv=wantMin?Infinity:-Infinity;
+      for(var i=0;i<cs.length;i++){
+        var rr=ext(t+1,b,cs[i]); if(!rr) continue;
+        var v=popcount(cs[i])+(wantMin?rr[0]:rr[1]);
+        if(wantMin?v<bestv:v>bestv){ bestv=v; best=cs[i]; }
+      }
+      if(best===null) return null;
+      rows.push(best); a=b; b=best;
+    }
+    return rows;
+  }
+
+  function marginals(){                            // how often each cell is alive across ALL pasts
+    var pre=[],t;
+    for(t=0;t<=R+2;t++) pre.push(new Map());
+    pre[0].set(KEY(0,0),1n);
+    for(t=0;t<=R+1;t++){
+      pre[t].forEach(function(p,k){
+        guard();
+        var a=Math.floor(k/CB), b=k&MASK;
+        var cs=validCs(t-1,a,b,t>=R);
+        for(var i=0;i<cs.length;i++){
+          var nk=KEY(b,cs[i]), cur=pre[t+1].get(nk);
+          pre[t+1].set(nk,(cur===undefined?0n:cur)+p);
+        }
+      });
+    }
+    var alive=[];
+    for(var rr=0;rr<R;rr++){
+      var row=new Array(C).fill(0n);
+      pre[rr+1].forEach(function(p,k){
+        guard();
+        var a=Math.floor(k/CB), b=k&MASK, suf=count(rr+1,a,b);
+        if(suf===0n) return;
+        var w=p*suf;
+        for(var j=0;j<C;j++) if((b>>j)&1) row[j]+=w;
+      });
+      alive.push(row);
+    }
+    var h=transposed?C:R, w2=transposed?R:C, out=new Array(h*w2);
+    for(var y=0;y<h;y++) for(var x=0;x<w2;x++) out[y*w2+x]=transposed?alive[x][y]:alive[y][x];
+    return {h:h,w:w2,alive:out};
+  }
+
+  function toGrid(rows){
+    if(!rows) return null;
+    var h=transposed?C:R, w2=transposed?R:C, cells=new Uint8Array(h*w2);
+    for(var y=0;y<h;y++) for(var x=0;x<w2;x++)
+      cells[y*w2+x]=transposed?((rows[x]>>y)&1):((rows[y]>>x)&1);
+    return {h:h,w:w2,cells:cells};
+  }
+
+  var total=count(0,0,0);
+  return {
+    total:total, pad:pad,
+    gridH:transposed?C:R, gridW:transposed?R:C,
+    at:function(i){ return toGrid(unrank(i)); },
+    range:function(){ return ext(0,0,0); },
+    extreme:function(min){ return toGrid(extremeRows(min)); },
+    marginals:marginals,
+    get states(){ return entries; }
+  };
+}
+
+/* one forward tick, on a board that grows by a ring so nothing is lost */
+function stepGrid(cells,h,w){
+  var H2=h+2,W2=w+2,out=new Uint8Array(H2*W2);
+  function at(y,x){ return (y<0||y>=h||x<0||x>=w)?0:cells[y*w+x]; }
+  for(var y=-1;y<=h;y++) for(var x=-1;x<=w;x++){
+    var n=0;
+    for(var dy=-1;dy<=1;dy++) for(var dx=-1;dx<=1;dx++) if(dy||dx) n+=at(y+dy,x+dx);
+    out[(y+1)*W2+(x+1)]=(n===3||(n===2&&at(y,x)))?1:0;
+  }
+  return {h:H2,w:W2,cells:out};
+}
+
+/* ============================================================
+   2. PAINTING
+============================================================ */
+var pal={};
+function readPalette(){
+  var cs=getComputedStyle(document.documentElement);
+  ["past","past-2","past-soft","past-dim","present","present-2","present-soft",
+   "void","dead","dead-2","line","line-soft","panel","panel-2","muted","ink"].forEach(function(k){
+    pal[k]=cs.getPropertyValue("--"+k).trim()||"#888";
+  });
+}
+function rgb(hex){
+  var h=hex.replace("#","");
+  if(h.length===3) h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];
+}
+function mix(c1,c2,t){
+  var a=rgb(c1),b=rgb(c2);
+  return "rgb("+Math.round(a[0]+(b[0]-a[0])*t)+","+Math.round(a[1]+(b[1]-a[1])*t)+","+Math.round(a[2]+(b[2]-a[2])*t)+")";
+}
+function rrect(g,x,y,w,h,r){
+  if(g.roundRect){ g.beginPath(); g.roundRect(x,y,w,h,r); return; }
+  r=Math.min(r,w/2,h/2);
+  g.beginPath();
+  g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r);
+  g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath();
+}
+/* opts: h, w, at(y,x)->{fill,a,scale} | null, base(y,x)->{fill,a} , inset, cursor */
+function paint(cv,opts){
+  var dpr=Math.min(window.devicePixelRatio||1,2.5);
+  var cssW=cv.clientWidth||opts.fallbackW||120;
+  var cell=cssW/opts.w, cssH=cell*opts.h;
+  cv.style.height=cssH.toFixed(2)+"px";
+  cv.width=Math.max(1,Math.round(cssW*dpr));
+  cv.height=Math.max(1,Math.round(cssH*dpr));
+  var g=cv.getContext("2d");
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,cssW,cssH);
+  var gap=cell>15?1.6:cell>8?1.1:0.7;
+  var rad=cell>15?2.6:cell>8?1.7:1;
+  for(var y=0;y<opts.h;y++) for(var x=0;x<opts.w;x++){
+    var bx=x*cell+gap/2, by=y*cell+gap/2, bw=cell-gap, bh=cell-gap;
+    if(opts.base){
+      var bs=opts.base(y,x);
+      if(bs){ g.globalAlpha=bs.a===undefined?1:bs.a; g.fillStyle=bs.fill; rrect(g,bx,by,bw,bh,Math.min(rad,bw/2)); g.fill(); }
+    }
+    var s=opts.at?opts.at(y,x):null;
+    if(s){
+      var k=s.scale===undefined?1:s.scale;
+      if(k>0.02){
+        var sw=bw*k, sh=bh*k;
+        g.globalAlpha=s.a===undefined?1:s.a;
+        g.fillStyle=s.fill;
+        rrect(g,bx+(bw-sw)/2,by+(bh-sh)/2,sw,sh,Math.min(rad,sw/2));
+        g.fill();
+      }
+    }
+  }
+  g.globalAlpha=1;
+  if(opts.inset){
+    var p=opts.inset, o=Math.max(0.6,gap/2);
+    g.save();
+    g.setLineDash([3,3]); g.lineWidth=1; g.strokeStyle=pal["present"]; g.globalAlpha=.55;
+    g.strokeRect(p*cell-o+0.5, p*cell-o+0.5, (opts.w-2*p)*cell+2*o-1, (opts.h-2*p)*cell+2*o-1);
+    g.restore();
+  }
+  if(opts.cursor){
+    var cy=opts.cursor[0], cx=opts.cursor[1];
+    g.save();
+    g.lineWidth=2; g.strokeStyle=pal["ink"]; g.globalAlpha=.85;
+    g.strokeRect(cx*cell+1, cy*cell+1, cell-2, cell-2);
+    g.restore();
+  }
+}
+
+/* ============================================================
+   3. NUMBERS
+============================================================ */
+var SUP={"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹"};
+function grp(n){ return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,","); }
+function sciOf(n){
+  var s=n.toString();
+  if(s.length<=12) return "";
+  var e=(s.length-1).toString().split("").map(function(d){return SUP[d];}).join("");
+  return "≈ "+s[0]+"."+s.slice(1,4)+" × 10"+e;
+}
+function randBig(n){
+  var bits=n.toString(2).length, bytes=Math.ceil(bits/8), arr=new Uint8Array(bytes);
+  for(var k=0;k<50;k++){
+    crypto.getRandomValues(arr);
+    var v=0n;
+    for(var i=0;i<bytes;i++) v=(v<<8n)|BigInt(arr[i]);
+    v>>=BigInt(bytes*8-bits);
+    if(v<n) return v;
+  }
+  return n-1n;
+}
+function pop(cells){ var c=0; for(var i=0;i<cells.length;i++) c+=cells[i]; return c; }
+
+/* ============================================================
+   4. STATE
+============================================================ */
+var MIND=3, MAXD=12, PER_PAGE=12;
+var PRESETS=[
+  {n:"Blinker",   w:5,h:5,c:[[2,1],[2,2],[2,3]]},
+  {n:"Block",     w:4,h:4,c:[[1,1],[1,2],[2,1],[2,2]]},
+  {n:"Glider",    w:5,h:5,c:[[1,2],[2,3],[3,1],[3,2],[3,3]]},
+  {n:"Toad",      w:6,h:6,c:[[2,2],[2,3],[2,4],[3,1],[3,2],[3,3]]},
+  {n:"Beehive",   w:6,h:6,c:[[2,2],[2,3],[3,1],[3,4],[4,2],[4,3]]},
+  {n:"Boat",      w:5,h:5,c:[[1,1],[1,2],[2,1],[2,3],[3,2]]},
+  {n:"R-pentomino",w:5,h:5,c:[[1,2],[1,3],[2,1],[2,2],[3,2]]}
+];
+var S={ W:5,H:5,pad:1, cells:new Uint8Array(25), chain:[], depth:0,
+        res:null, stale:true, fastEnough:true, page:0n, cursor:[2,2], notice:"" };
+
+var $=function(id){ return document.getElementById(id); };
+var editor=$("editor");
+
+function idx(y,x){ return y*S.W+x; }
+function blank(w,h){ return new Uint8Array(w*h); }
+function cloneCells(c){ return new Uint8Array(c); }
+function genLabel(k){ return k===0?"t":"t−"+k; }
+
+function save(){
+  try{
+    localStorage.setItem("life-rewound", JSON.stringify({
+      W:S.W,H:S.H,pad:S.pad,cells:Array.from(S.cells)
+    }));
+  }catch(e){}
+}
+function restore(){
+  try{
+    var raw=localStorage.getItem("life-rewound");
+    if(!raw) return false;
+    var d=JSON.parse(raw);
+    if(!d||!d.cells||d.W<MIND||d.W>MAXD||d.H<MIND||d.H>MAXD) return false;
+    if(d.cells.length!==d.W*d.H) return false;
+    S.W=d.W; S.H=d.H; S.pad=(d.pad===0||d.pad===1||d.pad===2)?d.pad:1;
+    S.cells=Uint8Array.from(d.cells);
+    return true;
+  }catch(e){ return false; }
+}
+
+/* ============================================================
+   5. RENDERING
+============================================================ */
+function renderEditor(){
+  var p=S.pad, focused=document.activeElement===editor;
+  paint(editor,{
+    h:S.H+2*p, w:S.W+2*p,
+    base:function(y,x){
+      var iy=y-p, ix=x-p, inside=(iy>=0&&iy<S.H&&ix>=0&&ix<S.W);
+      return {fill:pal["dead"], a:inside?1:.42};
+    },
+    at:function(y,x){
+      var iy=y-p, ix=x-p;
+      if(iy<0||iy>=S.H||ix<0||ix>=S.W) return null;
+      return S.cells[idx(iy,ix)]?{fill:pal["present"]}:null;
+    },
+    inset:p||0,
+    cursor:focused?[S.cursor[0]+p,S.cursor[1]+p]:null
+  });
+}
+
+function renderTimeline(){
+  var el=$("timeline");
+  if(S.chain.length<2){ el.innerHTML=""; el.hidden=true; return; }
+  el.hidden=false;
+  var out=[];
+  for(var k=0;k<S.chain.length;k++){
+    if(k) out.push('<span class="tl-arrow">&larr;</span>');
+    out.push('<button type="button" class="tl-btn'+(k===S.depth?" now":"")+'" data-k="'+k+'"'+
+             (k===S.depth?' aria-current="true"':"")+'>'+genLabel(k)+'</button>');
+  }
+  el.innerHTML=out.join("");
+  Array.prototype.forEach.call(el.querySelectorAll(".tl-btn"),function(b){
+    b.addEventListener("click",function(){ gotoChain(+b.dataset.k); });
+  });
+}
+
+function renderControls(){
+  $("wVal").textContent=S.W; $("hVal").textContent=S.H;
+  $("dimNote").textContent=S.W+"×"+S.H+" → window "+(S.W+2*S.pad)+"×"+(S.H+2*S.pad);
+  Array.prototype.forEach.call($("padRow").children,function(b){
+    b.setAttribute("aria-pressed", (+b.dataset.pad===S.pad)?"true":"false");
+  });
+  $("padNote").textContent=[
+    "The past has to fit the board exactly — no help from off-screen cells.",
+    "The past may reach one ring outside the board. The usual choice.",
+    "Two rings outside. Far more pasts, and far slower to count."
+  ][S.pad];
+  var rb=$("btnRewind");
+  rb.dataset.stale=S.stale?"1":"0";
+  $("nowGen").textContent=genLabel(S.depth);
+  $("pastGen").textContent=genLabel(S.depth+1);
+  document.querySelector(".past-panel").classList.toggle("stale",S.stale&&!!S.res);
+}
+
+function renderVerdict(){
+  var big=$("countBig"), sub=$("countSub"), sci=$("countSci"), extra=$("verdictExtra");
+  big.className="count mono"; sci.textContent=""; extra.innerHTML="";
+  var r=S.res;
+  if(S.notice) extra.innerHTML='<div class="banner plain">'+S.notice+"</div>";
+  if(!r){ big.textContent="—"; sub.textContent="Press rewind to count."; return; }
+  if(r.error){
+    big.textContent="too many"; big.className="count mono small";
+    sub.textContent="This board has more pasts than can be counted here.";
+    extra.innerHTML='<div class="banner plain"><span>'+
+      "The count is finite, but the search ran past its "+(r.error==="budget"?"memory":"time")+
+      " limit. Sparse boards have astronomically many pasts — add live cells, shrink the board, or narrow the search window."+
+      "</span></div>"+extra.innerHTML;
+    return;
+  }
+  var n=r.total, w=S.W+2*S.pad, h=S.H+2*S.pad;
+  if(n===0n){
+    big.textContent="0"; big.className="count mono void";
+    sub.textContent="possible pasts — nothing can produce this.";
+    extra.innerHTML='<div class="banner"><span><b>Garden of Eden.</b> No '+w+"×"+h+
+      " configuration turns into this pattern, so it can only ever be a starting state — it has no history."+
+      (S.pad<2?" A wider search window might still find one.":"")+"</span></div>"+extra.innerHTML;
+    return;
+  }
+  var s=n.toString();
+  big.textContent=grp(n);
+  if(s.length>15) big.className="count mono small";
+  sub.textContent=(n===1n?"possible past":"possible pasts")+" inside the "+w+"×"+h+" window";
+  sci.textContent=sciOf(n);
+  if(r.range) sci.textContent+=(sci.textContent?"   ·   ":"")+"live cells: "+r.range[0]+"–"+r.range[1];
+  var t=Math.round(r.ms);
+  extra.innerHTML=extra.innerHTML+'<p class="note">Counted exactly in '+t+" ms by walking the board row by row — the pasts themselves are built one at a time, on demand.</p>";
+}
+
+function featCanvas(){ var c=document.createElement("canvas"); c.style.width="100%"; return c; }
+
+function renderFeatures(){
+  var box=$("features"), r=S.res;
+  box.innerHTML="";
+  if(!r||r.error||r.total===0n){ box.hidden=true; return; }
+  box.hidden=false;
+  var p=S.pad;
+
+  function card(cap,val,cv,onClick,title){
+    var d=document.createElement("div"); d.className="feat";
+    var c=document.createElement("div"); c.className="cap"; c.textContent=cap;
+    var v=document.createElement("div"); v.className="val"; v.innerHTML=val;
+    d.appendChild(c);
+    if(onClick){
+      var b=document.createElement("button");
+      b.type="button"; b.className="card"; b.style.padding="6px"; b.title=title||"";
+      b.appendChild(cv); b.addEventListener("click",onClick); d.appendChild(b);
+    } else { d.appendChild(cv); }
+    d.appendChild(v); box.appendChild(d); return d;
+  }
+
+  /* superposition */
+  var cvM=featCanvas();
+  if(r.marg){
+    card("Superposition","every past at once, by how often each cell is alive",cvM,null);
+    var tot=r.total, m=r.marg;
+    paint(cvM,{h:m.h,w:m.w,
+      base:function(){ return {fill:pal["dead"],a:1}; },
+      at:function(y,x){
+        var f=Number(m.alive[y*m.w+x]*100000n/tot)/100000;
+        return f<=0?null:{fill:pal["past"],a:Math.max(.07,Math.pow(f,.78))};
+      },
+      inset:p||0, fallbackW:120});
+  } else {
+    var d=document.createElement("div"); d.className="feat";
+    d.innerHTML='<div class="cap">Superposition</div><div class="val" style="margin-top:0">'+
+      "Too many states to map every cell at once — try a smaller board or a tighter window.</div>";
+    box.appendChild(d);
+  }
+
+  /* sparsest / densest */
+  [[true,"Sparsest past","the least it could have taken"],[false,"Densest past","the most it could have taken"]]
+  .forEach(function(spec){
+    var g=spec[0]?r.min:r.max;
+    if(!g) return;
+    var cv=featCanvas();
+    card(spec[1],"<b>"+pop(g.cells)+"</b> live cells — "+spec[2],cv,function(){
+      openInspector({grid:g,index:null,label:spec[1]});
+    },"Inspect this past");
+    paint(cv,{h:g.h,w:g.w,
+      base:function(){ return {fill:pal["dead"],a:1}; },
+      at:function(y,x){ return g.cells[y*g.w+x]?{fill:pal["past"]}:null; },
+      inset:p||0, fallbackW:120});
+  });
+}
+
+function renderPager(){
+  var el=$("pager"), r=S.res;
+  el.innerHTML="";
+  if(!r||r.error||!r.total||r.total===0n) return;
+  var n=r.total, per=BigInt(PER_PAGE);
+  var pages=(n+per-1n)/per;
+  var from=S.page*per+1n, to=S.page*per+per; if(to>n) to=n;
+
+  function btn(txt,fn,dis,lab){
+    var b=document.createElement("button");
+    b.type="button"; b.textContent=txt; b.disabled=!!dis;
+    if(lab) b.setAttribute("aria-label",lab);
+    if(fn) b.addEventListener("click",fn);
+    el.appendChild(b); return b;
+  }
+  btn("|◀",function(){ S.page=0n; renderGallery(); renderPager(); },S.page===0n,"First page");
+  btn("◀",function(){ if(S.page>0n){S.page-=1n; renderGallery(); renderPager();} },S.page===0n,"Previous page");
+  var pos=document.createElement("span");
+  pos.className="pos";
+  pos.textContent=grp(from)+"–"+grp(to)+" of "+grp(n);
+  el.appendChild(pos);
+  btn("▶",function(){ if(S.page<pages-1n){S.page+=1n; renderGallery(); renderPager();} },S.page>=pages-1n,"Next page");
+  btn("▶|",function(){ S.page=pages-1n; renderGallery(); renderPager(); },S.page>=pages-1n,"Last page");
+
+  if(n>per){
+    var inp=document.createElement("input");
+    inp.type="text"; inp.inputMode="numeric"; inp.placeholder="go to #";
+    inp.setAttribute("aria-label","Jump to a past by number");
+    inp.addEventListener("keydown",function(e){ if(e.key==="Enter") jump(); });
+    el.appendChild(inp);
+    function jump(){
+      var v=inp.value.replace(/[^0-9]/g,"");
+      if(!v) return;
+      var i;
+      try{ i=BigInt(v); }catch(e){ return; }
+      if(i<1n) i=1n; if(i>n) i=n;
+      S.page=(i-1n)/per; inp.value=""; renderGallery(); renderPager();
+      openInspector({grid:S.res.solver.at(i-1n),index:i-1n});
+    }
+    btn("Go",jump,false,"Jump to that past");
+  }
+  btn("Surprise me",function(){
+    var i=randBig(n);
+    S.page=i/per; renderGallery(); renderPager();
+    openInspector({grid:S.res.solver.at(i),index:i});
+  },false,"Open a random past");
+}
+
+function renderGallery(){
+  var el=$("gallery"), em=$("galleryEmpty"), r=S.res;
+  el.innerHTML="";
+  if(!r||r.error){ em.hidden=false; em.textContent=r&&r.error?"Nothing to browse — the count did not finish.":"Draw a pattern, then rewind."; return; }
+  if(r.total===0n){ em.hidden=false; em.textContent="There is nothing to browse: this pattern has no past at all."; return; }
+  em.hidden=true;
+  var per=BigInt(PER_PAGE), start=S.page*per, p=S.pad;
+  for(var k=0n;k<per;k++){
+    var i=start+k;
+    if(i>=r.total) break;
+    (function(index){
+      var g=r.solver.at(index);
+      var b=document.createElement("button");
+      b.type="button"; b.className="card";
+      b.title="Past #"+grp(index+1n)+" — "+pop(g.cells)+" live cells";
+      b.setAttribute("aria-label",b.title);
+      var cv=document.createElement("canvas"); cv.style.width="100%";
+      var meta=document.createElement("div"); meta.className="meta";
+      meta.innerHTML='<span class="ix">#'+grp(index+1n)+'</span><span title="live cells">'+pop(g.cells)+" ◼</span>";
+      b.appendChild(cv); b.appendChild(meta);
+      b.addEventListener("click",function(){ openInspector({grid:g,index:index}); });
+      el.appendChild(b);
+      paint(cv,{h:g.h,w:g.w,
+        base:function(){ return {fill:pal["dead"],a:1}; },
+        at:function(y,x){ return g.cells[y*g.w+x]?{fill:pal["past"]}:null; },
+        inset:p||0, fallbackW:96});
+    })(i);
+  }
+}
+
+function renderAll(){
+  renderControls(); renderTimeline(); renderEditor();
+  renderVerdict(); renderFeatures(); renderPager(); renderGallery();
+}
+
+/* ============================================================
+   6. INSPECTOR
+============================================================ */
+var insp=null, lastFocus=null;
+function closeInspector(){
+  if(!insp) return;
+  if(insp.raf) cancelAnimationFrame(insp.raf);
+  insp.el.remove(); insp=null;
+  document.removeEventListener("keydown",inspKeys);
+  if(lastFocus&&lastFocus.focus) lastFocus.focus();
+}
+function inspKeys(e){
+  if(!insp) return;
+  if(e.key==="Escape"){ e.preventDefault(); closeInspector(); }
+  else if(e.key==="ArrowRight"&&insp.index!==null) step(1n);
+  else if(e.key==="ArrowLeft"&&insp.index!==null) step(-1n);
+}
+function step(d){
+  if(!insp||insp.index===null||!S.res||!S.res.solver) return;
+  var n=S.res.total, i=insp.index+d;
+  if(i<0n||i>=n) return;
+  openInspector({grid:S.res.solver.at(i),index:i});
+}
+
+function verifies(g,present){
+  var nx=stepGrid(g.cells,g.h,g.w);
+  for(var y=0;y<g.h+2;y++) for(var x=0;x<g.w+2;x++){
+    var u=y-1, v=x-1;
+    var want=(u>=0&&u<g.h&&v>=0&&v<g.w)?present.cells[u*g.w+v]:0;
+    if(nx.cells[y*(g.w+2)+x]!==want) return false;
+  }
+  return true;
+}
+
+function openInspector(o){
+  var reopen=!!insp;
+  if(insp){ if(insp.raf) cancelAnimationFrame(insp.raf); insp.el.remove(); insp=null; }
+  else { lastFocus=document.activeElement; document.addEventListener("keydown",inspKeys); }
+
+  var g=o.grid, p=S.pad, i=(o.index===undefined)?null:o.index;
+  var present={h:g.h,w:g.w,cells:blank(g.w,g.h)};
+  for(var y=0;y<S.H;y++) for(var x=0;x<S.W;x++)
+    present.cells[(y+p)*g.w+(x+p)]=S.cells[idx(y,x)];
+
+  var el=document.createElement("div");
+  el.className="scrim"; el.setAttribute("role","dialog"); el.setAttribute("aria-modal","true");
+  el.setAttribute("aria-label","A possible past");
+  var title=(i===null)?(o.label||"A possible past")
+    :("Past #"+grp(i+1n)+" of "+grp(S.res.total));
+  el.innerHTML=
+    '<div class="sheet">'+
+      '<div class="head"><span class="eyebrow">'+title+'</span>'+
+        '<button type="button" class="close-x" aria-label="Close">×</button></div>'+
+      '<div class="body">'+
+        '<div class="pair">'+
+          '<div class="slot"><span class="cap past">generation '+genLabel(S.depth+1)+' · the past</span>'+
+            '<canvas data-r="l"></canvas><span class="val mono" style="font-size:11px;color:var(--muted)">'+
+            pop(g.cells)+' live cells</span></div>'+
+          '<div class="arrow" aria-hidden="true">'+
+            '<svg width="26" height="16" viewBox="0 0 26 16"><path d="M1 8h22M18 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>'+
+          '<div class="slot"><span class="cap present">generation '+genLabel(S.depth)+' · your pattern</span>'+
+            '<canvas data-r="r"></canvas><span class="val mono" style="font-size:11px;color:var(--muted)">'+
+            pop(present.cells)+' live cells</span></div>'+
+        '</div>'+
+        '<div class="legend">'+
+          '<span><i style="background:'+pal["present"]+'"></i>born</span>'+
+          '<span><i style="background:'+mix(pal["past"],pal["present"],.5)+'"></i>survives</span>'+
+          '<span><i style="background:'+pal["void"]+'"></i>dies</span>'+
+          '<span data-r="ver"></span>'+
+        '</div>'+
+        '<div class="actions">'+
+          '<button type="button" data-a="play">▶ Play the tick</button>'+
+          '<button type="button" data-a="back">⟲ Rewind from here</button>'+
+          (i===null?"":'<button type="button" data-a="prev">‹ Previous</button><button type="button" data-a="next">Next ›</button>')+
+          '<button type="button" data-a="close" style="margin-left:auto">Close</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  document.getElementById("inspector").appendChild(el);
+
+  var cvL=el.querySelector('[data-r="l"]'), cvR=el.querySelector('[data-r="r"]');
+  insp={el:el,index:i,grid:g,present:present,raf:0};
+
+  paint(cvL,{h:g.h,w:g.w,
+    base:function(){ return {fill:pal["dead"],a:1}; },
+    at:function(y,x){ return g.cells[y*g.w+x]?{fill:pal["past"]}:null; },
+    inset:p||0, fallbackW:230});
+
+  function paintRight(t){
+    paint(cvR,{h:g.h,w:g.w,
+      base:function(){ return {fill:pal["dead"],a:1}; },
+      at:function(y,x){
+        var a=g.cells[y*g.w+x], b=present.cells[y*g.w+x];
+        if(a&&b) return {fill:mix(pal["past"],pal["present"],t)};
+        if(a&&!b) return {fill:mix(pal["past"],pal["void"],Math.min(1,t*2)), a:1-t, scale:1-t*.85};
+        if(!a&&b) return {fill:pal["present"], a:t, scale:.15+.85*t};
+        return null;
+      },
+      inset:p||0, fallbackW:230});
+  }
+  paintRight(1);
+  insp.repaint=function(){ paint(cvL,{h:g.h,w:g.w,
+      base:function(){ return {fill:pal["dead"],a:1}; },
+      at:function(y,x){ return g.cells[y*g.w+x]?{fill:pal["past"]}:null; },
+      inset:p||0, fallbackW:230}); paintRight(1); };
+
+  var ver=el.querySelector('[data-r="ver"]');
+  ver.style.marginLeft="auto";
+  if(verifies(g,present)){ ver.innerHTML='<span style="color:var(--past)">✓</span> checked: one tick forward gives your pattern exactly'; }
+  else{ ver.innerHTML='<span style="color:var(--void)">✕</span> verification failed'; }
+
+  function play(){
+    if(insp.raf) cancelAnimationFrame(insp.raf);
+    if(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches){ paintRight(1); return; }
+    var t0=performance.now(), dur=950;
+    (function frame(now){
+      var t=Math.min(1,(now-t0)/dur);
+      var e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+      paintRight(e);
+      if(t<1) insp.raf=requestAnimationFrame(frame);
+    })(t0);
+  }
+  el.addEventListener("click",function(e){ if(e.target===el) closeInspector(); });
+  el.querySelector(".close-x").addEventListener("click",closeInspector);
+  Array.prototype.forEach.call(el.querySelectorAll("[data-a]"),function(b){
+    b.addEventListener("click",function(){
+      var a=b.dataset.a;
+      if(a==="play") play();
+      else if(a==="close") closeInspector();
+      else if(a==="back") rewindFrom(g);
+      else if(a==="prev") step(-1n);
+      else if(a==="next") step(1n);
+    });
+  });
+  if(!reopen) setTimeout(function(){ var f=el.querySelector('[data-a="play"]'); if(f) f.focus(); },0);
+  setTimeout(play,reopen?0:180);
+}
+
+/* ============================================================
+   7. ACTIONS
+============================================================ */
+function markStale(){ S.stale=true; renderControls(); }
+function touched(){
+  S.chain=[]; S.depth=0; S.notice="";
+  save();
+  if(S.fastEnough) solveNow(); else { markStale(); renderEditor(); }
+}
+function setBusy(on,msg){
+  var panel=document.querySelector(".past-panel");
+  var b=panel.querySelector(".busy");
+  if(on){
+    if(!b){ b=document.createElement("div"); b.className="busy"; panel.appendChild(b); }
+    b.textContent=msg||"counting every past…";
+  } else if(b) b.remove();
+}
+function solveNow(){
+  setBusy(true);
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){
+    doSolve(); setBusy(false);
+  }); });
+}
+function doSolve(){
+  var t0=performance.now(), res={};
+  try{
+    var s=buildSolver(S.cells,S.H,S.W,S.pad,{budget:900000,deadline:Date.now()+6000});
+    res.solver=s; res.total=s.total;
+    if(s.total>0n){
+      res.range=s.range();
+      res.min=s.extreme(true);
+      res.max=s.extreme(false);
+      if(s.states<600000){ try{ res.marg=s.marginals(); }catch(e){ res.marg=null; } }
+    }
+  }catch(e){ res.error=(e.message==="BUDGET")?"budget":"time"; }
+  res.ms=performance.now()-t0;
+  S.res=res; S.stale=false; S.page=0n;
+  S.fastEnough=!res.error && res.ms<380;
+  closeInspector();
+  renderAll();
+}
+function setSize(dim,d){
+  var v=(dim==="w"?S.W:S.H)+d;
+  if(v<MIND||v>MAXD) return;
+  var nw=dim==="w"?v:S.W, nh=dim==="h"?v:S.H;
+  var nc=blank(nw,nh);
+  for(var y=0;y<Math.min(nh,S.H);y++) for(var x=0;x<Math.min(nw,S.W);x++) nc[y*nw+x]=S.cells[y*S.W+x];
+  S.W=nw; S.H=nh; S.cells=nc;
+  S.cursor=[Math.min(S.cursor[0],nh-1),Math.min(S.cursor[1],nw-1)];
+  touched();
+}
+function setPad(p){ if(p===S.pad) return; S.pad=p; S.notice=""; save(); if(S.fastEnough) solveNow(); else { markStale(); renderEditor(); } }
+function applyPreset(pr){
+  S.W=pr.w; S.H=pr.h; S.cells=blank(pr.w,pr.h);
+  pr.c.forEach(function(c){ S.cells[c[0]*pr.w+c[1]]=1; });
+  S.cursor=[Math.min(S.cursor[0],S.H-1),Math.min(S.cursor[1],S.W-1)];
+  S.chain=[]; S.depth=0; S.notice=""; save(); solveNow();
+}
+function gotoChain(k){
+  var e=S.chain[k]; if(!e) return;
+  S.W=e.W; S.H=e.H; S.cells=cloneCells(e.cells); S.depth=k;
+  S.cursor=[Math.min(S.cursor[0],S.H-1),Math.min(S.cursor[1],S.W-1)];
+  S.notice=""; save(); solveNow();
+}
+function rewindFrom(g){
+  if(g.w>MAXD||g.h>MAXD){
+    S.notice="That past is "+g.w+"×"+g.h+", past the "+MAXD+"×"+MAXD+" limit. Switch to the Tight window to keep rewinding at the same size.";
+    closeInspector(); renderVerdict(); return;
+  }
+  if(!S.chain.length) S.chain=[{W:S.W,H:S.H,cells:cloneCells(S.cells)}];
+  S.chain=S.chain.slice(0,S.depth+1);
+  S.chain.push({W:g.w,H:g.h,cells:cloneCells(g.cells)});
+  S.depth=S.chain.length-1;
+  S.W=g.w; S.H=g.h; S.cells=cloneCells(g.cells);
+  S.cursor=[Math.min(S.cursor[0],S.H-1),Math.min(S.cursor[1],S.W-1)];
+  S.notice=""; save(); closeInspector(); solveNow();
+}
+function huntEden(){
+  setBusy(true,"hunting for a Garden of Eden…");
+  setTimeout(function(){
+    var end=Date.now()+3000, tries=0, found=null;
+    while(Date.now()<end){
+      tries++;
+      var c=blank(S.W,S.H);
+      for(var i=0;i<c.length;i++) c[i]=Math.random()<0.55?1:0;
+      try{
+        var s=buildSolver(c,S.H,S.W,S.pad,{budget:200000,deadline:Date.now()+250});
+        if(s.total===0n){ found=c; break; }
+      }catch(e){}
+    }
+    setBusy(false);
+    if(found){ S.cells=found; S.chain=[]; S.depth=0; S.notice=""; save(); solveNow(); }
+    else{
+      S.notice="No Garden of Eden in "+tries+" random tries at this window — they are genuinely rare once the past is allowed to reach outside the board. The Tight window is thick with them.";
+      renderAll();
+    }
+  },40);
+}
+
+/* ============================================================
+   8. EVENTS
+============================================================ */
+function cellFromEvent(e){
+  var r=editor.getBoundingClientRect();
+  var cell=r.width/(S.W+2*S.pad);
+  var x=Math.floor((e.clientX-r.left)/cell)-S.pad;
+  var y=Math.floor((e.clientY-r.top)/cell)-S.pad;
+  if(y<0||y>=S.H||x<0||x>=S.W) return null;
+  return {y:y,x:x,i:idx(y,x)};
+}
+var painting=false, paintVal=1;
+editor.addEventListener("pointerdown",function(e){
+  var c=cellFromEvent(e); if(!c) return;
+  e.preventDefault(); editor.focus();
+  try{ editor.setPointerCapture(e.pointerId); }catch(err){}
+  paintVal=(e.shiftKey||e.button===2||e.altKey)?0:(S.cells[c.i]?0:1);
+  painting=true; S.cursor=[c.y,c.x]; S.cells[c.i]=paintVal; renderEditor();
+});
+editor.addEventListener("pointermove",function(e){
+  if(!painting) return;
+  var c=cellFromEvent(e); if(!c) return;
+  if(S.cells[c.i]!==paintVal){ S.cells[c.i]=paintVal; S.cursor=[c.y,c.x]; renderEditor(); }
+});
+function endPaint(){ if(!painting) return; painting=false; touched(); }
+editor.addEventListener("pointerup",endPaint);
+editor.addEventListener("pointercancel",endPaint);
+editor.addEventListener("contextmenu",function(e){ e.preventDefault(); });
+editor.addEventListener("focus",renderEditor);
+editor.addEventListener("blur",renderEditor);
+editor.addEventListener("keydown",function(e){
+  var k=e.key, moved=false;
+  if(k==="ArrowUp"){ S.cursor[0]=Math.max(0,S.cursor[0]-1); moved=true; }
+  else if(k==="ArrowDown"){ S.cursor[0]=Math.min(S.H-1,S.cursor[0]+1); moved=true; }
+  else if(k==="ArrowLeft"){ S.cursor[1]=Math.max(0,S.cursor[1]-1); moved=true; }
+  else if(k==="ArrowRight"){ S.cursor[1]=Math.min(S.W-1,S.cursor[1]+1); moved=true; }
+  else if(k===" "||k==="Enter"){
+    var i=idx(S.cursor[0],S.cursor[1]);
+    S.cells[i]=S.cells[i]?0:1;
+    e.preventDefault(); renderEditor(); touched(); return;
+  }
+  if(moved){ e.preventDefault(); renderEditor(); }
+});
+
+Array.prototype.forEach.call(document.querySelectorAll("[data-dim]"),function(b){
+  b.addEventListener("click",function(){ setSize(b.dataset.dim,+b.dataset.d); });
+});
+Array.prototype.forEach.call($("padRow").children,function(b){
+  b.addEventListener("click",function(){ setPad(+b.dataset.pad); });
+});
+PRESETS.forEach(function(pr){
+  var b=document.createElement("button");
+  b.type="button"; b.textContent=pr.n;
+  b.addEventListener("click",function(){ applyPreset(pr); });
+  $("presetRow").appendChild(b);
+});
+$("btnClear").addEventListener("click",function(){ S.cells=blank(S.W,S.H); renderEditor(); touched(); });
+$("btnInvert").addEventListener("click",function(){
+  for(var i=0;i<S.cells.length;i++) S.cells[i]=S.cells[i]?0:1;
+  renderEditor(); touched();
+});
+$("btnRandom").addEventListener("click",function(){
+  for(var i=0;i<S.cells.length;i++) S.cells[i]=Math.random()<0.4?1:0;
+  renderEditor(); touched();
+});
+$("btnEden").addEventListener("click",huntEden);
+$("btnRewind").addEventListener("click",solveNow);
+
+var rt=0;
+window.addEventListener("resize",function(){
+  clearTimeout(rt);
+  rt=setTimeout(function(){ renderAll(); if(insp&&insp.repaint) insp.repaint(); },130);
+});
+function themeChanged(){ readPalette(); renderAll(); if(insp&&insp.repaint) insp.repaint(); }
+if(window.matchMedia){
+  var mq=window.matchMedia("(prefers-color-scheme: dark)");
+  if(mq.addEventListener) mq.addEventListener("change",themeChanged);
+  else if(mq.addListener) mq.addListener(themeChanged);
+}
+new MutationObserver(themeChanged).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme","class","style"]});
+
+/* ============================================================
+   9. GO
+============================================================ */
+readPalette();
+if(!restore()){
+  S.W=5; S.H=5; S.cells=blank(5,5);
+  [[2,1],[2,2],[2,3]].forEach(function(c){ S.cells[c[0]*5+c[1]]=1; });
+}
+S.cursor=[Math.min(2,S.H-1),Math.min(2,S.W-1)];
+renderControls(); renderEditor();
+solveNow();
+
+})();
+</script>
+</body>
+</html>
