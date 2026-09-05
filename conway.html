@@ -346,7 +346,7 @@
       <button class="tool on" data-tool="toggle" title="Click a cell to turn it on or off; drag to keep going">Toggle</button>
       <button class="tool" data-tool="line" title="Drag across the board to lay a line of cells">Line</button>
       <button class="tool" data-tool="stamp" title="Click to drop the chosen pattern">Stamp</button>
-      <button class="tool" data-tool="pan" title="Drag to move the view around the board">Pan</button>
+      <button class="tool" data-tool="pan" title="Drag to move the view; pinch, shift-drag or double-click to zoom">Pan</button>
     </div>
     <div class="ctl">
       <label for="stamp">Pattern</label>
@@ -386,7 +386,7 @@
         <span><i style="background: hsl(var(--osc-h) 78% 55%)"></i> oscillator</span>
         <span><i style="background: hsl(var(--ship-h) 62% 62%)"></i> spaceship</span>
         <span><i style="background: #7d8899"></i> unidentified</span>
-        <span id="hint">Edges wrap around. Click a cell to toggle it; click a bar to inspect that pattern.</span>
+        <span id="hint">Edges wrap around. Click a cell to toggle it; click a bar to inspect that pattern. Pan zooms too — pinch, shift-drag or double-click.</span>
       </div>
     </section>
 
@@ -2260,6 +2260,42 @@
 
   /* ---------- board tools ---------- */
   let drag = null;
+  const pointers = new Map();
+  let pinch = null;
+
+  function canvasPoint(ev) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+  }
+
+  // Two fingers (or two pointers of any kind) zoom about the point between
+  // them, and dragging that midpoint keeps panning at the same time.
+  function startPinch() {
+    const pts = Array.from(pointers.values());
+    const dx = pts[0].x - pts[1].x, dy = pts[0].y - pts[1].y;
+    const rect = canvas.getBoundingClientRect();
+    pinch = {
+      dist: Math.max(1, Math.hypot(dx, dy)),
+      scale: view.scale,
+      mid: { x: (pts[0].x + pts[1].x) / 2 - rect.left, y: (pts[0].y + pts[1].y) / 2 - rect.top }
+    };
+    linePreview = null;
+    drag = null;
+    canvas.classList.remove('panning');
+  }
+
+  function movePinch() {
+    const pts = Array.from(pointers.values());
+    if (pts.length < 2) return;
+    const rect = canvas.getBoundingClientRect();
+    const dist = Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y));
+    const mid = { x: (pts[0].x + pts[1].x) / 2 - rect.left, y: (pts[0].y + pts[1].y) / 2 - rect.top };
+    const cs = cellSize();
+    view.ox = ((view.ox - (mid.x - pinch.mid.x) / cs) % W + W) % W;
+    view.oy = ((view.oy - (mid.y - pinch.mid.y) / cs) % H + H) % H;
+    pinch.mid = mid;
+    setZoom(pinch.scale * (dist / pinch.dist), mid.x, mid.y);
+  }
 
   function pointerCell(ev) {
     const rect = canvas.getBoundingClientRect();
@@ -2277,9 +2313,18 @@
   }
 
   canvas.addEventListener('pointerdown', function (ev) {
-    canvas.setPointerCapture(ev.pointerId);
+    try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* synthetic pointer */ }
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pointers.size === 2) { startPinch(); return; }
+    if (pointers.size > 2) return;
     const c = pointerCell(ev);
     if (tool === 'pan') {
+      // Shift-drag (or the right button) zooms instead of panning.
+      if (ev.shiftKey || ev.button === 2) {
+        const at = canvasPoint(ev);
+        drag = { kind: 'zoom', y: ev.clientY, scale: view.scale, fx: at.x, fy: at.y };
+        return;
+      }
       drag = { kind: 'pan', x: ev.clientX, y: ev.clientY };
       canvas.classList.add('panning');
       return;
@@ -2306,7 +2351,13 @@
   });
 
   canvas.addEventListener('pointermove', function (ev) {
+    if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pinch) { movePinch(); return; }
     if (!drag) return;
+    if (drag.kind === 'zoom') {
+      setZoom(drag.scale * Math.pow(1.008, drag.y - ev.clientY), drag.fx, drag.fy);
+      return;
+    }
     if (drag.kind === 'pan') {
       const cs = cellSize();
       view.ox = ((view.ox - (ev.clientX - drag.x) / cs) % W + W) % W;
@@ -2331,6 +2382,9 @@
   });
 
   function endDrag(ev) {
+    if (ev && ev.pointerId !== undefined) pointers.delete(ev.pointerId);
+    if (pinch && pointers.size < 2) { pinch = null; return; }
+    if (pinch) return;
     if (!drag) return;
     if (drag.kind === 'line' && linePreview) {
       for (let i = 0; i < linePreview.length; i++) cells[linePreview[i]] = 1;
@@ -2343,6 +2397,20 @@
   }
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
+
+  canvas.addEventListener('dblclick', function (ev) {
+    if (tool !== 'pan') return;
+    const at = canvasPoint(ev);
+    const out = ev.shiftKey || ev.altKey;
+    const next = out
+      ? ZOOMS.filter(function (z) { return z < view.scale - 0.01; }).pop() || 1
+      : ZOOMS.find(function (z) { return z > view.scale + 0.01; }) || ZOOMS[ZOOMS.length - 1];
+    setZoom(next, at.x, at.y);
+  });
+
+  canvas.addEventListener('contextmenu', function (ev) {
+    if (tool === 'pan') ev.preventDefault();
+  });
 
   canvas.addEventListener('wheel', function (ev) {
     ev.preventDefault();
