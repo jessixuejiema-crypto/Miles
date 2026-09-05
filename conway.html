@@ -113,6 +113,21 @@
   input[type=range] { width: 108px; accent-color: var(--accent); }
   .val { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 44px; }
 
+  .tools { gap: 0; }
+  .tools button {
+    border-radius: 0;
+    border-left-width: 0;
+    padding: 6px 10px;
+  }
+  .tools button:first-child { border-radius: 9px 0 0 9px; border-left-width: 1px; }
+  .tools button:last-child { border-radius: 0 9px 9px 0; }
+  .tools button.on {
+    background: color-mix(in srgb, var(--accent) 24%, var(--panel-2));
+    border-color: var(--accent-dim);
+    color: var(--text);
+  }
+  button.ghost { background: none; border-color: transparent; padding: 2px 7px; }
+
   /* ---------- board ---------- */
   .board-card { padding: 12px; }
   .stage { position: relative; }
@@ -123,7 +138,17 @@
     border: 1px solid var(--border-soft);
     cursor: crosshair;
     image-rendering: pixelated;
+    touch-action: none;
   }
+  canvas.pan { cursor: grab; }
+  canvas.panning { cursor: grabbing; }
+  body.no-border .board-card {
+    background: none;
+    border-color: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+  body.no-border canvas { border: 0; border-radius: 0; }
   .stats {
     display: flex; flex-wrap: wrap; gap: 6px 18px;
     padding: 10px 4px 2px;
@@ -151,10 +176,13 @@
   .award .n { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .award .c { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 
-  ul.rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  ul.rows {
+    list-style: none; margin: 0; padding: 0 4px 0 0;
+    display: flex; flex-direction: column;
+    max-height: 46vh; overflow-y: auto;
+  }
   li.row {
     padding: 7px 8px 8px; border-radius: 10px; border: 1px solid transparent;
-    cursor: default;
   }
   li.row:hover { background: var(--panel-2); border-color: var(--border-soft); }
   li.row.zero { opacity: 0.4; }
@@ -192,7 +220,65 @@
   }
   .r-bot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
   svg.spark { flex: 0 0 auto; }
-  .r-peak { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; margin-left: auto; }
+  .r-avg, .r-peak { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .r-peak { margin-left: auto; }
+  .r-meta {
+    color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums;
+    margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  li.row.picked { background: var(--panel-2); border-color: var(--accent-dim); }
+  li.row { cursor: pointer; }
+
+  /* ---------- inspector ---------- */
+  .inspect { padding: 12px; margin-bottom: 16px; }
+  .ins-head { display: flex; align-items: baseline; gap: 8px; }
+  .ins-head h2 { flex: 1 1 auto; margin: 0 0 10px; }
+  .ins-body { display: flex; gap: 12px; align-items: flex-start; }
+  #insBoard {
+    width: 150px; height: 150px; flex: 0 0 auto;
+    border: 1px solid var(--border-soft); border-radius: 10px;
+    background: var(--cell-dead); cursor: default;
+  }
+  .ins-side { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .ins-field { display: flex; align-items: center; gap: 8px; }
+  .ins-field span { color: var(--muted); font-size: 12px; width: 48px; flex: 0 0 auto; }
+  .ins-field input[type=text] {
+    flex: 1 1 auto; min-width: 0; font: inherit; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px 8px;
+  }
+  .ins-field input[type=color] {
+    width: 34px; height: 26px; padding: 0; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--panel-2); cursor: pointer;
+  }
+  dl.ins-facts {
+    margin: 2px 0 0; display: grid; grid-template-columns: auto 1fr;
+    gap: 2px 10px; font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  dl.ins-facts dt { color: var(--dim); }
+  dl.ins-facts dd { margin: 0; color: var(--muted); }
+  .ins-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  /* ---------- peaks chart ---------- */
+  .peaks { padding: 12px; margin-top: 16px; }
+  .peak-chart { max-height: 260px; overflow-y: auto; padding-right: 4px; }
+  .peak-group { margin-bottom: 10px; }
+  .peak-group:last-child { margin-bottom: 0; }
+  .peak-group h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--dim); margin: 0 0 4px; font-weight: 650;
+  }
+  .peak-row {
+    display: grid; grid-template-columns: 86px minmax(0, 1fr) 28px;
+    align-items: center; gap: 8px; padding: 2px 0;
+  }
+  .peak-name {
+    font-size: 12px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; color: var(--muted);
+  }
+  .peak-track { height: 7px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+  .peak-fill { display: block; height: 100%; border-radius: 4px; min-width: 2px; }
+  .peak-val { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
 
   .feed { padding: 12px; margin-top: 16px; }
   ol.events {
@@ -256,10 +342,26 @@
         <option value="120x72">120 × 72</option>
       </select>
     </div>
+    <div class="ctl tools" role="group" aria-label="Board tool">
+      <button class="tool on" data-tool="toggle" title="Click a cell to turn it on or off; drag to keep going">Toggle</button>
+      <button class="tool" data-tool="line" title="Drag across the board to lay a line of cells">Line</button>
+      <button class="tool" data-tool="stamp" title="Click to drop the chosen pattern">Stamp</button>
+      <button class="tool" data-tool="pan" title="Drag to move the view around the board">Pan</button>
+    </div>
     <div class="ctl">
-      <label for="stamp">Click to place</label>
+      <label for="stamp">Pattern</label>
       <select id="stamp"></select>
     </div>
+    <div class="ctl">
+      <label>Zoom</label>
+      <button id="zoomOut" title="Zoom out">−</button>
+      <span class="val" id="zoomVal">1.0×</span>
+      <button id="zoomIn" title="Zoom in">+</button>
+      <button id="zoomFit" title="Show the whole board again">Fit</button>
+    </div>
+    <label class="toggle" title="Hide the frame around the board">
+      <input type="checkbox" id="noBorder"> Remove border
+    </label>
     <label class="toggle" title="The census forgets its built-in names and has to earn every one back">
       <input type="checkbox" id="blind"> Name everything from scratch
     </label>
@@ -284,11 +386,37 @@
         <span><i style="background: hsl(var(--osc-h) 78% 55%)"></i> oscillator</span>
         <span><i style="background: hsl(var(--ship-h) 62% 62%)"></i> spaceship</span>
         <span><i style="background: #7d8899"></i> unidentified</span>
-        <span>Edges wrap around. Click the board to drop a pattern.</span>
+        <span id="hint">Edges wrap around. Click a cell to toggle it; click a bar to inspect that pattern.</span>
       </div>
     </section>
 
     <aside>
+      <section class="card inspect" id="inspect" hidden>
+        <div class="ins-head">
+          <h2 id="insTitle">Pattern</h2>
+          <button id="insClose" class="ghost" title="Close">✕</button>
+        </div>
+        <div class="ins-body">
+          <canvas id="insBoard" width="150" height="150"></canvas>
+          <div class="ins-side">
+            <label class="ins-field">
+              <span>Name</span>
+              <input type="text" id="insName" maxlength="24" autocomplete="off">
+            </label>
+            <label class="ins-field">
+              <span>Colour</span>
+              <input type="color" id="insColour">
+            </label>
+            <dl class="ins-facts" id="insFacts"></dl>
+          </div>
+        </div>
+        <div class="ins-actions">
+          <button id="insPlay" class="primary">❚❚ Pause</button>
+          <button id="insStep">Step</button>
+          <button id="insPlace">Place on board</button>
+        </div>
+      </section>
+
       <section class="card census">
         <h2>Census</h2>
         <div class="awards">
@@ -308,6 +436,12 @@
         <label class="toggle" style="margin-top: 10px;">
           <input type="checkbox" id="showZero"> show kinds with none alive
         </label>
+      </section>
+
+      <section class="card peaks">
+        <h2>Peaks</h2>
+        <div id="peaksChart" class="peak-chart"></div>
+        <div class="empty" id="peaksEmpty">No peaks recorded yet.</div>
       </section>
 
       <section class="card feed">
@@ -778,9 +912,31 @@
   function makeKind(name, type, color) {
     return {
       key: name, name: name, type: type, color: color,
-      count: 0, prev: 0, peak: 0, delta: 0, deltaAt: -1e9,
+      count: 0, prev: 0, peak: 0, peakGen: 0, delta: 0, deltaAt: -1e9,
+      sum: 0, samples: 0,
       history: new Array(SPARK_POINTS).fill(0)
     };
+  }
+
+  // Rows of X/. for a grid's live cells — the shape an inspector can replay.
+  function rowsFromGrid(grid, w, h) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < grid.length; i++) {
+      if (!grid[i]) continue;
+      const x = i % w, y = (i / w) | 0;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+    if (x0 > x1) return ['X'];
+    const rows = [];
+    for (let y = y0; y <= y1; y++) {
+      let line = '';
+      for (let x = x0; x <= x1; x++) line += grid[y * w + x] ? 'X' : '.';
+      rows.push(line);
+    }
+    return rows;
   }
 
   function buildLibrary() {
@@ -800,6 +956,8 @@
       const i = placed[p.type]++;
       const hue = total[p.type] > 1 ? band[0] + i * (band[1] - band[0]) / (total[p.type] - 1) : band[0];
       const kind = makeKind(p.name, p.type, 'hsl(' + hue.toFixed(0) + ' 66% ' + (i % 2 ? 47 : 59) + '%)');
+      kind.sample = p.cells;
+      kind.period = p.period;
       kinds.push(kind);
 
       const pts = parseCells(p.cells);
@@ -890,7 +1048,7 @@
     module.exports = {
       PATTERNS: PATTERNS, GOSPER_GUN: GOSPER_GUN, LIB: LIB,
       parseCells: parseCells, stepGrid: stepGrid, findComponents: findComponents,
-      relCoords: relCoords, canonicalKey: canonicalKey, classify: classify,
+      relCoords: relCoords, canonicalKey: canonicalKey, classify: classify, rowsFromGrid: rowsFromGrid,
       buildLibrary: buildLibrary, makeKind: makeKind,
       translationKey: translationKey, positionKey: positionKey
     };
@@ -908,7 +1066,6 @@
   let objects = [];
   let kindsSeen = Object.create(null);
   let events = [];
-  let highlightKind = null;
 
   // Cataloguing unknowns: an unidentified object is followed generation by
   // generation, and once it comes back to a shape it already had, it is named.
@@ -921,6 +1078,70 @@
   let clusterTracks = [];
   let trackOwner = new Int32Array(W * H).fill(-1);
   let clusterOwner = new Int32Array(W * H).fill(-1);
+
+  // The board can be zoomed and panned; offsets are in cells and wrap, like
+  // the board itself.
+  const ZOOMS = [1, 1.5, 2, 3, 4, 6, 8];
+  const view = { scale: 1, ox: 0, oy: 0 };
+  let baseCell = 8;
+  let tool = 'toggle';
+  let linePreview = null;
+  let pickedKind = null;
+  let hoverKind = null;
+
+  // Per-seed rarity, kept across reseeds (and reloads) so "1 in n" means
+  // something. Discovered kinds are counted by shape, not by their run-local
+  // name, so the same stranger accumulates across runs.
+  const STORE_KEY = 'life-census-v1';
+  const SEED_LABEL = {
+    menagerie: 'menageries', soup: 'soups', gun: 'gun runs',
+    parade: 'parades', zoo: 'zoos', strangers: 'stranger seeds'
+  };
+  const SEED_ONE = {
+    menagerie: 'menagerie', soup: 'soup', gun: 'gun run',
+    parade: 'parade', zoo: 'zoo', strangers: 'stranger seed'
+  };
+  let store = (function () {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch (e) { return {}; }
+  })();
+  if (!store.seeds) store.seeds = {};
+  if (!store.looks) store.looks = {};
+  let storeDirty = false;
+  let lastSave = 0;
+  let currentSeed = 'menagerie';
+  let runSeen = Object.create(null);
+
+  function saveStore() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* private mode */ }
+    storeDirty = false;
+  }
+
+  function statKey(kind) {
+    return kind.found ? (kind.keys && kind.keys[0]) || kind.key : kind.key;
+  }
+
+  function seedBucket(name) {
+    if (!store.seeds[name]) store.seeds[name] = { runs: 0, kinds: {} };
+    return store.seeds[name];
+  }
+
+  function oddsText(kind) {
+    const bucket = store.seeds[currentSeed];
+    const label = SEED_LABEL[currentSeed] || 'seeds';
+    if (!bucket || !bucket.runs) return '';
+    const hits = bucket.kinds[statKey(kind)] || 0;
+    if (!hits) return 'not seen in ' + label + ' yet';
+    const per = bucket.runs / hits;
+    if (per <= 1.005) return 'in every ' + (SEED_ONE[currentSeed] || 'seed');
+    return '1 in ' + (per < 10 ? per.toFixed(2) : per.toFixed(1)) + ' ' + label;
+  }
+
+  function oddsTitle(kind) {
+    const bucket = store.seeds[currentSeed];
+    if (!bucket || !bucket.runs) return '';
+    const hits = bucket.kinds[statKey(kind)] || 0;
+    return 'seen in ' + hits + ' of ' + bucket.runs + ' ' + (SEED_LABEL[currentSeed] || 'seeds');
+  }
 
   const SPEEDS = [1, 2, 4, 8, 15, 30, 60];
   let speed = SPEEDS[3];
@@ -936,6 +1157,13 @@
   const eventsEl = $('events');
 
   /* ---------- census rows ---------- */
+  LIB.kinds.forEach(function (k) {
+    const look = store.looks[k.key];
+    if (!look) return;
+    if (look.name) k.name = look.name;
+    if (look.color) k.color = look.color;
+  });
+
   const rowEls = new Map();
 
   function addRow(kind) {
@@ -954,8 +1182,10 @@
           '<svg class="spark" width="72" height="16" viewBox="0 0 72 16" aria-hidden="true">' +
             '<polyline fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" points=""></polyline>' +
           '</svg>' +
+          '<span class="r-avg">avg 0</span>' +
           '<span class="r-peak">peak 0</span>' +
-        '</div>';
+        '</div>' +
+        '<div class="r-meta"></div>';
       li.querySelector('.dot').style.background = kind.color;
       li.querySelector('.r-name').textContent = kind.name;
       const tag = li.querySelector('.r-tag');
@@ -965,8 +1195,9 @@
       fill.style.background = kind.color;
       if (kind.type === 'unknown') fill.classList.add('unk');
       li.querySelector('polyline').setAttribute('stroke', kind.color);
-      li.addEventListener('mouseenter', function () { highlightKind = kind; draw(); });
-      li.addEventListener('mouseleave', function () { highlightKind = null; draw(); });
+      li.addEventListener('mouseenter', function () { hoverKind = kind; draw(); });
+      li.addEventListener('mouseleave', function () { hoverKind = null; draw(); });
+      li.addEventListener('click', function () { openInspector(kind); });
       rowsEl.appendChild(li);
       rowEls.set(kind, {
         li: li,
@@ -974,6 +1205,10 @@
         count: li.querySelector('.r-count'),
         fill: li.querySelector('.r-fill'),
         peak: li.querySelector('.r-peak'),
+        avg: li.querySelector('.r-avg'),
+        meta: li.querySelector('.r-meta'),
+        name: li.querySelector('.r-name'),
+        dot: li.querySelector('.dot'),
         spark: li.querySelector('polyline')
       });
   }
@@ -1006,14 +1241,44 @@
 
   function layout() {
     const cssWidth = (canvas.parentElement && canvas.parentElement.clientWidth) || 640;
-    const cell = Math.max(3, Math.floor(cssWidth / W));
+    baseCell = Math.max(3, Math.floor(cssWidth / W));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.round(W * cell * dpr);
-    canvas.height = Math.round(H * cell * dpr);
-    canvas.style.width = (W * cell) + 'px';
-    canvas.style.height = (H * cell) + 'px';
+    canvas.width = Math.round(W * baseCell * dpr);
+    canvas.height = Math.round(H * baseCell * dpr);
+    canvas.style.width = (W * baseCell) + 'px';
+    canvas.style.height = (H * baseCell) + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    canvas.dataset.cell = String(cell);
+    draw();
+  }
+
+  const boardW = function () { return W * baseCell; };
+  const boardH = function () { return H * baseCell; };
+  const cellSize = function () { return baseCell * view.scale; };
+
+  // Where a cell lands on screen, taking the wrap-around view offset into
+  // account; off-screen cells simply fall outside the canvas.
+  function screenX(x, cs) { return (((x - view.ox) % W + W) % W) * cs; }
+  function screenY(y, cs) { return (((y - view.oy) % H + H) % H) * cs; }
+
+  function cellAt(px, py) {
+    const cs = cellSize();
+    return {
+      x: ((Math.floor(px / cs + view.ox) % W) + W) % W,
+      y: ((Math.floor(py / cs + view.oy) % H) + H) % H
+    };
+  }
+
+  function setZoom(scale, focusX, focusY) {
+    const cs = cellSize();
+    const fx = focusX === undefined ? boardW() / 2 : focusX;
+    const fy = focusY === undefined ? boardH() / 2 : focusY;
+    const beforeX = view.ox + fx / cs, beforeY = view.oy + fy / cs;
+    view.scale = Math.max(1, Math.min(ZOOMS[ZOOMS.length - 1], scale));
+    const after = cellSize();
+    view.ox = ((beforeX - fx / after) % W + W) % W;
+    view.oy = ((beforeY - fy / after) % H + H) % H;
+    if (view.scale === 1) { view.ox = 0; view.oy = 0; }
+    $('zoomVal').textContent = view.scale.toFixed(1) + '×';
     draw();
   }
 
@@ -1035,7 +1300,8 @@
     kindsSeen = Object.create(null);
     clearDiscoveries();
     LIB.kinds.forEach(function (k) {
-      k.count = 0; k.prev = 0; k.peak = 0; k.delta = 0; k.deltaAt = -1e9;
+      k.count = 0; k.prev = 0; k.peak = 0; k.peakGen = 0; k.delta = 0; k.deltaAt = -1e9;
+      k.sum = 0; k.samples = 0;
       k.history.fill(0);
     });
     analyse(true);
@@ -1094,6 +1360,10 @@
   }
 
   function seed(kind) {
+    currentSeed = kind;
+    seedBucket(kind).runs++;
+    runSeen = Object.create(null);
+    storeDirty = true;
     const density = parseInt($('density').value, 10) / 100;
     if (kind === 'soup') {
       for (let i = 0; i < cells.length; i++) cells[i] = Math.random() < density ? 1 : 0;
@@ -1140,7 +1410,7 @@
   }
 
   function kindOf(p) {
-    for (let i = 0; i < LIB.kinds.length; i++) if (LIB.kinds[i].name === p.name) return LIB.kinds[i];
+    for (let i = 0; i < LIB.kinds.length; i++) if (LIB.kinds[i].key === p.name) return LIB.kinds[i];
     return LIB.unknown;
   }
 
@@ -1327,6 +1597,7 @@
     const kind = makeKind(DISC_PREFIX[type] + nth, type,
       'hsl(' + hue.toFixed(0) + ' 74% ' + (nth % 2 ? 52 : 64) + '%)');
     kind.found = { gen: generation, period: proof.period, cells: idxs.length };
+    kind.sample = rowsFromGrid(proof.phases[0].grid, proof.gw, proof.gh);
     kind.keys = [];
     kind.wideKeys = [];
     kind.pieceKeys = [];
@@ -1429,8 +1700,20 @@
 
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     LIB.kinds.forEach(function (k) {
-      if (k.count > k.peak) k.peak = k.count;
-      if (k.count > 0) kindsSeen[k.key] = true;
+      if (k.count > k.peak) { k.peak = k.count; k.peakGen = generation; }
+      if (k.count > 0) {
+        kindsSeen[k.key] = true;
+        // First sighting this run: that is one seed this kind turned up in.
+        const sk = statKey(k);
+        if (!runSeen[sk]) {
+          runSeen[sk] = 1;
+          const bucket = seedBucket(currentSeed);
+          bucket.kinds[sk] = (bucket.kinds[sk] || 0) + 1;
+          storeDirty = true;
+        }
+      }
+      k.sum += k.count;
+      k.samples++;
       k.history.push(k.count);
       if (k.history.length > SPARK_POINTS) k.history.shift();
       const d = k.count - k.prev;
@@ -1458,46 +1741,90 @@
      Rendering
      ============================================================ */
   function draw() {
-    const cell = parseInt(canvas.dataset.cell || '8', 10);
-    const w = W * cell, h = H * cell;
+    const cs = cellSize();
+    const w = boardW(), h = boardH();
     const styles = getComputedStyle(document.body);
     ctx.fillStyle = styles.getPropertyValue('--cell-dead') || '#101419';
     ctx.fillRect(0, 0, w, h);
 
-    if (cell >= 6) {
+    if (cs >= 6) {
       ctx.strokeStyle = styles.getPropertyValue('--grid-line');
       ctx.lineWidth = 1;
       ctx.beginPath();
-      for (let x = 1; x < W; x++) { ctx.moveTo(x * cell + 0.5, 0); ctx.lineTo(x * cell + 0.5, h); }
-      for (let y = 1; y < H; y++) { ctx.moveTo(0, y * cell + 0.5); ctx.lineTo(w, y * cell + 0.5); }
+      const cols = Math.ceil(w / cs) + 1, rows = Math.ceil(h / cs) + 1;
+      const startX = Math.floor(view.ox), startY = Math.floor(view.oy);
+      for (let i = 0; i <= cols; i++) {
+        const sx = screenX(startX + i, cs);
+        if (sx <= w) { ctx.moveTo(sx + 0.5, 0); ctx.lineTo(sx + 0.5, h); }
+      }
+      for (let i = 0; i <= rows; i++) {
+        const sy = screenY(startY + i, cs);
+        if (sy <= h) { ctx.moveTo(0, sy + 0.5); ctx.lineTo(w, sy + 0.5); }
+      }
       ctx.stroke();
     }
 
-    const pad = cell >= 6 ? 1 : 0;
+    const pad = cs >= 6 ? 1 : 0;
+    const size = Math.max(1, cs - pad);
     for (let c = 0; c < objects.length; c++) {
       const obj = objects[c];
       ctx.fillStyle = obj.kind.color;
       const idxs = obj.idxs;
       for (let i = 0; i < idxs.length; i++) {
         const p = idxs[i];
-        ctx.fillRect((p % W) * cell, ((p / W) | 0) * cell, cell - pad, cell - pad);
+        const sx = screenX(p % W, cs), sy = screenY((p / W) | 0, cs);
+        if (sx > w || sy > h) continue;
+        ctx.fillRect(sx, sy, size, size);
       }
     }
 
-    if (highlightKind) {
-      ctx.strokeStyle = highlightKind.color;
-      ctx.lineWidth = Math.max(1, cell / 7);
+    const marked = pickedKind || hoverKind;
+    if (marked) {
+      ctx.strokeStyle = marked.color;
+      ctx.lineWidth = Math.max(1, cs / 7);
       ctx.globalAlpha = 0.85;
       for (let c = 0; c < objects.length; c++) {
         const obj = objects[c];
-        if (obj.kind !== highlightKind) continue;
+        if (obj.kind !== marked) continue;
         for (let i = 0; i < obj.idxs.length; i++) {
           const p = obj.idxs[i];
-          ctx.strokeRect((p % W) * cell - 2, ((p / W) | 0) * cell - 2, cell + 3, cell + 3);
+          const sx = screenX(p % W, cs), sy = screenY((p / W) | 0, cs);
+          if (sx > w || sy > h) continue;
+          ctx.strokeRect(sx - 2, sy - 2, cs + 3, cs + 3);
         }
       }
       ctx.globalAlpha = 1;
     }
+
+    if (linePreview) {
+      ctx.fillStyle = styles.getPropertyValue('--accent') || '#4fd6c4';
+      ctx.globalAlpha = 0.75;
+      for (let i = 0; i < linePreview.length; i++) {
+        const p = linePreview[i];
+        const sx = screenX(p % W, cs), sy = screenY((p / W) | 0, cs);
+        if (sx > w || sy > h) continue;
+        ctx.fillRect(sx, sy, size, size);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Cells along the shortest path between two board positions, wrap included.
+  function lineCells(x0, y0, x1, y1) {
+    let dx = x1 - x0, dy = y1 - y0;
+    if (dx > W / 2) dx -= W;
+    if (dx < -W / 2) dx += W;
+    if (dy > H / 2) dy -= H;
+    if (dy < -H / 2) dy += H;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy));
+    const out = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = steps ? i / steps : 0;
+      const x = ((Math.round(x0 + dx * t) % W) + W) % W;
+      const y = ((Math.round(y0 + dy * t) % H) + H) % H;
+      out.push(y * W + x);
+    }
+    return out;
   }
 
   function sparkPoints(history) {
@@ -1536,10 +1863,16 @@
       r.li.classList.toggle('zero', kind.count === 0);
       r.count.textContent = kind.count;
       r.fill.style.width = Math.min(100, kind.count / max * 100).toFixed(1) + '%';
-      r.peak.textContent = kind.found
-        ? (kind.found.period > 1 ? 'p' + kind.found.period + ' · ' : '') +
-          'found gen ' + kind.found.gen + ' · peak ' + kind.peak
-        : 'peak ' + kind.peak;
+      const avg = kind.samples ? kind.sum / kind.samples : 0;
+      r.avg.textContent = 'avg ' + (avg >= 10 ? avg.toFixed(0) : avg.toFixed(1));
+      r.avg.title = 'average number alive per generation this run';
+      r.peak.textContent = 'peak ' + kind.peak + (kind.peak ? ' · gen ' + kind.peakGen : '');
+      const meta = [oddsText(kind)];
+      if (kind.found) {
+        meta.push((kind.found.period > 1 ? 'p' + kind.found.period + ' · ' : '') + 'found gen ' + kind.found.gen);
+      }
+      r.meta.textContent = meta.filter(Boolean).join('  ·  ');
+      r.meta.title = oddsTitle(kind);
       r.spark.setAttribute('points', sparkPoints(kind.history));
 
       const fresh = kind.delta !== 0 && now - kind.deltaAt < 2200;
@@ -1596,6 +1929,53 @@
     $('sFound').textContent = discovered.total;
   }
 
+  function esc(text) {
+    return String(text).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function refreshRow(kind) {
+    const r = rowEls.get(kind);
+    if (!r) return;
+    r.name.textContent = kind.name;
+    r.dot.style.background = kind.color;
+    r.fill.style.background = kind.color;
+    r.spark.setAttribute('stroke', kind.color);
+  }
+
+  // Every peak the run has recorded, grouped the way the census thinks about
+  // patterns. Bars are scaled to the tallest peak on the board.
+  const PEAK_GROUPS = [
+    { type: 'still', label: 'Still lifes' },
+    { type: 'osc', label: 'Oscillators' },
+    { type: 'ship', label: 'Spaceships' },
+    { type: 'unknown', label: 'Unidentified' }
+  ];
+
+  function renderPeaks() {
+    let max = 1;
+    LIB.kinds.forEach(function (k) { if (k.peak > max) max = k.peak; });
+    let html = '', any = false;
+    PEAK_GROUPS.forEach(function (g) {
+      const rows = LIB.kinds.filter(function (k) { return k.type === g.type && k.peak > 0; })
+        .sort(function (a, b) { return (b.peak - a.peak) || a.name.localeCompare(b.name); });
+      if (!rows.length) return;
+      any = true;
+      html += '<div class="peak-group"><h3>' + g.label + '</h3>' + rows.map(function (k) {
+        return '<div class="peak-row" title="' + esc(k.name) + ' — peak ' + k.peak +
+            ' at generation ' + k.peakGen + ', ' + k.count + ' alive now">' +
+          '<span class="peak-name">' + esc(k.name) + '</span>' +
+          '<span class="peak-track"><span class="peak-fill" style="width:' +
+            (k.peak / max * 100).toFixed(1) + '%;background:' + esc(k.color) + '"></span></span>' +
+          '<span class="peak-val">' + k.peak + '</span>' +
+        '</div>';
+      }).join('') + '</div>';
+    });
+    $('peaksChart').innerHTML = html;
+    $('peaksEmpty').style.display = any ? 'none' : '';
+  }
+
   function renderEvents() {
     const list = events.slice(0, 14);
     eventsEl.innerHTML = list.map(function (e) {
@@ -1603,8 +1983,8 @@
         const f = e.kind.found;
         return '<li>' +
           '<span class="ev-gen">gen ' + e.gen + '</span>' +
-          '<span class="ev-name" style="color:' + e.kind.color + '">' +
-            e.kind.name + ' catalogued</span>' +
+          '<span class="ev-name" style="color:' + esc(e.kind.color) + '">' +
+            esc(e.kind.name) + ' catalogued</span>' +
           '<span class="ev-d find">' +
             (f.period > 1 ? 'p' + f.period : 'still') + '</span>' +
           '</li>';
@@ -1612,12 +1992,189 @@
       const up = e.delta > 0;
       return '<li>' +
         '<span class="ev-gen">gen ' + e.gen + '</span>' +
-        '<span class="ev-name" style="color:' + e.kind.color + '">' + e.kind.name + '</span>' +
+        '<span class="ev-name" style="color:' + esc(e.kind.color) + '">' + esc(e.kind.name) + '</span>' +
         '<span class="ev-d ' + (up ? 'up' : 'down') + '">' + (up ? '+' : '−') + Math.abs(e.delta) + '</span>' +
         '</li>';
     }).join('');
     $('eventsEmpty').style.display = list.length ? 'none' : '';
   }
+
+  /* ============================================================
+     Inspector: what a pattern looks like, running
+     ============================================================ */
+  const insCanvas = $('insBoard');
+  const insCtx = insCanvas.getContext('2d');
+  const insp = { kind: null, grid: null, size: 0, rows: null, playing: true, gen: 0, last: 0 };
+
+  function toHex(color) {
+    if (/^#[0-9a-f]{6}$/i.test(color)) return color;
+    const probe = document.createElement('span');
+    probe.style.color = color;
+    probe.style.display = 'none';
+    document.body.appendChild(probe);
+    const rgb = getComputedStyle(probe).color;
+    probe.remove();
+    const parts = rgb.match(/\d+/g);
+    if (!parts) return '#888888';
+    return '#' + parts.slice(0, 3).map(function (v) {
+      return ('0' + (+v).toString(16)).slice(-2);
+    }).join('');
+  }
+
+  // A shape to replay: the pattern's own, or a live one borrowed off the board
+  // for kinds that have none of their own (the unidentified bucket).
+  function sampleFor(kind) {
+    if (kind.sample) return kind.sample;
+    for (let i = 0; i < objects.length; i++) {
+      if (objects[i].kind !== kind) continue;
+      const g = new Uint8Array(W * H);
+      for (let j = 0; j < objects[i].idxs.length; j++) g[objects[i].idxs[j]] = 1;
+      return rowsFromGrid(g, W, H);
+    }
+    return null;
+  }
+
+  function markPicked() {
+    rowEls.forEach(function (r, kind) { r.li.classList.toggle('picked', kind === pickedKind); });
+  }
+
+  function loadPreview(rows) {
+    const w = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+    const h = rows.length;
+    // Small patterns deserve big cells; a spaceship still gets room to fly,
+    // since the preview wraps like the board does.
+    const size = Math.max(14, w + 6, h + 6);
+    insp.size = size;
+    insp.grid = new Uint8Array(size * size);
+    const ox = (size - w) >> 1, oy = (size - h) >> 1;
+    parseCells(rows).forEach(function (pt) {
+      insp.grid[(pt[1] + oy) * size + pt[0] + ox] = 1;
+    });
+    insp.gen = 0;
+  }
+
+  function inspectorFacts(kind) {
+    const period = kind.found ? kind.found.period : kind.period;
+    const avg = kind.samples ? kind.sum / kind.samples : 0;
+    const facts = [
+      ['Kind', kind.type === 'unknown' ? 'unidentified' : TYPE_LABEL[kind.type] === 'still' ? 'still life' : TYPE_LABEL[kind.type] === 'osc' ? 'oscillator' : 'spaceship'],
+      ['Period', period ? (period === 1 ? 'stable' : 'every ' + period + ' gens') : '—'],
+      ['On board', String(kind.count)],
+      ['Average', (avg >= 10 ? avg.toFixed(0) : avg.toFixed(1)) + ' per gen'],
+      ['Peak', kind.peak + (kind.peak ? ' (gen ' + kind.peakGen + ')' : '')],
+      ['Rarity', oddsText(kind) || '—']
+    ];
+    if (kind.found) facts.push(['Catalogued', 'gen ' + kind.found.gen]);
+    $('insFacts').innerHTML = facts.map(function (f) {
+      return '<dt>' + esc(f[0]) + '</dt><dd>' + esc(f[1]) + '</dd>';
+    }).join('');
+  }
+
+  function drawPreview() {
+    const size = 150;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (insCanvas.width !== Math.round(size * dpr)) {
+      insCanvas.width = Math.round(size * dpr);
+      insCanvas.height = Math.round(size * dpr);
+    }
+    insCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const styles = getComputedStyle(document.body);
+    insCtx.fillStyle = styles.getPropertyValue('--cell-dead') || '#101419';
+    insCtx.fillRect(0, 0, size, size);
+    if (!insp.grid || !insp.kind) {
+      insCtx.fillStyle = styles.getPropertyValue('--dim') || '#888';
+      insCtx.font = '12px ui-sans-serif, system-ui, sans-serif';
+      insCtx.textAlign = 'center';
+      insCtx.fillText('none on the board', size / 2, size / 2);
+      insCtx.textAlign = 'left';
+      return;
+    }
+    const cs = size / insp.size;
+    insCtx.fillStyle = insp.kind.color;
+    for (let i = 0; i < insp.grid.length; i++) {
+      if (!insp.grid[i]) continue;
+      insCtx.fillRect((i % insp.size) * cs, ((i / insp.size) | 0) * cs, Math.max(1, cs - 0.5), Math.max(1, cs - 0.5));
+    }
+  }
+
+  function openInspector(kind) {
+    const rows = sampleFor(kind);
+    pickedKind = kind;
+    insp.kind = kind;
+    insp.rows = rows;
+    insp.playing = true;
+    if (rows) loadPreview(rows); else { insp.grid = null; }
+    $('inspect').hidden = false;
+    $('insTitle').textContent = kind.name;
+    $('insName').value = kind.name;
+    $('insColour').value = toHex(kind.color);
+    $('insPlay').textContent = '❚❚ Pause';
+    $('insPlace').disabled = !rows;
+    inspectorFacts(kind);
+    markPicked();
+    drawPreview();
+    draw();
+  }
+
+  function closeInspector() {
+    $('inspect').hidden = true;
+    insp.kind = null;
+    insp.grid = null;
+    pickedKind = null;
+    markPicked();
+    draw();
+  }
+
+  function rememberLook(kind) {
+    // Built-in patterns keep a custom name and colour between visits;
+    // catalogued ones only live as long as their run does.
+    if (kind.found) return;
+    store.looks[kind.key] = { name: kind.name, color: kind.color };
+    storeDirty = true;
+  }
+
+  $('insClose').addEventListener('click', closeInspector);
+  $('insPlay').addEventListener('click', function () {
+    insp.playing = !insp.playing;
+    $('insPlay').textContent = insp.playing ? '❚❚ Pause' : '▶ Play';
+  });
+  $('insStep').addEventListener('click', function () {
+    if (!insp.grid) return;
+    insp.playing = false;
+    $('insPlay').textContent = '▶ Play';
+    insp.grid = stepGrid(insp.grid, insp.size, insp.size, true);
+    insp.gen++;
+    drawPreview();
+  });
+  $('insPlace').addEventListener('click', function () {
+    if (!insp.rows) return;
+    const cs = cellSize();
+    stamp(insp.rows,
+      Math.round(view.ox + boardW() / cs / 2) % W,
+      Math.round(view.oy + boardH() / cs / 2) % H);
+    analyse(true);
+    draw();
+  });
+  $('insName').addEventListener('input', function () {
+    const kind = insp.kind;
+    if (!kind) return;
+    kind.name = $('insName').value.trim() || kind.key;
+    $('insTitle').textContent = kind.name;
+    refreshRow(kind);
+    renderPeaks();
+    rememberLook(kind);
+    uiDirty = true;
+  });
+  $('insColour').addEventListener('input', function () {
+    const kind = insp.kind;
+    if (!kind) return;
+    kind.color = $('insColour').value;
+    refreshRow(kind);
+    renderPeaks();
+    rememberLook(kind);
+    drawPreview();
+    draw();
+  });
 
   /* ============================================================
      Loop
@@ -1642,7 +2199,19 @@
       lastUiPaint = now;
       uiDirty = false;
       renderCensus();
+      renderPeaks();
       renderEvents();
+      if (insp.kind) inspectorFacts(insp.kind);
+    }
+    if (insp.kind && insp.grid && insp.playing && now - insp.last > 160) {
+      insp.last = now;
+      insp.grid = stepGrid(insp.grid, insp.size, insp.size, true);
+      insp.gen++;
+      drawPreview();
+    }
+    if (storeDirty && now - lastSave > 1500) {
+      lastSave = now;
+      saveStore();
     }
     requestAnimationFrame(frame);
   }
@@ -1689,15 +2258,114 @@
     draw();
   });
 
-  canvas.addEventListener('click', function (ev) {
+  /* ---------- board tools ---------- */
+  let drag = null;
+
+  function pointerCell(ev) {
     const rect = canvas.getBoundingClientRect();
-    const cell = parseInt(canvas.dataset.cell || '8', 10);
-    const x = Math.floor((ev.clientX - rect.left) / cell);
-    const y = Math.floor((ev.clientY - rect.top) / cell);
-    if (x < 0 || y < 0 || x >= W || y >= H) return;
-    stamp(STAMPS[parseInt(stampSel.value, 10)].cells, x, y);
+    return cellAt(ev.clientX - rect.left, ev.clientY - rect.top);
+  }
+
+  function setTool(next) {
+    tool = next;
+    linePreview = null;
+    Array.prototype.forEach.call(document.querySelectorAll('.tool'), function (b) {
+      b.classList.toggle('on', b.dataset.tool === next);
+    });
+    canvas.classList.toggle('pan', next === 'pan');
+    draw();
+  }
+
+  canvas.addEventListener('pointerdown', function (ev) {
+    canvas.setPointerCapture(ev.pointerId);
+    const c = pointerCell(ev);
+    if (tool === 'pan') {
+      drag = { kind: 'pan', x: ev.clientX, y: ev.clientY };
+      canvas.classList.add('panning');
+      return;
+    }
+    if (tool === 'stamp') {
+      stamp(STAMPS[parseInt(stampSel.value, 10)].cells, c.x, c.y);
+      analyse(true);
+      draw();
+      return;
+    }
+    if (tool === 'line') {
+      drag = { kind: 'line', x: c.x, y: c.y };
+      linePreview = lineCells(c.x, c.y, c.x, c.y);
+      draw();
+      return;
+    }
+    // toggle: the first cell flips, and dragging keeps painting that value
+    const idx = c.y * W + c.x;
+    const value = cells[idx] ? 0 : 1;
+    cells[idx] = value;
+    drag = { kind: 'paint', value: value, last: idx };
     analyse(true);
     draw();
+  });
+
+  canvas.addEventListener('pointermove', function (ev) {
+    if (!drag) return;
+    if (drag.kind === 'pan') {
+      const cs = cellSize();
+      view.ox = ((view.ox - (ev.clientX - drag.x) / cs) % W + W) % W;
+      view.oy = ((view.oy - (ev.clientY - drag.y) / cs) % H + H) % H;
+      drag.x = ev.clientX;
+      drag.y = ev.clientY;
+      draw();
+      return;
+    }
+    const c = pointerCell(ev);
+    if (drag.kind === 'line') {
+      linePreview = lineCells(drag.x, drag.y, c.x, c.y);
+      draw();
+      return;
+    }
+    const idx = c.y * W + c.x;
+    if (idx === drag.last) return;
+    drag.last = idx;
+    cells[idx] = drag.value;
+    analyse(true);
+    draw();
+  });
+
+  function endDrag(ev) {
+    if (!drag) return;
+    if (drag.kind === 'line' && linePreview) {
+      for (let i = 0; i < linePreview.length; i++) cells[linePreview[i]] = 1;
+      analyse(true);
+    }
+    linePreview = null;
+    canvas.classList.remove('panning');
+    drag = null;
+    draw();
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  canvas.addEventListener('wheel', function (ev) {
+    ev.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const step = ev.deltaY < 0 ? 1.2 : 1 / 1.2;
+    setZoom(view.scale * step, ev.clientX - rect.left, ev.clientY - rect.top);
+  }, { passive: false });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tool'), function (b) {
+    b.addEventListener('click', function () { setTool(b.dataset.tool); });
+  });
+  $('zoomIn').addEventListener('click', function () {
+    const next = ZOOMS.find(function (z) { return z > view.scale + 0.01; });
+    setZoom(next || ZOOMS[ZOOMS.length - 1]);
+  });
+  $('zoomOut').addEventListener('click', function () {
+    const lower = ZOOMS.filter(function (z) { return z < view.scale - 0.01; });
+    setZoom(lower.length ? lower[lower.length - 1] : 1);
+  });
+  $('zoomFit').addEventListener('click', function () { setZoom(1); });
+  $('noBorder').addEventListener('change', function () {
+    document.body.classList.toggle('no-border', $('noBorder').checked);
+    layout();
   });
 
   window.addEventListener('resize', layout);
@@ -1725,6 +2393,8 @@
       return objects.map(function (o) { return { name: o.kind.name, idxs: o.idxs.slice() }; });
     },
     gen: function () { return generation; },
+    view: function () { return { scale: view.scale, ox: +view.ox.toFixed(2), oy: +view.oy.toFixed(2) }; },
+    preview: function () { return { gen: insp.gen, playing: insp.playing, cells: insp.grid ? insp.grid.length : 0 }; },
     blind: function (on) {
       clearDiscoveries();
       setBlind(on);
@@ -1745,9 +2415,11 @@
   };
 
   layout();
+  setTool('toggle');
   seed('menagerie');
   draw();
   renderCensus();
+  renderPeaks();
   setRunning(true);
   requestAnimationFrame(frame);
 })();
