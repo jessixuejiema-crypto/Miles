@@ -1104,12 +1104,12 @@
   let store = (function () {
     try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch (e) { return {}; }
   })();
-  if (!store.seeds) store.seeds = {};
+  delete store.seeds;                 // the old per-seed tally, replaced below
+  if (!store.gens) store.gens = {};
   if (!store.looks) store.looks = {};
   let storeDirty = false;
   let lastSave = 0;
   let currentSeed = 'menagerie';
-  let runSeen = Object.create(null);
 
   function saveStore() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* private mode */ }
@@ -1120,27 +1120,30 @@
     return kind.found ? (kind.keys && kind.keys[0]) || kind.key : kind.key;
   }
 
+  // How often a kind is actually on the board, counted in generations and
+  // kept per seed kind (a soup and a menagerie are different worlds).
   function seedBucket(name) {
-    if (!store.seeds[name]) store.seeds[name] = { runs: 0, kinds: {} };
-    return store.seeds[name];
+    if (!store.gens[name]) store.gens[name] = { gens: 0, kinds: {} };
+    return store.gens[name];
   }
 
-  function oddsText(kind) {
-    const bucket = store.seeds[currentSeed];
-    const label = SEED_LABEL[currentSeed] || 'seeds';
-    if (!bucket || !bucket.runs) return '';
+  function oddsText(kind, long) {
+    const bucket = store.gens[currentSeed];
+    if (!bucket || !bucket.gens) return '';
     const hits = bucket.kinds[statKey(kind)] || 0;
-    if (!hits) return 'not seen in ' + label + ' yet';
-    const per = bucket.runs / hits;
-    if (per <= 1.005) return 'in every ' + (SEED_ONE[currentSeed] || 'seed');
-    return '1 in ' + (per < 10 ? per.toFixed(2) : per.toFixed(1)) + ' ' + label;
+    if (!hits) return 'never on the board yet';
+    const per = bucket.gens / hits;
+    if (per <= 1.005) return 'in every generation';
+    return '1 in ' + (per < 10 ? per.toFixed(2) : per < 100 ? per.toFixed(1) : per.toFixed(0)) +
+      (long ? ' generations' : ' gens');
   }
 
   function oddsTitle(kind) {
-    const bucket = store.seeds[currentSeed];
-    if (!bucket || !bucket.runs) return '';
+    const bucket = store.gens[currentSeed];
+    if (!bucket || !bucket.gens) return '';
     const hits = bucket.kinds[statKey(kind)] || 0;
-    return 'seen in ' + hits + ' of ' + bucket.runs + ' ' + (SEED_LABEL[currentSeed] || 'seeds');
+    return 'on the board in ' + hits + ' of ' + bucket.gens + ' ' +
+      (SEED_ONE[currentSeed] || 'seed') + ' generations watched';
   }
 
   const SPEEDS = [1, 2, 4, 8, 15, 30, 60];
@@ -1361,9 +1364,7 @@
 
   function seed(kind) {
     currentSeed = kind;
-    seedBucket(kind).runs++;
-    runSeen = Object.create(null);
-    storeDirty = true;
+    seedBucket(kind);
     const density = parseInt($('density').value, 10) / 100;
     if (kind === 'soup') {
       for (let i = 0; i < cells.length; i++) cells[i] = Math.random() < density ? 1 : 0;
@@ -1699,18 +1700,18 @@
     }
 
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const bucket = seedBucket(currentSeed);
+    if (!silent) {
+      bucket.gens++;
+      storeDirty = true;
+    }
     LIB.kinds.forEach(function (k) {
       if (k.count > k.peak) { k.peak = k.count; k.peakGen = generation; }
       if (k.count > 0) {
         kindsSeen[k.key] = true;
-        // First sighting this run: that is one seed this kind turned up in.
-        const sk = statKey(k);
-        if (!runSeen[sk]) {
-          runSeen[sk] = 1;
-          const bucket = seedBucket(currentSeed);
-          bucket.kinds[sk] = (bucket.kinds[sk] || 0) + 1;
-          storeDirty = true;
-        }
+        // One more generation this kind was on the board (only real ticks
+        // count — stamping something in does not advance time).
+        if (!silent) bucket.kinds[statKey(k)] = (bucket.kinds[statKey(k)] || 0) + 1;
       }
       k.sum += k.count;
       k.samples++;
@@ -2062,7 +2063,7 @@
       ['On board', String(kind.count)],
       ['Average', (avg >= 10 ? avg.toFixed(0) : avg.toFixed(1)) + ' per gen'],
       ['Peak', kind.peak + (kind.peak ? ' (gen ' + kind.peakGen + ')' : '')],
-      ['Rarity', oddsText(kind) || '—']
+      ['Present', oddsText(kind, true) || '—']
     ];
     if (kind.found) facts.push(['Catalogued', 'gen ' + kind.found.gen]);
     $('insFacts').innerHTML = facts.map(function (f) {
@@ -2345,7 +2346,7 @@
     const idx = c.y * W + c.x;
     const value = cells[idx] ? 0 : 1;
     cells[idx] = value;
-    drag = { kind: 'paint', value: value, last: idx };
+    drag = { kind: 'paint', value: value, last: idx, x: c.x, y: c.y };
     analyse(true);
     draw();
   });
@@ -2375,8 +2376,13 @@
     }
     const idx = c.y * W + c.x;
     if (idx === drag.last) return;
+    // Pointer samples skip cells on a fast swipe, so fill the gap between
+    // this cell and the last one instead of leaving a trail of dots.
+    const run = lineCells(drag.x, drag.y, c.x, c.y);
+    for (let i = 0; i < run.length; i++) cells[run[i]] = drag.value;
     drag.last = idx;
-    cells[idx] = drag.value;
+    drag.x = c.x;
+    drag.y = c.y;
     analyse(true);
     draw();
   });
