@@ -65,7 +65,9 @@
   <div class="group" id="tools">
     <button class="tb active" data-tool="colony" title="Click to place an ant hill">⛰️ Colony</button>
     <button class="tb" data-tool="food" title="Click or drag to drop food">🍓 Food</button>
-    <button class="tb" data-tool="wall" title="Drag to paint rock walls">🪨 Wall</button>
+    <button class="tb" data-tool="plant" title="Click to plant a berry bush that keeps sprouting food">🌱 Plant</button>
+    <button class="tb" data-tool="wall" title="Drag to paint solid rock walls">🪨 Wall</button>
+    <button class="tb" data-tool="dirt" title="Drag to paint soft dirt — ants dig through it">🟫 Dirt</button>
     <button class="tb" data-tool="erase" title="Click or drag to erase">🧽 Erase</button>
   </div>
   <div class="sep"></div>
@@ -97,7 +99,9 @@
     <span class="dot" style="background:#8a8272"></span>an ant that searches 1 minute without finding food starves; an emptied colony sends out a fresh worker<br>
     <span class="dot" style="background:#c8b88a"></span>ants sharpen with age — eyesight grows 20→50 px, they learn from every wall they hit, and blocked ants head for gaps they can see<br>
     <span class="dot" style="background:#9ac8e0"></span>everything an ant sees or bumps into joins its colony's shared map, re-seeing a changed spot updates the memory — and nobody steers into a wall that's already on the map<br>
-    <span class="dot" style="background:#ff9d7a"></span>food gives off a scent that drifts through gaps (warm haze) — ants smell it from afar and home in
+    <span class="dot" style="background:#ff9d7a"></span>food gives off a scent that drifts through gaps (warm haze) — ants smell it from afar and home in<br>
+    <span class="dot" style="background:#6fc463"></span>every pile doubles about every 10 s, and 🌱 plants keep sprouting more, so the land never runs dry<br>
+    <span class="dot" style="background:#8a6034"></span>🟫 dirt is diggable, not solid — ants tunnel through it slowly and can smell food right through the soil
   </div>
   <div id="hint"></div>
 </div>
@@ -121,6 +125,12 @@ const SENSOR_DIST = 15, SENSOR_ANG = 0.5;
 const ANT_CAP = 200;       // per colony, keeps the sim smooth
 const STARVE = 60;         // seconds of fruitless searching before an ant starves
 const EXPLORER_EVERY = 5;  // every 5th ant = explorer (20%)
+const FOOD_DOUBLE = 10;    // seconds between a pile doubling itself
+const FOOD_CAP = 60;       // biggest a single pile grows to
+const PLANT_EVERY = 12;    // seconds between a plant sprouting another pile
+const PLANT_PILES = 5;     // piles one plant keeps growing at once
+const DIG_SPEED = 0.42;    // how much slower an ant moves while digging dirt
+const DIG_RATE = 0.7;      // dirt cleared per second per digging ant
 
 /* ---- state ---- */
 let W = 0, H = 0, gw = 0, gh = 0;
@@ -128,7 +138,9 @@ let foodP = new Float32Array(0), traffic = new Float32Array(0), walls = new Uint
 let blurA = new Float32Array(0), blurB = new Float32Array(0);
 let foodScent = new Float32Array(0), scentB = new Float32Array(0);
 let stepN = 0;
-let colonies = [], foods = [], ants = [], effects = [];
+let colonies = [], foods = [], ants = [], effects = [], plants = [];
+let dirtHP = new Float32Array(0);   // how much digging each dirt cell has left
+let wallsDirty = false;
 let colonySeq = 0;
 const COLONY_TINTS = ['#e8e0cf', '#a8d8ff', '#ffb8d8', '#b8f0a0', '#d8c0ff', '#ffe08a', '#90e8d0', '#ff9f8a', '#c0c8ff', '#d0e890'];
 let playing = false, simTime = 0, speedMul = 1, showTrails = true;
@@ -148,16 +160,16 @@ function cellIdx(x, y) {
 function blocked(x, y) {
   if (x < 4 || y < 4 || x > W - 4 || y > H - 4) return true;
   const i = cellIdx(x, y);
-  return i >= 0 && walls[i] === 1;
+  return i >= 0 && walls[i] !== 0; // rock, and dirt until somebody digs it out
 }
 function sense(grid, a, off) {
   const ang = a.h + off;
   const i = cellIdx(a.x + Math.cos(ang) * SENSOR_DIST, a.y + Math.sin(ang) * SENSOR_DIST);
-  if (i < 0 || walls[i]) return 0;
+  if (i < 0 || walls[i] === 1) return 0; // rock blocks the nose, dirt does not
   return grid[i];
 }
 function clearLine(x0, y0, x1, y1) {
-  // walls block line of sight
+  // rock and dirt both block line of sight
   const dx = x1 - x0, dy = y1 - y0;
   const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (CELL * 0.8)));
   for (let k = 1; k <= n; k++) {
@@ -181,11 +193,13 @@ function resize() {
   if (nw === W && nh === H) return;
   const ngw = Math.ceil(nw / CELL), ngh = Math.ceil(nh / CELL);
   const nFood = new Float32Array(ngw * ngh), nTraf = new Float32Array(ngw * ngh), nWalls = new Uint8Array(ngw * ngh);
+  const nDirt = new Float32Array(ngw * ngh);
   const cw = Math.min(gw, ngw), ch = Math.min(gh, ngh);
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
     nFood[y * ngw + x] = foodP[y * gw + x];
     nTraf[y * ngw + x] = traffic[y * gw + x];
     nWalls[y * ngw + x] = walls[y * gw + x];
+    nDirt[y * ngw + x] = dirtHP[y * gw + x];
   }
   for (const c of colonies) {
     const nk = new Uint8Array(ngw * ngh);
@@ -193,7 +207,7 @@ function resize() {
     c.known = nk;
   }
   W = nw; H = nh; gw = ngw; gh = ngh;
-  foodP = nFood; traffic = nTraf; walls = nWalls;
+  foodP = nFood; traffic = nTraf; walls = nWalls; dirtHP = nDirt;
   blurA = new Float32Array(gw * gh); blurB = new Float32Array(gw * gh);
   foodScent = new Float32Array(gw * gh); scentB = new Float32Array(gw * gh);
   cv.width = W; cv.height = H;
@@ -218,11 +232,37 @@ function addColony(x, y) {
   if (playing) spawnAnt(col);
 }
 function addFood(x, y) {
-  const f = { x, y, amount: 30, owner: null };
+  const f = { x, y, amount: 30, owner: null, grow: 0, plant: null };
   f.r = foodRadius(f.amount);
   foods.push(f);
 }
 function foodRadius(n) { return 4 + Math.sqrt(n) * 1.5; }
+
+function addPlant(x, y) {
+  for (const q of plants) if (Math.hypot(q.x - x, q.y - y) < 40) { flashHint('Too close to another plant'); return; }
+  const pl = { x, y, t: PLANT_EVERY * 0.5, sway: Math.random() * TAU };
+  plants.push(pl);
+  sprout(pl); // a fresh plant already carries a berry
+}
+function sprout(pl) {
+  let n = 0;
+  for (const f of foods) if (f.plant === pl) n++;
+  if (n >= PLANT_PILES) return;
+  for (let t = 0; t < 14; t++) {
+    const ang = Math.random() * TAU, d = 19 + Math.random() * 24;
+    const x = pl.x + Math.cos(ang) * d, y = pl.y + Math.sin(ang) * d;
+    if (x < 12 || y < 12 || x > W - 12 || y > H - 12) continue;
+    const i = cellIdx(x, y);
+    if (i < 0 || walls[i]) continue;
+    let clash = false;
+    for (const f of foods) if (Math.hypot(f.x - x, f.y - y) < 13) { clash = true; break; }
+    if (clash) continue;
+    const f = { x, y, amount: 8, owner: null, grow: 0, plant: pl };
+    f.r = foodRadius(f.amount);
+    foods.push(f);
+    return;
+  }
+}
 
 function spawnAnt(col) {
   if (col.alive >= ANT_CAP) return;
@@ -236,7 +276,7 @@ function spawnAnt(col) {
     sway: 0, swayAmp: 0.15, lastCell: -1,
     wpX: 0, wpY: 0, wpT: 0, hits: 0, streak: 0, lastHitT: -9, guided: false,
     fightCd: 2, dead: false, chase: null, chaseT: 0, hunger: 0,
-    age: 0, xp: 0
+    age: 0, xp: 0, digging: false, digH: 0
   });
 }
 
@@ -301,22 +341,24 @@ function buildField(col) {
   }
 }
 
+function mapMark(i) { return walls[i] === 1 ? 2 : walls[i] === 2 ? 3 : 1; } // 1 open, 2 rock, 3 dirt
+
 function observe(a) {
   // whatever an ant sees becomes part of its colony's map; re-seeing a
   // changed spot (wall removed, wall added) overwrites the stale memory
   const kn = a.colony.known, v = vision(a);
   let i = cellIdx(a.x, a.y);
-  if (i >= 0) kn[i] = walls[i] ? 2 : 1;
+  if (i >= 0) kn[i] = mapMark(i);
   for (let k = 0; k < 5; k++) {
     const ang = Math.random() * TAU, d = Math.random() * v;
     const px = a.x + Math.cos(ang) * d, py = a.y + Math.sin(ang) * d;
     const mi = cellIdx((a.x + px) / 2, (a.y + py) / 2);
     if (mi >= 0) {
-      kn[mi] = walls[mi] ? 2 : 1;
-      if (walls[mi]) continue; // can't see past that wall
+      kn[mi] = mapMark(mi);
+      if (walls[mi]) continue; // can't see past rock or dirt
     }
     i = cellIdx(px, py);
-    if (i >= 0) kn[i] = walls[i] ? 2 : 1;
+    if (i >= 0) kn[i] = mapMark(i);
   }
 }
 
@@ -331,8 +373,9 @@ function pathBlocked(a, d, off, v) {
     if (x < 4 || y < 4 || x > W - 4 || y > H - 4) return true;
     const i = cellIdx(x, y);
     if (i < 0) continue;
-    if (kn[i] === 2) return true;                        // once bumped or seen: never again
-    if (dd <= v && walls[i]) { kn[i] = 2; return true; } // spotted now, remembered forever
+    if (kn[i] === 2) return true;                              // once bumped or seen: never again
+    if (dd <= v && walls[i]) { kn[i] = mapMark(i); }            // spotted now, remembered
+    if (kn[i] === 2) return true;                              // ...but dirt is diggable, not a wall
   }
   return false;
 }
@@ -552,12 +595,31 @@ function stepAnt(a) {
     else a.h += (Math.random() < 0.5 ? -10 : 10) * STEP; // walled in: swing hard away
   }
 
+  if (a.digging) { a.h = a.digH; a.swayAmp = 0.04; } // stay on the shaft
   a.sway = Math.sin(simTime * a.wfreq + a.phase) * a.swayAmp;
   const dir = a.h + a.sway;
   const spd = a.chase ? ANT_SPEED * 1.25 : ANT_SPEED; // chasers sprint
   const nx = a.x + Math.cos(dir) * spd * STEP;
   const ny = a.y + Math.sin(dir) * spd * STEP;
-  if (blocked(nx, ny)) {
+
+  // dirt is not rock, it is work: an ant that meets soil stops and burrows
+  // instead of bouncing, and the cell it breaks becomes a tunnel that
+  // everyone after it walks straight through
+  const hi = cellIdx(a.x, a.y), ti = cellIdx(nx, ny);
+  const soil = (hi >= 0 && walls[hi] === 2) ? hi : (ti >= 0 && walls[ti] === 2) ? ti : -1;
+  const wasDigging = a.digging;
+  a.digging = soil >= 0;
+  if (a.digging) {
+    if (!wasDigging) a.digH = a.h; // the heading it broke ground on
+    // an ant that can smell food through the soil digs for it in earnest,
+    // and ants crowding one cell break it open together
+    const drive = 1 + Math.min(2.5, foodScent[soil] * 60);
+    dirtHP[soil] -= DIG_RATE * drive * STEP;
+    if (dirtHP[soil] <= 0) {
+      walls[soil] = 0; dirtHP[soil] = 0;
+      wallsDirty = true; fieldsDirty = true;
+    }
+  } else if (blocked(nx, ny)) {
     a.h += Math.PI + (Math.random() - 0.5);
     a.lastHitT = simTime;
     a.xp = Math.min(120, a.xp + 2); // mistakes make the next look sharper
@@ -566,7 +628,7 @@ function stepAnt(a) {
       const cxx = bc + ox, cyy = br + oy;
       if (cxx < 0 || cyy < 0 || cxx >= gw || cyy >= gh) continue;
       const bi = cyy * gw + cxx;
-      a.colony.known[bi] = walls[bi] ? 2 : 1; // felt the wall: it's on the map now
+      a.colony.known[bi] = mapMark(bi); // felt the wall: it's on the map now
     }
     if (!Number.isNaN(goal) && ++a.hits >= 3) {
       // three strikes on this wall: stop trying this spot entirely and
@@ -590,21 +652,23 @@ function stepAnt(a) {
 function diffuseScent() {
   for (const f of foods) {
     const i = cellIdx(f.x, f.y);
-    if (i >= 0 && !walls[i]) foodScent[i] = 3;
+    if (i >= 0 && walls[i] !== 1) foodScent[i] = 3;
   }
-  const D = 0.35, LAM = 0.988;
+  // rock stops a smell dead; dirt only muffles it, so ants scent food
+  // buried on the far side of the soil and dig toward it
+  const D = 0.35, LAM = 0.993, SOIL = 0.999;
   for (let y = 0; y < gh; y++) {
     const row = y * gw;
     for (let x = 0; x < gw; x++) {
       const i = row + x;
-      if (walls[i]) { scentB[i] = 0; continue; }
+      if (walls[i] === 1) { scentB[i] = 0; continue; }
       const c = foodScent[i];
       let sum = 0, n = 0;
-      if (x > 0      && !walls[i - 1])  { sum += foodScent[i - 1];  n++; }
-      if (x < gw - 1 && !walls[i + 1])  { sum += foodScent[i + 1];  n++; }
-      if (y > 0      && !walls[i - gw]) { sum += foodScent[i - gw]; n++; }
-      if (y < gh - 1 && !walls[i + gw]) { sum += foodScent[i + gw]; n++; }
-      const v = (c + ((n ? sum / n : c) - c) * D) * LAM;
+      if (x > 0      && walls[i - 1]  !== 1) { sum += foodScent[i - 1];  n++; }
+      if (x < gw - 1 && walls[i + 1]  !== 1) { sum += foodScent[i + 1];  n++; }
+      if (y > 0      && walls[i - gw] !== 1) { sum += foodScent[i - gw]; n++; }
+      if (y < gh - 1 && walls[i + gw] !== 1) { sum += foodScent[i + gw]; n++; }
+      const v = (c + ((n ? sum / n : c) - c) * D) * LAM * (walls[i] === 2 ? SOIL : 1);
       scentB[i] = v < 0.0005 ? 0 : v;
     }
   }
@@ -627,7 +691,7 @@ function fightList(A, B) {
         const lose = Math.random() < 0.5 ? a : b, win = lose === a ? b : a;
         lose.dead = true;
         lose.colony.alive--;
-        if (lose.carrying) foods.push({ x: lose.x, y: lose.y, amount: 1, r: foodRadius(1), owner: win.colony });
+        if (lose.carrying) foods.push({ x: lose.x, y: lose.y, amount: 1, r: foodRadius(1), owner: win.colony, grow: 0, plant: null });
         win.fightCd = 3;
         win.h = Math.random() * TAU;
         effects.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0 });
@@ -643,7 +707,7 @@ function forceFight(a, b) {
   const lose = Math.random() < 0.5 ? a : b, win = lose === a ? b : a;
   lose.dead = true;
   lose.colony.alive--;
-  if (lose.carrying) foods.push({ x: lose.x, y: lose.y, amount: 1, r: foodRadius(1), owner: win.colony });
+  if (lose.carrying) foods.push({ x: lose.x, y: lose.y, amount: 1, r: foodRadius(1), owner: win.colony, grow: 0, plant: null });
   win.fightCd = 3;
   win.chase = null;
   effects.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0 });
@@ -691,6 +755,21 @@ function step() {
     const f = foodP[i] * DECAY; foodP[i] = f < 0.002 ? 0 : f;
     const t = traffic[i] * DECAY; traffic[i] = t < 0.002 ? 0 : t;
   }
+  // every pile doubles itself on a timer, and plants keep sprouting new ones
+  for (const f of foods) {
+    f.grow += STEP;
+    if (f.grow >= FOOD_DOUBLE) {
+      f.grow = 0;
+      if (f.amount < FOOD_CAP) {
+        f.amount = Math.min(FOOD_CAP, f.amount * 2);
+        f.r = foodRadius(f.amount);
+      }
+    }
+  }
+  for (const pl of plants) {
+    pl.t += STEP;
+    if (pl.t >= PLANT_EVERY) { pl.t = 0; sprout(pl); }
+  }
   for (const a of ants) stepAnt(a);
   for (const c of colonies) {
     if (c.alive === 0 && c.spawned > 0) {
@@ -713,7 +792,13 @@ function redrawWalls() {
   for (let i = 0; i < walls.length; i++) {
     if (!walls[i]) continue;
     const j = i * 4;
-    d[j] = 92; d[j + 1] = 82; d[j + 2] = 70; d[j + 3] = 255;
+    if (walls[i] === 2) { // dirt thins out as it gets dug away
+      const hp = dirtHP[i] < 0 ? 0 : dirtHP[i] > 1 ? 1 : dirtHP[i];
+      d[j] = 104; d[j + 1] = 74; d[j + 2] = 45;
+      d[j + 3] = (120 + 125 * hp) | 0;
+    } else {
+      d[j] = 92; d[j + 1] = 82; d[j + 2] = 70; d[j + 3] = 255;
+    }
   }
   wallCtx.putImageData(img, 0, 0);
 }
@@ -806,6 +891,7 @@ function render() {
 
   if (showTrails) drawMarkers();
 
+  if (wallsDirty) { redrawWalls(); wallsDirty = false; }
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(wallCv, 0, 0, W, H);
 
@@ -817,6 +903,25 @@ function render() {
     ctx.beginPath(); ctx.arc(f.x, f.y, f.r - 1, 0, TAU); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,.35)';
     ctx.beginPath(); ctx.arc(f.x - f.r * 0.3, f.y - f.r * 0.3, f.r * 0.22, 0, TAU); ctx.fill();
+  }
+
+  // plants
+  for (const pl of plants) {
+    const lean = Math.sin(performance.now() / 900 + pl.sway) * 0.09;
+    ctx.fillStyle = '#2c4a26';
+    ctx.beginPath(); ctx.ellipse(pl.x, pl.y + 10, 10, 3.5, 0, 0, TAU); ctx.fill();
+    ctx.save();
+    ctx.translate(pl.x, pl.y + 10);
+    ctx.rotate(lean);
+    ctx.strokeStyle = '#3f7d38'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -21); ctx.stroke();
+    ctx.fillStyle = '#4e9c48';
+    ctx.beginPath(); ctx.ellipse(-9, -11, 9, 4.2, -0.55, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(9, -15, 9, 4.2, 0.55, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#6fc463';
+    ctx.beginPath(); ctx.ellipse(0, -24, 7, 5.8, 0, 0, TAU); ctx.fill();
+    ctx.restore();
+    ctx.lineCap = 'butt';
   }
 
   const pulse = 0.55 + 0.35 * Math.sin(performance.now() / 180);
@@ -856,6 +961,10 @@ function render() {
     if (a.chase) {
       ctx.strokeStyle = 'rgba(255,92,70,.8)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, TAU); ctx.stroke();
+    }
+    if (a.digging) { // soil kicked up at the working end
+      ctx.fillStyle = 'rgba(196,156,110,.9)';
+      ctx.beginPath(); ctx.arc(5.2, 0, 1.9, 0, TAU); ctx.fill();
     }
     if (a.colony === selectedColony) {
       ctx.strokeStyle = selGlow; ctx.lineWidth = 1.5;
@@ -930,21 +1039,27 @@ function canvasPos(e) {
   const r = cv.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
-function paintWall(x, y, set) {
-  const cx = (x / CELL) | 0, cy = (y / CELL) | 0, R = set ? 2 : 3;
+function paintCell(x, y, kind) {
+  const cx = (x / CELL) | 0, cy = (y / CELL) | 0, R = kind ? 2 : 3;
   for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
     const nx = cx + dx, ny = cy + dy;
     if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
     if (dx * dx + dy * dy > R * R + 1) continue;
     const i = ny * gw + nx;
-    walls[i] = set ? 1 : 0;
-    if (set) { foodP[i] = 0; traffic[i] = 0; }
+    walls[i] = kind;
+    dirtHP[i] = kind === 2 ? 1 : 0;
+    if (kind) { foodP[i] = 0; traffic[i] = 0; }
   }
   fieldsDirty = true;
   redrawWalls();
 }
 function erase(x, y) {
   foods = foods.filter(f => Math.hypot(f.x - x, f.y - y) > f.r + 12);
+  const keptPlants = plants.filter(q => Math.hypot(q.x - x, q.y - y) > 22);
+  if (keptPlants.length !== plants.length) {
+    for (const f of foods) if (f.plant && !keptPlants.includes(f.plant)) f.plant = null;
+    plants = keptPlants;
+  }
   const before = colonies.length;
   colonies = colonies.filter(c => Math.hypot(c.x - x, c.y - y) > 26);
   if (colonies.length !== before) {
@@ -953,7 +1068,7 @@ function erase(x, y) {
     for (const f of foods) if (f.owner && !colonies.includes(f.owner)) f.owner = null;
     if (selectedColony && !colonies.includes(selectedColony)) selectedColony = null;
   }
-  paintWall(x, y, false);
+  paintCell(x, y, 0);
 }
 function applyTool(p, isDown) {
   if (!tool) {
@@ -969,7 +1084,9 @@ function applyTool(p, isDown) {
       addFood(p.x, p.y); lastFood = p;
     }
   }
-  else if (tool === 'wall') paintWall(p.x, p.y, true);
+  else if (tool === 'plant') { if (isDown) addPlant(p.x, p.y); }
+  else if (tool === 'wall') paintCell(p.x, p.y, 1);
+  else if (tool === 'dirt') paintCell(p.x, p.y, 2);
   else if (tool === 'erase') erase(p.x, p.y);
 }
 
@@ -1004,12 +1121,13 @@ document.getElementById('reset').addEventListener('click', () => {
   playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
   foodP.fill(0); traffic.fill(0); foodScent.fill(0);
   for (const c of colonies) { c.stored = 0; c.spawned = 0; c.alive = 0; c.known.fill(0); c.foodMemo = []; }
+  for (const pl of plants) pl.t = PLANT_EVERY * 0.5;
 });
 document.getElementById('clearAll').addEventListener('click', () => {
-  ants = []; colonies = []; foods = []; effects = []; delivered = 0; simTime = 0; playing = false;
+  ants = []; colonies = []; foods = []; effects = []; plants = []; delivered = 0; simTime = 0; playing = false;
   colonySeq = 0; selectedColony = null;
   playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
-  foodP.fill(0); traffic.fill(0); foodScent.fill(0); walls.fill(0); redrawWalls();
+  foodP.fill(0); traffic.fill(0); foodScent.fill(0); walls.fill(0); dirtHP.fill(0); redrawWalls();
 });
 document.getElementById('speed').addEventListener('change', e => { speedMul = +e.target.value; });
 document.getElementById('trails').addEventListener('change', e => { showTrails = e.target.checked; });
