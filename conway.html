@@ -142,13 +142,6 @@
   }
   canvas.pan { cursor: grab; }
   canvas.panning { cursor: grabbing; }
-  body.no-border .board-card {
-    background: none;
-    border-color: transparent;
-    box-shadow: none;
-    padding: 0;
-  }
-  body.no-border canvas { border: 0; border-radius: 0; }
   .stats {
     display: flex; flex-wrap: wrap; gap: 6px 18px;
     padding: 10px 4px 2px;
@@ -359,7 +352,7 @@
       <button id="zoomIn" title="Zoom in">+</button>
       <button id="zoomFit" title="Show the whole board again">Fit</button>
     </div>
-    <label class="toggle" title="Hide the frame around the board">
+    <label class="toggle" title="Stop the board wrapping: anything that reaches an edge leaves for good">
       <input type="checkbox" id="noBorder"> Remove border
     </label>
     <label class="toggle" title="The census forgets its built-in names and has to earn every one back">
@@ -574,8 +567,10 @@
     return out;
   }
 
-  // 8-connected blobs of live cells, wrapping at the edges.
-  function findComponents(cells, w, h) {
+  // 8-connected blobs of live cells. With wrap off, the edges are walls and
+  // nothing joins up around the far side.
+  function findComponents(cells, w, h, wrap) {
+    const wrapped = wrap !== false;
     const size = w * h;
     const label = new Int32Array(size).fill(-1);
     const comps = [];
@@ -594,7 +589,10 @@
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
             if (dx === 0 && dy === 0) continue;
-            const n = ((py + dy + h) % h) * w + ((px + dx + w) % w);
+            let nx = px + dx, ny = py + dy;
+            if (wrapped) { nx = (nx + w) % w; ny = (ny + h) % h; }
+            else if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const n = ny * w + nx;
             if (cells[n] && label[n] < 0) { label[n] = id; stack.push(n); }
           }
         }
@@ -606,14 +604,15 @@
 
   // Cell coordinates relative to the first cell, using the shortest way
   // round the torus — so a shape straddling the seam keeps its real form.
-  function relCoords(idxs, w, h) {
+  function relCoords(idxs, w, h, wrap) {
+    const wrapped = wrap !== false;
     const hw = w >> 1, hh = h >> 1;
     const rx = idxs[0] % w, ry = (idxs[0] / w) | 0;
     const out = new Int32Array(idxs.length * 2);
     for (let i = 0; i < idxs.length; i++) {
       const x = idxs[i] % w, y = (idxs[i] / w) | 0;
-      out[i * 2] = ((x - rx + w + hw) % w) - hw;
-      out[i * 2 + 1] = ((y - ry + h + hh) % h) - hh;
+      out[i * 2] = wrapped ? ((x - rx + w + hw) % w) - hw : x - rx;
+      out[i * 2 + 1] = wrapped ? ((y - ry + h + hh) % h) - hh : y - ry;
     }
     return out;
   }
@@ -654,8 +653,8 @@
 
   // Translation-only signature. Unlike canonicalKey it keeps orientation, so
   // comparing it across generations gives a pattern's true period.
-  function translationKey(idxs, w, h) {
-    const rel = relCoords(idxs, w, h);
+  function translationKey(idxs, w, h, wrap) {
+    const rel = relCoords(idxs, w, h, wrap);
     const n = idxs.length;
     let minX = Infinity, minY = Infinity;
     for (let i = 0; i < n; i++) {
@@ -712,7 +711,8 @@
 
   let owner = new Int32Array(0), stampMap = new Int32Array(0), stampTick = 0;
 
-  function groupNearby(comps, w, h) {
+  function groupNearby(comps, w, h, wrap) {
+    const wrapped = wrap !== false;
     if (comps.length < 2) return comps.length ? [comps.slice()] : [];
     const size = w * h;
     if (owner.length !== size) {
@@ -733,7 +733,10 @@
         const p = idxs[i], px = p % w, py = (p / w) | 0;
         for (let dy = -CLUSTER_R; dy <= CLUSTER_R; dy++) {
           for (let dx = -CLUSTER_R; dx <= CLUSTER_R; dx++) {
-            const n = ((py + dy + h) % h) * w + ((px + dx + w) % w);
+            let nx = px + dx, ny = py + dy;
+            if (wrapped) { nx = (nx + w) % w; ny = (ny + h) % h; }
+            else if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const n = ny * w + nx;
             if (stampMap[n] === tick) {
               const a = find(owner[n]), b = find(ci);
               if (a !== b) parent[b] = a;
@@ -765,9 +768,9 @@
     return out;
   }
 
-  function identify(idxs, w, h, lib) {
+  function identify(idxs, w, h, lib, wrap) {
     if (idxs.length > MAX_OBJECT_CELLS) return { kind: null, key: null };
-    const rel = relCoords(idxs, w, h);
+    const rel = relCoords(idxs, w, h, wrap);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let i = 0; i < idxs.length; i++) {
       const x = rel[i * 2], y = rel[i * 2 + 1];
@@ -777,21 +780,24 @@
       if (y > maxY) maxY = y;
     }
     // Something spanning half the board has no unambiguous shape on a torus.
-    if ((maxX - minX) * 2 >= w || (maxY - minY) * 2 >= h) return { kind: null, key: null };
+    if (wrap !== false && ((maxX - minX) * 2 >= w || (maxY - minY) * 2 >= h)) {
+      return { kind: null, key: null };
+    }
     const key = canonicalKey(rel);
     return { kind: lib.library[key] || null, key: key };
   }
 
   // Shortest Chebyshev distance between two objects, the short way round.
-  function objDistance(a, b, w, h) {
+  function objDistance(a, b, w, h, wrap) {
+    const wrapped = wrap !== false;
     const hw = w >> 1, hh = h >> 1;
     let best = Infinity;
     for (let i = 0; i < a.idxs.length; i++) {
       const px = a.idxs[i] % w, py = (a.idxs[i] / w) | 0;
       for (let j = 0; j < b.idxs.length; j++) {
         const qx = b.idxs[j] % w, qy = (b.idxs[j] / w) | 0;
-        let dx = Math.abs(px - qx); if (dx > hw) dx = w - dx;
-        let dy = Math.abs(py - qy); if (dy > hh) dy = h - dy;
+        let dx = Math.abs(px - qx); if (wrapped && dx > hw) dx = w - dx;
+        let dy = Math.abs(py - qy); if (wrapped && dy > hh) dy = h - dy;
         const d = dx > dy ? dx : dy;
         if (d < best) { best = d; if (best === 1) return best; }
       }
@@ -803,7 +809,7 @@
   // the clustering distance, and the loose pieces can even look like other
   // patterns. This pass regathers small neighbours and only accepts the
   // regrouping when it matches one of those wide patterns exactly.
-  function wideMerge(objects, w, h, lib) {
+  function wideMerge(objects, w, h, lib, wrap) {
     // Only loose pieces are worth regathering: anything unnamed, or shaped
     // like a piece one of the wide patterns breaks into.
     const cand = [];
@@ -818,7 +824,7 @@
     const gap = function (i, j) {
       const id = i < j ? i * objects.length + j : j * objects.length + i;
       let d = dist.get(id);
-      if (d === undefined) { d = objDistance(objects[i], objects[j], w, h); dist.set(id, d); }
+      if (d === undefined) { d = objDistance(objects[i], objects[j], w, h, wrap); dist.set(id, d); }
       return d;
     };
 
@@ -844,7 +850,7 @@
         set.push(bestJ);
         cellCount += objects[bestJ].idxs.length;
         const idxs = mergeIdxs(set.map(function (i) { return objects[i]; }));
-        const hit = lib.wideLibrary[canonicalKey(relCoords(idxs, w, h))];
+        const hit = lib.wideLibrary[canonicalKey(relCoords(idxs, w, h, wrap))];
         if (hit) {
           set.forEach(function (i) { claimed[i] = 1; });
           merged.push({ kind: hit, idxs: idxs });
@@ -859,18 +865,18 @@
   }
 
   // Board -> list of objects, each with a pattern kind and its cells.
-  function classify(cells, w, h, lib) {
+  function classify(cells, w, h, lib, wrap) {
     const objects = [];
     const clusters = [];
     objects.clusters = clusters;
-    const comps = findComponents(cells, w, h);
+    const comps = findComponents(cells, w, h, wrap);
     if (!comps.length) return objects;
-    const groups = groupNearby(comps, w, h);
+    const groups = groupNearby(comps, w, h, wrap);
 
     for (let gi = 0; gi < groups.length; gi++) {
       const group = groups[gi];
       const all = mergeIdxs(group);
-      const whole = identify(all, w, h, lib);
+      const whole = identify(all, w, h, lib, wrap);
       // Remember the cluster itself, not just what it was broken into: a
       // pattern whose pieces look like smaller patterns is only recognisable
       // as a whole.
@@ -883,25 +889,25 @@
       // to be a split-phase oscillator together.
       const misses = [];
       for (let i = 0; i < group.length; i++) {
-        const hit = identify(group[i].idxs, w, h, lib);
+        const hit = identify(group[i].idxs, w, h, lib, wrap);
         if (hit.kind) objects.push({ kind: hit.kind, idxs: group[i].idxs, key: hit.key });
         else { group[i].key = hit.key; misses.push(group[i]); }
       }
       if (!misses.length) continue;
-      const subs = groupNearby(misses, w, h);
+      const subs = groupNearby(misses, w, h, wrap);
       for (let si = 0; si < subs.length; si++) {
         const sub = subs[si];
         const sidxs = mergeIdxs(sub);
-        const hit = sub.length > 1 ? identify(sidxs, w, h, lib) : { kind: null, key: null };
+        const hit = sub.length > 1 ? identify(sidxs, w, h, lib, wrap) : { kind: null, key: null };
         // Pieces that mean nothing on their own stay together as one unnamed
         // object: a clump this tight is one thing, and keeping it whole is what
         // lets the tracker watch it and eventually catalogue it.
         objects.push(hit.kind
           ? { kind: hit.kind, idxs: sidxs, key: hit.key }
-          : { kind: lib.unknown, idxs: sidxs, key: sub.length > 1 ? identify(sidxs, w, h, lib).key : sub[0].key });
+          : { kind: lib.unknown, idxs: sidxs, key: sub.length > 1 ? identify(sidxs, w, h, lib, wrap).key : sub[0].key });
       }
     }
-    const out = lib.wideRadius > 0 ? wideMerge(objects, w, h, lib) : objects;
+    const out = lib.wideRadius > 0 ? wideMerge(objects, w, h, lib, wrap) : objects;
     out.clusters = clusters;
     return out;
   }
@@ -976,7 +982,7 @@
         const live = [];
         for (let i = 0; i < grid.length; i++) if (grid[i]) live.push(i);
         if (live.length && live.length <= MAX_OBJECT_CELLS) {
-          const key = canonicalKey(relCoords(live, w, h));
+          const key = canonicalKey(relCoords(live, w, h, false));
           keys.push(key);
           if (!(key in library)) library[key] = kind;
         }
@@ -993,7 +999,7 @@
           if (x1 - x0 + 1 > kind.box.w) kind.box.w = x1 - x0 + 1;
           if (y1 - y0 + 1 > kind.box.h) kind.box.h = y1 - y0 + 1;
         }
-        const gap = maxPieceGap(findComponents(grid, w, h), w);
+        const gap = maxPieceGap(findComponents(grid, w, h, false), w);
         if (gap > kind.spread) kind.spread = gap;
         if (t < phases - 1) grid = stepGrid(grid, w, h, false);
       }
@@ -1027,7 +1033,7 @@
         g[(pt[1] + entry.margin) * entry.w + (pt[0] + entry.margin)] = 1;
       });
       for (let t = 0; t < entry.phases; t++) {
-        classify(g, entry.w, entry.h, plain).forEach(function (o) {
+        classify(g, entry.w, entry.h, plain, false).forEach(function (o) {
           // Pieces can look like smaller patterns in their own right (a
           // pentadecathlon sheds blinker-shaped arms), so those count too.
           if (o.key) widePieceKeys[o.key] = true;
@@ -1085,6 +1091,7 @@
   const view = { scale: 1, ox: 0, oy: 0 };
   let baseCell = 8;
   let tool = 'toggle';
+  let wrapEdges = true;   // the board is a torus until the border is removed
   let linePreview = null;
   let pickedKind = null;
   let hoverKind = null;
@@ -1260,15 +1267,42 @@
 
   // Where a cell lands on screen, taking the wrap-around view offset into
   // account; off-screen cells simply fall outside the canvas.
-  function screenX(x, cs) { return (((x - view.ox) % W + W) % W) * cs; }
-  function screenY(y, cs) { return (((y - view.oy) % H + H) % H) * cs; }
+  function screenX(x, cs) {
+    return wrapEdges ? (((x - view.ox) % W + W) % W) * cs : (x - view.ox) * cs;
+  }
+  function screenY(y, cs) {
+    return wrapEdges ? (((y - view.oy) % H + H) % H) * cs : (y - view.oy) * cs;
+  }
+
+  // With the border gone the view stops at the edges instead of rolling over.
+  function clampView() {
+    if (wrapEdges) {
+      view.ox = ((view.ox % W) + W) % W;
+      view.oy = ((view.oy % H) + H) % H;
+      return;
+    }
+    const cs = cellSize();
+    view.ox = Math.max(0, Math.min(W - boardW() / cs, view.ox));
+    view.oy = Math.max(0, Math.min(H - boardH() / cs, view.oy));
+  }
+
+  function panBy(dxCells, dyCells) {
+    view.ox += dxCells;
+    view.oy += dyCells;
+    clampView();
+  }
 
   function cellAt(px, py) {
     const cs = cellSize();
-    return {
-      x: ((Math.floor(px / cs + view.ox) % W) + W) % W,
-      y: ((Math.floor(py / cs + view.oy) % H) + H) % H
-    };
+    let x = Math.floor(px / cs + view.ox), y = Math.floor(py / cs + view.oy);
+    if (wrapEdges) {
+      x = ((x % W) + W) % W;
+      y = ((y % H) + H) % H;
+    } else {
+      x = Math.max(0, Math.min(W - 1, x));
+      y = Math.max(0, Math.min(H - 1, y));
+    }
+    return { x: x, y: y };
   }
 
   function setZoom(scale, focusX, focusY) {
@@ -1278,9 +1312,10 @@
     const beforeX = view.ox + fx / cs, beforeY = view.oy + fy / cs;
     view.scale = Math.max(1, Math.min(ZOOMS[ZOOMS.length - 1], scale));
     const after = cellSize();
-    view.ox = ((beforeX - fx / after) % W + W) % W;
-    view.oy = ((beforeY - fy / after) % H + H) % H;
-    if (view.scale === 1) { view.ox = 0; view.oy = 0; }
+    view.ox = beforeX - fx / after;
+    view.oy = beforeY - fy / after;
+    if (view.scale === 1 && wrapEdges) { view.ox = 0; view.oy = 0; }
+    clampView();
     $('zoomVal').textContent = view.scale.toFixed(1) + '×';
     draw();
   }
@@ -1291,8 +1326,13 @@
     const h = rows.length;
     const ox = cx - (w >> 1), oy = cy - (h >> 1);
     pts.forEach(function (p) {
-      const x = ((p[0] + ox) % W + W) % W;
-      const y = ((p[1] + oy) % H + H) % H;
+      let x = p[0] + ox, y = p[1] + oy;
+      if (wrapEdges) {
+        x = ((x % W) + W) % W;
+        y = ((y % H) + H) % H;
+      } else if (x < 0 || y < 0 || x >= W || y >= H) {
+        return;
+      }
       cells[y * W + x] = 1;
     });
   }
@@ -1455,7 +1495,7 @@
   }
 
   function addPhase(track, idxs) {
-    track.phases.push(translationKey(idxs, W, H));
+    track.phases.push(translationKey(idxs, W, H, wrapEdges));
     if (track.phases.length > MAX_PERIOD + 1) track.phases.shift();
   }
 
@@ -1533,7 +1573,7 @@
   }
 
   function replayAlone(idxs, maxPeriod) {
-    const rel = relCoords(idxs, W, H);
+    const rel = relCoords(idxs, W, H, wrapEdges);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let i = 0; i < idxs.length; i++) {
       const x = rel[i * 2], y = rel[i * 2 + 1];
@@ -1558,16 +1598,16 @@
       return out;
     };
     const first = live(grid);
-    const shape0 = translationKey(first, gw, gh);
+    const shape0 = translationKey(first, gw, gh, false);
     const place0 = positionKey(first);
-    const phases = [{ key: canonicalKey(relCoords(first, gw, gh)), grid: grid }];
+    const phases = [{ key: canonicalKey(relCoords(first, gw, gh, false)), grid: grid }];
 
     for (let p = 1; p <= maxPeriod; p++) {
       grid = stepGrid(grid, gw, gh, false);
       const now = live(grid);
       if (!now.length) return null;
-      if (translationKey(now, gw, gh) === shape0) {
-        const comps = findComponents(phases[0].grid, gw, gh);
+      if (translationKey(now, gw, gh, false) === shape0) {
+        const comps = findComponents(phases[0].grid, gw, gh, false);
         if (comps.length > 1 && piecesIndependent(phases[0].grid, comps, p, gw, gh)) return null;
         return {
           period: p,
@@ -1576,7 +1616,7 @@
           gw: gw, gh: gh
         };
       }
-      phases.push({ key: canonicalKey(relCoords(now, gw, gh)), grid: grid });
+      phases.push({ key: canonicalKey(relCoords(now, gw, gh, false)), grid: grid });
     }
     return null;
   }
@@ -1606,7 +1646,7 @@
     let spread = 0, size = 0;
     proof.phases.forEach(function (f) {
       if (!(f.key in LIB.library)) { LIB.library[f.key] = kind; kind.keys.push(f.key); }
-      const comps = findComponents(f.grid, proof.gw, proof.gh);
+      const comps = findComponents(f.grid, proof.gw, proof.gh, false);
       const gap = maxPieceGap(comps, proof.gw);
       if (gap > spread) spread = gap;
       let cells = 0;
@@ -1623,7 +1663,7 @@
       const plain = { library: LIB.library, unknown: LIB.unknown, wideRadius: 0 };
       proof.phases.forEach(function (f) {
         if (!(f.key in LIB.wideLibrary)) { LIB.wideLibrary[f.key] = kind; kind.wideKeys.push(f.key); }
-        classify(f.grid, proof.gw, proof.gh, plain).forEach(function (o) {
+        classify(f.grid, proof.gw, proof.gh, plain, false).forEach(function (o) {
           if (o.key && !LIB.widePieceKeys[o.key]) {
             LIB.widePieceKeys[o.key] = true;
             kind.pieceKeys.push(o.key);
@@ -1690,7 +1730,7 @@
      Census
      ============================================================ */
   function analyse(silent) {
-    objects = classify(cells, W, H, LIB);
+    objects = classify(cells, W, H, LIB, wrapEdges);
     trackObjects(silent);
     population = 0;
     LIB.kinds.forEach(function (k) { k.prev = k.count; k.count = 0; });
@@ -1774,7 +1814,7 @@
       for (let i = 0; i < idxs.length; i++) {
         const p = idxs[i];
         const sx = screenX(p % W, cs), sy = screenY((p / W) | 0, cs);
-        if (sx > w || sy > h) continue;
+        if (sx > w || sy > h || sx < -cs || sy < -cs) continue;
         ctx.fillRect(sx, sy, size, size);
       }
     }
@@ -1803,7 +1843,7 @@
       for (let i = 0; i < linePreview.length; i++) {
         const p = linePreview[i];
         const sx = screenX(p % W, cs), sy = screenY((p / W) | 0, cs);
-        if (sx > w || sy > h) continue;
+        if (sx > w || sy > h || sx < -cs || sy < -cs) continue;
         ctx.fillRect(sx, sy, size, size);
       }
       ctx.globalAlpha = 1;
@@ -1813,16 +1853,23 @@
   // Cells along the shortest path between two board positions, wrap included.
   function lineCells(x0, y0, x1, y1) {
     let dx = x1 - x0, dy = y1 - y0;
-    if (dx > W / 2) dx -= W;
-    if (dx < -W / 2) dx += W;
-    if (dy > H / 2) dy -= H;
-    if (dy < -H / 2) dy += H;
+    if (wrapEdges) {
+      if (dx > W / 2) dx -= W;
+      if (dx < -W / 2) dx += W;
+      if (dy > H / 2) dy -= H;
+      if (dy < -H / 2) dy += H;
+    }
     const steps = Math.max(Math.abs(dx), Math.abs(dy));
     const out = [];
     for (let i = 0; i <= steps; i++) {
       const t = steps ? i / steps : 0;
-      const x = ((Math.round(x0 + dx * t) % W) + W) % W;
-      const y = ((Math.round(y0 + dy * t) % H) + H) % H;
+      let x = Math.round(x0 + dx * t), y = Math.round(y0 + dy * t);
+      if (wrapEdges) {
+        x = ((x % W) + W) % W;
+        y = ((y % H) + H) % H;
+      } else if (x < 0 || y < 0 || x >= W || y >= H) {
+        continue;
+      }
       out.push(y * W + x);
     }
     return out;
@@ -2181,7 +2228,7 @@
      Loop
      ============================================================ */
   function tickOnce() {
-    cells = stepGrid(cells, W, H, true);
+    cells = stepGrid(cells, W, H, wrapEdges);
     generation++;
     analyse(false);
   }
@@ -2292,8 +2339,7 @@
     const dist = Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y));
     const mid = { x: (pts[0].x + pts[1].x) / 2 - rect.left, y: (pts[0].y + pts[1].y) / 2 - rect.top };
     const cs = cellSize();
-    view.ox = ((view.ox - (mid.x - pinch.mid.x) / cs) % W + W) % W;
-    view.oy = ((view.oy - (mid.y - pinch.mid.y) / cs) % H + H) % H;
+    panBy(-(mid.x - pinch.mid.x) / cs, -(mid.y - pinch.mid.y) / cs);
     pinch.mid = mid;
     setZoom(pinch.scale * (dist / pinch.dist), mid.x, mid.y);
   }
@@ -2361,8 +2407,7 @@
     }
     if (drag.kind === 'pan') {
       const cs = cellSize();
-      view.ox = ((view.ox - (ev.clientX - drag.x) / cs) % W + W) % W;
-      view.oy = ((view.oy - (ev.clientY - drag.y) / cs) % H + H) % H;
+      panBy(-(ev.clientX - drag.x) / cs, -(ev.clientY - drag.y) / cs);
       drag.x = ev.clientX;
       drag.y = ev.clientY;
       draw();
@@ -2438,8 +2483,13 @@
   });
   $('zoomFit').addEventListener('click', function () { setZoom(1); });
   $('noBorder').addEventListener('change', function () {
-    document.body.classList.toggle('no-border', $('noBorder').checked);
-    layout();
+    wrapEdges = !$('noBorder').checked;
+    clampView();
+    $('hint').textContent = wrapEdges
+      ? 'Edges wrap around. Click a cell to toggle it; click a bar to inspect that pattern. Pan zooms too — pinch, shift-drag or double-click.'
+      : 'Border removed: anything reaching an edge leaves for good. Click a cell to toggle it; click a bar to inspect that pattern.';
+    analyse(true);
+    draw();
   });
 
   window.addEventListener('resize', layout);
