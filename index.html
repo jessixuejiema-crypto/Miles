@@ -395,6 +395,19 @@ function corridorDir(i, h) {
   return best;
 }
 
+function scentDir(x, y) {
+  // which way the food smell gets stronger from here; NaN if there is none.
+  // Soil passes smell, so this works from inside a bank as well as outside.
+  let best = NaN, bv = 0;
+  for (let k = 0; k < 12; k++) {
+    const ang = k * TAU / 12;
+    const i = cellIdx(x + Math.cos(ang) * 18, y + Math.sin(ang) * 18);
+    if (i < 0 || walls[i] === 1) continue;
+    if (foodScent[i] > bv) { bv = foodScent[i]; best = ang; }
+  }
+  return bv > 0.002 ? best : NaN;
+}
+
 function tunnelFor(a, goal, gx, gy) {
   // a shaft somebody already dug is only worth walking to if it actually
   // gets this ant nearer where it is going - otherwise it breaks ground
@@ -505,8 +518,11 @@ function turnToward(h, target, maxTurn) {
 function stepAnt(a) {
   if (a.dead) return;
   a.age += STEP;
-  if (!a.carrying) {
-    a.hunger += STEP; // the clock only runs while searching: carried food is food
+  if (!a.carrying && !a.digging) {
+    // only fruitless searching starves an ant. Carried food is food, and an
+    // ant at the working face of a shaft is doing the colony's work, not
+    // wandering, so a digger never dies partway through its own tunnel.
+    a.hunger += STEP;
     if (a.hunger > STARVE) {
       a.dead = true;
       a.colony.alive--;
@@ -712,7 +728,13 @@ function stepAnt(a) {
         mayDig = false; a.noDig = 2.5;
       }
     }
-    if (mayDig) a.digH = a.h; // the heading it broke ground on
+    if (mayDig) {
+      // a shaft is aimed at something rather than cut wherever the ant
+      // happened to be facing: its goal if it has one, else the way the
+      // food smell strengthens through the soil
+      const aim = Number.isNaN(goal) ? scentDir(a.x, a.y) : goal;
+      a.digH = Number.isNaN(aim) ? a.h : aim;
+    }
   }
   a.digging = mayDig;
   if (a.digging) {
