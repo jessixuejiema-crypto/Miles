@@ -96,7 +96,7 @@
     <span class="dot" style="background:#f5a83c"></span>explorer ant (20%) — blazes new paths
     <span class="dot" style="background:#e8e0cf"></span>follower ant (80%) — follows popular trails<br>
     <span class="dot" style="background:#ff5c46"></span>rivals sometimes fight on contact, and stealing a claimed food pile gets you chased — only one walks away<br>
-    <span class="dot" style="background:#8a8272"></span>an ant that searches 1 minute without finding food starves; an emptied colony sends out a fresh worker<br>
+    <span class="dot" style="background:#8a8272"></span>an ant that searches 10 minutes without finding food starves; an emptied colony sends out a fresh worker<br>
     <span class="dot" style="background:#c8b88a"></span>ants sharpen with age — eyesight grows 20→50 px, they learn from every wall they hit, and blocked ants head for gaps they can see<br>
     <span class="dot" style="background:#9ac8e0"></span>everything an ant sees or bumps into joins its colony's shared map, re-seeing a changed spot updates the memory — and nobody steers into a wall that's already on the map<br>
     <span class="dot" style="background:#ff9d7a"></span>food gives off a scent that drifts through gaps (warm haze) — ants smell it from afar and home in<br>
@@ -123,14 +123,14 @@ const DEP_RATE = 7;        // deposit per second at full weight
 const ANT_SPEED = 46;      // px/s
 const SENSOR_DIST = 15, SENSOR_ANG = 0.5;
 const ANT_CAP = 200;       // per colony, keeps the sim smooth
-const STARVE = 60;         // seconds of fruitless searching before an ant starves
+const STARVE = 600;        // seconds of fruitless searching before an ant starves
 const EXPLORER_EVERY = 5;  // every 5th ant = explorer (20%)
 const FOOD_DOUBLE = 10;    // seconds between a pile doubling itself
 const FOOD_CAP = 60;       // biggest a single pile grows to
 const PLANT_EVERY = 12;    // seconds between a plant sprouting another pile
 const PLANT_PILES = 5;     // piles one plant keeps growing at once
 const DIG_SPEED = 0.42;    // how much slower an ant moves while digging dirt
-const DIG_RATE = 0.7;      // dirt cleared per second per digging ant
+const DIG_RATE = 0.5;      // one dirt cell takes any ant two seconds to clear
 const TUNNEL_LOOK = 130;   // how far an ant checks for a shaft before digging one
 
 /* ---- state ---- */
@@ -278,7 +278,8 @@ function spawnAnt(col) {
     sway: 0, swayAmp: 0.15, lastCell: -1,
     wpX: 0, wpY: 0, wpT: 0, hits: 0, streak: 0, lastHitT: -9, guided: false,
     fightCd: 2, dead: false, chase: null, chaseT: 0, hunger: 0,
-    age: 0, xp: 0, digging: false, digH: 0, noDig: 0, digCommit: 0
+    age: 0, xp: 0, digging: false, digH: 0, noDig: 0, digCommit: 0,
+    wallSide: 0, wallT: -9, openT: -9, openAng: NaN, homeT: -9, homeClear: true
   });
 }
 
@@ -406,6 +407,32 @@ function scentDir(x, y) {
     if (foodScent[i] > bv) { bv = foodScent[i]; best = ang; }
   }
   return bv > 0.002 ? best : NaN;
+}
+
+function openingDir(a, pref, v) {
+  // sweep the full circle for the way through with the most clear room,
+  // scored toward where the ant wants to go so a slot in a wall beats the
+  // wide open ground behind it
+  let best = NaN, bestScore = 0;
+  const stepLen = CELL * 0.8;
+  for (let k = 0; k < 16; k++) {
+    const ang = k * TAU / 16;
+    let free = 0;
+    for (let d = stepLen; d <= v; d += stepLen) {
+      const x = a.x + Math.cos(ang) * d, y = a.y + Math.sin(ang) * d;
+      if (x < 6 || y < 6 || x > W - 6 || y > H - 6) break;
+      const i = cellIdx(x, y);
+      if (i >= 0 && walls[i]) break;
+      free = d;
+    }
+    if (free < 10) continue;
+    let dd = ang - pref;
+    while (dd > Math.PI) dd -= TAU;
+    while (dd < -Math.PI) dd += TAU;
+    const score = free * (1 + Math.cos(dd));
+    if (score > bestScore) { bestScore = score; best = ang; }
+  }
+  return best;
 }
 
 function tunnelFor(a, goal, gx, gy) {
@@ -540,20 +567,26 @@ function stepAnt(a) {
   if (a.carrying) {
     // head home, marking the food trail behind it as it goes
     goal = Math.atan2(col.y - a.y, col.x - a.x); goalX = col.x; goalY = col.y;
-    if (a.sinceFood > 110 && a.wpT <= 0) {
-      // hauling way too long: walk home by the colony's remembered map
-      const fa = fieldDir(col, a.x, a.y);
+    if (a.wpT <= 0) {
+      // a laden ant always takes the exact way home. With nothing in the
+      // way that is simply the straight line; when something is, it walks
+      // the colony's remembered route around it, and that route is never
+      // forgotten once the ground has been seen.
+      if (simTime - a.homeT > 0.5) {
+        a.homeT = simTime;
+        a.homeClear = clearLine(a.x, a.y, col.x, col.y);
+      }
+      const fa = a.homeClear ? NaN : fieldDir(col, a.x, a.y);
       if (!Number.isNaN(fa)) {
         a.guided = true;
-        a.h = turnToward(a.h, fa, 8 * STEP);
+        a.h = turnToward(a.h, fa, 6 * STEP);
         a.h += (Math.random() - 0.5) * 0.08;
-        a.swayAmp = 0.3;
+        a.swayAmp = 0.45; // still weaves, but never wanders off the route
+      } else {
+        a.h = turnToward(a.h, goal, 5 * STEP);
+        a.h += (Math.random() - 0.5) * 0.10;
+        a.swayAmp = 0.55;
       }
-    }
-    if (!a.guided && a.wpT <= 0) {
-      a.h = turnToward(a.h, goal, 5 * STEP);
-      a.h += (Math.random() - 0.5) * 0.10;
-      a.swayAmp = 0.55; // serpentine weave on the way home, no beelines
     }
     deposit(foodP, a, 1 - a.sinceFood / 70);
     if (Math.hypot(col.x - a.x, col.y - a.y) < 15) {
@@ -626,13 +659,18 @@ function stepAnt(a) {
       a.h += (Math.random() - 0.5) * 0.05;
       a.swayAmp = 0.2;
     } else if (!Number.isNaN(goal)) {
-      // lost too long: trek home to regroup
-      const fa = a.sinceHome > 320 ? fieldDir(col, a.x, a.y) : NaN;
+      // heading home to regroup: same rule, straight when it is clear and
+      // the remembered route around anything that is not
+      if (simTime - a.homeT > 0.5) {
+        a.homeT = simTime;
+        a.homeClear = clearLine(a.x, a.y, col.x, col.y);
+      }
+      const fa = a.homeClear ? NaN : fieldDir(col, a.x, a.y);
       if (!Number.isNaN(fa)) {
         a.guided = true;
-        a.h = turnToward(a.h, fa, 8 * STEP);
+        a.h = turnToward(a.h, fa, 6 * STEP);
         a.h += (Math.random() - 0.5) * 0.08;
-        a.swayAmp = 0.3;
+        a.swayAmp = 0.45;
       } else {
         a.h = turnToward(a.h, goal, 4 * STEP);
         a.h += (Math.random() - 0.5) * 0.10;
@@ -684,19 +722,54 @@ function stepAnt(a) {
   // walls in sight OR on the colony's map get dodged before impact:
   // once a wall is bumped or seen, nobody steers into it again
   const v = vision(a);
-  const look = 6 + v;
-  if (pathBlocked(a, look, 0, v)) {
-    const lBad = pathBlocked(a, look, -0.7, v), rBad = pathBlocked(a, look, 0.7, v);
-    if (!lBad && rBad) a.h -= 7 * STEP;
-    else if (!rBad && lBad) a.h += 7 * STEP;
-    else if (!lBad && !rBad) a.h += (Math.random() < 0.5 ? -7 : 7) * STEP;
-    else a.h += (Math.random() < 0.5 ? -10 : 10) * STEP; // walled in: swing hard away
+  const hcell = cellIdx(a.x, a.y);
+  // in a squeeze an ant watches its nose, not the horizon: looking far ahead
+  // down a one-ant gap only ever reports "blocked" and turns it back
+  const tight = hcell >= 0 && walls[hcell] === 0 && openAround(hcell) <= 2;
+  // a weaving ant is not walking where it is looking. That is fine in the
+  // open, but beside stone the weave is what clips the edge of a gap, so
+  // near anything solid the ant straightens up and walks its own line.
+  let nearWall = tight || (hcell >= 0 && openAround(hcell) < 4);
+  if (!nearWall) for (const o of [-0.9, 0, 0.9]) {
+    const pi = cellIdx(a.x + Math.cos(a.h + o) * 13, a.y + Math.sin(a.h + o) * 13);
+    if (pi >= 0 && walls[pi]) { nearWall = true; break; }
   }
 
-  if (a.digging) { a.h = a.digH; a.swayAmp = 0.04; } // stay on the shaft
+  if (a.digging) { a.h = a.digH; a.swayAmp = 0.04; }        // stay on the shaft
+  else if (nearWall) a.swayAmp = Math.min(a.swayAmp, 0.06); // no scraping the walls
   if (a.noDig > 0) a.noDig -= STEP;
   if (a.digCommit > 0) a.digCommit -= STEP;
   a.sway = Math.sin(simTime * a.wfreq + a.phase) * a.swayAmp;
+
+  // look only as far as it takes to avoid touching, and check the heading it
+  // will actually travel on (sway included) rather than the one it faces
+  const look = tight ? 9 : 12 + v * 0.25;
+  const off = tight ? 0.35 : 0.7;
+  if (pathBlocked(a, look, a.sway, v)) {
+    const lBad = pathBlocked(a, look, a.sway - off, v);
+    const rBad = pathBlocked(a, look, a.sway + off, v);
+    if (!lBad && rBad) a.h -= 7 * STEP;
+    else if (!rBad && lBad) a.h += 7 * STEP;
+    else if (!lBad && !rBad) a.h += (Math.random() < 0.5 ? -7 : 7) * STEP;
+    else {
+      // hemmed in: aim for the opening it can actually see rather than
+      // backing out or sweeping the wall in a hopeful direction
+      if (simTime - a.openT > 0.3) {
+        a.openT = simTime;
+        a.openAng = openingDir(a, Number.isNaN(goal) ? a.h : goal, v);
+      }
+      const ca = hcell >= 0 ? corridorDir(hcell, a.h) : NaN;
+      if (!Number.isNaN(a.openAng)) {
+        a.h = turnToward(a.h, a.openAng, 9 * STEP);
+      } else if (!Number.isNaN(ca)) {
+        a.h = turnToward(a.h, ca, 9 * STEP);
+      } else {
+        if (!a.wallSide || simTime - a.wallT > 4) a.wallSide = Math.random() < 0.5 ? -1 : 1;
+        a.wallT = simTime;
+        a.h += a.wallSide * 9 * STEP;
+      }
+    }
+  }
   const dir = a.h + a.sway;
   const spd = a.chase ? ANT_SPEED * 1.25 : ANT_SPEED; // chasers sprint
   const nx = a.x + Math.cos(dir) * spd * STEP;
@@ -739,20 +812,20 @@ function stepAnt(a) {
   a.digging = mayDig;
   if (a.digging) {
     a.digCommit = 3; // see this shaft through rather than drifting off it
-    // an ant that can smell food through the soil digs for it in earnest,
-    // and ants crowding one cell break it open together
-    const drive = 1 + Math.min(2.5, foodScent[soil] * 60);
-    dirtHP[soil] -= DIG_RATE * drive * STEP;
+    dirtHP[soil] -= DIG_RATE * STEP; // ants sharing a cell still split the work
     if (dirtHP[soil] <= 0) {
       walls[soil] = 0; dirtHP[soil] = 0;
       wallsDirty = true; fieldsDirty = true;
     }
   } else if (soil >= 0) {
-    // not digging here: follow the tunnel it is standing in, or work along
-    // the face toward the shaft it is headed for
+    // not digging here, so glance off the soil instead of clinging to it:
+    // turn down the tunnel it is standing in (or away from the face) and
+    // keep moving the same step, so an ant never sticks to dirt
     const ca = (hi >= 0 && walls[hi] === 0) ? corridorDir(hi, a.h) : NaN;
-    const tgt = Number.isNaN(ca) ? Math.atan2(a.wpY - a.y, a.wpX - a.x) : ca;
-    a.h = turnToward(a.h, tgt, 8 * STEP);
+    a.h = Number.isNaN(ca) ? a.h + Math.PI + (Math.random() - 0.5) * 1.2 : ca;
+    const bx = a.x + Math.cos(a.h) * spd * STEP;
+    const by = a.y + Math.sin(a.h) * spd * STEP;
+    if (!blocked(bx, by)) { a.x = bx; a.y = by; }
   } else if (blocked(nx, ny)) {
     a.h += Math.PI + (Math.random() - 0.5);
     a.lastHitT = simTime;
