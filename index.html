@@ -101,7 +101,7 @@
     <span class="dot" style="background:#9ac8e0"></span>everything an ant sees or bumps into joins its colony's shared map, re-seeing a changed spot updates the memory — and nobody steers into a wall that's already on the map<br>
     <span class="dot" style="background:#ff9d7a"></span>food gives off a scent that drifts through gaps (warm haze) — ants smell it from afar and home in<br>
     <span class="dot" style="background:#6fc463"></span>every pile doubles about every 10 s, and 🌱 plants keep sprouting more, so the land never runs dry<br>
-    <span class="dot" style="background:#8a6034"></span>🟫 dirt is diggable, not solid — ants tunnel through it slowly and can smell food right through the soil
+    <span class="dot" style="background:#8a6034"></span>🟫 dirt is diggable, not solid — ants bore narrow shafts, reuse the tunnels others opened, and smell food right through the soil
   </div>
   <div id="hint"></div>
 </div>
@@ -131,6 +131,7 @@ const PLANT_EVERY = 12;    // seconds between a plant sprouting another pile
 const PLANT_PILES = 5;     // piles one plant keeps growing at once
 const DIG_SPEED = 0.42;    // how much slower an ant moves while digging dirt
 const DIG_RATE = 0.7;      // dirt cleared per second per digging ant
+const TUNNEL_LOOK = 130;   // how far an ant checks for a shaft before digging one
 
 /* ---- state ---- */
 let W = 0, H = 0, gw = 0, gh = 0;
@@ -140,7 +141,8 @@ let foodScent = new Float32Array(0), scentB = new Float32Array(0);
 let stepN = 0;
 let colonies = [], foods = [], ants = [], effects = [], plants = [];
 let dirtHP = new Float32Array(0);   // how much digging each dirt cell has left
-let wallsDirty = false;
+let wallsDirty = false, anyDirt = false;
+let tunnelSpots = [];               // open cells inside soil: shafts already dug
 let colonySeq = 0;
 const COLONY_TINTS = ['#e8e0cf', '#a8d8ff', '#ffb8d8', '#b8f0a0', '#d8c0ff', '#ffe08a', '#90e8d0', '#ff9f8a', '#c0c8ff', '#d0e890'];
 let playing = false, simTime = 0, speedMul = 1, showTrails = true;
@@ -276,7 +278,7 @@ function spawnAnt(col) {
     sway: 0, swayAmp: 0.15, lastCell: -1,
     wpX: 0, wpY: 0, wpT: 0, hits: 0, streak: 0, lastHitT: -9, guided: false,
     fightCd: 2, dead: false, chase: null, chaseT: 0, hunger: 0,
-    age: 0, xp: 0, digging: false, digH: 0
+    age: 0, xp: 0, digging: false, digH: 0, noDig: 0, digCommit: 0
   });
 }
 
@@ -339,6 +341,86 @@ function buildField(col) {
     if (i >= gw      && d[i - gw] < 0 && kn[i - gw] !== 2) { d[i - gw] = nd; q[qt++] = i - gw; }
     if (i < n - gw   && d[i + gw] < 0 && kn[i + gw] !== 2) { d[i + gw] = nd; q[qt++] = i + gw; }
   }
+}
+
+function findTunnels() {
+  tunnelSpots = [];
+  if (!anyDirt) return;
+  for (let y = 1; y < gh - 1; y++) {
+    const row = y * gw;
+    for (let x = 1; x < gw - 1; x++) {
+      const i = row + x;
+      if (walls[i] !== 0) continue;
+      let soilN = 0;
+      if (walls[i - 1] === 2) soilN++;
+      if (walls[i + 1] === 2) soilN++;
+      if (walls[i - gw] === 2) soilN++;
+      if (walls[i + gw] === 2) soilN++;
+      if (soilN >= 2) tunnelSpots.push({ x: (x + 0.5) * CELL, y: (y + 0.5) * CELL });
+    }
+  }
+}
+
+function soilAround(i) {
+  let n = 0;
+  if (walls[i - 1] === 2) n++;
+  if (walls[i + 1] === 2) n++;
+  if (i >= gw && walls[i - gw] === 2) n++;
+  if (i < walls.length - gw && walls[i + gw] === 2) n++;
+  return n;
+}
+
+function openAround(i) {
+  let n = 0;
+  if (walls[i - 1] === 0) n++;
+  if (walls[i + 1] === 0) n++;
+  if (i >= gw && walls[i - gw] === 0) n++;
+  if (i < walls.length - gw && walls[i + gw] === 0) n++;
+  return n;
+}
+function corridorDir(i, h) {
+  // which way the tunnel actually runs from here, closest to the way we face
+  const x = i % gw, y = (i / gw) | 0;
+  let best = NaN, bs = -Infinity;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const cx = x + dx, cy = y + dy;
+    if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) continue;
+    if (walls[cy * gw + cx] !== 0) continue;
+    const ang = Math.atan2(dy, dx);
+    let dd = ang - h;
+    while (dd > Math.PI) dd -= TAU;
+    while (dd < -Math.PI) dd += TAU;
+    if (Math.cos(dd) > bs) { bs = Math.cos(dd); best = ang; }
+  }
+  return best;
+}
+
+function tunnelFor(a, goal, gx, gy) {
+  // a shaft somebody already dug is only worth walking to if it actually
+  // gets this ant nearer where it is going - otherwise it breaks ground
+  if (!tunnelSpots.length) return null;
+  const hasGoal = !Number.isNaN(goal);
+  const myGoalD = hasGoal ? Math.hypot(gx - a.x, gy - a.y) : 0;
+  let best = null, bestScore = Infinity;
+  for (const t of tunnelSpots) {
+    const dx = t.x - a.x, dy = t.y - a.y;
+    const d = Math.hypot(dx, dy);
+    if (d > TUNNEL_LOOK || d < 13) continue;
+    let score;
+    if (hasGoal) {
+      const gd = Math.hypot(gx - t.x, gy - t.y);
+      if (gd >= myGoalD - 20) continue; // that shaft leads the wrong way
+      score = gd + d * 0.35;
+    } else {
+      let dd = Math.atan2(dy, dx) - a.h;
+      while (dd > Math.PI) dd -= TAU;
+      while (dd < -Math.PI) dd += TAU;
+      if (Math.abs(dd) > 1.7) continue; // behind it, not worth doubling back
+      score = d;
+    }
+    if (score < bestScore) { bestScore = score; best = t; }
+  }
+  return best;
 }
 
 function mapMark(i) { return walls[i] === 1 ? 2 : walls[i] === 2 ? 3 : 1; } // 1 open, 2 rock, 3 dirt
@@ -596,6 +678,8 @@ function stepAnt(a) {
   }
 
   if (a.digging) { a.h = a.digH; a.swayAmp = 0.04; } // stay on the shaft
+  if (a.noDig > 0) a.noDig -= STEP;
+  if (a.digCommit > 0) a.digCommit -= STEP;
   a.sway = Math.sin(simTime * a.wfreq + a.phase) * a.swayAmp;
   const dir = a.h + a.sway;
   const spd = a.chase ? ANT_SPEED * 1.25 : ANT_SPEED; // chasers sprint
@@ -606,11 +690,33 @@ function stepAnt(a) {
   // instead of bouncing, and the cell it breaks becomes a tunnel that
   // everyone after it walks straight through
   const hi = cellIdx(a.x, a.y), ti = cellIdx(nx, ny);
-  const soil = (hi >= 0 && walls[hi] === 2) ? hi : (ti >= 0 && walls[ti] === 2) ? ti : -1;
+  const inSoil = hi >= 0 && walls[hi] === 2;
+  const soil = inSoil ? hi : (ti >= 0 && walls[ti] === 2) ? ti : -1;
   const wasDigging = a.digging;
-  a.digging = soil >= 0;
+  let mayDig = soil >= 0;
+  if (mayDig && !wasDigging && !inSoil) {
+    const inShaft = hi >= 0 && walls[hi] === 0 && soilAround(hi) >= 2;
+    if (a.noDig > 0) {
+      mayDig = false;                       // already walking to a shaft
+    } else if (inShaft) {
+      // down a tunnel already: only its dead end gets worked. Digging the
+      // sides is what turns a shaft into a cavern, so it is never allowed.
+      if (openAround(hi) > 1) mayDig = false;
+    } else if (a.digCommit <= 0) {
+      // arriving cold at the bank: use a shaft somebody already cut if one
+      // leads the right way, and break fresh ground only when none does
+      const mouth = tunnelFor(a, goal, goalX, goalY);
+      if (mouth) {
+        a.wpX = mouth.x; a.wpY = mouth.y;
+        a.wpT = 2.5 + Math.hypot(mouth.x - a.x, mouth.y - a.y) / ANT_SPEED;
+        mayDig = false; a.noDig = 2.5;
+      }
+    }
+    if (mayDig) a.digH = a.h; // the heading it broke ground on
+  }
+  a.digging = mayDig;
   if (a.digging) {
-    if (!wasDigging) a.digH = a.h; // the heading it broke ground on
+    a.digCommit = 3; // see this shaft through rather than drifting off it
     // an ant that can smell food through the soil digs for it in earnest,
     // and ants crowding one cell break it open together
     const drive = 1 + Math.min(2.5, foodScent[soil] * 60);
@@ -619,6 +725,12 @@ function stepAnt(a) {
       walls[soil] = 0; dirtHP[soil] = 0;
       wallsDirty = true; fieldsDirty = true;
     }
+  } else if (soil >= 0) {
+    // not digging here: follow the tunnel it is standing in, or work along
+    // the face toward the shaft it is headed for
+    const ca = (hi >= 0 && walls[hi] === 0) ? corridorDir(hi, a.h) : NaN;
+    const tgt = Number.isNaN(ca) ? Math.atan2(a.wpY - a.y, a.wpX - a.x) : ca;
+    a.h = turnToward(a.h, tgt, 8 * STEP);
   } else if (blocked(nx, ny)) {
     a.h += Math.PI + (Math.random() - 0.5);
     a.lastHitT = simTime;
@@ -749,6 +861,7 @@ function step() {
   fieldTimer += STEP;
   if (fieldsDirty || fieldTimer >= 1.5) {
     for (const c of colonies) buildField(c);
+    findTunnels();
     fieldsDirty = false; fieldTimer = 0;
   }
   for (let i = 0; i < foodP.length; i++) {
@@ -1048,6 +1161,7 @@ function paintCell(x, y, kind) {
     const i = ny * gw + nx;
     walls[i] = kind;
     dirtHP[i] = kind === 2 ? 1 : 0;
+    if (kind === 2) anyDirt = true;
     if (kind) { foodP[i] = 0; traffic[i] = 0; }
   }
   fieldsDirty = true;
@@ -1127,7 +1241,8 @@ document.getElementById('clearAll').addEventListener('click', () => {
   ants = []; colonies = []; foods = []; effects = []; plants = []; delivered = 0; simTime = 0; playing = false;
   colonySeq = 0; selectedColony = null;
   playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
-  foodP.fill(0); traffic.fill(0); foodScent.fill(0); walls.fill(0); dirtHP.fill(0); redrawWalls();
+  foodP.fill(0); traffic.fill(0); foodScent.fill(0); walls.fill(0); dirtHP.fill(0);
+  anyDirt = false; tunnelSpots = []; redrawWalls();
 });
 document.getElementById('speed').addEventListener('change', e => { speedMul = +e.target.value; });
 document.getElementById('trails').addEventListener('change', e => { showTrails = e.target.checked; });
