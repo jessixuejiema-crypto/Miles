@@ -1,1656 +1,1288 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>My Little Garden</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ant Colony Sim</title>
+</head>
+<body>
 <style>
-  :root {
-    --bg: #f3efe4;
-    --bg-glow: #e2ecd4;
-    --panel: #fbf9f2;
-    --border: #ddd6c2;
-    --text: #2d3a2e;
-    --muted: #77836f;
-    --accent: #3e8e4f;
-    --gold: #b07f10;
-    --soil: #7a5230;
-    --soil-hi: #916440;
-    --soil-dark: #5d3d24;
-    --frame: #8a5a33;
-    --ripe-glow: rgba(217, 165, 32, 0.55);
-    --chip-on: #e3f0e0;
-    --shadow: rgba(61, 48, 32, 0.18);
-    --overlay: rgba(40, 34, 24, 0.55);
-    --danger: #b3443c;
+  :root{
+    --bg:#16120c; --bar:#221b11; --panel:#2b2317; --ink:#efe7d6; --dim:#a89a7f;
+    --accent:#f0a532; --green:#5ce080; --blue:#5a96ff; --red:#e5484d;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #121a12;
-      --bg-glow: #1c2b1e;
-      --panel: #1c261c;
-      --border: #32402f;
-      --text: #dfe9d9;
-      --muted: #93a189;
-      --accent: #6fce84;
-      --gold: #e2b13c;
-      --soil: #4a3325;
-      --soil-hi: #5d4130;
-      --soil-dark: #33231a;
-      --frame: #5d3f26;
-      --ripe-glow: rgba(226, 177, 60, 0.5);
-      --chip-on: #28402b;
-      --shadow: rgba(0, 0, 0, 0.5);
-      --overlay: rgba(0, 0, 0, 0.65);
-      --danger: #e07a72;
-    }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+    -webkit-user-select:none; user-select:none;
   }
-  :root[data-theme="light"] {
-    --bg: #f3efe4;
-    --bg-glow: #e2ecd4;
-    --panel: #fbf9f2;
-    --border: #ddd6c2;
-    --text: #2d3a2e;
-    --muted: #77836f;
-    --accent: #3e8e4f;
-    --gold: #b07f10;
-    --soil: #7a5230;
-    --soil-hi: #916440;
-    --soil-dark: #5d3d24;
-    --frame: #8a5a33;
-    --ripe-glow: rgba(217, 165, 32, 0.55);
-    --chip-on: #e3f0e0;
-    --shadow: rgba(61, 48, 32, 0.18);
-    --overlay: rgba(40, 34, 24, 0.55);
-    --danger: #b3443c;
+  #bar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:8px 12px; background:var(--bar); border-bottom:1px solid #3a2f1d;
   }
-  :root[data-theme="dark"] {
-    --bg: #121a12;
-    --bg-glow: #1c2b1e;
-    --panel: #1c261c;
-    --border: #32402f;
-    --text: #dfe9d9;
-    --muted: #93a189;
-    --accent: #6fce84;
-    --gold: #e2b13c;
-    --soil: #4a3325;
-    --soil-hi: #5d4130;
-    --soil-dark: #33231a;
-    --frame: #5d3f26;
-    --ripe-glow: rgba(226, 177, 60, 0.5);
-    --chip-on: #28402b;
-    --shadow: rgba(0, 0, 0, 0.5);
-    --overlay: rgba(0, 0, 0, 0.65);
-    --danger: #e07a72;
+  .logo{font-weight:700; letter-spacing:.3px; margin-right:4px; white-space:nowrap}
+  .logo small{color:var(--dim); font-weight:400}
+  .group{display:flex; gap:6px; align-items:center}
+  .sep{width:1px; height:22px; background:#3a2f1d}
+  button,select{
+    background:var(--panel); color:var(--ink); border:1px solid #453923;
+    border-radius:8px; padding:6px 10px; font:inherit; cursor:pointer;
+    transition:background .12s, border-color .12s;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    min-height: 100vh;
-    background: radial-gradient(1100px 520px at 50% -8%, var(--bg-glow) 0%, var(--bg) 62%);
-    color: var(--text);
-    font-family: "SF Pro Rounded", ui-rounded, "Segoe UI", system-ui, -apple-system, sans-serif;
-    display: flex;
-    justify-content: center;
-    padding: 26px 16px 40px;
+  button:hover{background:#382e1c}
+  button.tb.active{background:#4a3a1c; border-color:var(--accent); color:#ffd98a}
+  #play{background:#2a4a2a; border-color:#3f7a3f; font-weight:600; min-width:88px}
+  #play:hover{background:#356035}
+  #play.on{background:#5a3520; border-color:#a8683a}
+  label.chk{display:flex; align-items:center; gap:5px; color:var(--dim); cursor:pointer; white-space:nowrap}
+  .stats{margin-left:auto; display:flex; gap:14px; color:var(--dim); white-space:nowrap; font-variant-numeric:tabular-nums}
+  .stats b{color:var(--ink); font-weight:600}
+  #wrap{position:relative; flex:1; min-height:0}
+  #cv{position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:crosshair}
+  #hint{
+    position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
+    background:rgba(24,19,11,.88); border:1px solid #4a3c22; border-radius:10px;
+    padding:8px 16px; color:#ffd98a; pointer-events:none; white-space:nowrap;
+    transition:opacity .4s; max-width:94%; overflow:hidden; text-overflow:ellipsis;
   }
-  .game { width: 100%; max-width: 520px; text-align: center; }
-
-  header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
+  #hint.hide{opacity:0}
+  #legend{
+    position:absolute; left:12px; bottom:12px; background:rgba(24,19,11,.82);
+    border:1px solid #3a2f1d; border-radius:10px; padding:8px 12px;
+    font-size:12px; color:var(--dim); pointer-events:none; line-height:1.7;
   }
-  h1 { font-size: 1.5rem; letter-spacing: 0.3px; text-wrap: balance; }
-  .money { text-align: right; }
-  .coins {
-    font-size: 1.05rem;
-    font-weight: 800;
-    color: var(--gold);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .coins.tokens { color: #9d7ae8; font-size: 0.92rem; }
-  .s-buy.tok {
-    background: #9d7ae8;
-    margin-left: 4px;
-  }
-
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    justify-content: center;
-    margin-bottom: 12px;
-  }
-  .act {
-    background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 9px 14px;
-    font-size: 0.88rem;
-    font-weight: 700;
-    color: var(--text);
-    cursor: pointer;
-    font-family: inherit;
-    transition: transform 0.1s, border-color 0.15s;
-  }
-  .act:hover { transform: translateY(-2px); border-color: var(--accent); }
-  .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .act.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
-
-  /* Seed toolbar (owned seeds) */
-  .shop {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    justify-content: center;
-    margin-bottom: 8px;
-    min-height: 30px;
-  }
-  .chip {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-    background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 6px 10px 5px;
-    min-width: 62px;
-    cursor: pointer;
-    color: var(--text);
-    transition: border-color 0.15s, background 0.15s, transform 0.1s;
-    font-family: inherit;
-  }
-  .chip:hover { transform: translateY(-2px); }
-  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .chip.on {
-    border-color: var(--accent);
-    background: var(--chip-on);
-    box-shadow: 0 3px 10px var(--shadow);
-  }
-  .chip .c-emoji { font-size: 1.3rem; line-height: 1.2; }
-  .chip .c-name { font-size: 0.7rem; font-weight: 700; }
-  .chip .c-meta {
-    font-size: 0.65rem;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .msg {
-    min-height: 1.3em;
-    font-size: 0.88rem;
-    color: var(--muted);
-    margin-bottom: 12px;
-  }
-
-  /* Weather banner */
-  .weather {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-left: 5px solid var(--accent);
-    border-radius: 12px;
-    padding: 8px 12px;
-    margin-bottom: 12px;
-    font-size: 0.82rem;
-    text-align: left;
-    line-height: 1.4;
-  }
-  .weather b { font-size: 0.92rem; }
-  .weather .w-time {
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    font-weight: 700;
-  }
-  .stack .st-val { font-size: 0.62rem; color: var(--gold); font-weight: 800; }
-  .stack .st-name { max-width: 86px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  /* Plot */
-  .plot-wrap { position: relative; margin: 0 auto 8px; max-width: 460px; }
-  .ruler-top {
-    color: var(--muted);
-    font-size: 0.72rem;
-    letter-spacing: 1px;
-    font-variant-numeric: tabular-nums;
-    margin-bottom: 4px;
-  }
-  .plot-viewport {
-    overflow: auto;
-    max-height: min(70vh, 520px);
-    border-radius: 16px;
-    cursor: grab;
-  }
-  .plot-viewport.dragging { cursor: grabbing; }
-  .plot-viewport::-webkit-scrollbar { width: 9px; height: 9px; }
-  .plot-viewport::-webkit-scrollbar-thumb { background: var(--frame); border-radius: 5px; }
-  .plot-viewport::-webkit-scrollbar-track { background: transparent; }
-  .pan-hint {
-    color: var(--muted);
-    font-size: 0.78rem;
-    margin-top: 6px;
-  }
-  #plot {
-    display: grid;
-    gap: 2px;
-    width: max-content;
-    margin: 0 auto;
-    background: var(--soil-dark);
-    border: 9px solid var(--frame);
-    border-radius: 14px;
-    padding: 2px;
-    box-shadow: 0 14px 30px var(--shadow);
-    user-select: none;
-  }
-  .cell {
-    position: relative;
-    aspect-ratio: 1;
-    border: none;
-    background: radial-gradient(circle at 35% 30%, var(--soil-hi), var(--soil) 75%);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    overflow: visible;
-    font-size: inherit;
-  }
-  /* dashed meter lines splitting the plot into 1 m squares */
-  .cell.m-r { border-right: 2px dashed rgba(255, 244, 214, 0.5); }
-  .cell.m-b { border-bottom: 2px dashed rgba(255, 244, 214, 0.5); }
-  .cell:hover { filter: brightness(1.15); }
-  .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
-  .cell .plant {
-    font-size: 0.56em;
-    line-height: 1;
-    transition: transform 0.25s, opacity 0.25s;
-    pointer-events: none;
-  }
-  .cell.ripe { box-shadow: inset 0 0 12px var(--ripe-glow); }
-  .cell.ripe .plant { animation: sway 1.6s ease-in-out infinite; }
-  @keyframes sway {
-    0%, 100% { transform: scale(1) rotate(-5deg); }
-    50%      { transform: scale(1.08) rotate(5deg); }
-  }
-  .cell .bar {
-    position: absolute;
-    left: 12%;
-    right: 12%;
-    bottom: 7%;
-    height: 3px;
-    background: rgba(0, 0, 0, 0.35);
-    border-radius: 2px;
-    overflow: hidden;
-    pointer-events: none;
-  }
-  .cell .bar i {
-    display: block;
-    height: 100%;
-    width: 0%;
-    background: var(--accent);
-    border-radius: 2px;
-  }
-  .cell .badge {
-    position: absolute;
-    top: 2%;
-    right: 3%;
-    font-size: 0.28em;
-    pointer-events: none;
-  }
-  .pop {
-    position: absolute;
-    left: 50%;
-    top: 10%;
-    transform: translateX(-50%);
-    font-size: 0.34em;
-    font-weight: 800;
-    color: var(--gold);
-    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
-    pointer-events: none;
-    animation: rise 0.9s ease-out forwards;
-    z-index: 5;
-    white-space: nowrap;
-  }
-  @keyframes rise {
-    from { opacity: 1; translate: 0 0; }
-    to   { opacity: 0; translate: 0 -26px; }
-  }
-
-  .legend {
-    color: var(--muted);
-    font-size: 0.82rem;
-    line-height: 1.55;
-    max-width: 450px;
-    margin: 10px auto 0;
-  }
-  .legend b { color: var(--text); }
-
-  /* Shop modals */
-  .overlay[hidden] { display: none; }
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--overlay);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 18px;
-    z-index: 50;
-  }
-  .modal {
-    background: var(--panel);
-    border: 1.5px solid var(--border);
-    border-radius: 18px;
-    width: 100%;
-    max-width: 430px;
-    max-height: 86vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 20px 50px var(--shadow);
-    text-align: left;
-    overflow: hidden;
-  }
-  .m-head {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    padding: 16px 16px 12px;
-    border-bottom: 1.5px solid var(--border);
-  }
-  .m-face { font-size: 2.1rem; line-height: 1; }
-  .m-bubble {
-    flex: 1;
-    background: var(--chip-on);
-    border-radius: 12px;
-    padding: 9px 12px;
-    font-size: 0.9rem;
-    line-height: 1.45;
-    min-height: 2.4em;
-  }
-  .m-close {
-    background: none;
-    border: none;
-    font-size: 1.1rem;
-    cursor: pointer;
-    color: var(--muted);
-    padding: 4px 6px;
-    font-family: inherit;
-  }
-  .m-close:hover { color: var(--text); }
-  .m-sub {
-    padding: 8px 16px;
-    font-size: 0.78rem;
-    color: var(--muted);
-    border-bottom: 1.5px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    font-variant-numeric: tabular-nums;
-  }
-  .m-body { overflow-y: auto; padding: 8px 12px 12px; }
-
-  .srow {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 7px 6px;
-    border-bottom: 1px solid var(--border);
-  }
-  .srow:last-child { border-bottom: none; }
-  .srow .s-emoji { font-size: 1.4rem; width: 30px; text-align: center; }
-  .srow .s-info { flex: 1; min-width: 0; }
-  .srow .s-name { font-size: 0.85rem; font-weight: 700; }
-  .srow .s-tags { font-size: 0.7rem; color: var(--muted); }
-  .srow .s-stock {
-    font-size: 0.72rem;
-    font-weight: 800;
-    color: var(--accent);
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .srow.oos .s-stock { color: var(--danger); }
-  .srow.oos .s-emoji, .srow.oos .s-info { opacity: 0.45; }
-  .srow .s-buy {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 9px;
-    padding: 6px 10px;
-    font-size: 0.78rem;
-    font-weight: 800;
-    cursor: pointer;
-    font-family: inherit;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .srow .s-buy:disabled { opacity: 0.35; cursor: not-allowed; }
-
-  .inv-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    padding: 4px 2px 10px;
-  }
-  .stack {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    background: var(--bg);
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 7px 10px;
-    min-width: 62px;
-    cursor: pointer;
-    font-family: inherit;
-    color: var(--text);
-  }
-  .stack.held { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
-  .stack .st-emoji { font-size: 1.3rem; }
-  .stack .st-count { font-size: 0.72rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .stack .st-name { font-size: 0.62rem; color: var(--muted); }
-  .sell-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    padding: 4px 2px 6px;
-  }
-  .sell-actions .act { flex: 1 1 auto; font-size: 0.8rem; padding: 8px 8px; }
-  .act.gold { background: var(--gold); border-color: var(--gold); color: #fff; }
-  .act.quiet { color: var(--muted); }
-
-  @media (prefers-reduced-motion: reduce) {
-    .cell .plant, .chip, .act { transition: none; }
-    .cell.ripe .plant { animation: none; }
-    .pop { animation-duration: 0.01s; }
-  }
+  #legend .grad{display:inline-block; width:96px; height:8px; border-radius:4px; margin-right:7px; vertical-align:middle;
+    background:linear-gradient(90deg,#2f6bff,#24d3e6,#3fe06a,#f2e33c,#ff9d2e,#ff3527)}
+  #legend .bands{opacity:.72; font-size:11px}
+  #legend .dot{display:inline-block; width:8px; height:8px; border-radius:50%; margin:0 10px 0 3px; vertical-align:middle}
 </style>
 
-<div class="game">
-  <header>
-    <h1>🌻 My Little Garden</h1>
-    <div class="money">
-      <div class="coins" id="coins">🪙 20¢</div>
-      <div class="coins tokens" id="tokens">🎟️ 0</div>
-    </div>
-  </header>
-
-  <div class="actions">
-    <button class="act primary" id="btn-seedshop">🌱 Seed Shop</button>
-    <button class="act primary" id="btn-gearshop">🛠️ Gear Shop</button>
-    <button class="act primary" id="btn-sellshop">🧺 Sell Shop</button>
-    <button class="act" id="btn-expand">📐 Expand Garden (100¢)</button>
+<div id="bar">
+  <span class="logo">🐜 Ant Colony Sim <small>— editor</small></span>
+  <div class="group" id="tools">
+    <button class="tb active" data-tool="colony" title="Click to place an ant hill">⛰️ Colony</button>
+    <button class="tb" data-tool="food" title="Click or drag to drop food">🍓 Food</button>
+    <button class="tb" data-tool="plant" title="Click to plant a berry bush that keeps sprouting food">🌱 Plant</button>
+    <button class="tb" data-tool="wall" title="Drag to paint solid rock walls">🪨 Wall</button>
+    <button class="tb" data-tool="dirt" title="Drag to paint soft dirt — ants dig through it">🟫 Dirt</button>
+    <button class="tb" data-tool="erase" title="Click or drag to erase">🧽 Erase</button>
   </div>
-
-  <div class="weather" id="weather-banner">
-    <span id="w-info"></span>
-    <span class="w-time" id="w-time"></span>
+  <div class="sep"></div>
+  <div class="group">
+    <button id="play">▶ Play</button>
+    <button id="reset" title="Clear ants and trails, keep the map">⟲ Reset</button>
+    <button id="clearAll" title="Wipe everything">🗑 Clear</button>
+    <select id="speed" title="Simulation speed">
+      <option value="1">1×</option><option value="2">2×</option>
+      <option value="4">4×</option><option value="8">8×</option>
+    </select>
+    <label class="chk"><input type="checkbox" id="trails" checked> Markers</label>
   </div>
-
-  <div class="shop" id="shop"></div>
-  <p class="msg" id="msg">Visit the Seed Shop to buy your first seeds!</p>
-
-  <div class="plot-wrap">
-    <div class="ruler-top" id="ruler">⟵&nbsp;&nbsp;3 m&nbsp;&nbsp;⟶</div>
-    <div class="plot-viewport" id="plot-viewport">
-      <div id="plot"></div>
-    </div>
-    <p class="pan-hint" id="pan-hint" hidden>🖐️ Drag to look around your garden</p>
-  </div>
-
-  <p class="legend">
-    Seeds marked <b>♻️</b> are multi-harvest: pick them when ripe and the <b>stem stays behind</b> and regrows a new crop, forever.
-    Single-harvest crops leave the soil empty. Harvests go in your <b>🧺 basket</b> — sell them at the Sell Shop.
-    The <b>🛠️ Gear Shop</b> sells tools — pick a targeted tool (like the watering can) and click a plant to use it; instant tools fire the moment you click them in the toolbar.
-    The <b>weather</b> changes every ~3 minutes (139 kinds, including the Grow&nbsp;a&nbsp;Garden set!) and several can strike at once — 50% chance of 2, 25% of 3, and so on. Every 10 seconds each active weather may <b>✨ mutate</b> a plant, and mutations stack for multiplied value — but harvesting takes them with the crop, so a regrown stem starts fresh.
-    You also earn <b>🎟️ tokens</b>: digging up a single-harvest plant pays 1–4, harvesting common–rare multi-harvest crops pays 4–10, and legendary or better pays 50–1000 — spend them in any shop with the purple price button.
-    The <b>token shop stocks separately</b> from the sheckle shop, and its restock odds are multiplied by the active weather multipliers — a ×3 and a ×5 weather together mean ×15 token-stock luck!
-    Both shops <b>restock every 10 seconds</b>; rare items are rarely in stock. Expanding the garden always costs <b>100¢</b>, as many times as you like.
-  </p>
-</div>
-
-<!-- Seed shop -->
-<div class="overlay" id="ov-seed" hidden>
-  <div class="modal" role="dialog" aria-label="Seed shop">
-    <div class="m-head">
-      <div class="m-face">🧑‍🌾</div>
-      <div class="m-bubble" id="seed-bubble">These are the seeds that are in stock!</div>
-      <button class="m-close" id="close-seed" aria-label="Close seed shop">✖</button>
-    </div>
-    <div class="m-sub">
-      <span id="seed-luck">Seller's stock</span>
-      <span id="restock">Restock in 0:10</span>
-    </div>
-    <div class="m-body" id="seedlist"></div>
+  <div class="stats">
+    <span>⏱ <b id="stTime">0:00</b></span>
+    <span>🐜 <b id="stAnts">0</b></span>
+    <span>🍓 delivered <b id="stFood">0</b></span>
   </div>
 </div>
 
-<!-- Gear shop -->
-<div class="overlay" id="ov-gear" hidden>
-  <div class="modal" role="dialog" aria-label="Gear shop">
-    <div class="m-head">
-      <div class="m-face">🤖</div>
-      <div class="m-bubble" id="gear-bubble">Beep boop! This is the gear that is in stock!</div>
-      <button class="m-close" id="close-gear" aria-label="Close gear shop">✖</button>
-    </div>
-    <div class="m-sub">
-      <span id="gear-luck">Gear in stock</span>
-      <span id="restock2">Restock in 0:10</span>
-    </div>
-    <div class="m-body" id="gearlist"></div>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="legend">
+    <span class="grad"></span>marker map — ant traffic, fades in ~2 min<br>
+    <span class="bands">blue 1–5 · cyan 6–15 · green 16–26 · yellow 27–40 · orange 41–80 · red 81+</span><br>
+    <span class="dot" style="background:#f5a83c"></span>explorer ant (20%) — blazes new paths
+    <span class="dot" style="background:#e8e0cf"></span>follower ant (80%) — follows popular trails<br>
+    <span class="dot" style="background:#ff5c46"></span>rivals sometimes fight on contact, and stealing a claimed food pile gets you chased — only one walks away<br>
+    <span class="dot" style="background:#8a8272"></span>an ant that searches 10 minutes without finding food starves; an emptied colony sends out a fresh worker<br>
+    <span class="dot" style="background:#c8b88a"></span>ants sharpen with age — eyesight grows 20→50 px, they learn from every wall they hit, and blocked ants head for gaps they can see<br>
+    <span class="dot" style="background:#9ac8e0"></span>everything an ant sees or bumps into joins its colony's shared map, re-seeing a changed spot updates the memory — and nobody steers into a wall that's already on the map<br>
+    <span class="dot" style="background:#ff9d7a"></span>food gives off a scent that drifts through gaps (warm haze) — ants smell it from afar and home in<br>
+    <span class="dot" style="background:#6fc463"></span>every pile doubles about every 10 s, and 🌱 plants keep sprouting more, so the land never runs dry<br>
+    <span class="dot" style="background:#8a6034"></span>🟫 dirt is diggable, not solid — any ant bores a cell in 2 s, shafts stay one ant wide, and smell carries right through the soil
   </div>
-</div>
-
-<!-- Sell shop -->
-<div class="overlay" id="ov-sell" hidden>
-  <div class="modal" role="dialog" aria-label="Sell shop">
-    <div class="m-head">
-      <div class="m-face">🤠</div>
-      <div class="m-bubble" id="sell-bubble">Howdy! Whatcha got in that basket for me?</div>
-      <button class="m-close" id="close-sell" aria-label="Close sell shop">✖</button>
-    </div>
-    <div class="m-body">
-      <div class="inv-grid" id="invlist"></div>
-      <div class="sell-actions" id="held-actions" hidden>
-        <button class="act" id="btn-worth">💰 How much is this worth?</button>
-        <button class="act primary" id="btn-sellthis">✅ I want to sell this</button>
-        <button class="act quiet" id="btn-nevermind">🙅 Nevermind</button>
-      </div>
-      <div class="sell-actions">
-        <button class="act gold" id="btn-sellall">💸 Sell All</button>
-      </div>
-    </div>
-  </div>
+  <div id="hint"></div>
 </div>
 
 <script>
-(function () {
-  // name, emoji, price¢, stock range, % chance in stock each restock, multi?, grow s, regrow s, sell¢ per harvest
-  var SEEDS = [
-    { key: 'carrot',          name: 'Carrot',           emoji: '🥕', price: 10,    stock: [10, 20], chance: 100,  multi: false, grow: 15,   sell: 25 },
-    { key: 'strawberry',      name: 'Strawberry',       emoji: '🍓', price: 50,    stock: [2, 4],   chance: 99,   multi: true,  grow: 30,   regrow: 15,  sell: 30 },
-    { key: 'blueberry',       name: 'Blueberry',        emoji: '🫐', price: 75,    stock: [1, 2],   chance: 80,   multi: true,  grow: 40,   regrow: 20,  sell: 45 },
-    { key: 'buttercup',       name: 'Buttercup',        emoji: '🌼', price: 100,   stock: [1, 2],   chance: 50,   multi: false, grow: 35,   sell: 250 },
-    { key: 'tomato',          name: 'Tomato',           emoji: '🍅', price: 200,   stock: [1, 3],   chance: 40,   multi: true,  grow: 60,   regrow: 25,  sell: 120 },
-    { key: 'corn',            name: 'Corn',             emoji: '🌽', price: 250,   stock: [1, 2],   chance: 20,   multi: true,  grow: 80,   regrow: 30,  sell: 150 },
-    { key: 'daffodil',        name: 'Daffodil',         emoji: '🌷', price: 300,   stock: [1, 2],   chance: 18,   multi: false, grow: 45,   sell: 750 },
-    { key: 'watermelon',      name: 'Watermelon',       emoji: '🍉', price: 500,   stock: [1, 2],   chance: 15,   multi: false, grow: 90,   sell: 1300 },
-    { key: 'pumpkin',         name: 'Pumpkin',          emoji: '🎃', price: 800,   stock: [1, 2],   chance: 12,   multi: false, grow: 120,  sell: 2100 },
-    { key: 'apple',           name: 'Apple',            emoji: '🍎', price: 1250,  stock: [1, 2],   chance: 10,   multi: true,  grow: 100,  regrow: 40,  sell: 750 },
-    { key: 'bamboo',          name: 'Bamboo',           emoji: '🎍', price: 2000,  stock: [1, 2],   chance: 9,    multi: false, grow: 60,   sell: 5000 },
-    { key: 'coconut',         name: 'Coconut',          emoji: '🥥', price: 3000,  stock: [1, 1],   chance: 7,    multi: true,  grow: 150,  regrow: 60,  sell: 1800 },
-    { key: 'cactus',          name: 'Cactus',           emoji: '🌵', price: 5000,  stock: [1, 1],   chance: 6,    multi: true,  grow: 120,  regrow: 50,  sell: 3000 },
-    { key: 'dragonfruit',     name: 'Dragon Fruit',     emoji: '🐉', price: 8000,  stock: [1, 1],   chance: 5,    multi: true,  grow: 180,  regrow: 70,  sell: 4800 },
-    { key: 'mango',           name: 'Mango',            emoji: '🥭', price: 12000, stock: [1, 1],   chance: 4.5,  multi: true,  grow: 200,  regrow: 80,  sell: 7200 },
-    { key: 'grape',           name: 'Grape',            emoji: '🍇', price: 20000, stock: [1, 1],   chance: 4,    multi: true,  grow: 240,  regrow: 90,  sell: 12000 },
-    { key: 'mushroom',        name: 'Mushroom',         emoji: '🍄', price: 40000, stock: [1, 1],   chance: 3.5,  multi: false, grow: 150,  sell: 100000 },
-    { key: 'pepper',          name: 'Pepper',           emoji: '🌶️', price: 75000, stock: [1, 1],  chance: 3,    multi: true,  grow: 300,  regrow: 100, sell: 45000 },
-    { key: 'cacao',           name: 'Cacao',            emoji: '🍫', price: 125000, stock: [1, 1],  chance: 2.5,  multi: true,  grow: 350,  regrow: 120, sell: 75000 },
-    { key: 'sunflower',       name: 'Sunflower',        emoji: '🌻', price: 250000, stock: [1, 1],  chance: 2,    multi: true,  grow: 400,  regrow: 150, sell: 150000 },
-    { key: 'beanstalk',       name: 'Beanstalk',        emoji: '🫛', price: 500000, stock: [1, 1],  chance: 1.5,  multi: true,  grow: 500,  regrow: 180, sell: 300000 },
-    { key: 'emberlily',       name: 'Ember Lily',       emoji: '🪷', price: 1e6,   stock: [1, 1],   chance: 1,    multi: true,  grow: 600,  regrow: 200, sell: 600000 },
-    { key: 'sugarapple',      name: 'Sugar Apple',      emoji: '🍏', price: 2.5e6, stock: [1, 1],   chance: 0.8,  multi: true,  grow: 700,  regrow: 240, sell: 1.5e6 },
-    { key: 'burningbud',      name: 'Burning Bud',      emoji: '🥀', price: 5e6,   stock: [1, 1],   chance: 0.6,  multi: true,  grow: 800,  regrow: 280, sell: 3e6 },
-    { key: 'giantpinecone',   name: 'Giant Pinecone',   emoji: '🌰', price: 1e7,   stock: [1, 1],   chance: 0.4,  multi: true,  grow: 900,  regrow: 300, sell: 6e6 },
-    { key: 'elderstrawberry', name: 'Elder Strawberry', emoji: '🍒', price: 2.5e7, stock: [1, 1],   chance: 0.3,  multi: true,  grow: 1000, regrow: 330, sell: 1.5e7 },
-    { key: 'romanesco',       name: 'Romanesco',        emoji: '🥦', price: 5e7,   stock: [1, 1],   chance: 0.2,  multi: true,  grow: 1100, regrow: 360, sell: 3e7 },
-    { key: 'crimsonthorn',    name: 'Crimson Thorn',    emoji: '🌹', price: 1e8,   stock: [1, 1],   chance: 0.1,  multi: true,  grow: 1200, regrow: 400, sell: 6e7 },
-    { key: 'zebrazinkle',     name: 'Zebra Zinkle',     emoji: '🦓', price: 2.5e8, stock: [1, 1],   chance: 0.05, multi: true,  grow: 1300, regrow: 430, sell: 1.5e8 },
-    { key: 'octobloom',       name: 'Octobloom',        emoji: '🐙', price: 5e8,   stock: [1, 1],   chance: 0.025, multi: true, grow: 1400, regrow: 460, sell: 3e8 },
-    { key: 'alienapple',      name: 'Alien Apple',      emoji: '👽', price: 1e15,  stock: [1, 1],   chance: 0.01, multi: true,  grow: 1500, regrow: 500, sell: 6e14 }
+'use strict';
+(() => {
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const TAU = Math.PI * 2;
+
+/* ---- tuning ---- */
+const CELL = 6;            // pheromone grid cell size (px)
+const FADE = 120;          // seconds for a marker to fully fade
+const STEP = 1 / 60;       // fixed sim step
+const DECAY = Math.pow(0.01, STEP / FADE);
+const MAXV = 3;            // pheromone saturation (popular paths get brighter)
+const DEP_RATE = 7;        // deposit per second at full weight
+const ANT_SPEED = 46;      // px/s
+const SENSOR_DIST = 15, SENSOR_ANG = 0.5;
+const ANT_CAP = 200;       // per colony, keeps the sim smooth
+const STARVE = 600;        // seconds of fruitless searching before an ant starves
+const EXPLORER_EVERY = 5;  // every 5th ant = explorer (20%)
+const FOOD_DOUBLE = 10;    // seconds between a pile doubling itself
+const FOOD_CAP = 60;       // biggest a single pile grows to
+const PLANT_EVERY = 12;    // seconds between a plant sprouting another pile
+const PLANT_PILES = 5;     // piles one plant keeps growing at once
+const DIG_SPEED = 0.42;    // how much slower an ant moves while digging dirt
+const DIG_RATE = 0.5;      // one dirt cell takes any ant two seconds to clear
+
+/* ---- state ---- */
+let W = 0, H = 0, gw = 0, gh = 0;
+let foodP = new Float32Array(0), traffic = new Float32Array(0), walls = new Uint8Array(0);
+let blurA = new Float32Array(0), blurB = new Float32Array(0);
+let foodScent = new Float32Array(0), scentB = new Float32Array(0);
+let stepN = 0;
+let colonies = [], foods = [], ants = [], effects = [], plants = [];
+let dirtHP = new Float32Array(0);   // how much digging each dirt cell has left
+let wallsDirty = false;
+let colonySeq = 0;
+const COLONY_TINTS = ['#e8e0cf', '#a8d8ff', '#ffb8d8', '#b8f0a0', '#d8c0ff', '#ffe08a', '#90e8d0', '#ff9f8a', '#c0c8ff', '#d0e890'];
+let playing = false, simTime = 0, speedMul = 1, showTrails = true;
+let delivered = 0, tool = 'colony';
+let selectedColony = null; // empty-handed click on a colony highlights its ants
+
+const pherCv = document.createElement('canvas');
+const wallCv = document.createElement('canvas');
+let pherCtx, wallCtx, pherImg;
+
+/* ---- grid helpers ---- */
+function cellIdx(x, y) {
+  const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
+  if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) return -1;
+  return cy * gw + cx;
+}
+function blocked(x, y) {
+  if (x < 4 || y < 4 || x > W - 4 || y > H - 4) return true;
+  const i = cellIdx(x, y);
+  return i >= 0 && walls[i] !== 0; // rock, and dirt until somebody digs it out
+}
+function sense(grid, a, off) {
+  const ang = a.h + off;
+  const i = cellIdx(a.x + Math.cos(ang) * SENSOR_DIST, a.y + Math.sin(ang) * SENSOR_DIST);
+  if (i < 0 || walls[i] === 1) return 0; // rock blocks the nose, dirt does not
+  return grid[i];
+}
+function clearLine(x0, y0, x1, y1) {
+  // rock and dirt both block line of sight
+  const dx = x1 - x0, dy = y1 - y0;
+  const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (CELL * 0.8)));
+  for (let k = 1; k <= n; k++) {
+    const i = cellIdx(x0 + dx * k / n, y0 + dy * k / n);
+    if (i >= 0 && walls[i]) return false;
+  }
+  return true;
+}
+function deposit(grid, a, w) {
+  if (w <= 0) return;
+  const i = cellIdx(a.x, a.y);
+  if (i < 0) return;
+  const v = grid[i] + DEP_RATE * w * STEP;
+  grid[i] = v > MAXV ? MAXV : v;
+}
+
+/* ---- resize (keeps walls/trails where they overlap) ---- */
+function resize() {
+  const r = cv.getBoundingClientRect();
+  const nw = Math.max(60, Math.round(r.width)), nh = Math.max(60, Math.round(r.height));
+  if (nw === W && nh === H) return;
+  const ngw = Math.ceil(nw / CELL), ngh = Math.ceil(nh / CELL);
+  const nFood = new Float32Array(ngw * ngh), nTraf = new Float32Array(ngw * ngh), nWalls = new Uint8Array(ngw * ngh);
+  const nDirt = new Float32Array(ngw * ngh);
+  const cw = Math.min(gw, ngw), ch = Math.min(gh, ngh);
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+    nFood[y * ngw + x] = foodP[y * gw + x];
+    nTraf[y * ngw + x] = traffic[y * gw + x];
+    nWalls[y * ngw + x] = walls[y * gw + x];
+    nDirt[y * ngw + x] = dirtHP[y * gw + x];
+  }
+  for (const c of colonies) {
+    const nk = new Uint8Array(ngw * ngh);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) nk[y * ngw + x] = c.known[y * gw + x];
+    c.known = nk;
+  }
+  W = nw; H = nh; gw = ngw; gh = ngh;
+  foodP = nFood; traffic = nTraf; walls = nWalls; dirtHP = nDirt;
+  blurA = new Float32Array(gw * gh); blurB = new Float32Array(gw * gh);
+  foodScent = new Float32Array(gw * gh); scentB = new Float32Array(gw * gh);
+  cv.width = W; cv.height = H;
+  pherCv.width = gw; pherCv.height = gh;
+  wallCv.width = gw; wallCv.height = gh;
+  pherCtx = pherCv.getContext('2d');
+  wallCtx = wallCv.getContext('2d');
+  pherImg = pherCtx.createImageData(gw, gh);
+  fieldsDirty = true;
+  for (const a of ants) { a.x = Math.min(Math.max(a.x, 6), W - 6); a.y = Math.min(Math.max(a.y, 6), H - 6); a.lastCell = -1; }
+  redrawWalls();
+}
+
+/* ---- entities ---- */
+function addColony(x, y) {
+  for (const c of colonies) if (Math.hypot(c.x - x, c.y - y) < 70) { flashHint('Too close to another colony'); return; }
+  const col = { x, y, stored: 0, spawned: 0, alive: 0, field: null,
+    known: new Uint8Array(gw * gh), foodMemo: [],
+    tint: COLONY_TINTS[colonySeq++ % COLONY_TINTS.length] };
+  colonies.push(col);
+  fieldsDirty = true;
+  if (playing) spawnAnt(col);
+}
+function addFood(x, y) {
+  const f = { x, y, amount: 30, owner: null, grow: 0, plant: null };
+  f.r = foodRadius(f.amount);
+  foods.push(f);
+}
+function foodRadius(n) { return 4 + Math.sqrt(n) * 1.5; }
+
+function addPlant(x, y) {
+  for (const q of plants) if (Math.hypot(q.x - x, q.y - y) < 40) { flashHint('Too close to another plant'); return; }
+  const pl = { x, y, t: PLANT_EVERY * 0.5, sway: Math.random() * TAU };
+  plants.push(pl);
+  sprout(pl); // a fresh plant already carries a berry
+}
+function sprout(pl) {
+  let n = 0;
+  for (const f of foods) if (f.plant === pl) n++;
+  if (n >= PLANT_PILES) return;
+  for (let t = 0; t < 14; t++) {
+    const ang = Math.random() * TAU, d = 19 + Math.random() * 24;
+    const x = pl.x + Math.cos(ang) * d, y = pl.y + Math.sin(ang) * d;
+    if (x < 12 || y < 12 || x > W - 12 || y > H - 12) continue;
+    const i = cellIdx(x, y);
+    if (i < 0 || walls[i]) continue;
+    let clash = false;
+    for (const f of foods) if (Math.hypot(f.x - x, f.y - y) < 13) { clash = true; break; }
+    if (clash) continue;
+    const f = { x, y, amount: 8, owner: null, grow: 0, plant: pl };
+    f.r = foodRadius(f.amount);
+    foods.push(f);
+    return;
+  }
+}
+
+function spawnAnt(col) {
+  if (col.alive >= ANT_CAP) return;
+  const explorer = col.spawned % EXPLORER_EVERY === 0; // ant #1 explores, then every 5th
+  col.spawned++; col.alive++;
+  ants.push({
+    x: col.x, y: col.y, h: Math.random() * TAU,
+    carrying: false, explorer, colony: col,
+    sinceHome: 0, sinceFood: 0,
+    phase: Math.random() * TAU, wfreq: 4.5 + Math.random() * 2.5,
+    sway: 0, swayAmp: 0.15, lastCell: -1,
+    wpX: 0, wpY: 0, wpT: 0, hits: 0, streak: 0, lastHitT: -9, guided: false,
+    fightCd: 2, dead: false, chase: null, chaseT: 0, hunger: 0,
+    age: 0, xp: 0, digging: false, digH: 0,
+    wallSide: 0, wallT: -9, openT: -9, openAng: NaN, homeT: -9, homeClear: true
+  });
+}
+
+/* ---- ant brain ---- */
+function vision(a) {
+  // eyesight sharpens with age and with every mistake survived:
+  // 20px as a newborn, 50px as a veteran
+  return 20 + 30 * Math.min(1, (a.age + a.xp) / 120);
+}
+
+function pickWaypoint(a, gx, gy) {
+  // blocked ants don't gamble on random spots: they look around as far as
+  // their eyes reach and walk toward a visible gap, never at a wall.
+  // Failed retries push the search wider (they learn from their mistakes).
+  const reach = vision(a) * (1 + 0.6 * a.streak);
+  const goalAng = Math.atan2(gy - a.y, gx - a.x);
+  const base = Math.random() * TAU;
+  const stepLen = CELL * 0.8;
+  const kn = a.colony.known;
+  let bx = NaN, by = 0, bs = 0;
+  for (let r = 0; r < 14; r++) {
+    const ang = base + r * TAU / 14;
+    let free = 0;
+    for (let d = stepLen; d <= reach; d += stepLen) {
+      const x = a.x + Math.cos(ang) * d, y = a.y + Math.sin(ang) * d;
+      if (x < 8 || y < 8 || x > W - 8 || y > H - 8) break;
+      const i = cellIdx(x, y);
+      if (i >= 0 && (walls[i] || kn[i] === 2)) break;
+      free = d;
+    }
+    if (free < 16) continue; // that way is wall, not gap
+    let dd = ang - goalAng;
+    while (dd > Math.PI) dd -= TAU;
+    while (dd < -Math.PI) dd += TAU;
+    const ex = a.x + Math.cos(ang) * free * 0.85, ey = a.y + Math.sin(ang) * free * 0.85;
+    const score = free * (1.2 + Math.cos(dd)) * (clearLine(ex, ey, gx, gy) ? 2.5 : 1);
+    if (score > bs) { bs = score; bx = ex; by = ey; }
+  }
+  if (!Number.isNaN(bx)) { a.wpX = bx; a.wpY = by; a.wpT = 3 + Math.hypot(bx - a.x, by - a.y) / ANT_SPEED; }
+}
+
+/* each colony gets a BFS distance field over the wall grid: a lost ant
+   "remembers the terrain" and can always find its way home around walls */
+let fieldsDirty = true, fieldTimer = 0;
+function buildField(col) {
+  // routed over the colony's OBSERVED map: only walls somebody saw or bumped
+  // into count, unexplored ground is optimistically assumed open
+  const n = gw * gh, d = new Int32Array(n).fill(-1);
+  col.field = d;
+  const kn = col.known;
+  const start = cellIdx(col.x, col.y);
+  if (start < 0 || kn[start] === 2) return;
+  const q = new Int32Array(n);
+  let qh = 0, qt = 0;
+  d[start] = 0; q[qt++] = start;
+  while (qh < qt) {
+    const i = q[qh++], x = i % gw, nd = d[i] + 1;
+    if (x > 0        && d[i - 1]  < 0 && kn[i - 1]  !== 2) { d[i - 1]  = nd; q[qt++] = i - 1; }
+    if (x < gw - 1   && d[i + 1]  < 0 && kn[i + 1]  !== 2) { d[i + 1]  = nd; q[qt++] = i + 1; }
+    if (i >= gw      && d[i - gw] < 0 && kn[i - gw] !== 2) { d[i - gw] = nd; q[qt++] = i - gw; }
+    if (i < n - gw   && d[i + gw] < 0 && kn[i + gw] !== 2) { d[i + gw] = nd; q[qt++] = i + gw; }
+  }
+}
+
+function soilAround(i) {
+  let n = 0;
+  if (walls[i - 1] === 2) n++;
+  if (walls[i + 1] === 2) n++;
+  if (i >= gw && walls[i - gw] === 2) n++;
+  if (i < walls.length - gw && walls[i + gw] === 2) n++;
+  return n;
+}
+
+function openAround(i) {
+  let n = 0;
+  if (walls[i - 1] === 0) n++;
+  if (walls[i + 1] === 0) n++;
+  if (i >= gw && walls[i - gw] === 0) n++;
+  if (i < walls.length - gw && walls[i + gw] === 0) n++;
+  return n;
+}
+function corridorDir(i, h) {
+  // which way the tunnel actually runs from here, closest to the way we face
+  const x = i % gw, y = (i / gw) | 0;
+  let best = NaN, bs = -Infinity;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const cx = x + dx, cy = y + dy;
+    if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) continue;
+    if (walls[cy * gw + cx] !== 0) continue;
+    const ang = Math.atan2(dy, dx);
+    let dd = ang - h;
+    while (dd > Math.PI) dd -= TAU;
+    while (dd < -Math.PI) dd += TAU;
+    if (Math.cos(dd) > bs) { bs = Math.cos(dd); best = ang; }
+  }
+  return best;
+}
+
+function scentDir(x, y) {
+  // which way the food smell gets stronger from here; NaN if there is none.
+  // Soil passes smell, so this works from inside a bank as well as outside.
+  let best = NaN, bv = 0;
+  for (let k = 0; k < 12; k++) {
+    const ang = k * TAU / 12;
+    const i = cellIdx(x + Math.cos(ang) * 18, y + Math.sin(ang) * 18);
+    if (i < 0 || walls[i] === 1) continue;
+    if (foodScent[i] > bv) { bv = foodScent[i]; best = ang; }
+  }
+  return bv > 0.002 ? best : NaN;
+}
+
+function openingDir(a, pref, v) {
+  // sweep the full circle for the way through with the most clear room,
+  // scored toward where the ant wants to go so a slot in a wall beats the
+  // wide open ground behind it
+  let best = NaN, bestScore = 0;
+  const stepLen = CELL * 0.8;
+  for (let k = 0; k < 16; k++) {
+    const ang = k * TAU / 16;
+    let free = 0;
+    for (let d = stepLen; d <= v; d += stepLen) {
+      const x = a.x + Math.cos(ang) * d, y = a.y + Math.sin(ang) * d;
+      if (x < 6 || y < 6 || x > W - 6 || y > H - 6) break;
+      const i = cellIdx(x, y);
+      if (i >= 0 && walls[i]) break;
+      free = d;
+    }
+    if (free < 10) continue;
+    let dd = ang - pref;
+    while (dd > Math.PI) dd -= TAU;
+    while (dd < -Math.PI) dd += TAU;
+    const score = free * (1 + Math.cos(dd));
+    if (score > bestScore) { bestScore = score; best = ang; }
+  }
+  return best;
+}
+
+function mapMark(i) { return walls[i] === 1 ? 2 : walls[i] === 2 ? 3 : 1; } // 1 open, 2 rock, 3 dirt
+
+function observe(a) {
+  // whatever an ant sees becomes part of its colony's map; re-seeing a
+  // changed spot (wall removed, wall added) overwrites the stale memory
+  const kn = a.colony.known, v = vision(a);
+  let i = cellIdx(a.x, a.y);
+  if (i >= 0) kn[i] = mapMark(i);
+  for (let k = 0; k < 5; k++) {
+    const ang = Math.random() * TAU, d = Math.random() * v;
+    const px = a.x + Math.cos(ang) * d, py = a.y + Math.sin(ang) * d;
+    const mi = cellIdx((a.x + px) / 2, (a.y + py) / 2);
+    if (mi >= 0) {
+      kn[mi] = mapMark(mi);
+      if (walls[mi]) continue; // can't see past rock or dirt
+    }
+    i = cellIdx(px, py);
+    if (i >= 0) kn[i] = mapMark(i);
+  }
+}
+
+function pathBlocked(a, d, off, v) {
+  // blocked by anything the colony REMEMBERS as wall, or any rock actually
+  // visible within eyesight v - and seeing it writes it onto the map
+  const kn = a.colony.known, ang = a.h + off;
+  const n = Math.max(1, Math.ceil(d / (CELL * 0.8)));
+  for (let k = 1; k <= n; k++) {
+    const dd = d * k / n;
+    const x = a.x + Math.cos(ang) * dd, y = a.y + Math.sin(ang) * dd;
+    if (x < 4 || y < 4 || x > W - 4 || y > H - 4) return true;
+    const i = cellIdx(x, y);
+    if (i < 0) continue;
+    if (kn[i] === 2) return true;                              // once bumped or seen: never again
+    if (dd <= v && walls[i]) { kn[i] = mapMark(i); }            // spotted now, remembered
+    if (kn[i] === 2) return true;                              // ...but dirt is diggable, not a wall
+  }
+  return false;
+}
+
+function foodNear(x, y) {
+  for (const f of foods) {
+    const dx = f.x - x, dy = f.y - y;
+    if (dx * dx + dy * dy < (f.r + 24) * (f.r + 24)) return true;
+  }
+  return false;
+}
+function rememberFood(col, x, y) {
+  for (const m of col.foodMemo) {
+    const dx = m.x - x, dy = m.y - y;
+    if (dx * dx + dy * dy < 900) { m.x = x; m.y = y; return; }
+  }
+  if (col.foodMemo.length >= 12) col.foodMemo.shift();
+  col.foodMemo.push({ x, y });
+}
+function fieldDir(col, x, y) {
+  // angle toward the neighboring cell that is closer to home, NaN if unknown
+  const d = col.field;
+  if (!d) return NaN;
+  const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
+  if (cx < 0 || cy < 0 || cx >= gw || cy >= gh || d[cy * gw + cx] < 0) return NaN;
+  let best = d[cy * gw + cx], bx = 0, by = 0;
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    if (!ox && !oy) continue;
+    const nx = cx + ox, ny = cy + oy;
+    if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+    const v = d[ny * gw + nx];
+    if (v >= 0 && v < best) { best = v; bx = ox; by = oy; }
+  }
+  if (!bx && !by) return NaN;
+  return Math.atan2((cy + by + 0.5) * CELL - y, (cx + bx + 0.5) * CELL - x);
+}
+
+function turnToward(h, target, maxTurn) {
+  let d = target - h;
+  while (d > Math.PI) d -= TAU;
+  while (d < -Math.PI) d += TAU;
+  return h + Math.max(-maxTurn, Math.min(maxTurn, d));
+}
+
+function stepAnt(a) {
+  if (a.dead) return;
+  a.age += STEP;
+  if (!a.carrying && !a.digging) {
+    // only fruitless searching starves an ant. Carried food is food, and an
+    // ant at the working face of a shaft is doing the colony's work, not
+    // wandering, so a digger never dies partway through its own tunnel.
+    a.hunger += STEP;
+    if (a.hunger > STARVE) {
+      a.dead = true;
+      a.colony.alive--;
+      effects.push({ x: a.x, y: a.y, age: 0, kind: 's' });
+      return;
+    }
+  }
+  a.sinceHome += STEP; a.sinceFood += STEP;
+  if (a.fightCd > 0) a.fightCd -= STEP;
+  const col = a.colony;
+  a.guided = false;
+  observe(a);
+  let goal = NaN, goalX = 0, goalY = 0; // where the ant is trying to get (home, or food it spotted)
+
+  if (a.carrying) {
+    // head home, marking the food trail behind it as it goes
+    goal = Math.atan2(col.y - a.y, col.x - a.x); goalX = col.x; goalY = col.y;
+    if (a.wpT <= 0) {
+      // a laden ant always takes the exact way home. With nothing in the
+      // way that is simply the straight line; when something is, it walks
+      // the colony's remembered route around it, and that route is never
+      // forgotten once the ground has been seen.
+      if (simTime - a.homeT > 0.5) {
+        a.homeT = simTime;
+        a.homeClear = clearLine(a.x, a.y, col.x, col.y);
+      }
+      const fa = a.homeClear ? NaN : fieldDir(col, a.x, a.y);
+      if (!Number.isNaN(fa)) {
+        a.guided = true;
+        a.h = turnToward(a.h, fa, 6 * STEP);
+        a.h += (Math.random() - 0.5) * 0.08;
+        a.swayAmp = 0.45; // still weaves, but never wanders off the route
+      } else {
+        a.h = turnToward(a.h, goal, 5 * STEP);
+        a.h += (Math.random() - 0.5) * 0.10;
+        a.swayAmp = 0.55;
+      }
+    }
+    deposit(foodP, a, 1 - a.sinceFood / 70);
+    if (Math.hypot(col.x - a.x, col.y - a.y) < 15) {
+      a.carrying = false; delivered++; col.stored++;
+      a.hunger = 0; a.sinceHome = 0; a.h = Math.random() * TAU;
+      a.wpT = 0; a.hits = 0; a.streak = 0;
+      spawnAnt(col); // food delivered -> the colony grows by one ant
+    }
+  } else {
+    if (a.chase && (a.chase.dead || !a.chase.carrying || a.chaseT <= 0)) a.chase = null;
+    if (a.chase) {
+      // run the food thief down and settle it
+      a.chaseT -= STEP;
+      const cdx = a.chase.x - a.x, cdy = a.chase.y - a.y;
+      if (cdx * cdx + cdy * cdy < 81) forceFight(a, a.chase);
+      else {
+        a.h = turnToward(a.h, Math.atan2(cdy, cdx), 9 * STEP);
+        a.h += (Math.random() - 0.5) * 0.06;
+        a.swayAmp = 0.2;
+      }
+    } else {
+    // nearby food is spotted on sight, no trail needed
+    let sawFood = false, foodAng = 0;
+    for (const f of foods) {
+      const dx = f.x - a.x, dy = f.y - a.y, R = f.r + vision(a);
+      if (dx * dx + dy * dy < R * R && clearLine(a.x, a.y, f.x, f.y)) {
+        foodAng = Math.atan2(dy, dx); goalX = f.x; goalY = f.y;
+        sawFood = true;
+        rememberFood(col, f.x, f.y);
+        break;
+      }
+    }
+    let onTrail = false;
+    if (!sawFood && a.wpT <= 0) {
+      // antennae pick up food scent drifting from piles plus (followers only)
+      // the food trail markers: the strongest smell wins
+      const w = a.explorer ? 0 : 1; // explorers ignore markers but smell like anyone
+      const l = sense(foodScent, a, -SENSOR_ANG) * 1.2 + w * sense(foodP, a, -SENSOR_ANG);
+      const c = sense(foodScent, a, 0) * 1.2 + w * sense(foodP, a, 0);
+      const r = sense(foodScent, a, SENSOR_ANG) * 1.2 + w * sense(foodP, a, SENSOR_ANG);
+      if (Math.max(l, c, r) > 0.03) {
+        onTrail = true;
+        if (c >= l && c >= r) { /* stay the course */ }
+        else if (l > r) a.h -= 0.15;
+        else a.h += 0.15;
+      }
+    }
+    let memo = null;
+    if (!sawFood && !onTrail && a.hunger > 30 && col.foodMemo.length) {
+      let bd = Infinity;
+      for (const m of col.foodMemo) {
+        const d2 = (m.x - a.x) * (m.x - a.x) + (m.y - a.y) * (m.y - a.y);
+        if (d2 < bd) { bd = d2; memo = m; }
+      }
+      if (memo && bd < vision(a) * vision(a) && clearLine(a.x, a.y, memo.x, memo.y) && !foodNear(memo.x, memo.y)) {
+        col.foodMemo.splice(col.foodMemo.indexOf(memo), 1); // saw it's gone: memory updated
+        memo = null;
+      }
+    }
+    if (sawFood) goal = foodAng;
+    else if (memo) { goal = Math.atan2(memo.y - a.y, memo.x - a.x); goalX = memo.x; goalY = memo.y; }
+    else if (a.sinceHome > 200 && !onTrail) {
+      goal = Math.atan2(col.y - a.y, col.x - a.x); goalX = col.x; goalY = col.y;
+    }
+
+    if (a.wpT > 0) {
+      // steering is handled by the relocation block below
+    } else if (sawFood) {
+      a.h = turnToward(a.h, goal, 10 * STEP);
+      a.h += (Math.random() - 0.5) * 0.05;
+      a.swayAmp = 0.2;
+    } else if (!Number.isNaN(goal)) {
+      // heading home to regroup: same rule, straight when it is clear and
+      // the remembered route around anything that is not
+      if (simTime - a.homeT > 0.5) {
+        a.homeT = simTime;
+        a.homeClear = clearLine(a.x, a.y, col.x, col.y);
+      }
+      const fa = a.homeClear ? NaN : fieldDir(col, a.x, a.y);
+      if (!Number.isNaN(fa)) {
+        a.guided = true;
+        a.h = turnToward(a.h, fa, 6 * STEP);
+        a.h += (Math.random() - 0.5) * 0.08;
+        a.swayAmp = 0.45;
+      } else {
+        a.h = turnToward(a.h, goal, 4 * STEP);
+        a.h += (Math.random() - 0.5) * 0.10;
+        a.swayAmp = 0.5;
+      }
+    } else if (onTrail) {
+      a.h += (Math.random() - 0.5) * 0.08;
+      a.swayAmp = 0.55; // weave along the trail
+    } else {
+      // fairly straight wandering covers ground; occasional sharp detours
+      a.h += (Math.random() - 0.5) * (a.explorer ? 0.12 : 0.16);
+      if (Math.random() < 0.008) a.h += (Math.random() - 0.5) * 2.4;
+      a.swayAmp = 0.15;
+    }
+
+    if (Math.hypot(col.x - a.x, col.y - a.y) < 15) a.sinceHome = 0;
+
+    for (let i = 0; i < foods.length; i++) {
+      const f = foods[i], dx = f.x - a.x, dy = f.y - a.y;
+      if (dx * dx + dy * dy < (f.r + 3) * (f.r + 3)) {
+        if (!f.owner) f.owner = a.colony;          // first colony to harvest claims the pile
+        else if (f.owner !== a.colony) startChase(a, f); // stealing claimed food gets you chased
+        rememberFood(col, f.x, f.y);
+        f.amount--;
+        if (f.amount <= 0) foods.splice(i, 1); else f.r = foodRadius(f.amount);
+        a.carrying = true; a.hunger = 0; a.sinceFood = 0; a.h += Math.PI;
+        a.wpT = 0; a.hits = 0; a.streak = 0;
+        break;
+      }
+    }
+    }
+  }
+
+  // relocating: instead of grinding on the wall, walk to the picked spot
+  // farther away, then resume chasing the goal from that new position
+  if (a.wpT > 0) {
+    a.wpT -= STEP;
+    const wdx = a.wpX - a.x, wdy = a.wpY - a.y;
+    if (wdx * wdx + wdy * wdy < 144) a.wpT = 0; // arrived: retry the goal from here
+    else if (a.wpT > 0) {
+      a.h = turnToward(a.h, Math.atan2(wdy, wdx), 6 * STEP);
+      a.h += (Math.random() - 0.5) * 0.10;
+      a.swayAmp = 0.25;
+    }
+  }
+  if (simTime - a.lastHitT > 5) a.hits = 0;      // brief clearance forgives the strike count
+  if (simTime - a.lastHitT > 25) a.streak = 0;   // but hops keep growing across nearby retries
+
+  // walls in sight OR on the colony's map get dodged before impact:
+  // once a wall is bumped or seen, nobody steers into it again
+  const v = vision(a);
+  const hcell = cellIdx(a.x, a.y);
+  // in a squeeze an ant watches its nose, not the horizon: looking far ahead
+  // down a one-ant gap only ever reports "blocked" and turns it back
+  const tight = hcell >= 0 && walls[hcell] === 0 && openAround(hcell) <= 2;
+  // a weaving ant is not walking where it is looking. That is fine in the
+  // open, but beside stone the weave is what clips the edge of a gap, so
+  // near anything solid the ant straightens up and walks its own line.
+  let nearWall = tight || (hcell >= 0 && openAround(hcell) < 4);
+  if (!nearWall) for (const o of [-0.9, 0, 0.9]) {
+    const pi = cellIdx(a.x + Math.cos(a.h + o) * 13, a.y + Math.sin(a.h + o) * 13);
+    if (pi >= 0 && walls[pi]) { nearWall = true; break; }
+  }
+
+  if (a.digging) { a.h = a.digH; a.swayAmp = 0.04; }        // stay on the shaft
+  else if (nearWall) a.swayAmp = Math.min(a.swayAmp, 0.06); // no scraping the walls
+  a.sway = Math.sin(simTime * a.wfreq + a.phase) * a.swayAmp;
+
+  // look only as far as it takes to avoid touching, and check the heading it
+  // will actually travel on (sway included) rather than the one it faces
+  const look = tight ? 9 : 12 + v * 0.25;
+  const off = tight ? 0.35 : 0.7;
+  if (pathBlocked(a, look, a.sway, v)) {
+    const lBad = pathBlocked(a, look, a.sway - off, v);
+    const rBad = pathBlocked(a, look, a.sway + off, v);
+    if (!lBad && rBad) a.h -= 7 * STEP;
+    else if (!rBad && lBad) a.h += 7 * STEP;
+    else if (!lBad && !rBad) a.h += (Math.random() < 0.5 ? -7 : 7) * STEP;
+    else {
+      // hemmed in: aim for the opening it can actually see rather than
+      // backing out or sweeping the wall in a hopeful direction
+      if (simTime - a.openT > 0.3) {
+        a.openT = simTime;
+        a.openAng = openingDir(a, Number.isNaN(goal) ? a.h : goal, v);
+      }
+      const ca = hcell >= 0 ? corridorDir(hcell, a.h) : NaN;
+      if (!Number.isNaN(a.openAng)) {
+        a.h = turnToward(a.h, a.openAng, 9 * STEP);
+      } else if (!Number.isNaN(ca)) {
+        a.h = turnToward(a.h, ca, 9 * STEP);
+      } else {
+        if (!a.wallSide || simTime - a.wallT > 4) a.wallSide = Math.random() < 0.5 ? -1 : 1;
+        a.wallT = simTime;
+        a.h += a.wallSide * 9 * STEP;
+      }
+    }
+  }
+  const dir = a.h + a.sway;
+  const spd = a.chase ? ANT_SPEED * 1.25 : ANT_SPEED; // chasers sprint
+  const nx = a.x + Math.cos(dir) * spd * STEP;
+  const ny = a.y + Math.sin(dir) * spd * STEP;
+
+  // dirt is not rock, it is work: an ant that meets soil stops and burrows
+  // instead of bouncing, and the cell it breaks becomes a tunnel that
+  // everyone after it walks straight through
+  const hi = cellIdx(a.x, a.y), ti = cellIdx(nx, ny);
+  const inSoil = hi >= 0 && walls[hi] === 2;
+  const soil = inSoil ? hi : (ti >= 0 && walls[ti] === 2) ? ti : -1;
+  const wasDigging = a.digging;
+  let mayDig = soil >= 0;
+  if (mayDig && !wasDigging && !inSoil) {
+    const inShaft = hi >= 0 && walls[hi] === 0 && soilAround(hi) >= 2;
+    // any ant that meets a soil face digs it. The only thing it may not do
+    // is widen a shaft it is standing in: inside a tunnel, work the dead end
+    // and nothing else, which is what keeps a tunnel a tunnel.
+    if (inShaft && openAround(hi) > 1) mayDig = false;
+    if (mayDig) {
+      // a shaft is aimed at something rather than cut wherever the ant
+      // happened to be facing: its goal if it has one, else the way the
+      // food smell strengthens through the soil
+      const aim = Number.isNaN(goal) ? scentDir(a.x, a.y) : goal;
+      a.digH = Number.isNaN(aim) ? a.h : aim;
+    }
+  }
+  a.digging = mayDig;
+  if (a.digging) {
+    dirtHP[soil] -= DIG_RATE * STEP; // ants sharing a cell still split the work
+    if (dirtHP[soil] <= 1e-6) { // float slack, so a cell is exactly 2 s of work
+      walls[soil] = 0; dirtHP[soil] = 0;
+      wallsDirty = true; fieldsDirty = true;
+    }
+  } else if (soil >= 0) {
+    // not digging here, so glance off the soil instead of clinging to it:
+    // turn down the tunnel it is standing in (or away from the face) and
+    // keep moving the same step, so an ant never sticks to dirt
+    const ca = (hi >= 0 && walls[hi] === 0) ? corridorDir(hi, a.h) : NaN;
+    a.h = Number.isNaN(ca) ? a.h + Math.PI + (Math.random() - 0.5) * 1.2 : ca;
+    const bx = a.x + Math.cos(a.h) * spd * STEP;
+    const by = a.y + Math.sin(a.h) * spd * STEP;
+    if (!blocked(bx, by)) { a.x = bx; a.y = by; }
+  } else if (blocked(nx, ny)) {
+    a.h += Math.PI + (Math.random() - 0.5);
+    a.lastHitT = simTime;
+    a.xp = Math.min(120, a.xp + 2); // mistakes make the next look sharper
+    const bc = (nx / CELL) | 0, br = (ny / CELL) | 0;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      const cxx = bc + ox, cyy = br + oy;
+      if (cxx < 0 || cyy < 0 || cxx >= gw || cyy >= gh) continue;
+      const bi = cyy * gw + cxx;
+      a.colony.known[bi] = mapMark(bi); // felt the wall: it's on the map now
+    }
+    if (!Number.isNaN(goal) && ++a.hits >= 3) {
+      // three strikes on this wall: stop trying this spot entirely and
+      // relocate to a random reachable point, farther away every retry,
+      // so the ant can never loop between the same two places forever
+      a.hits = 0;
+      a.streak = Math.min(a.streak + 1, 5);
+      pickWaypoint(a, goalX, goalY);
+    }
+  } else {
+    a.x = nx; a.y = ny;
+    const ci = cellIdx(nx, ny);
+    if (ci !== a.lastCell) { // one tick per ant per cell: the marker map counts ant traffic
+      a.lastCell = ci;
+      if (ci >= 0 && traffic[ci] < 150) traffic[ci] += 1;
+    }
+  }
+}
+
+/* ---- food scent: piles give off a smell that drifts through gaps ---- */
+function diffuseScent() {
+  for (const f of foods) {
+    const i = cellIdx(f.x, f.y);
+    if (i >= 0 && walls[i] !== 1) foodScent[i] = 3;
+  }
+  // rock stops a smell dead; dirt only muffles it, so ants scent food
+  // buried on the far side of the soil and dig toward it
+  const D = 0.35, LAM = 0.993, SOIL = 0.999;
+  for (let y = 0; y < gh; y++) {
+    const row = y * gw;
+    for (let x = 0; x < gw; x++) {
+      const i = row + x;
+      if (walls[i] === 1) { scentB[i] = 0; continue; }
+      const c = foodScent[i];
+      let sum = 0, n = 0;
+      if (x > 0      && walls[i - 1]  !== 1) { sum += foodScent[i - 1];  n++; }
+      if (x < gw - 1 && walls[i + 1]  !== 1) { sum += foodScent[i + 1];  n++; }
+      if (y > 0      && walls[i - gw] !== 1) { sum += foodScent[i - gw]; n++; }
+      if (y < gh - 1 && walls[i + gw] !== 1) { sum += foodScent[i + gw]; n++; }
+      const v = (c + ((n ? sum / n : c) - c) * D) * LAM * (walls[i] === 2 ? SOIL : 1);
+      scentB[i] = v < 0.0005 ? 0 : v;
+    }
+  }
+  const t = foodScent; foodScent = scentB; scentB = t;
+}
+
+/* ---- combat: rival colonies sometimes fight on contact, one wins ---- */
+function fightList(A, B) {
+  const same = A === B;
+  for (let i = 0; i < A.length; i++) {
+    const a = A[i];
+    if (a.dead || a.fightCd > 0) continue;
+    for (let j = same ? i + 1 : 0; j < B.length; j++) {
+      const b = B[j];
+      if (b.dead || b.fightCd > 0 || b.colony === a.colony) continue;
+      const dx = a.x - b.x, dy = a.y - b.y;
+      if (dx * dx + dy * dy > 64) continue;
+      if (Math.random() < 0.5) {
+        // it comes to blows: even odds, only one walks away
+        const lose = Math.random() < 0.5 ? a : b, win = lose === a ? b : a;
+        lose.dead = true;
+        lose.colony.alive--;
+        if (lose.carrying) foods.push({ x: lose.x, y: lose.y, amount: 1, r: foodRadius(1), owner: win.colony, grow: 0, plant: null });
+        win.fightCd = 3;
+        win.h = Math.random() * TAU;
+        effects.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0 });
+      } else {
+        a.fightCd = 1.5; b.fightCd = 1.5; // sized each other up and moved on
+      }
+      break;
+    }
+  }
+}
+function forceFight(a, b) {
+  // a chase caught up: this one always comes to blows
+  const lose = Math.random() < 0.5 ? a : b, win = lose === a ? b : a;
+  lose.dead = true;
+  lose.colony.alive--;
+  if (lose.carrying) foods.push({ x: lose.x, y: lose.y, amount: 1, r: foodRadius(1), owner: win.colony, grow: 0, plant: null });
+  win.fightCd = 3;
+  win.chase = null;
+  effects.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0 });
+}
+function startChase(thief, f) {
+  // up to four idle defenders near the pile drop everything and give chase
+  let n = 0;
+  for (const g of ants) {
+    if (n >= 4) break;
+    if (g.colony !== f.owner || g.carrying || g.dead || g.chase) continue;
+    const dx = g.x - f.x, dy = g.y - f.y;
+    if (dx * dx + dy * dy > 32400) continue; // within 180px of the pile
+    g.chase = thief; g.chaseT = 12; n++;
+  }
+}
+function resolveFights() {
+  const cs = 14, bw = Math.ceil(W / cs) || 1;
+  const buckets = new Map();
+  for (const a of ants) {
+    const k = ((a.y / cs) | 0) * bw + ((a.x / cs) | 0);
+    const b = buckets.get(k);
+    if (b) b.push(a); else buckets.set(k, [a]);
+  }
+  for (const [k, list] of buckets) {
+    fightList(list, list);
+    // pair each bucket only with its E/SW/S/SE neighbours so no pair is checked twice
+    const e = buckets.get(k + 1), sw = buckets.get(k + bw - 1), so = buckets.get(k + bw), se = buckets.get(k + bw + 1);
+    if (e) fightList(list, e);
+    if (sw) fightList(list, sw);
+    if (so) fightList(list, so);
+    if (se) fightList(list, se);
+  }
+}
+
+/* ---- sim step ---- */
+function step() {
+  simTime += STEP;
+  if ((stepN++ & 1) === 0) diffuseScent();
+  fieldTimer += STEP;
+  if (fieldsDirty || fieldTimer >= 1.5) {
+    for (const c of colonies) buildField(c);
+    fieldsDirty = false; fieldTimer = 0;
+  }
+  for (let i = 0; i < foodP.length; i++) {
+    const f = foodP[i] * DECAY; foodP[i] = f < 0.002 ? 0 : f;
+    const t = traffic[i] * DECAY; traffic[i] = t < 0.002 ? 0 : t;
+  }
+  // every pile doubles itself on a timer, and plants keep sprouting new ones
+  for (const f of foods) {
+    f.grow += STEP;
+    if (f.grow >= FOOD_DOUBLE) {
+      f.grow = 0;
+      if (f.amount < FOOD_CAP) {
+        f.amount = Math.min(FOOD_CAP, f.amount * 2);
+        f.r = foodRadius(f.amount);
+      }
+    }
+  }
+  for (const pl of plants) {
+    pl.t += STEP;
+    if (pl.t >= PLANT_EVERY) { pl.t = 0; sprout(pl); }
+  }
+  for (const a of ants) stepAnt(a);
+  for (const c of colonies) {
+    if (c.alive === 0 && c.spawned > 0) {
+      c.respawnT = (c.respawnT || 0) + STEP;
+      if (c.respawnT > 10) { c.respawnT = 0; spawnAnt(c); }
+    } else c.respawnT = 0;
+  }
+  if (colonies.length > 1) resolveFights();
+  for (const a of ants) if (a.dead) { ants = ants.filter(x => !x.dead); break; }
+  if (effects.length) {
+    for (const e of effects) e.age += STEP;
+    effects = effects.filter(e => e.age < 0.5);
+  }
+}
+
+/* ---- rendering ---- */
+function redrawWalls() {
+  const img = wallCtx.createImageData(gw, gh);
+  const d = img.data;
+  for (let i = 0; i < walls.length; i++) {
+    if (!walls[i]) continue;
+    const j = i * 4;
+    if (walls[i] === 2) { // dirt thins out as it gets dug away
+      const hp = dirtHP[i] < 0 ? 0 : dirtHP[i] > 1 ? 1 : dirtHP[i];
+      d[j] = 104; d[j + 1] = 74; d[j + 2] = 45;
+      d[j + 3] = (120 + 125 * hp) | 0;
+    } else {
+      d[j] = 92; d[j + 1] = 82; d[j + 2] = 70; d[j + 3] = 255;
+    }
+  }
+  wallCtx.putImageData(img, 0, 0);
+}
+
+/* traffic count -> color, anchored at the band midpoints:
+   1-5 blue, 6-15 cyan, 16-26 green, 27-40 yellow, 41-80 orange, 81+ red */
+const LUT_MAX = 120, LUT_RES = 2;
+const lut = new Uint8Array((LUT_MAX * LUT_RES + 1) * 3);
+{
+  const stops = [
+    [0,    38,  70, 217],
+    [3,    47, 107, 255],   // blue
+    [10.5, 36, 211, 230],   // cyan
+    [21,   63, 224, 106],   // green
+    [33.5, 242, 227, 60],   // yellow
+    [60,  255, 157,  46],   // orange
+    [95,  255,  53,  39],   // red
+    [120, 255,  42,  30],
   ];
-  var CROPS = {};
-  SEEDS.forEach(function (s) { CROPS[s.key] = s; });
+  for (let k = 0; k <= LUT_MAX * LUT_RES; k++) {
+    const v = k / LUT_RES;
+    let si = 0;
+    while (si < stops.length - 2 && v > stops[si + 1][0]) si++;
+    const a = stops[si], b = stops[si + 1];
+    const t = Math.min(1, Math.max(0, (v - a[0]) / (b[0] - a[0])));
+    lut[k * 3]     = (a[1] + (b[1] - a[1]) * t) | 0;
+    lut[k * 3 + 1] = (a[2] + (b[2] - a[2]) * t) | 0;
+    lut[k * 3 + 2] = (a[3] + (b[3] - a[3]) * t) | 0;
+  }
+}
 
-  // Gear: target=true means select it, then click a plant; target=false is used instantly
-  var GEAR = [
-    { key: 'wateringcan', name: 'Watering Can', emoji: '🫗', price: 10,   stock: [1, 3], chance: 100, target: true,  desc: 'Water one plant — halves its remaining grow time' },
-    { key: 'fertilizer',  name: 'Fertilizer',   emoji: '🧪', price: 50,   stock: [1, 2], chance: 80,  target: true,  desc: 'Instantly ripens one growing plant' },
-    { key: 'goldscythe',  name: 'Golden Scythe', emoji: '🌾', price: 500,  stock: [1, 1], chance: 50,  target: false, desc: 'Harvests every ripe crop in one sweep' },
-    { key: 'luckycharm',  name: 'Lucky Charm',  emoji: '🍀', price: 1000, stock: [1, 1], chance: 30,  target: false, desc: 'Forces the shops to restock right now' },
-    { key: 'timecrystal', name: 'Time Crystal', emoji: '⏳', price: 5000, stock: [1, 1], chance: 10,  target: false, desc: 'Instantly ripens every plant in the garden' }
-  ];
-  var GEARMAP = {};
-  GEAR.forEach(function (g) { GEARMAP[g.key] = g; });
-
-  // Rarity tiers (drive token rewards) and token prices for every shop item
-  var TIERS = {
-    carrot: 'common', strawberry: 'common',
-    blueberry: 'uncommon', buttercup: 'uncommon', tomato: 'uncommon', corn: 'uncommon',
-    daffodil: 'rare', watermelon: 'rare', pumpkin: 'rare', apple: 'rare', bamboo: 'rare',
-    coconut: 'legendary', cactus: 'legendary', dragonfruit: 'legendary', mango: 'legendary', grape: 'legendary',
-    mushroom: 'mythical', pepper: 'mythical', cacao: 'mythical', sunflower: 'mythical', beanstalk: 'mythical',
-    emberlily: 'divine', sugarapple: 'divine', burningbud: 'divine', giantpinecone: 'divine', elderstrawberry: 'divine',
-    romanesco: 'transcendental', crimsonthorn: 'transcendental', zebrazinkle: 'transcendental', octobloom: 'transcendental', alienapple: 'transcendental'
-  };
-  var LOW_TIERS = { common: 1, uncommon: 1, rare: 1 }; // 4-10 tokens; higher tiers pay 50-1000
-  var TOK_SEED = {
-    carrot: 10, strawberry: 25, blueberry: 35, buttercup: 50, tomato: 100, corn: 200,
-    daffodil: 250, watermelon: 350, pumpkin: 500, apple: 650, bamboo: 800,
-    coconut: 1000, cactus: 1200, dragonfruit: 1500, mango: 1800, grape: 2200,
-    mushroom: 2800, pepper: 3500, cacao: 4200, sunflower: 5000, beanstalk: 6000,
-    emberlily: 7000, sugarapple: 7500, burningbud: 8000, giantpinecone: 8500, elderstrawberry: 9000,
-    romanesco: 9500, crimsonthorn: 9800, zebrazinkle: 10000, octobloom: 12000, alienapple: 50000
-  };
-  var TOK_GEAR = { wateringcan: 10, fertilizer: 40, goldscythe: 300, luckycharm: 500, timecrystal: 1500 };
-  SEEDS.forEach(function (s) { s.tier = TIERS[s.key] || 'common'; s.tok = TOK_SEED[s.key] || 10; });
-  GEAR.forEach(function (g) { g.tok = TOK_GEAR[g.key] || 10; });
-
-  // Weather: [name, emoji, mutation, value multiplier, weight, growth speed, mutation chance per 10s, color]
-  // Average duration is 3 minutes (2-4 min roll). Higher weight = more common.
-  var WEATHERS = [
-    // common skies
-    ['Sun', '☀️', 'Sundried', 1.5, 15, 1, 0.03, '#f5c542'],
-    ['Raining', '🌧️', 'Wet', 2, 12, 1.5, 0.2, '#4d8fd1'],
-    ['Cloudy', '☁️', 'Shaded', 1.3, 10, 1, 0.2, '#9aa5b1'],
-    ['Night', '🌙', 'Moonlit', 2.5, 10, 1, 0.2, '#7d8fd6'],
-    ['Drizzle', '🌦️', 'Dewy', 1.6, 8, 1.2, 0.2, '#6fa8d6'],
-    ['Breeze', '🍃', 'Windswept', 1.4, 8, 1, 0.2, '#79c98b'],
-    ['Fog', '🌫️', 'Misty', 1.8, 8, 1, 0.2, '#aeb8c2'],
-    ['Overcast', '🌥️', 'Dim', 1.4, 7, 1, 0.2, '#8f9aa6'],
-    ['Morning Dew', '💧', 'Glistening', 1.7, 7, 1, 0.2, '#63c6d8'],
-    ['Sunset', '🌇', 'Amber', 1.6, 7, 1, 0.2, '#f08c42'],
-    ['Sunrise', '🌅', 'Golden', 1.8, 7, 1, 0.2, '#f3b13f'],
-    ['Warm Front', '🌤️', 'Cozy', 1.5, 6, 1.1, 0.2, '#f0a35e'],
-    ['Cold Front', '🌬️', 'Crisp', 1.6, 6, 1, 0.2, '#6db3d1'],
-    ['Humid Day', '💦', 'Sticky', 1.5, 6, 1.1, 0.2, '#5bb8a5'],
-    ['Gentle Rain', '☔', 'Rinsed', 1.8, 6, 1.3, 0.2, '#5a86c9'],
-    // uncommon
-    ['Thunderstorm', '⛈️', 'Shocked', 3, 5, 1.4, 0.2, '#f7e463'],
-    ['Hail', '🧊', 'Dented', 2.5, 4, 1, 0.2, '#bfe3f0'],
-    ['Snow', '❄️', 'Frozen', 3, 4, 1, 0.2, '#cfe8f5'],
-    ['Windstorm', '💨', 'Tousled', 2.2, 4, 1, 0.2, '#9fb8ac'],
-    ['Rainbow', '🌈', 'Prismatic', 4, 3, 1, 0.2, '#d06bd6'],
-    ['Heatwave', '🥵', 'Scorched', 2.8, 4, 1, 0.2, '#e8683e'],
-    ['Cold Snap', '🥶', 'Chilled', 2.8, 4, 1, 0.2, '#6fc3e8'],
-    ['Downpour', '🌊', 'Soaked', 2.6, 4, 1.6, 0.2, '#3f74c4'],
-    ['Mud Rain', '🟤', 'Muddy', 2.2, 3, 1.2, 0.2, '#8a6a45'],
-    ['Pollen Storm', '🌼', 'Sneezy', 2.4, 3, 1.2, 0.2, '#e5d05a'],
-    ['Frost', '🍂', 'Frosted', 2.6, 4, 1, 0.2, '#a8d8e8'],
-    ['Sleet', '🌨️', 'Slushy', 2.3, 3, 1, 0.2, '#9fc4d8'],
-    ['Gale', '🍥', 'Gusty', 2.5, 3, 1, 0.2, '#85a8a0'],
-    ['Monsoon', '🌀', 'Drenched', 2.8, 3, 1.7, 0.2, '#3f86c4'],
-    ['Dust Devil', '🌪️', 'Dusty', 2.4, 3, 1, 0.2, '#c4a25e'],
-    ['Sandstorm', '🏜️', 'Sandy', 2.6, 3, 1, 0.2, '#d1b06b'],
-    ['Full Moon', '🌕', 'Lunar', 3, 3, 1, 0.2, '#e8e3c4'],
-    ['New Moon', '🌑', 'Shadowed', 3, 3, 1, 0.2, '#4a4a5e'],
-    ['Harvest Moon', '🌾', 'Bountiful', 3.5, 3, 1, 0.2, '#e0a83f'],
-    ['Starry Night', '✨', 'Starlit', 3, 3, 1, 0.2, '#8f9fe8'],
-    ['Shooting Star', '🌠', 'Starstruck', 4, 2, 1, 0.2, '#b9a8f0'],
-    ['Static Storm', '⚡', 'Charged', 3.2, 3, 1, 0.2, '#f0e05a'],
-    ['Thundersnow', '🌩️', 'Thunderfrost', 4, 2, 1, 0.2, '#9fd0f0'],
-    ['Spring Shower', '🌷', 'Blooming', 2.5, 3, 1.3, 0.2, '#e88fb8'],
-    ['Autumn Wind', '🍁', 'Rustic', 2.4, 3, 1, 0.2, '#d1793f'],
-    ['Summer Haze', '😎', 'Hazy', 2.2, 3, 1, 0.2, '#e8c46b'],
-    // rare
-    ['Earthquake', '🪨', 'Cracked', 5, 2, 1, 0.2, '#8a7a63'],
-    ['Tornado', '🌪', 'Twisted', 6, 1.5, 1, 0.2, '#7a8f8a'],
-    ['Hurricane', '🛟', 'Cyclonic', 6, 1.5, 1.3, 0.2, '#4f7ac4'],
-    ['Blizzard', '⛄', 'Frostbitten', 6, 1.5, 1, 0.2, '#b8dff0'],
-    ['Aurora', '🌌', 'Aurora', 8, 1.5, 1, 0.25, '#6be8c8'],
-    ['Eclipse', '🌒', 'Eclipsed', 8, 1.2, 1, 0.2, '#5e5a8f'],
-    ['Solar Eclipse', '🕶️', 'Corona', 9, 1, 1, 0.2, '#f0b83f'],
-    ['Lunar Eclipse', '🌘', 'Umbral', 9, 1, 1, 0.2, '#8f6bd6'],
-    ['Meteor Shower', '☄️', 'Celestial', 10, 1, 1, 0.25, '#e8955a'],
-    ['Blood Moon', '🔴', 'Bloodlit', 10, 1, 1, 0.25, '#d64545'],
-    ['Volcanic Ash', '🌋', 'Ashen', 7, 1.2, 1, 0.2, '#6b5e5a'],
-    ['Lava Rain', '🔥', 'Molten', 9, 1, 1, 0.2, '#e86038'],
-    ['Flood', '🚣', 'Waterlogged', 6, 1.3, 1.5, 0.2, '#3f6ac4'],
-    ['Firestorm', '🎆', 'Charred', 8, 1, 1, 0.2, '#e0703f'],
-    ['Ice Storm', '🥌', 'Glazed', 7, 1.2, 1, 0.2, '#a0d8f0'],
-    ['Acid Rain', '☣️', 'Corroded', 8, 1, 1.2, 0.2, '#9fd63f'],
-    ['Ball Lightning', '🔮', 'Orbed', 9, 1, 1, 0.2, '#c46be8'],
-    ['Heat Lightning', '🌡️', 'Flickering', 6, 1.3, 1, 0.2, '#e8a53f'],
-    ['Waterspout', '⛲', 'Whirled', 7, 1.1, 1.2, 0.2, '#55a0c9'],
-    ['Sun Halo', '😇', 'Haloed', 8, 1, 1, 0.2, '#f0d75a'],
-    ['Moonbow', '🌉', 'Opalescent', 9, 1, 1, 0.2, '#a8c4e8'],
-    ['Fire Rainbow', '🎨', 'Radiant', 9, 1, 1, 0.2, '#e88f5a'],
-    ['Polar Vortex', '🧭', 'Polar', 8, 1, 1, 0.2, '#6bc4e8'],
-    ['Mirage', '🏝️', 'Illusory', 7, 1.1, 1, 0.2, '#d8c46b'],
-    ['Heat Dome', '⛱️', 'Baked', 6, 1.2, 1, 0.2, '#e09553'],
-    ['Sun Shower', '🌂', 'Sprinkled', 6, 1.3, 1.3, 0.2, '#8fc9a8'],
-    ['Freezing Rain', '🧣', 'Icebound', 7, 1.1, 1, 0.2, '#7ab8d8'],
-    ['Graupel', '🫧', 'Peppered', 6, 1.2, 1, 0.2, '#c4d0d8'],
-    ['Rime', '🕸️', 'Silverfrost', 7, 1.1, 1, 0.2, '#c8d8e0'],
-    ['Cloudburst', '💥', 'Bursting', 7, 1.1, 1.5, 0.2, '#5a86d1'],
-    ['Jet Stream', '✈️', 'Streamlined', 6, 1.2, 1.2, 0.2, '#8fa8c4'],
-    ['Microburst', '🎐', 'Flattened', 7, 1, 1, 0.2, '#a0b8b0'],
-    ['Derecho', '🚩', 'Leveled', 8, 0.9, 1, 0.2, '#b8926b'],
-    ['Bomb Cyclone', '💣', 'Stormforged', 10, 0.8, 1.2, 0.2, '#5e6a8f'],
-    ['Dust Bowl', '🥣', 'Parched', 7, 1, 1, 0.2, '#c4a05a'],
-    ['Whiteout', '📄', 'Blanked', 8, 0.9, 1, 0.2, '#e8eef0'],
-    ['Green Flash', '🟢', 'Verdant', 9, 0.8, 1, 0.2, '#4fc46b'],
-    ['Fogbow', '⚪', 'Ghostly', 8, 0.9, 1, 0.2, '#d0d8e0'],
-    ['Zodiacal Light', '💫', 'Zodiac', 10, 0.8, 1, 0.2, '#b89fe8'],
-    ['Noctilucent Clouds', '🌃', 'Noctilucent', 10, 0.8, 1, 0.2, '#6b8fd6'],
-    // mythic
-    ['Meteor Strike', '☄', 'Meteoric', 15, 0.5, 1, 0.3, '#e07a45'],
-    ['Solar Storm', '🌞', 'Sunfire', 15, 0.5, 1, 0.3, '#f0a03f'],
-    ['Gamma Burst', '☢️', 'Irradiated', 18, 0.4, 1, 0.3, '#9fe83f'],
-    ['Cosmic Rays', '📡', 'Cosmic', 16, 0.4, 1, 0.3, '#6bd6e8'],
-    ['Stardust', '🌟', 'Stardusted', 15, 0.5, 1, 0.3, '#f0e08f'],
-    ['Nebula Sky', '🪻', 'Nebular', 18, 0.4, 1, 0.3, '#b86be8'],
-    ['Galaxy Night', '🪐', 'Galactic', 20, 0.4, 1, 0.3, '#7a6be8'],
-    ['Black Hole', '🕳️', 'Voidtouched', 50, 0.15, 1, 0.3, '#3a3a4a'],
-    ['Supernova', '🧨', 'Nova', 40, 0.2, 1, 0.3, '#f0d05a'],
-    ['Alien Rain', '👽', 'Alien', 60, 0.15, 1, 0.3, '#6be86b'],
-    ['UFO Sighting', '🛸', 'Beamed', 45, 0.2, 1, 0.3, '#8fe8d6'],
-    ['Rainbow Meteor', '🎏', 'Chromatic', 35, 0.2, 1, 0.3, '#d66bc4'],
-    ['Time Storm', '⏰', 'Temporal', 30, 0.25, 1, 0.3, '#c4b86b'],
-    ['Gravity Flux', '🎈', 'Weightless', 25, 0.3, 1, 0.3, '#a8c46b'],
-    ['Magnetic Storm', '🧲', 'Magnetized', 22, 0.3, 1, 0.3, '#d67a6b'],
-    ['Plasma Storm', '🔆', 'Ionized', 25, 0.3, 1, 0.3, '#e8926b'],
-    ['Void Fog', '🖤', 'Void', 35, 0.2, 1, 0.3, '#4a3a5e'],
-    ['Dream Mist', '😴', 'Dreamy', 20, 0.3, 1, 0.3, '#b8a8e8'],
-    ['Fairy Dust', '🧚', 'Fae', 25, 0.3, 1, 0.3, '#e8a8d6'],
-    ['Dragon Breath', '🐲', 'Dragonfire', 30, 0.25, 1, 0.3, '#e86b4a'],
-    ['Phoenix Wind', '🎇', 'Phoenix', 35, 0.2, 1, 0.3, '#f0854a'],
-    ['Spirit Rain', '👻', 'Spectral', 22, 0.3, 1, 0.3, '#a8d0d8'],
-    ['Golden Hour', '🏆', 'Gilded', 20, 0.3, 1, 0.3, '#f0c43f'],
-    ['Diamond Dust', '💎', 'Diamond', 30, 0.25, 1, 0.3, '#c4e8f0'],
-    ['Sakura Wind', '🌸', 'Blossomed', 18, 0.35, 1, 0.3, '#f0a8c4'],
-    ['Honey Rain', '🍯', 'Honeyed', 18, 0.35, 1, 0.3, '#e8b53f'],
-    ['Chocolate Rain', '🍩', 'Chocolatey', 16, 0.35, 1, 0.3, '#8a5e3f'],
-    ['Candy Storm', '🍬', 'Sugared', 18, 0.35, 1, 0.3, '#e88fb0'],
-    ['Confetti Storm', '🎉', 'Festive', 16, 0.35, 1, 0.3, '#d66b8f'],
-    ['Bubble Storm', '🛁', 'Bubbly', 15, 0.4, 1, 0.3, '#a8d6e8'],
-    ['Glitter Storm', '💖', 'Glittered', 20, 0.3, 1, 0.3, '#e8d08f'],
-    ['Moonquake', '🌖', 'Moonstruck', 25, 0.3, 1, 0.3, '#b8b8d6'],
-    // Grow a Garden weathers
-    ['Bee Swarm', '🐝', 'Pollinated', 3, 2, 1, 0.25, '#f0c33f'],
-    ['Working Bee Swarm', '🍯', 'Honey Glazed', 5, 1, 1, 0.25, '#e8a53f'],
-    ['Disco', '🪩', 'Disco', 15, 0.5, 1, 0.3, '#d65ad6'],
-    ['DJ Party', '🎧', 'Remixed', 12, 0.5, 1, 0.3, '#8f5ad6'],
-    ['Windy', '🎋', 'Windstruck', 2, 4, 1, 0.2, '#9fc4a8'],
-    ['Tropical Rain', '🌴', 'Tropical', 3, 2, 1.5, 0.2, '#4fb88a'],
-    ['Drought', '🦴', 'Withered', 2.5, 2, 1, 0.2, '#c9a06b'],
-    ['Summer Harvest', '🍑', 'Sunkissed', 3, 2, 1, 0.2, '#f0925e'],
-    ['Alien Invasion', '👾', 'Alienlike', 30, 0.2, 1, 0.3, '#7ae86b'],
-    ['Space Travel', '🚀', 'Astro', 20, 0.3, 1, 0.3, '#6b8fe8'],
-    ['Crystal Beams', '🔷', 'Crystalline', 25, 0.3, 1, 0.3, '#6bd0e8'],
-    ['Volcano', '🗻', 'Magma', 12, 0.6, 1, 0.25, '#d65a3f'],
-    ['Zen Aura', '🧘', 'Tranquil', 10, 0.8, 1, 0.25, '#8fd6b8'],
-    ['Corrupt Zen Aura', '👹', 'Corrupt', 18, 0.4, 1, 0.3, '#b84a6b'],
-    ['Laser Storm', '🔦', 'Plasma', 15, 0.5, 1, 0.3, '#e85ad6'],
-    ['Sheckle Rain', '🪙', 'Sheckled', 10, 0.6, 1, 0.25, '#e8c43f'],
-    ['Chicken Rain', '🐔', 'Feathered', 8, 0.8, 1, 0.25, '#f0e0c4'],
-    ['Zombie Invasion', '🧟', 'Zombified', 25, 0.3, 1, 0.3, '#7a9f4a'],
-    ['Sun God', '👑', 'Dawnbound', 150, 0.1, 1, 0.3, '#f0d75a'],
-    ['Armageddon', '💀', 'Apocalyptic', 40, 0.15, 1, 0.3, '#6b4a4a'],
-    ['Pool Party', '🏊', 'Splashed', 4, 1.5, 1.2, 0.2, '#5aa0d6'],
-    ['Under the Sea', '🐠', 'Oceanic', 8, 0.8, 1, 0.25, '#4a8fd6'],
-    ['Obby', '🏁', 'Bouncy', 6, 0.8, 1, 0.25, '#d6b84a'],
-    ['Jandel Storm', '🃏', 'Jandeled', 20, 0.3, 1, 0.3, '#d64a8f'],
-    ['Starfall', '⭐', 'Starfallen', 12, 0.6, 1, 0.25, '#f0e05a'],
-    ['Frost Dawn', '🌁', 'Frostproof', 14, 0.5, 1, 0.25, '#b8d8e8']
-  ].map(function (r) {
-    return {
-      key: r[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
-      name: r[0], emoji: r[1], mutName: r[2], mult: r[3],
-      weight: r[4], speed: r[5], mutChance: r[6], color: r[7]
-    };
-  });
-  var WMAP = {};
-  WEATHERS.forEach(function (w) { WMAP[w.key] = w; });
-
-  var SPOTS_PER_M = 3;         // 3x3 planting spots per square meter
-  var EXPAND_COST = 100;       // always 100¢, forever
-  var RESTOCK_MS = 10 * 1000;
-  var SAVE_KEY = 'garden-game-v2';
-
-  var sheckles = 20;
-  var tokens = 0;
-  var meters = 3;
-  var cols = meters * SPOTS_PER_M;
-  var grid = new Array(cols * cols).fill(null); // {t, state:'grow'|'ripe'|'regrow', end}
-  var seedsOwned = {};  // key -> count of seeds in your bag
-  var gearOwned = {};   // key -> count of gear in your shed
-  var basket = {};      // key -> count of harvested crops
-  var stock = {};       // key -> count in the sheckle shop right now (seeds and gear)
-  var stockTok = {};    // key -> count in the token shop — rolled independently,
-                        // with the chance boosted by the active weather multipliers
-  var nextRestock = 0;
-  var sel = 'hand';
-  var held = null;       // basket stack key selected in the sell shop
-  var weather = null;    // {key, until}
-  var lastMutRoll = 0;   // last 10-second mutation roll
-
-  var coinsEl = document.getElementById('coins');
-  var tokensEl = document.getElementById('tokens');
-  var shopEl = document.getElementById('shop');
-  var msgEl = document.getElementById('msg');
-  var plotEl = document.getElementById('plot');
-  var rulerEl = document.getElementById('ruler');
-  var seedBubble = document.getElementById('seed-bubble');
-  var gearBubble = document.getElementById('gear-bubble');
-  var sellBubble = document.getElementById('sell-bubble');
-  var seedListEl = document.getElementById('seedlist');
-  var gearListEl = document.getElementById('gearlist');
-  var invListEl = document.getElementById('invlist');
-  var heldActions = document.getElementById('held-actions');
-  var restockEl = document.getElementById('restock');
-  var restock2El = document.getElementById('restock2');
-  var seedLuckEl = document.getElementById('seed-luck');
-  var gearLuckEl = document.getElementById('gear-luck');
-  var weatherEl = document.getElementById('weather-banner');
-  var wInfoEl = document.getElementById('w-info');
-  var wTimeEl = document.getElementById('w-time');
-  var plotVp = document.getElementById('plot-viewport');
-  var panHintEl = document.getElementById('pan-hint');
-  var ovSeed = document.getElementById('ov-seed');
-  var ovGear = document.getElementById('ov-gear');
-  var ovSell = document.getElementById('ov-sell');
-  var cellEls = [];
-
-  function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
-
-  function money(n) {
-    if (n >= 1e15) return trim(n / 1e15) + 'Q¢';
-    if (n >= 1e12) return trim(n / 1e12) + 'T¢';
-    if (n >= 1e9)  return trim(n / 1e9)  + 'B¢';
-    if (n >= 1e6)  return trim(n / 1e6)  + 'M¢';
-    if (n >= 1e4)  return trim(n / 1e3)  + 'k¢';
-    return n + '¢';
-  }
-  function trim(x) {
-    return (Math.round(x * 100) / 100).toString();
-  }
-  function tokFmt(n) {
-    if (n >= 1e6) return trim(n / 1e6) + 'M';
-    if (n >= 1e4) return trim(n / 1e3) + 'k';
-    return String(n);
-  }
-
-  // ---------- persistence ----------
-  function save() {
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({
-        sheckles: sheckles, tokens: tokens, meters: meters, grid: grid,
-        seedsOwned: seedsOwned, gearOwned: gearOwned, basket: basket,
-        stock: stock, stockTok: stockTok, nextRestock: nextRestock, weather: weather
-      }));
-    } catch (e) { /* storage unavailable — play without saving */ }
-  }
-  function load() {
-    try {
-      var raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return;
-      var d = JSON.parse(raw);
-      if (typeof d.sheckles === 'number') sheckles = d.sheckles;
-      if (typeof d.tokens === 'number') tokens = d.tokens;
-      if (typeof d.meters === 'number' && d.meters >= 3) meters = d.meters;
-      cols = meters * SPOTS_PER_M;
-      if (Array.isArray(d.grid) && d.grid.length === cols * cols) {
-        grid = d.grid.map(function (p) { return p && CROPS[p.t] ? p : null; });
-      } else {
-        grid = new Array(cols * cols).fill(null);
-      }
-      if (d.seedsOwned) seedsOwned = d.seedsOwned;
-      if (d.gearOwned) gearOwned = d.gearOwned;
-      if (d.basket) basket = d.basket;
-      if (d.stock) stock = d.stock;
-      if (d.stockTok) stockTok = d.stockTok;
-      if (typeof d.nextRestock === 'number') nextRestock = d.nextRestock;
-      if (d.weather) {
-        var wkeys = d.weather.keys || (d.weather.key ? [d.weather.key] : []);
-        wkeys = wkeys.filter(function (k) { return WMAP[k]; });
-        if (wkeys.length) weather = { keys: wkeys, until: d.weather.until };
-      }
-    } catch (e) { /* corrupt save — start fresh */ }
-  }
-
-  // ---------- seed shop stock ----------
-  // Product of all active weather multipliers, e.g. a 3x and a 5x weather = 15x
-  function weatherLuck() {
-    if (!weather) return 1;
-    return activeWeathers().reduce(function (a, w) { return a * w.mult; }, 1);
-  }
-  function doRestock() {
-    var luck = weatherLuck();
-    SEEDS.concat(GEAR).forEach(function (s) {
-      stock[s.key] = (Math.random() * 100 < s.chance) ? randInt(s.stock[0], s.stock[1]) : 0;
-      // token shop rolls separately, with weather-boosted odds
-      stockTok[s.key] = (Math.random() * 100 < s.chance * luck) ? randInt(s.stock[0], s.stock[1]) : 0;
-    });
-    nextRestock = Date.now() + RESTOCK_MS;
-    if (!ovSeed.hidden) {
-      seedBubble.textContent = 'Fresh delivery! These are the seeds that are in stock!';
-      renderSeedShop();
-    }
-    if (!ovGear.hidden) {
-      gearBubble.textContent = 'Beep boop! Restock complete! This is the gear that is in stock!';
-      renderGearShop();
-    }
-    save();
-  }
-
-  function renderSeedShop() {
-    seedListEl.innerHTML = '';
-    var luck = weatherLuck();
-    seedLuckEl.textContent = luck > 1 ? 'Token-stock luck ×' + trim(luck) : 'Seller’s stock';
-    SEEDS.forEach(function (s) {
-      var sc = stock[s.key] || 0, tc = stockTok[s.key] || 0;
-      var row = document.createElement('div');
-      row.className = 'srow' + (sc < 1 && tc < 1 ? ' oos' : '');
-      row.innerHTML =
-        '<span class="s-emoji">' + s.emoji + '</span>' +
-        '<span class="s-info"><span class="s-name">' + s.name + '</span><br>' +
-        '<span class="s-tags">' + (s.multi ? '♻️ multi-harvest' : '🚫 single harvest') +
-        ' · grows in ' + s.grow + 's</span></span>' +
-        '<span class="s-stock">' + (sc < 1 && tc < 1 ? 'NO STOCK' : '') + '</span>';
-      var buy = document.createElement('button');
-      buy.className = 's-buy';
-      buy.textContent = money(s.price) + (sc > 0 ? ' ×' + sc : '');
-      buy.disabled = sc < 1 || sheckles < s.price;
-      buy.title = sc < 1 ? 'Out of stock in the sheckle shop' : 'Buy with sheckles';
-      buy.addEventListener('click', function () { buySeed(s.key, false); });
-      row.appendChild(buy);
-      var buyT = document.createElement('button');
-      buyT.className = 's-buy tok';
-      buyT.textContent = '🎟️' + tokFmt(s.tok) + (tc > 0 ? ' ×' + tc : '');
-      buyT.disabled = tc < 1 || tokens < s.tok;
-      buyT.title = tc < 1 ? 'Out of stock in the token shop' : 'Buy with tokens';
-      buyT.addEventListener('click', function () { buySeed(s.key, true); });
-      row.appendChild(buyT);
-      seedListEl.appendChild(row);
-    });
-  }
-
-  function buySeed(key, useTok) {
-    var s = CROPS[key];
-    var pool = useTok ? stockTok : stock;
-    if ((pool[key] || 0) < 1) { seedBubble.textContent = 'Sorry, no ' + s.name.toLowerCase() + ' seeds in the ' + (useTok ? 'token' : 'sheckle') + ' stock right now!'; return; }
-    if (useTok) {
-      if (tokens < s.tok) { seedBubble.textContent = 'That one costs ' + tokFmt(s.tok) + ' tokens — go dig and harvest some more!'; return; }
-      tokens -= s.tok;
-    } else {
-      if (sheckles < s.price) { seedBubble.textContent = 'That one costs ' + money(s.price) + ' — come back with more sheckles!'; return; }
-      sheckles -= s.price;
-    }
-    pool[key]--;
-    seedsOwned[key] = (seedsOwned[key] || 0) + 1;
-    seedBubble.textContent = 'One ' + s.name.toLowerCase() + ' seed, all yours! Anything else?';
-    if (sel === 'dig' || sel === 'hand') sel = key;
-    renderSeedShop();
-    refresh();
-  }
-
-  // ---------- gear shop ----------
-  function renderGearShop() {
-    gearListEl.innerHTML = '';
-    var luck = weatherLuck();
-    gearLuckEl.textContent = luck > 1 ? 'Token-stock luck ×' + trim(luck) : 'Gear in stock';
-    GEAR.forEach(function (g) {
-      var sc = stock[g.key] || 0, tc = stockTok[g.key] || 0;
-      var row = document.createElement('div');
-      row.className = 'srow' + (sc < 1 && tc < 1 ? ' oos' : '');
-      row.innerHTML =
-        '<span class="s-emoji">' + g.emoji + '</span>' +
-        '<span class="s-info"><span class="s-name">' + g.name + '</span><br>' +
-        '<span class="s-tags">' + g.desc + '</span></span>' +
-        '<span class="s-stock">' + (sc < 1 && tc < 1 ? 'NO STOCK' : '') + '</span>';
-      var buy = document.createElement('button');
-      buy.className = 's-buy';
-      buy.textContent = money(g.price) + (sc > 0 ? ' ×' + sc : '');
-      buy.disabled = sc < 1 || sheckles < g.price;
-      buy.title = sc < 1 ? 'Out of stock in the sheckle shop' : 'Buy with sheckles';
-      buy.addEventListener('click', function () { buyGear(g.key, false); });
-      row.appendChild(buy);
-      var buyT = document.createElement('button');
-      buyT.className = 's-buy tok';
-      buyT.textContent = '🎟️' + tokFmt(g.tok) + (tc > 0 ? ' ×' + tc : '');
-      buyT.disabled = tc < 1 || tokens < g.tok;
-      buyT.title = tc < 1 ? 'Out of stock in the token shop' : 'Buy with tokens';
-      buyT.addEventListener('click', function () { buyGear(g.key, true); });
-      row.appendChild(buyT);
-      gearListEl.appendChild(row);
-    });
-  }
-
-  function buyGear(key, useTok) {
-    var g = GEARMAP[key];
-    var pool = useTok ? stockTok : stock;
-    if ((pool[key] || 0) < 1) { gearBubble.textContent = 'Beep! No ' + g.name.toLowerCase() + ' in the ' + (useTok ? 'token' : 'sheckle') + ' stock right now!'; return; }
-    if (useTok) {
-      if (tokens < g.tok) { gearBubble.textContent = 'Beep boop — that costs ' + tokFmt(g.tok) + ' tokens. Insufficient tokens detected!'; return; }
-      tokens -= g.tok;
-    } else {
-      if (sheckles < g.price) { gearBubble.textContent = 'Beep boop — that costs ' + money(g.price) + '. Insufficient sheckles detected!'; return; }
-      sheckles -= g.price;
-    }
-    pool[key]--;
-    gearOwned[key] = (gearOwned[key] || 0) + 1;
-    gearBubble.textContent = 'One ' + g.name.toLowerCase() + ', dispensed! ' + (g.target ? 'Select it, then click a plant.' : 'Click it in your toolbar to use it.');
-    renderGearShop();
-    refresh();
-  }
-
-  // Instant-use gear (no plant target)
-  function useGlobalGear(key) {
-    var g = GEARMAP[key];
-    if (key === 'goldscythe') {
-      var reaped = 0;
-      for (var i = 0; i < grid.length; i++) {
-        var p = grid[i];
-        if (p && p.state !== 'ripe' && Date.now() >= p.end) p.state = 'ripe';
-        if (p && p.state === 'ripe') { harvest(i); reaped++; }
-      }
-      if (!reaped) { setMsg('Nothing is ripe — the scythe stays in the shed.'); return; }
-      setMsg('🌾 Scythed ' + reaped + ' crop' + (reaped > 1 ? 's' : '') + ' into your basket!');
-    } else if (key === 'luckycharm') {
-      doRestock();
-      setMsg('🍀 The lucky charm made the shops restock!');
-    } else if (key === 'timecrystal') {
-      var sped = 0;
-      grid.forEach(function (p) {
-        if (p && p.state !== 'ripe' && Date.now() < p.end) { p.end = Date.now(); sped++; }
-      });
-      if (!sped) { setMsg('Nothing is growing — the time crystal stays put.'); return; }
-      setMsg('⏳ Time warped! ' + sped + ' plant' + (sped > 1 ? 's' : '') + ' ripened instantly.');
-    }
-    gearOwned[key]--;
-    refresh();
-  }
-
-  // Targeted gear, applied to the plant at cell i
-  function useTargetedGear(key, i) {
-    var p = grid[i], c = CROPS[p.t], now = Date.now();
-    if (key === 'wateringcan') {
-      p.end = now + Math.max(0, p.end - now) / 2;
-      setMsg('🫗 Watered the ' + c.name.toLowerCase() + ' — remaining time halved!');
-    } else if (key === 'fertilizer') {
-      p.end = now;
-      setMsg('🧪 Fertilized the ' + c.name.toLowerCase() + ' — ripe right now!');
-    }
-    gearOwned[key]--;
-    refresh();
-  }
-
-  // ---------- owned-seed toolbar ----------
-  function renderToolbar() {
-    shopEl.innerHTML = '';
-    var owned = SEEDS.filter(function (s) { return (seedsOwned[s.key] || 0) > 0; });
-    // Out of the selected seed/gear? Fall back to another seed or an empty
-    // hand — never to Dig, so clicking a ripe plant still harvests it.
-    var selValid = sel === 'dig' || sel === 'hand' || seedsOwned[sel] > 0 || (GEARMAP[sel] && gearOwned[sel] > 0);
-    if (!selValid) sel = owned.length ? owned[0].key : 'hand';
-    owned.forEach(function (s) {
-      var b = document.createElement('button');
-      b.className = 'chip' + (sel === s.key ? ' on' : '');
-      b.innerHTML =
-        '<span class="c-emoji">' + s.emoji + '</span>' +
-        '<span class="c-name">' + s.name + '</span>' +
-        '<span class="c-meta">×' + seedsOwned[s.key] + (s.multi ? ' ♻️' : '') + '</span>';
-      b.title = s.name + ' seed — click soil to plant';
-      b.addEventListener('click', function () {
-        if (sel === s.key) {
-          // clicking the selected chip again puts it away
-          sel = 'hand';
-          setMsg('Put the ' + s.name.toLowerCase() + ' seeds away.');
-        } else {
-          sel = s.key;
-          setMsg(s.name + ' seed selected — click an empty spot of soil to plant.');
-        }
-        renderToolbar();
-      });
-      shopEl.appendChild(b);
-    });
-    GEAR.filter(function (g) { return (gearOwned[g.key] || 0) > 0; }).forEach(function (g) {
-      var b = document.createElement('button');
-      b.className = 'chip' + (sel === g.key ? ' on' : '');
-      b.innerHTML =
-        '<span class="c-emoji">' + g.emoji + '</span>' +
-        '<span class="c-name">' + g.name + '</span>' +
-        '<span class="c-meta">×' + gearOwned[g.key] + ' 🛠️</span>';
-      b.title = g.desc;
-      b.addEventListener('click', function () {
-        if (g.target) {
-          if (sel === g.key) {
-            sel = 'hand';
-            setMsg('Put the ' + g.name.toLowerCase() + ' away.');
-          } else {
-            sel = g.key;
-            setMsg(g.name + ' ready — click a growing plant to use it.');
-          }
-          renderToolbar();
-        } else {
-          useGlobalGear(g.key);
-        }
-      });
-      shopEl.appendChild(b);
-    });
-    var dig = document.createElement('button');
-    dig.className = 'chip' + (sel === 'dig' ? ' on' : '');
-    dig.innerHTML = '<span class="c-emoji">⛏️</span><span class="c-name">Dig</span><span class="c-meta">clear</span>';
-    dig.title = 'Dig up a plant (no refund)';
-    dig.addEventListener('click', function () {
-      if (sel === 'dig') {
-        sel = 'hand';
-        setMsg('Put the pickaxe away.');
-      } else {
-        sel = 'dig';
-        setMsg('Dig mode: click a plant to remove it.');
-      }
-      renderToolbar();
-    });
-    shopEl.appendChild(dig);
-  }
-
-  var msgTimer = null;
-  function setMsg(text) {
-    msgEl.textContent = text;
-    if (msgTimer) clearTimeout(msgTimer);
-    msgTimer = setTimeout(function () { msgEl.textContent = ' '; }, 4000);
-  }
-
-  // ---------- plot ----------
-  function buildPlot() {
-    cols = meters * SPOTS_PER_M;
-    plotEl.innerHTML = '';
-    cellEls = [];
-    plotEl.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
-    for (var i = 0; i < cols * cols; i++) {
-      var col = i % cols, row = (i / cols) | 0;
-      var b = document.createElement('button');
-      b.className = 'cell' +
-        (col % SPOTS_PER_M === SPOTS_PER_M - 1 && col !== cols - 1 ? ' m-r' : '') +
-        (row % SPOTS_PER_M === SPOTS_PER_M - 1 && row !== cols - 1 ? ' m-b' : '');
-      b.innerHTML = '<span class="plant"></span><span class="bar" hidden><i></i></span><span class="badge" hidden></span>';
-      (function (idx) {
-        b.addEventListener('click', function () { clickCell(idx); });
-      })(i);
-      plotEl.appendChild(b);
-      cellEls.push(b);
-    }
-    rulerEl.innerHTML = '⟵&nbsp;&nbsp;' + meters + ' m&nbsp;&nbsp;⟶';
-    sizeCells();
-  }
-  // Cells keep a fixed size; a bigger garden pans inside the viewport
-  // instead of zooming out to fit.
-  function sizeCells() {
-    var avail = plotVp.clientWidth - 22; // frame + padding
-    var px = Math.max(24, Math.min(46, Math.floor(avail / (3 * SPOTS_PER_M))));
-    plotEl.style.gridTemplateColumns = 'repeat(' + cols + ', ' + px + 'px)';
-    plotEl.style.fontSize = px + 'px';
-    panHintEl.hidden = !(plotVp.scrollWidth > plotVp.clientWidth + 4 || plotVp.scrollHeight > plotVp.clientHeight + 4);
-  }
-  window.addEventListener('resize', sizeCells);
-
-  // Mouse drag-to-pan (touch devices pan natively via scrolling)
-  var panDrag = null, panMoved = false;
-  plotVp.addEventListener('pointerdown', function (e) {
-    if (e.pointerType !== 'mouse') return;
-    panDrag = { x: e.clientX, y: e.clientY, sl: plotVp.scrollLeft, st: plotVp.scrollTop };
-    panMoved = false;
-  });
-  window.addEventListener('pointermove', function (e) {
-    if (!panDrag) return;
-    var dx = e.clientX - panDrag.x, dy = e.clientY - panDrag.y;
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) panMoved = true;
-    if (panMoved) {
-      plotVp.scrollLeft = panDrag.sl - dx;
-      plotVp.scrollTop = panDrag.st - dy;
-      plotVp.classList.add('dragging');
-    }
-  });
-  window.addEventListener('pointerup', function () {
-    panDrag = null;
-    plotVp.classList.remove('dragging');
-  });
-  // After a drag, swallow the click so it doesn't plant/harvest a cell
-  plotVp.addEventListener('click', function (e) {
-    if (panMoved) {
-      e.stopPropagation();
-      e.preventDefault();
-      panMoved = false;
-    }
-  }, true);
-
-  function expandGarden() {
-    if (sheckles < EXPAND_COST) {
-      setMsg('Expanding costs ' + money(EXPAND_COST) + ' — you have ' + money(sheckles) + '.');
-      return;
-    }
-    sheckles -= EXPAND_COST;
-    var oldCols = cols, oldGrid = grid;
-    meters++;
-    cols = meters * SPOTS_PER_M;
-    grid = new Array(cols * cols).fill(null);
-    for (var r = 0; r < oldCols; r++) {
-      for (var c = 0; c < oldCols; c++) {
-        grid[r * cols + c] = oldGrid[r * oldCols + c];
-      }
-    }
-    buildPlot();
-    setMsg('Garden expanded to ' + meters + ' m × ' + meters + ' m! (' + (cols * cols) + ' spots)');
-    refresh();
-  }
-
-  function clickCell(i) {
-    var p = grid[i];
-    if (sel === 'dig') {
-      if (!p) { setMsg('Nothing to dig here.'); return; }
-      grid[i] = null;
-      var digC = CROPS[p.t];
-      if (!digC.multi) {
-        // digging up single-harvest plants pays out a few tokens
-        var digTk = randInt(1, 4);
-        tokens += digTk;
-        popup(i, '+' + digTk + '🎟️');
-        setMsg('Dug up the ' + digC.name.toLowerCase() + ' — found ' + digTk + ' token' + (digTk > 1 ? 's' : '') + '!');
-      } else {
-        setMsg('Dug up the ' + digC.name.toLowerCase() + '.');
-      }
-      refresh();
-      return;
-    }
-    if (p) {
-      if (p.state === 'ripe') { harvest(i); refresh(); return; }
-      if (GEARMAP[sel] && GEARMAP[sel].target) {
-        if (!(gearOwned[sel] > 0)) { setMsg('No ' + GEARMAP[sel].name.toLowerCase() + ' left — buy more at the Gear Shop.'); return; }
-        useTargetedGear(sel, i);
-        return;
-      }
-      if (p.state === 'regrow') setMsg('The stem is regrowing a new ' + CROPS[p.t].name.toLowerCase() + '…');
-      else setMsg('Still growing — give it a moment.');
-      return;
-    }
-    if (GEARMAP[sel]) { setMsg('Use the ' + GEARMAP[sel].name.toLowerCase() + ' on a planted spot, not empty soil.'); return; }
-    var c = CROPS[sel];
-    if (!c) { setMsg('Buy seeds at the Seed Shop first!'); return; }
-    if (!(seedsOwned[sel] > 0)) { setMsg('No ' + c.name.toLowerCase() + ' seeds left — buy more at the Seed Shop.'); return; }
-    seedsOwned[sel]--;
-    grid[i] = { t: sel, state: 'grow', end: Date.now() + c.grow * 1000 };
-    refresh();
-  }
-
-  // ---------- weather ----------
-  function pickWeather(excludeKeys) {
-    var pool = WEATHERS.filter(function (w) { return excludeKeys.indexOf(w.key) < 0; });
-    var total = 0;
-    pool.forEach(function (w) { total += w.weight; });
-    var r = Math.random() * total;
-    for (var i = 0; i < pool.length; i++) {
-      r -= pool[i].weight;
-      if (r <= 0) return pool[i];
-    }
-    return pool[pool.length - 1];
-  }
-  function activeWeathers() {
-    return weather.keys.map(function (k) { return WMAP[k]; }).filter(Boolean);
-  }
-  function newWeather(announce) {
-    // 50% chance of 2 simultaneous weathers, 25% of 3, 12.5% of 4, and so on
-    var count = 1;
-    while (Math.random() < 0.5 && count < 6) count++;
-    var keys = [];
-    for (var i = 0; i < count; i++) {
-      var w = pickWeather(keys);
-      if (w) keys.push(w.key);
-    }
-    // 2-4 minutes, averaging 3
-    weather = { keys: keys, until: Date.now() + (120 + Math.random() * 120) * 1000 };
-    renderWeather();
-    if (announce) {
-      setMsg('The weather changed: ' + keys.map(function (k) { return WMAP[k].emoji + ' ' + WMAP[k].name; }).join(' + ') + '!');
-    }
-    save();
-  }
-  function renderWeather() {
-    var ws = activeWeathers();
-    var speed = ws.reduce(function (a, w) { return a * w.speed; }, 1);
-    var parts = ws.map(function (w) {
-      return '<b>' + w.emoji + ' ' + w.name + '</b> (' + w.mutName + ' ×' + w.mult + ')';
-    });
-    var fx = speed > 1 ? ' — plants grow ' + (Math.round(speed * 100) / 100) + '× faster' : '';
-    wInfoEl.innerHTML = parts.join(' + ') + fx;
-    weatherEl.style.borderLeftColor = ws.length ? ws[0].color : 'var(--accent)';
-  }
-  function tryMutate(w) {
-    var idxs = [];
-    for (var i = 0; i < grid.length; i++) {
-      var p = grid[i];
-      if (p && (p.muts || []).indexOf(w.key) < 0) idxs.push(i);
-    }
-    if (!idxs.length) return;
-    var hit = idxs[randInt(0, idxs.length - 1)];
-    var p2 = grid[hit];
-    p2.muts = p2.muts || [];
-    p2.muts.push(w.key);
-    popup(hit, '✨ ' + w.mutName + '!');
-    setMsg('✨ Your ' + CROPS[p2.t].name.toLowerCase() + ' mutated: ' + w.mutName + ' (value ×' + w.mult + ')!');
-    save();
-  }
-  function mutNames(p) {
-    return (p.muts || []).map(function (k) { return WMAP[k] ? WMAP[k].mutName : k; });
-  }
-
-  function harvest(i) {
-    var p = grid[i], c = CROPS[p.t];
-    // mutations travel with the crop into the basket
-    var stackKey = p.t + (p.muts && p.muts.length ? '|' + p.muts.join('+') : '');
-    basket[stackKey] = (basket[stackKey] || 0) + 1;
-    // multi-harvest crops pay tokens: common-rare 4-10, legendary+ 50-1000
-    var tk = 0;
-    if (c.multi) {
-      tk = LOW_TIERS[c.tier] ? randInt(4, 10) : randInt(50, 1000);
-      tokens += tk;
-    }
-    popup(i, '+1 ' + c.emoji + (p.muts && p.muts.length ? '✨' : '') + (tk ? ' +' + tk + '🎟️' : ''));
-    if (c.multi) {
-      // the stem stays behind and regrows, forever — but the mutations left
-      // with the harvested crop, so the regrown one starts fresh
-      p.state = 'regrow';
-      p.end = Date.now() + c.regrow * 1000;
-      p.muts = [];
-      setMsg('Picked a ' + c.name.toLowerCase() + '! The stem will regrow another.');
-    } else {
-      grid[i] = null;
-      setMsg('Harvested the ' + c.name.toLowerCase() + '! It went into your basket.');
+function boxPass(src, dst) {
+  // separable 3x3 box; blurB is the horizontal scratch row buffer
+  for (let y = 0; y < gh; y++) {
+    const row = y * gw;
+    for (let x = 0; x < gw; x++) {
+      const i = row + x;
+      let s = src[i], n = 1;
+      if (x > 0) { s += src[i - 1]; n++; }
+      if (x < gw - 1) { s += src[i + 1]; n++; }
+      blurB[i] = s / n;
     }
   }
-
-  function popup(i, text) {
-    var s = document.createElement('span');
-    s.className = 'pop';
-    s.textContent = text;
-    cellEls[i].appendChild(s);
-    setTimeout(function () { s.remove(); }, 900);
-  }
-
-  // ---------- sell shop ----------
-  // Basket stacks are keyed "crop" or "crop|mut1+mut2" so mutated crops sell separately
-  function stackInfo(k) {
-    var parts = k.split('|');
-    var c = CROPS[parts[0]];
-    var muts = parts[1] ? parts[1].split('+') : [];
-    var mult = 1;
-    var names = muts.map(function (m) {
-      if (WMAP[m]) { mult *= WMAP[m].mult; return WMAP[m].mutName; }
-      return m;
-    });
-    return {
-      crop: c,
-      muts: muts,
-      value: Math.max(1, Math.round(c.sell * mult)),
-      label: (names.length ? names.join(' ') + ' ' : '') + c.name
-    };
-  }
-
-  function renderSellShop() {
-    invListEl.innerHTML = '';
-    var keys = Object.keys(basket).filter(function (k) {
-      return basket[k] > 0 && CROPS[k.split('|')[0]];
-    });
-    keys.sort(function (a, b) { return stackInfo(b).value - stackInfo(a).value; });
-    if (held && !(basket[held] > 0)) held = null;
-    if (!keys.length) {
-      held = null;
-      var empty = document.createElement('p');
-      empty.style.cssText = 'color:var(--muted);font-size:0.85rem;padding:6px 2px 10px;';
-      empty.textContent = 'Your basket is empty. Go harvest something!';
-      invListEl.appendChild(empty);
-    }
-    keys.forEach(function (k) {
-      var info = stackInfo(k);
-      var b = document.createElement('button');
-      b.className = 'stack' + (held === k ? ' held' : '');
-      b.innerHTML =
-        '<span class="st-emoji">' + info.crop.emoji + (info.muts.length ? '✨' : '') + '</span>' +
-        '<span class="st-count">×' + basket[k] + '</span>' +
-        '<span class="st-name">' + info.label + '</span>' +
-        '<span class="st-val">' + money(info.value) + '</span>';
-      b.title = info.label + ' — worth ' + money(info.value) + ' each';
-      b.addEventListener('click', function () {
-        held = k;
-        sellBubble.textContent = 'You’re holding a ' + info.label.toLowerCase() + '. What would you like to do?';
-        renderSellShop();
-      });
-      invListEl.appendChild(b);
-    });
-    heldActions.hidden = !held;
-  }
-
-  function basketTotal() {
-    var total = 0;
-    Object.keys(basket).forEach(function (k) {
-      if (basket[k] > 0 && CROPS[k.split('|')[0]]) total += basket[k] * stackInfo(k).value;
-    });
-    return total;
-  }
-
-  document.getElementById('btn-worth').addEventListener('click', function () {
-    if (!held) return;
-    var info = stackInfo(held);
-    sellBubble.textContent = 'Lemme see… a ' + info.label.toLowerCase() + ' like this is worth ' + money(info.value) + '.';
-  });
-  document.getElementById('btn-sellthis').addEventListener('click', function () {
-    if (!held) return;
-    var info = stackInfo(held);
-    basket[held]--;
-    sheckles += info.value;
-    sellBubble.textContent = 'Sold! One ' + info.label.toLowerCase() + ' for ' + money(info.value) + '. Pleasure doin’ business!';
-    if (!(basket[held] > 0)) { delete basket[held]; held = null; }
-    renderSellShop();
-    refresh();
-  });
-  document.getElementById('btn-nevermind').addEventListener('click', function () {
-    held = null;
-    sellBubble.textContent = 'No worries. Anything else catch your eye?';
-    renderSellShop();
-  });
-  document.getElementById('btn-sellall').addEventListener('click', function () {
-    var total = basketTotal();
-    if (total <= 0) { sellBubble.textContent = 'Your basket’s empty, friend — nothin’ to sell!'; return; }
-    sheckles += total;
-    basket = {};
-    held = null;
-    sellBubble.textContent = 'The whole basket! That’ll be ' + money(total) + '. Come back soon!';
-    renderSellShop();
-    refresh();
-  });
-
-  // ---------- modals ----------
-  function openSeedShop() {
-    seedBubble.textContent = 'These are the seeds that are in stock!';
-    renderSeedShop();
-    ovSeed.hidden = false;
-  }
-  function openGearShop() {
-    gearBubble.textContent = 'Beep boop! This is the gear that is in stock!';
-    renderGearShop();
-    ovGear.hidden = false;
-  }
-  function openSellShop() {
-    held = null;
-    sellBubble.textContent = 'Howdy! Whatcha got in that basket for me?';
-    renderSellShop();
-    ovSell.hidden = false;
-  }
-  document.getElementById('btn-seedshop').addEventListener('click', openSeedShop);
-  document.getElementById('btn-gearshop').addEventListener('click', openGearShop);
-  document.getElementById('btn-sellshop').addEventListener('click', openSellShop);
-  document.getElementById('btn-expand').addEventListener('click', expandGarden);
-  document.getElementById('close-seed').addEventListener('click', function () { ovSeed.hidden = true; });
-  document.getElementById('close-gear').addEventListener('click', function () { ovGear.hidden = true; });
-  document.getElementById('close-sell').addEventListener('click', function () { ovSell.hidden = true; });
-  ovSeed.addEventListener('click', function (e) { if (e.target === ovSeed) ovSeed.hidden = true; });
-  ovGear.addEventListener('click', function (e) { if (e.target === ovGear) ovGear.hidden = true; });
-  ovSell.addEventListener('click', function (e) { if (e.target === ovSell) ovSell.hidden = true; });
-
-  // ---------- render ----------
-  function updateCell(i) {
-    var el = cellEls[i];
-    var plant = el.firstChild, bar = plant.nextSibling, badge = bar.nextSibling;
-    var p = grid[i];
-    el.classList.remove('ripe');
-    if (!p) {
-      plant.textContent = '';
-      bar.hidden = true;
-      badge.hidden = true;
-      el.style.outline = '';
-      el.title = 'Empty soil — click to plant';
-      return;
-    }
-    var c = CROPS[p.t], now = Date.now();
-    if (p.state !== 'ripe' && now >= p.end) p.state = 'ripe';
-
-    // mutation glow + tooltip suffix
-    var muts = p.muts || [];
-    var mutSuffix = '';
-    if (muts.length) {
-      var lastMut = WMAP[muts[muts.length - 1]];
-      el.style.outline = '2px solid ' + (lastMut ? lastMut.color : '#fff');
-      el.style.outlineOffset = '-2px';
-      mutSuffix = ' ✨ ' + mutNames(p).join(', ');
-    } else {
-      el.style.outline = '';
-    }
-
-    if (p.state === 'ripe') {
-      plant.textContent = c.emoji;
-      plant.style.transform = 'scale(1)';
-      plant.style.opacity = '1';
-      plant.style.filter = 'none';
-      bar.hidden = true;
-      el.classList.add('ripe');
-      badge.hidden = !c.multi;
-      if (c.multi) badge.textContent = '♻️';
-      el.title = c.name + ' — ripe! Click to harvest' + (c.multi ? ' (stem regrows)' : '') + mutSuffix;
-      return;
-    }
-
-    var dur = (p.state === 'regrow' ? c.regrow : c.grow) * 1000;
-    var pr = Math.min(1, Math.max(0, 1 - (p.end - now) / dur));
-    badge.hidden = true;
-    bar.hidden = false;
-    bar.firstChild.style.width = (pr * 100).toFixed(0) + '%';
-
-    if (p.state === 'regrow') {
-      // the stem left behind after harvest
-      plant.textContent = '🌿';
-      plant.style.transform = 'scale(0.68)';
-      plant.style.opacity = '0.6';
-      plant.style.filter = 'none';
-      el.title = c.name + ' stem — regrowing (' + Math.ceil((p.end - now) / 1000) + 's)' + mutSuffix;
-      return;
-    }
-    if (pr < 0.3) {
-      plant.textContent = '🌱';
-      plant.style.transform = 'scale(0.55)';
-      plant.style.opacity = '0.95';
-      plant.style.filter = 'none';
-    } else if (pr < 0.65) {
-      plant.textContent = '🌿';
-      plant.style.transform = 'scale(0.72)';
-      plant.style.opacity = '1';
-      plant.style.filter = 'none';
-    } else {
-      plant.textContent = c.emoji;
-      plant.style.transform = 'scale(0.82)';
-      plant.style.opacity = '0.85';
-      plant.style.filter = 'grayscale(0.55)';
-    }
-    el.title = c.name + ' — growing (' + Math.ceil((p.end - now) / 1000) + 's to ripe)' + mutSuffix;
-  }
-
-  function tick() {
-    var now = Date.now();
-    if (now >= nextRestock) doRestock();
-
-    // weather cycle (possibly several at once)
-    if (!weather || now >= weather.until) newWeather(!!weather);
-    var ws = activeWeathers();
-    // growth speed boosts multiply (e.g. rain 1.5x + monsoon 1.7x = 2.55x)
-    var speed = ws.reduce(function (a, x) { return a * x.speed; }, 1);
-    if (speed > 1) {
-      var boost = (speed - 1) * 250;
-      for (var b = 0; b < grid.length; b++) {
-        if (grid[b] && grid[b].state !== 'ripe') grid[b].end -= boost;
-      }
-    }
-    // every 10 seconds: each active weather rolls its own mutation chance
-    if (now - lastMutRoll >= 10000) {
-      lastMutRoll = now;
-      ws.forEach(function (x) {
-        if (Math.random() < x.mutChance) tryMutate(x);
-      });
-    }
-    var wLeft = Math.max(0, weather.until - now);
-    wTimeEl.textContent = ((wLeft / 60000) | 0) + ':' + ('0' + (Math.ceil(wLeft / 1000) % 60)).slice(-2);
-
-    for (var i = 0; i < grid.length; i++) updateCell(i);
-    coinsEl.textContent = '🪙 ' + money(sheckles);
-    tokensEl.textContent = '🎟️ ' + tokFmt(tokens);
-    if (!ovSeed.hidden || !ovGear.hidden) {
-      var left = Math.max(0, nextRestock - Date.now());
-      var m = (left / 60000) | 0, s = Math.ceil((left % 60000) / 1000);
-      if (s === 60) { m++; s = 0; }
-      var txt = 'Restock in ' + m + ':' + (s < 10 ? '0' : '') + s;
-      restockEl.textContent = txt;
-      restock2El.textContent = txt;
+  for (let y = 0; y < gh; y++) {
+    const row = y * gw;
+    for (let x = 0; x < gw; x++) {
+      const i = row + x;
+      let s = blurB[i], n = 1;
+      if (y > 0) { s += blurB[i - gw]; n++; }
+      if (y < gh - 1) { s += blurB[i + gw]; n++; }
+      dst[i] = s / n;
     }
   }
+}
 
-  function refresh() {
-    // Soft-lock rescue: broke, seedless, and nothing growing or in the basket
-    var anyPlant = grid.some(Boolean);
-    var anySeed = Object.keys(seedsOwned).some(function (k) { return seedsOwned[k] > 0; });
-    var anyCrop = Object.keys(basket).some(function (k) { return basket[k] > 0; });
-    if (!anyPlant && !anySeed && !anyCrop && sheckles < 10) {
-      sheckles = 20;
-      setMsg('A kind neighbor gifted you 🪙20¢ to start over!');
+function drawMarkers() {
+  boxPass(traffic, blurA);
+  boxPass(blurA, blurA);
+  const d = pherImg.data;
+  for (let i = 0; i < traffic.length; i++) {
+    // keep the trail core at its true count, let the blur supply a soft halo
+    const t0 = traffic[i], tb = blurA[i];
+    const v = t0 > tb ? t0 : tb;
+    const sc = foodScent[i];
+    const j = i * 4;
+    if (v < 0.05 && sc < 0.05) { d[j + 3] = 0; continue; }
+    let cr = 0, cg = 0, cb2 = 0, ca = 0;
+    if (v >= 0.05) {
+      const k = ((v > LUT_MAX ? LUT_MAX : v) * LUT_RES) | 0;
+      cr = lut[k * 3]; cg = lut[k * 3 + 1]; cb2 = lut[k * 3 + 2];
+      ca = Math.min(215, 45 + v * 80);
     }
-    renderToolbar();
-    if (!ovSeed.hidden) renderSeedShop();
-    if (!ovGear.hidden) renderGearShop();
-    tick();
-    save();
+    if (sc >= 0.05) { // warm berry-scented haze
+      cr = Math.min(255, cr + sc * 55); cg = Math.min(255, cg + sc * 22); cb2 = Math.min(255, cb2 + sc * 10);
+      ca = Math.min(215, ca + 14 + sc * 16);
+    }
+    d[j] = cr | 0; d[j + 1] = cg | 0; d[j + 2] = cb2 | 0;
+    d[j + 3] = ca | 0;
+  }
+  pherCtx.putImageData(pherImg, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(pherCv, 0, 0, W, H);
+}
+
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#16120c';
+  ctx.fillRect(0, 0, W, H);
+
+  if (showTrails) drawMarkers();
+
+  if (wallsDirty) { redrawWalls(); wallsDirty = false; }
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(wallCv, 0, 0, W, H);
+
+  // food
+  for (const f of foods) {
+    ctx.fillStyle = '#8f2a2e';
+    ctx.beginPath(); ctx.arc(f.x, f.y + 1, f.r, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#e5484d';
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r - 1, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.35)';
+    ctx.beginPath(); ctx.arc(f.x - f.r * 0.3, f.y - f.r * 0.3, f.r * 0.22, 0, TAU); ctx.fill();
   }
 
-  // ---------- boot ----------
-  load();
-  buildPlot();
-  // weather first: the token shop's restock odds depend on it
-  if (!weather || Date.now() >= weather.until) newWeather(false); else renderWeather();
-  if (!nextRestock || !Object.keys(stock).length) doRestock();
-  lastMutRoll = Date.now();
-  refresh();
-  setInterval(tick, 250);
-  setInterval(save, 5000);
+  // plants
+  for (const pl of plants) {
+    const lean = Math.sin(performance.now() / 900 + pl.sway) * 0.09;
+    ctx.fillStyle = '#2c4a26';
+    ctx.beginPath(); ctx.ellipse(pl.x, pl.y + 10, 10, 3.5, 0, 0, TAU); ctx.fill();
+    ctx.save();
+    ctx.translate(pl.x, pl.y + 10);
+    ctx.rotate(lean);
+    ctx.strokeStyle = '#3f7d38'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -21); ctx.stroke();
+    ctx.fillStyle = '#4e9c48';
+    ctx.beginPath(); ctx.ellipse(-9, -11, 9, 4.2, -0.55, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(9, -15, 9, 4.2, 0.55, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#6fc463';
+    ctx.beginPath(); ctx.ellipse(0, -24, 7, 5.8, 0, 0, TAU); ctx.fill();
+    ctx.restore();
+    ctx.lineCap = 'butt';
+  }
 
-  // small debug/test handle
-  window.__g = {
-    grid: function () { return grid; },
-    sheckles: function () { return sheckles; },
-    tokens: function () { return tokens; },
-    giveTok: function (n) { tokens += n; refresh(); },
-    stock: function () { return stock; },
-    stockTok: function () { return stockTok; },
-    luck: weatherLuck,
-    basket: function () { return basket; },
-    seeds: function () { return seedsOwned; },
-    gear: function () { return gearOwned; },
-    weather: function () { return weather; },
-    weathers: function () { return WEATHERS; },
-    setWeather: function (k) {
-      var keys = (Array.isArray(k) ? k : [k]).filter(function (x) { return WMAP[x]; });
-      if (keys.length) { weather = { keys: keys, until: Date.now() + 180000 }; renderWeather(); }
-    },
-    mutate: function (k) { tryMutate(WMAP[k || weather.keys[0]]); },
-    meters: function () { return meters; },
-    give: function (n) { sheckles += n; refresh(); },
-    restock: doRestock
-  };
+  const pulse = 0.55 + 0.35 * Math.sin(performance.now() / 180);
+  const selGlow = 'rgba(255,235,140,' + pulse.toFixed(2) + ')';
+
+  // colonies
+  for (const c of colonies) {
+    if (c === selectedColony) {
+      ctx.strokeStyle = selGlow; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, 29, 18, 0, 0, TAU); ctx.stroke();
+    }
+    ctx.fillStyle = '#6b4e2e';
+    ctx.beginPath(); ctx.ellipse(c.x, c.y + 3, 24, 14, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#8a6a40';
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, 20, 11, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#0c0905';
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, 7, 4.5, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = c.tint; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, 11, 7, 0, 0, TAU); ctx.stroke();
+    ctx.fillStyle = c.tint;
+    ctx.font = '11px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🐜' + c.alive + '  🍓' + c.stored, c.x, c.y - 18);
+  }
+
+  // ants
+  for (const a of ants) {
+    const ang = a.h + a.sway;
+    const cos = Math.cos(ang), sin = Math.sin(ang);
+    ctx.setTransform(cos, sin, -sin, cos, a.x, a.y);
+    ctx.fillStyle = a.explorer ? '#f5a83c' : a.colony.tint;
+    ctx.fillRect(-3, -1.1, 6, 2.2);
+    if (a.carrying) {
+      ctx.fillStyle = '#ff5f56';
+      ctx.beginPath(); ctx.arc(3.6, 0, 2.3, 0, TAU); ctx.fill();
+    }
+    if (a.chase) {
+      ctx.strokeStyle = 'rgba(255,92,70,.8)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, TAU); ctx.stroke();
+    }
+    if (a.digging) { // soil kicked up at the working end
+      ctx.fillStyle = 'rgba(196,156,110,.9)';
+      ctx.beginPath(); ctx.arc(5.2, 0, 1.9, 0, TAU); ctx.fill();
+    }
+    if (a.colony === selectedColony) {
+      ctx.strokeStyle = selGlow; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, TAU); ctx.stroke();
+    }
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // skirmish flashes and starvation fades
+  for (const e of effects) {
+    const t = e.age / 0.5;
+    if (e.kind === 's') {
+      ctx.fillStyle = 'rgba(205,195,175,' + (0.65 * (1 - t)).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(e.x, e.y, 0.5 + 2.6 * (1 - t), 0, TAU); ctx.fill();
+      continue;
+    }
+    ctx.strokeStyle = 'rgba(255,92,70,' + (1 - t).toFixed(2) + ')';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(e.x, e.y, 3 + t * 10, 0, TAU); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,220,180,' + (0.8 * (1 - t)).toFixed(2) + ')';
+    ctx.beginPath(); ctx.arc(e.x, e.y, 1.6, 0, TAU); ctx.fill();
+  }
+}
+
+/* ---- HUD ---- */
+const stTime = document.getElementById('stTime');
+const stAnts = document.getElementById('stAnts');
+const stFood = document.getElementById('stFood');
+const hintEl = document.getElementById('hint');
+let flashTimer = 0, flashMsg = '';
+
+function flashHint(msg) { flashMsg = msg; flashTimer = performance.now() + 1800; }
+
+function updateHUD() {
+  const m = (simTime / 60) | 0, s = (simTime % 60) | 0;
+  stTime.textContent = m + ':' + String(s).padStart(2, '0');
+  stAnts.textContent = ants.length;
+  stFood.textContent = delivered;
+
+  let msg = '';
+  if (flashTimer > performance.now()) msg = flashMsg;
+  else if (selectedColony) msg = 'Highlighting the selected colony\u2019s ' + selectedColony.alive + (selectedColony.alive === 1 ? ' ant' : ' ants') + ' \u2014 click empty ground to deselect';
+  else if (colonies.length === 0) msg = '\u2460 Click anywhere to place a colony (ant hill)';
+  else if (foods.length === 0 && delivered === 0) msg = '② Pick 🍓 Food and click to drop food for the ants';
+  else if (!playing && ants.length === 0) msg = '③ Press ▶ Play — one ant will crawl out and start exploring';
+  else if (!playing) msg = 'Paused — press ▶ Play to resume';
+  else if (!tool) msg = 'Empty hands — click a colony to highlight its ants';
+  hintEl.textContent = msg;
+  hintEl.classList.toggle('hide', msg === '');
+}
+
+/* ---- main loop ---- */
+let last = performance.now(), acc = 0, hudTick = 0;
+function frame(t) {
+  const dt = Math.min(0.1, (t - last) / 1000);
+  last = t;
+  if (playing) {
+    acc += dt * speedMul;
+    let n = 0;
+    while (acc >= STEP && n < 32) { step(); acc -= STEP; n++; }
+    if (n >= 32) acc = 0;
+  }
+  render();
+  if (++hudTick % 6 === 0) updateHUD();
+  requestAnimationFrame(frame);
+}
+
+/* ---- editor input ---- */
+let dragging = false, lastFood = null;
+
+function canvasPos(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function paintCell(x, y, kind) {
+  const cx = (x / CELL) | 0, cy = (y / CELL) | 0, R = kind ? 2 : 3;
+  for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+    const nx = cx + dx, ny = cy + dy;
+    if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+    if (dx * dx + dy * dy > R * R + 1) continue;
+    const i = ny * gw + nx;
+    walls[i] = kind;
+    dirtHP[i] = kind === 2 ? 1 : 0;
+    if (kind) { foodP[i] = 0; traffic[i] = 0; }
+  }
+  fieldsDirty = true;
+  redrawWalls();
+}
+function erase(x, y) {
+  foods = foods.filter(f => Math.hypot(f.x - x, f.y - y) > f.r + 12);
+  const keptPlants = plants.filter(q => Math.hypot(q.x - x, q.y - y) > 22);
+  if (keptPlants.length !== plants.length) {
+    for (const f of foods) if (f.plant && !keptPlants.includes(f.plant)) f.plant = null;
+    plants = keptPlants;
+  }
+  const before = colonies.length;
+  colonies = colonies.filter(c => Math.hypot(c.x - x, c.y - y) > 26);
+  if (colonies.length !== before) {
+    for (const a of ants) if (!colonies.includes(a.colony)) a.dead = true;
+    ants = ants.filter(a => !a.dead);
+    for (const f of foods) if (f.owner && !colonies.includes(f.owner)) f.owner = null;
+    if (selectedColony && !colonies.includes(selectedColony)) selectedColony = null;
+  }
+  paintCell(x, y, 0);
+}
+function applyTool(p, isDown) {
+  if (!tool) {
+    if (!isDown) return;
+    let hit = null;
+    for (const c of colonies) if (Math.hypot(c.x - p.x, c.y - p.y) < 30) { hit = c; break; }
+    selectedColony = hit === selectedColony ? null : hit;
+    return;
+  }
+  if (tool === 'colony') { if (isDown) addColony(p.x, p.y); }
+  else if (tool === 'food') {
+    if (isDown || !lastFood || Math.hypot(lastFood.x - p.x, lastFood.y - p.y) > 26) {
+      addFood(p.x, p.y); lastFood = p;
+    }
+  }
+  else if (tool === 'plant') { if (isDown) addPlant(p.x, p.y); }
+  else if (tool === 'wall') paintCell(p.x, p.y, 1);
+  else if (tool === 'dirt') paintCell(p.x, p.y, 2);
+  else if (tool === 'erase') erase(p.x, p.y);
+}
+
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  dragging = true; lastFood = null;
+  applyTool(canvasPos(e), true);
+});
+cv.addEventListener('pointermove', e => { if (dragging) applyTool(canvasPos(e), false); });
+cv.addEventListener('pointerup', () => { dragging = false; });
+cv.addEventListener('pointercancel', () => { dragging = false; });
+
+/* ---- toolbar ---- */
+document.getElementById('tools').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  tool = tool === b.dataset.tool ? null : b.dataset.tool; // re-click empties your hand
+  for (const x of document.querySelectorAll('#tools .tb')) x.classList.toggle('active', x.dataset.tool === tool);
+  cv.style.cursor = tool ? 'crosshair' : 'pointer';
+});
+
+const playBtn = document.getElementById('play');
+playBtn.addEventListener('click', () => {
+  if (!playing && colonies.length === 0) { flashHint('Place a colony first!'); return; }
+  playing = !playing;
+  if (playing) for (const c of colonies) if (c.spawned === 0) spawnAnt(c); // the first ant emerges
+  playBtn.textContent = playing ? '⏸ Pause' : '▶ Play';
+  playBtn.classList.toggle('on', playing);
+});
+
+document.getElementById('reset').addEventListener('click', () => {
+  ants = []; effects = []; delivered = 0; simTime = 0; playing = false;
+  playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
+  foodP.fill(0); traffic.fill(0); foodScent.fill(0);
+  for (const c of colonies) { c.stored = 0; c.spawned = 0; c.alive = 0; c.known.fill(0); c.foodMemo = []; }
+  for (const pl of plants) pl.t = PLANT_EVERY * 0.5;
+});
+document.getElementById('clearAll').addEventListener('click', () => {
+  ants = []; colonies = []; foods = []; effects = []; plants = []; delivered = 0; simTime = 0; playing = false;
+  colonySeq = 0; selectedColony = null;
+  playBtn.textContent = '▶ Play'; playBtn.classList.remove('on');
+  foodP.fill(0); traffic.fill(0); foodScent.fill(0); walls.fill(0); dirtHP.fill(0);
+  redrawWalls();
+});
+document.getElementById('speed').addEventListener('change', e => { speedMul = +e.target.value; });
+document.getElementById('trails').addEventListener('change', e => { showTrails = e.target.checked; });
+
+/* ---- boot ---- */
+window.addEventListener('resize', resize);
+resize();
+updateHUD();
+requestAnimationFrame(frame);
 })();
 </script>
-
+</body>
 </html>
