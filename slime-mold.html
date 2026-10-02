@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slime Mold Simulator</title>
+<style>
+  :root {
+    --bg: #f1eee4;
+    --panel: #fbf9f2;
+    --border: #ddd6c2;
+    --text: #2d3a2e;
+    --muted: #77836f;
+    --accent: #c28a00;
+    --chip-on: #f5e7bf;
+    --shadow: rgba(61, 48, 32, 0.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101410;
+      --panel: #1a211a;
+      --border: #303b2e;
+      --text: #dfe9d9;
+      --muted: #93a189;
+      --accent: #f2c14b;
+      --chip-on: #3a3420;
+      --shadow: rgba(0, 0, 0, 0.5);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 16px 16px 8px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  h1 { margin: 0; font-size: 22px; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 16px;
+    padding: 8px 16px 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  @media (max-width: 820px) {
+    main { grid-template-columns: minmax(0, 1fr); }
+  }
+  .stage {
+    position: relative;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 6px 24px var(--shadow);
+    aspect-ratio: 3 / 2;
+    touch-action: none;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: crosshair;
+  }
+  .hud {
+    position: absolute;
+    left: 10px;
+    bottom: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    font: 12px ui-monospace, monospace;
+    pointer-events: none;
+    text-shadow: 0 1px 2px #000;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-self: start;
+  }
+  .panel h2 {
+    margin: 0 0 6px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  button, select {
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.on {
+    background: var(--chip-on);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  select { width: 100%; }
+  label.slider {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 8px;
+    font-size: 13px;
+  }
+  label.slider output {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  label.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+  .sliders { display: flex; flex-direction: column; gap: 8px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Slime Mold Simulator</h1>
+  <p>Thousands of <i>Physarum</i> agents sense, follow and lay chemical trails, growing networks that link food sources together.</p>
+</header>
+<main>
+  <div>
+    <div class="stage">
+      <canvas id="view"></canvas>
+      <div class="hud" id="hud"></div>
+    </div>
+  </div>
+  <aside class="panel">
+    <section>
+      <h2>Simulation</h2>
+      <div class="row">
+        <button id="playBtn">Pause</button>
+        <button id="stepBtn">Step</button>
+        <button id="resetBtn">Reset</button>
+        <button id="clearBtn">Clear food &amp; walls</button>
+      </div>
+    </section>
+    <section>
+      <h2>Start shape</h2>
+      <select id="spawnSel">
+        <option value="center">Central blob</option>
+        <option value="corner">Top-left corner</option>
+        <option value="ring">Ring facing inward</option>
+        <option value="random">Scattered everywhere</option>
+        <option value="spots">Several colonies</option>
+      </select>
+    </section>
+    <section>
+      <h2>Brush (click / drag on the dish)</h2>
+      <div class="row" id="tools">
+        <button data-tool="food" class="on">Food</button>
+        <button data-tool="wall">Wall</button>
+        <button data-tool="spawn">Spawn mold</button>
+        <button data-tool="erase">Erase</button>
+      </div>
+      <p class="hint" style="margin-top:6px">Food oats attract the mold; walls block it. Try the “Food maze” preset.</p>
+    </section>
+    <section>
+      <h2>Presets</h2>
+      <select id="presetSel">
+        <option value="network">Classic network</option>
+        <option value="foodmaze">Food maze</option>
+        <option value="cities">City map (oat cities)</option>
+        <option value="cells">Cellular</option>
+        <option value="waves">Pulsing waves</option>
+        <option value="fine">Fine veins</option>
+      </select>
+    </section>
+    <section>
+      <h2>Parameters</h2>
+      <div class="sliders" id="sliders"></div>
+    </section>
+    <section>
+      <h2>Colour</h2>
+      <select id="paletteSel">
+        <option value="physarum">Physarum yellow</option>
+        <option value="ember">Ember</option>
+        <option value="bio">Bioluminescent</option>
+        <option value="mono">Monochrome</option>
+      </select>
+    </section>
+  </aside>
+</main>
+
+<script>
+(() => {
+  // ---- Grid & state -------------------------------------------------------
+  const W = 480, H = 320, N = W * H;
+  const canvas = document.getElementById('view');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  const px = new Uint32Array(img.data.buffer);
+
+  let trail = new Float32Array(N);
+  let scratch = new Float32Array(N);
+  const food = new Float32Array(N);   // attractant source strength
+  const wall = new Uint8Array(N);     // 1 = blocked
+
+  const MAX_AGENTS = 120000;
+  const ax = new Float32Array(MAX_AGENTS);
+  const ay = new Float32Array(MAX_AGENTS);
+  const ah = new Float32Array(MAX_AGENTS);
+  let agentCount = 0;
+
+  const params = {
+    agents: 50000,
+    sensorAngle: 22.5,   // degrees
+    sensorDist: 9,
+    turnAngle: 45,       // degrees
+    speed: 1,
+    deposit: 5,
+    decay: 0.1,
+    diffuse: 0.5,
+    foodStrength: 6,
+    stepsPerFrame: 1,
+  };
+
+  const sliderDefs = [
+    ['agents', 'Agents', 2000, MAX_AGENTS, 1000, v => (v / 1000).toFixed(0) + 'k'],
+    ['sensorAngle', 'Sensor angle', 5, 90, 0.5, v => v.toFixed(1) + '°'],
+    ['sensorDist', 'Sensor distance', 1, 40, 0.5, v => v.toFixed(1)],
+    ['turnAngle', 'Turn angle', 5, 90, 0.5, v => v.toFixed(1) + '°'],
+    ['speed', 'Speed', 0.2, 3, 0.1, v => v.toFixed(1)],
+    ['deposit', 'Trail deposit', 0.5, 20, 0.5, v => v.toFixed(1)],
+    ['decay', 'Trail decay', 0.01, 0.4, 0.01, v => v.toFixed(2)],
+    ['diffuse', 'Diffusion', 0, 1, 0.05, v => v.toFixed(2)],
+    ['foodStrength', 'Food scent', 0, 20, 0.5, v => v.toFixed(1)],
+    ['stepsPerFrame', 'Steps / frame', 1, 4, 1, v => v.toFixed(0)],
+  ];
+
+  const presets = {
+    network:  { sensorAngle: 22.5, sensorDist: 9,  turnAngle: 45, speed: 1,   deposit: 5,  decay: 0.1,  diffuse: 0.5, agents: 50000, spawn: 'center' },
+    foodmaze: { sensorAngle: 30,   sensorDist: 12, turnAngle: 40, speed: 1.2, deposit: 4,  decay: 0.12, diffuse: 0.6, agents: 30000, spawn: 'corner', layout: 'maze' },
+    cities:   { sensorAngle: 25,   sensorDist: 14, turnAngle: 35, speed: 1,   deposit: 3,  decay: 0.15, diffuse: 0.5, agents: 40000, spawn: 'random', layout: 'cities' },
+    cells:    { sensorAngle: 45,   sensorDist: 20, turnAngle: 20, speed: 1.4, deposit: 6,  decay: 0.08, diffuse: 0.7, agents: 70000, spawn: 'random' },
+    waves:    { sensorAngle: 60,   sensorDist: 30, turnAngle: 75, speed: 2,   deposit: 8,  decay: 0.05, diffuse: 0.3, agents: 80000, spawn: 'ring' },
+    fine:     { sensorAngle: 12,   sensorDist: 6,  turnAngle: 25, speed: 0.8, deposit: 3,  decay: 0.2,  diffuse: 0.2, agents: 90000, spawn: 'spots' },
+  };
+
+  // ---- Agents -------------------------------------------------------------
+  const TAU = Math.PI * 2;
+  const rand = Math.random;
+
+  function placeAgent(i, mode, cx, cy) {
+    let x, y, h;
+    for (let tries = 0; tries < 20; tries++) {
+      if (mode === 'ring') {
+        const a = rand() * TAU, r = Math.min(W, H) * (0.4 + rand() * 0.04);
+        x = W / 2 + Math.cos(a) * r; y = H / 2 + Math.sin(a) * r; h = a + Math.PI;
+      } else if (mode === 'random') {
+        x = rand() * W; y = rand() * H; h = rand() * TAU;
+      } else { // blob around (cx, cy)
+        const a = rand() * TAU, r = Math.sqrt(rand()) * (mode === 'brush' ? 6 : 18);
+        x = cx + Math.cos(a) * r; y = cy + Math.sin(a) * r; h = a;
+      }
+      x = Math.min(W - 0.01, Math.max(0, x));
+      y = Math.min(H - 0.01, Math.max(0, y));
+      if (!wall[(y | 0) * W + (x | 0)]) break;
+    }
+    ax[i] = x; ay[i] = y; ah[i] = h;
+  }
+
+  function spawnAll(mode) {
+    agentCount = params.agents;
+    const spots = [];
+    if (mode === 'spots') for (let k = 0; k < 5; k++) spots.push([W * (0.15 + rand() * 0.7), H * (0.15 + rand() * 0.7)]);
+    for (let i = 0; i < agentCount; i++) {
+      if (mode === 'spots') { const s = spots[i % spots.length]; placeAgent(i, 'blob', s[0], s[1]); }
+      else if (mode === 'corner') placeAgent(i, 'blob', 50, 50);
+      else placeAgent(i, mode, W / 2, H / 2);
+    }
+  }
+
+  function resizeAgents(n) {
+    // Grow by cloning random existing agents (or the centre), shrink by truncation.
+    for (let i = agentCount; i < n; i++) {
+      if (agentCount > 0) {
+        const j = (rand() * agentCount) | 0;
+        ax[i] = ax[j]; ay[i] = ay[j]; ah[i] = rand() * TAU;
+      } else placeAgent(i, 'blob', W / 2, H / 2);
+    }
+    agentCount = n;
+  }
+
+  // ---- Simulation step ----------------------------------------------------
+  function sense(x, y, h) {
+    let sx = (x + Math.cos(h) * params.sensorDist) | 0;
+    let sy = (y + Math.sin(h) * params.sensorDist) | 0;
+    if (sx < 0 || sx >= W || sy < 0 || sy >= H) return -1;
+    const k = sy * W + sx;
+    return wall[k] ? -1 : trail[k];
+  }
+
+  function step() {
+    const sa = params.sensorAngle * Math.PI / 180;
+    const ta = params.turnAngle * Math.PI / 180;
+    const sp = params.speed, dep = params.deposit;
+
+    // Food continuously emits attractant
+    const fs = params.foodStrength;
+    if (fs > 0) for (let k = 0; k < N; k++) if (food[k]) trail[k] += food[k] * fs;
+
+    for (let i = 0; i < agentCount; i++) {
+      let x = ax[i], y = ay[i], h = ah[i];
+      const f = sense(x, y, h);
+      const l = sense(x, y, h - sa);
+      const r = sense(x, y, h + sa);
+
+      if (f > l && f > r) {
+        // keep heading
+      } else if (f < l && f < r) {
+        h += (rand() < 0.5 ? -1 : 1) * ta;
+      } else if (l > r) {
+        h -= ta;
+      } else if (r > l) {
+        h += ta;
+      }
+      h += (rand() - 0.5) * 0.1; // a little jitter
+
+      let nx = x + Math.cos(h) * sp;
+      let ny = y + Math.sin(h) * sp;
+      if (nx < 0 || nx >= W || ny < 0 || ny >= H || wall[(ny | 0) * W + (nx | 0)]) {
+        // Bounce: pick a new random heading and stay put this step.
+        h = rand() * TAU;
+        nx = x; ny = y;
+      } else {
+        trail[(ny | 0) * W + (nx | 0)] += dep;
+      }
+      ax[i] = nx; ay[i] = ny; ah[i] = h;
+    }
+
+    // Diffuse (3x3 mean, blended) then decay
+    const d = params.diffuse, keep = 1 - params.decay;
+    for (let y = 0; y < H; y++) {
+      const y0 = y > 0 ? y - 1 : y, y1 = y < H - 1 ? y + 1 : y;
+      for (let x = 0; x < W; x++) {
+        const k = y * W + x;
+        if (wall[k]) { scratch[k] = 0; continue; }
+        const x0 = x > 0 ? x - 1 : x, x1 = x < W - 1 ? x + 1 : x;
+        const r0 = y0 * W, r1 = y * W, r2 = y1 * W;
+        const mean = (trail[r0 + x0] + trail[r0 + x] + trail[r0 + x1] +
+                      trail[r1 + x0] + trail[k]      + trail[r1 + x1] +
+                      trail[r2 + x0] + trail[r2 + x] + trail[r2 + x1]) / 9;
+        let v = (trail[k] * (1 - d) + mean * d) * keep;
+        scratch[k] = v > 200 ? 200 : v;
+      }
+    }
+    const t = trail; trail = scratch; scratch = t;
+  }
+
+  // ---- Rendering ----------------------------------------------------------
+  const palettes = {
+    physarum: [[0, 0, 0, 0], [0.25, 60, 30, 0], [0.55, 220, 160, 10], [0.8, 255, 225, 70], [1, 255, 255, 220]],
+    ember:    [[0, 5, 0, 5], [0.3, 120, 10, 20], [0.6, 240, 90, 10], [0.85, 255, 200, 60], [1, 255, 255, 230]],
+    bio:      [[0, 0, 5, 15], [0.3, 0, 50, 90], [0.6, 0, 170, 190], [0.85, 120, 255, 220], [1, 240, 255, 255]],
+    mono:     [[0, 0, 0, 0], [1, 255, 255, 255]],
+  };
+  let lut = new Uint32Array(256);
+  function buildLut(name) {
+    const stops = palettes[name];
+    for (let i = 0; i < 256; i++) {
+      const t = i / 255;
+      let s = 0;
+      while (s < stops.length - 2 && t > stops[s + 1][0]) s++;
+      const a = stops[s], b = stops[s + 1];
+      const u = (t - a[0]) / (b[0] - a[0] || 1);
+      const r = a[1] + (b[1] - a[1]) * u, g = a[2] + (b[2] - a[2]) * u, bl = a[3] + (b[3] - a[3]) * u;
+      lut[i] = (255 << 24) | (bl << 16) | (g << 8) | r;
+    }
+  }
+  const WALL_PX = (255 << 24) | (70 << 16) | (62 << 8) | 58;   // grey-blue
+  const FOOD_PX = (255 << 24) | (150 << 16) | (215 << 8) | 245; // oat beige
+
+  function render() {
+    for (let k = 0; k < N; k++) {
+      if (wall[k]) { px[k] = WALL_PX; continue; }
+      if (food[k]) { px[k] = FOOD_PX; continue; }
+      // Soft tone-mapping so dense veins don't saturate instantly
+      const v = trail[k];
+      const t = v / (v + 12);
+      px[k] = lut[(t * 255) | 0];
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // ---- Layouts ------------------------------------------------------------
+  function dot(arr, cx, cy, r, val) {
+    for (let y = Math.max(0, (cy - r) | 0); y <= Math.min(H - 1, cy + r); y++)
+      for (let x = Math.max(0, (cx - r) | 0); x <= Math.min(W - 1, cx + r); x++)
+        if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) arr[y * W + x] = val;
+  }
+  function rect(arr, x0, y0, x1, y1, val) {
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) arr[y * W + x] = val;
+  }
+
+  function applyLayout(name) {
+    food.fill(0); wall.fill(0);
+    if (name === 'maze') {
+      const t = 6;
+      rect(wall, 0, 0, W, t, 1); rect(wall, 0, H - t, W, H, 1);
+      rect(wall, 0, 0, t, H, 1); rect(wall, W - t, 0, W, H, 1);
+      // Serpentine corridors: the mold must snake down, up, down to reach the far oat
+      rect(wall, 120, 0, 120 + t, 240, 1);
+      rect(wall, 240, 80, 240 + t, H, 1);
+      rect(wall, 360, 0, 360 + t, 240, 1);
+      dot(food, 50, 50, 5, 1);
+      dot(food, 180, 280, 4, 1);
+      dot(food, 300, 40, 4, 1);
+      dot(food, 430, 280, 5, 1);
+    } else if (name === 'cities') {
+      // Rough "metro" of food sources with a dense core and a ring of suburbs
+      const pts = [[240, 160], [180, 120], [300, 120], [170, 210], [310, 215], [240, 70], [240, 260],
+                   [90, 80], [400, 70], [70, 250], [420, 250], [120, 165], [370, 160]];
+      pts.forEach(([x, y], i) => dot(food, x, y, i === 0 ? 7 : 4, 1));
+    }
+  }
+
+  // ---- UI wiring ----------------------------------------------------------
+  const sliderEls = {};
+  const slidersBox = document.getElementById('sliders');
+  for (const [key, label, min, max, stepv, fmt] of sliderDefs) {
+    const el = document.createElement('label');
+    el.className = 'slider';
+    el.innerHTML = `<span>${label}</span><output></output><input type="range" min="${min}" max="${max}" step="${stepv}">`;
+    const input = el.querySelector('input'), out = el.querySelector('output');
+    input.value = params[key]; out.textContent = fmt(params[key]);
+    input.addEventListener('input', () => {
+      params[key] = parseFloat(input.value);
+      out.textContent = fmt(params[key]);
+      if (key === 'agents') resizeAgents(params.agents);
+    });
+    sliderEls[key] = { input, out, fmt };
+    slidersBox.appendChild(el);
+  }
+  function syncSliders() {
+    for (const key in sliderEls) {
+      const s = sliderEls[key];
+      s.input.value = params[key]; s.out.textContent = s.fmt(params[key]);
+    }
+  }
+
+  let running = true;
+  const playBtn = document.getElementById('playBtn');
+  playBtn.onclick = () => { running = !running; playBtn.textContent = running ? 'Pause' : 'Play'; };
+  document.getElementById('stepBtn').onclick = () => { step(); render(); };
+
+  const spawnSel = document.getElementById('spawnSel');
+  function reset() { trail.fill(0); scratch.fill(0); spawnAll(spawnSel.value); frame = 0; }
+  document.getElementById('resetBtn').onclick = reset;
+  spawnSel.onchange = reset;
+  document.getElementById('clearBtn').onclick = () => { food.fill(0); wall.fill(0); };
+
+  const presetSel = document.getElementById('presetSel');
+  function loadPreset(name) {
+    const p = presets[name];
+    for (const k in p) if (k in params) params[k] = p[k];
+    spawnSel.value = p.spawn;
+    applyLayout(p.layout);
+    syncSliders();
+    reset();
+  }
+  presetSel.onchange = () => loadPreset(presetSel.value);
+
+  const paletteSel = document.getElementById('paletteSel');
+  paletteSel.onchange = () => buildLut(paletteSel.value);
+
+  let tool = 'food';
+  document.getElementById('tools').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    tool = b.dataset.tool;
+    for (const x of e.currentTarget.children) x.classList.toggle('on', x === b);
+  });
+
+  // Painting on the dish
+  let painting = false, last = null;
+  function toGrid(e) {
+    const r = canvas.getBoundingClientRect();
+    return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H];
+  }
+  function paintAt(x, y) {
+    if (tool === 'food') dot(food, x, y, 4, 1);
+    else if (tool === 'wall') { dot(wall, x, y, 3, 1); dot(food, x, y, 3, 0); }
+    else if (tool === 'erase') { dot(wall, x, y, 8, 0); dot(food, x, y, 8, 0); }
+    else if (tool === 'spawn') {
+      // Recycle the oldest-indexed agents into the brush so total count stays fixed
+      const n = Math.min(400, agentCount);
+      for (let j = 0; j < n; j++) placeAgent((spawnCursor + j) % agentCount, 'brush', x, y);
+      spawnCursor = (spawnCursor + n) % Math.max(1, agentCount);
+    }
+  }
+  let spawnCursor = 0;
+  function strokeTo(p) {
+    if (!last) { paintAt(p[0], p[1]); last = p; return; }
+    const dx = p[0] - last[0], dy = p[1] - last[1];
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 2));
+    for (let s = 1; s <= steps; s++) paintAt(last[0] + dx * s / steps, last[1] + dy * s / steps);
+    last = p;
+  }
+  canvas.addEventListener('pointerdown', e => {
+    painting = true; last = null; canvas.setPointerCapture(e.pointerId);
+    strokeTo(toGrid(e));
+    if (!running) render();
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!painting) return;
+    strokeTo(toGrid(e));
+    if (!running) render();
+  });
+  const endPaint = () => { painting = false; last = null; };
+  canvas.addEventListener('pointerup', endPaint);
+  canvas.addEventListener('pointercancel', endPaint);
+
+  // ---- Main loop ----------------------------------------------------------
+  const hud = document.getElementById('hud');
+  let frame = 0, fpsT = performance.now(), fpsN = 0, fps = 0;
+  function loop(now) {
+    if (running) {
+      for (let s = 0; s < params.stepsPerFrame; s++) { step(); frame++; }
+      render();
+    }
+    fpsN++;
+    if (now - fpsT > 500) { fps = fpsN * 1000 / (now - fpsT); fpsN = 0; fpsT = now; }
+    hud.textContent = `${agentCount.toLocaleString()} agents · step ${frame} · ${fps.toFixed(0)} fps`;
+    requestAnimationFrame(loop);
+  }
+
+  buildLut('physarum');
+  loadPreset('network');
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
