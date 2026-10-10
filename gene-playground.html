@@ -291,6 +291,7 @@
     <div class="stats" id="stats"></div>
     <div class="legend">
       <div><b>Strangers</b> = cells of a different creature · <b>Family</b> = cells of the same creature · <b>Any cell</b> = either.</div>
+      <div><b>Oscillating</b> picks who it's aimed at: e.g. <i>defend strangers</i> only blocks strangers, <i>diving family</i> hides only from family, <i>infecting family</i> spreads its color.</div>
       <div>Genes fire when a cell gets close to a matching cell, then can fire again every 2.5 s while it stays close.</div>
     </div>
   </section>
@@ -317,6 +318,13 @@
     ['diving', 'diving'],
     ['infecting', 'infecting'],
   ];
+  const OSC_WHO_HINT = {
+    run: 'Who to run away from',
+    attack: 'Who to attack',
+    defend: 'Who to shield against',
+    diving: 'Who to hide from',
+    infecting: 'Who to infect (family catches its color)',
+  };
   const DUP_MODES = [['2', 'into 2'], ['3', 'into 3'], ['4', 'into 4'], ['custom', 'type how many…']];
   const COLOR_MODES = [
     ['red', 'red'], ['yellow', 'yellow'], ['green', 'green'], ['blue', 'blue'],
@@ -325,6 +333,7 @@
   const MAX_CELLS = 400;
   const GENE_COOLDOWN = 2.5;
   const SENSE_GAP = 34;           // edge-to-edge distance that counts as "near"
+  const TARGET_RANGE = 220;      // how far an oscillation looks for its target
   const ACT_TIME = { run: 2.5, stop: 2.5, attack: 4, defend: 4, diving: 3, infecting: 4 };
   const STORE_KEY = 'genePlayground.v1';
 
@@ -371,7 +380,7 @@
   // ================= block factories =================
   function makeBlock(type) {
     switch (type) {
-      case 'osc': return { type: 'osc', mode: 'run' };
+      case 'osc': return { type: 'osc', mode: 'run', who: 'strangers' };
       case 'die': return { type: 'die' };
       case 'dup': return { type: 'dup', mode: '2', n: 5 };
       case 'color': return { type: 'color', mode: 'red', panel: '#ff66cc', hue: 200, hex: '#ff8800' };
@@ -387,32 +396,34 @@
       {
         id: uid(), name: 'Blobby', color: '#4ade80', size: 16, wobble: 0.5, lumps: 5,
         scripts: [
-          makeScript('strangers', [{ type: 'osc', mode: 'attack' }]),
+          makeScript('strangers', [{ type: 'osc', mode: 'attack', who: 'strangers' }]),
           makeScript('family', [{ ...makeBlock('color'), mode: 'yellow' }]),
         ],
       },
       {
         id: uid(), name: 'Goo', color: '#a78bfa', size: 13, wobble: 0.8, lumps: 3,
         scripts: [
-          makeScript('strangers', [{ type: 'osc', mode: 'infecting' }]),
-          makeScript('family', [{ type: 'osc', mode: 'diving' }]),
+          makeScript('strangers', [{ type: 'osc', mode: 'infecting', who: 'strangers' }]),
+          makeScript('family', [{ type: 'osc', mode: 'diving', who: 'strangers' }]),
         ],
       },
       {
         id: uid(), name: 'Sprout', color: '#38bdf8', size: 11, wobble: 0.3, lumps: 7,
         scripts: [
-          makeScript('any', [{ ...makeBlock('dup'), mode: '2' }, { type: 'osc', mode: 'run' }]),
-          makeScript('strangers', [{ type: 'osc', mode: 'defend' }]),
+          makeScript('any', [{ ...makeBlock('dup'), mode: '2' }, { type: 'osc', mode: 'run', who: 'any' }]),
+          makeScript('strangers', [{ type: 'osc', mode: 'defend', who: 'strangers' }]),
         ],
       },
     ];
   }
 
-  function sanitizeAction(a) {
+  function sanitizeAction(a, trigger) {
     if (!a || typeof a !== 'object') return null;
     const base = makeBlock(a.type);
     if (!base) return null;
-    return { ...base, ...a };
+    const out = { ...base, ...a };
+    if (out.type === 'osc' && !TRIGGERS.some(t => t[0] === a.who)) out.who = trigger;
+    return out;
   }
   function loadState() {
     try {
@@ -427,11 +438,14 @@
         sp.size = clamp(+sp.size || 16, 8, 30);
         sp.wobble = clamp(+sp.wobble || 0, 0, 1);
         sp.lumps = clamp(+sp.lumps || 4, 2, 9);
-        sp.scripts = (Array.isArray(sp.scripts) ? sp.scripts : []).map(s => ({
-          id: s.id || uid(),
-          trigger: TRIGGERS.some(t => t[0] === s.trigger) ? s.trigger : 'any',
-          actions: (Array.isArray(s.actions) ? s.actions : []).map(sanitizeAction).filter(Boolean),
-        }));
+        sp.scripts = (Array.isArray(sp.scripts) ? sp.scripts : []).map(s => {
+          const trigger = TRIGGERS.some(t => t[0] === s.trigger) ? s.trigger : 'any';
+          return {
+            id: s.id || uid(),
+            trigger,
+            actions: (Array.isArray(s.actions) ? s.actions : []).map(a => sanitizeAction(a, trigger)).filter(Boolean),
+          };
+        });
       });
       return data;
     } catch (e) { return null; }
@@ -492,7 +506,12 @@
       }
     } else if (data.type === 'osc') {
       el.className = 'blk osc';
-      el.append(txt('do oscillating'), mkSelect(OSC_MODES, data.mode, v => { data.mode = v; changed(); }));
+      el.append(txt('do oscillating'), mkSelect(OSC_MODES, data.mode, v => { data.mode = v; changed(); rerender(); }));
+      if (data.mode !== 'stop') {
+        const who = mkSelect(TRIGGERS, data.who || 'strangers', v => { data.who = v; changed(); });
+        who.title = OSC_WHO_HINT[data.mode] || '';
+        el.append(who);
+      }
     } else if (data.type === 'die') {
       el.className = 'blk die cap';
       el.append(txt('do dying ☠'));
@@ -908,11 +927,25 @@
     return base * (1 - c.born * 0.8);
   }
 
+  const isKind = (self, other, who) => who === 'any' || ((who === 'family') === (other.sp === self.sp));
+  // a diving cell is invisible to the cells it is hiding from
+  const hiddenFrom = (c, viewer) => c.act === 'diving' && isKind(c, viewer, c.actWho);
+  function nearestOf(c, who, range) {
+    let best = null, bd = Infinity;
+    for (const o of cells) {
+      if (o === c || o.dead || hiddenFrom(o, c) || !isKind(c, o, who)) continue;
+      const d = Math.hypot(o.x - c.x, o.y - c.y) - (o.r || 0);
+      if (d < bd && d < range) { bd = d; best = o; }
+    }
+    return best;
+  }
   function runGene(c, sp, script, target) {
     for (const a of script.actions) {
       if (c.dead) return;
       if (a.type === 'osc') {
-        c.act = a.mode; c.actT = ACT_TIME[a.mode] || 3; c.target = target;
+        const who = a.who || 'any';
+        c.act = a.mode; c.actT = ACT_TIME[a.mode] || 3; c.actWho = who;
+        c.target = target && isKind(c, target, who) ? target : nearestOf(c, who, TARGET_RANGE);
         if (a.mode === 'stop') { c.vx *= 0.1; c.vy *= 0.1; }
       } else if (a.type === 'die') {
         kill(c);
@@ -947,27 +980,29 @@
     }
     for (let i = 0; i < n; i++) {
       const a = cells[i];
-      if (a.dead || a.act === 'diving') continue;
+      if (a.dead) continue;
       for (let j = i + 1; j < n; j++) {
         const b = cells[j];
-        if (b.dead || b.act === 'diving') continue;
+        if (b.dead) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
         const lim = a.r + b.r + SENSE_GAP;
         if (dx > lim || dx < -lim || dy > lim || dy < -lim) continue;
         const d = Math.hypot(dx, dy);
         if (d > lim) continue;
         const gap = d - a.r - b.r;
-        if (gap < a.dA) { a.dA = gap; a.nA = b; }
-        if (gap < b.dA) { b.dA = gap; b.nA = a; }
-        if (a.sp === b.sp) {
-          if (gap < a.dF) { a.dF = gap; a.nF = b; }
-          if (gap < b.dF) { b.dF = gap; b.nF = a; }
-        } else {
-          if (gap < a.dS) { a.dS = gap; a.nS = b; }
-          if (gap < b.dS) { b.dS = gap; b.nS = a; }
+        const fam = a.sp === b.sp;
+        if (!hiddenFrom(b, a)) {
+          if (gap < a.dA) { a.dA = gap; a.nA = b; }
+          if (fam) { if (gap < a.dF) { a.dF = gap; a.nF = b; } }
+          else if (gap < a.dS) { a.dS = gap; a.nS = b; }
         }
-        // soft collision
-        if (gap < 0 && d > 0.001) {
+        if (!hiddenFrom(a, b)) {
+          if (gap < b.dA) { b.dA = gap; b.nA = a; }
+          if (fam) { if (gap < b.dF) { b.dF = gap; b.nF = a; } }
+          else if (gap < b.dS) { b.dS = gap; b.nS = a; }
+        }
+        // soft collision (divers slip under everyone)
+        if (gap < 0 && d > 0.001 && a.act !== 'diving' && b.act !== 'diving') {
           const push = (-gap) * 0.5 / d;
           a.x -= dx * push; a.y -= dy * push;
           b.x += dx * push; b.y += dy * push;
@@ -1015,18 +1050,23 @@
       } else if (c.act === 'stop') {
         tvx = 0; tvy = 0; steer = 8;
       } else if (c.act === 'attack' || c.act === 'infecting') {
-        if (t && t.act !== 'diving') {
+        if (t && !hiddenFrom(t, c)) {
           const dx = t.x - c.x, dy = t.y - c.y, d = Math.hypot(dx, dy) || 1;
           const sp = c.act === 'attack' ? 115 : 95;
           tvx = dx / d * sp; tvy = dy / d * sp; steer = 4;
           c.heading = Math.atan2(dy, dx);
           if (d < c.r + t.r + 2) {
             if (c.act === 'attack') {
-              const dmg = (t.act === 'defend' ? 8 : 60) * dt;
+              const shielded = t.act === 'defend' && isKind(t, c, t.actWho);
+              const dmg = (shielded ? 8 : 60) * dt;
               t.hp -= dmg;
               if (Math.random() < dt * 12) puff(t.x, t.y, '#ff5a5a', 1, 60);
               if (t.hp <= 0) kill(t);
-            } else if (t.act !== 'defend' && t.sp !== c.sp) {
+            } else if (t.sp === c.sp) {
+              // infecting family spreads this cell's color to them
+              if (t.color !== c.color) { t.color = c.color; t.flash = 0.4; puff(t.x, t.y, '#7dff9a', 6, 50); }
+              c.act = null; c.target = null;
+            } else if (!(t.act === 'defend' && isKind(t, c, t.actWho))) {
               const sp2 = speciesById(c.sp);
               t.sp = c.sp; t.color = c.color; t.act = null; t.target = null; t.hp = 100;
               t.cool = {};
