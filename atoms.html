@@ -236,6 +236,42 @@
       100% { transform: scale(1); }
     }
   }
+  .readout-part { display: grid; gap: 22px; }
+  .anim { display: grid; gap: 10px; }
+  .anim-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px 12px;
+    flex-wrap: wrap;
+  }
+  .anim-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .chip:hover:not(:disabled) { border-color: var(--muted); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .chip:disabled { color: var(--muted); opacity: 0.6; cursor: not-allowed; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--panel-2)); }
+  #chamber {
+    display: block;
+    width: 100%;
+    height: 340px;
+    border-radius: 8px;
+    background:
+      radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+      var(--panel-2);
+    border: 1px solid var(--border);
+  }
+  .anim-caption { margin: 0; font-size: 0.88rem; min-height: 2.6em; }
   .bars { display: grid; gap: 18px; }
   .bar { display: grid; gap: 6px; }
   .bar-head {
@@ -349,7 +385,23 @@
     <div id="grid" class="grid" role="list"></div>
   </section>
 
-  <section id="readout" class="readout" aria-live="polite"></section>
+  <section id="readout" class="readout">
+    <div id="readout-head" class="readout-part" aria-live="polite"></div>
+    <div class="anim">
+      <div class="anim-head">
+        <span class="bar-label">Inside the atom</span>
+        <div class="anim-controls">
+          <button id="radiate" class="chip" aria-pressed="true">Radiation: on</button>
+          <button id="split" class="chip">Split the nucleus</button>
+          <button id="reset" class="chip" disabled>Put it back together</button>
+        </div>
+      </div>
+      <canvas id="chamber" aria-label="Animation of the atom's nucleus and electrons"></canvas>
+      <p id="anim-caption" class="anim-caption" aria-live="polite"></p>
+      <div class="legend"><span><i style="background:var(--proton)"></i>Proton</span><span><i style="background:var(--neutron)"></i>Neutron</span><span><i style="background:var(--electron)"></i>Electron</span><span><i style="background:var(--accent)"></i>Gamma ray (energy)</span></div>
+    </div>
+    <div id="readout-bars" class="readout-part"></div>
+  </section>
 </div>
 
 <script>
@@ -534,6 +586,8 @@ function barBlock({ label, value, extra = "", body, foot = "" }) {
 const grid = document.getElementById("grid");
 const search = document.getElementById("search");
 const readout = document.getElementById("readout");
+const readoutHead = document.getElementById("readout-head");
+const readoutBars = document.getElementById("readout-bars");
 let current = "U-236";
 let lastDecay = null; // { from, to, mode } after pressing the button
 
@@ -627,7 +681,7 @@ function renderReadout() {
       : `${chainText}. It stops at ${end.name}-${end.a}, which is stable. Tap any atom in the chain to view it. α = alpha decay (loses 2 protons and 2 neutrons), β = beta decay (a neutron turns into a proton).`,
   });
 
-  readout.innerHTML = `
+  readoutHead.innerHTML = `
     <div class="ident">
       <div class="badge"><span class="z">${iso.z}</span><span class="s">${iso.sym}</span></div>
       <div class="ident-text">
@@ -639,7 +693,8 @@ function renderReadout() {
     <div class="decay">
       <button id="iterate" class="iterate" ${iso.hl == null ? "disabled" : ""}>One more iteration</button>
       <span class="decay-msg">${decayMessage(iso)}</span>
-    </div>
+    </div>`;
+  readoutBars.innerHTML = `
     <div class="bars">
       ${particles}
       <div class="legend"><span><i style="background:var(--proton)"></i>Protons</span><span><i style="background:var(--neutron)"></i>Neutrons</span><span><i style="background:var(--electron)"></i>Electrons</span><span>Each line on a bar marks 1 particle.</span></div>
@@ -664,13 +719,18 @@ function decayMessage(iso) {
 
 function iterate() {
   const iso = ISOTOPES[current];
-  if (iso.hl == null) return;
-  lastDecay = { from: iso.id, to: iso.daughter, mode: iso.mode };
-  select(iso.daughter, true);
-  readout.classList.remove("flash");
-  void readout.offsetWidth;
-  readout.classList.add("flash");
-  document.getElementById("iterate").focus();
+  if (iso.hl == null || Anim.busy) return;
+  const finish = () => {
+    lastDecay = { from: iso.id, to: iso.daughter, mode: iso.mode };
+    select(iso.daughter, true);
+    readout.classList.remove("flash");
+    void readout.offsetWidth;
+    readout.classList.add("flash");
+    document.getElementById("iterate").focus();
+  };
+  // Play the decay in the animation panel first, then switch to the new atom.
+  if (Anim.decay(finish)) document.getElementById("iterate").disabled = true;
+  else finish();
 }
 
 function select(id, fromDecay = false) {
@@ -679,6 +739,7 @@ function select(id, fromDecay = false) {
   current = id;
   renderGrid();
   renderReadout();
+  Anim.setIsotope(ISOTOPES[id]);
   try { history.replaceState(null, "", "#" + id); } catch (e) {}
   const tile = grid.querySelector(`[data-id="${id}"]`);
   if (tile) tile.scrollIntoView({ block: "nearest" });
@@ -700,6 +761,350 @@ search.addEventListener("keydown", e => {
     if (first) select(first.dataset.id);
   }
 });
+
+// ---------- Animation panel ----------
+// Draws the nucleus (protons + neutrons), the electron shells, and what comes out when it decays or splits.
+const SYMBOLS = ("H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr " +
+  "Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W " +
+  "Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf").split(" ");
+const NAMES = ("Hydrogen Helium Lithium Beryllium Boron Carbon Nitrogen Oxygen Fluorine Neon Sodium Magnesium Aluminium " +
+  "Silicon Phosphorus Sulfur Chlorine Argon Potassium Calcium Scandium Titanium Vanadium Chromium Manganese Iron Cobalt " +
+  "Nickel Copper Zinc Gallium Germanium Arsenic Selenium Bromine Krypton Rubidium Strontium Yttrium Zirconium Niobium " +
+  "Molybdenum Technetium Ruthenium Rhodium Palladium Silver Cadmium Indium Tin Antimony Tellurium Iodine Xenon Caesium " +
+  "Barium Lanthanum Cerium Praseodymium Neodymium Promethium Samarium Europium Gadolinium Terbium Dysprosium Holmium " +
+  "Erbium Thulium Ytterbium Lutetium Hafnium Tantalum Tungsten Rhenium Osmium Iridium Platinum Gold Mercury Thallium " +
+  "Lead Bismuth Polonium Astatine Radon Francium Radium Actinium Thorium Protactinium Uranium Neptunium Plutonium " +
+  "Americium Curium Berkelium Californium").split(" ");
+
+// Electrons per shell, filled in the usual order (1s 2s 2p 3s 3p 4s 3d ...).
+function shellsFor(z) {
+  const order = [[1,0],[2,0],[2,1],[3,0],[3,1],[4,0],[3,2],[4,1],[5,0],[4,2],[5,1],[6,0],[4,3],[5,2],[6,1],[7,0],[5,3],[6,2],[7,1]];
+  const shells = [];
+  let left = z;
+  for (const [n, l] of order) {
+    if (left <= 0) break;
+    const c = Math.min(left, 2 * (2 * l + 1));
+    shells[n - 1] = (shells[n - 1] || 0) + c;
+    left -= c;
+  }
+  return shells.map(x => x || 0);
+}
+
+const Anim = (() => {
+  const canvas = document.getElementById("chamber");
+  const ctx = canvas.getContext("2d");
+  const caption = document.getElementById("anim-caption");
+  const radBtn = document.getElementById("radiate");
+  const splitBtn = document.getElementById("split");
+  const resetBtn = document.getElementById("reset");
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  let W = 0, H = 0, dpr = 1, scale = 1;
+  let col = {};
+  let iso = null;
+  let nucleons = [];   // { kind: "p" | "n", lx, ly, x, y, g, ph, glow }
+  let groups = [];     // nucleus centres: { cx, cy, tx, ty, label, sx, sy }
+  let particles = [];  // flying things: alpha clusters, electrons, neutrons, sparks
+  let rays = [];       // gamma rays
+  let timers = [];
+  let clock = 0, last = 0, nextEmit = 0, flash = 0, eFade = 1;
+  let radiating = !reduce, busy = false, split = false;
+  let ball = 0.03;
+
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ["proton", "neutron", "electron", "accent", "text", "muted", "border", "panel-2"]) col[k] = cs.getPropertyValue("--" + k).trim();
+  }
+  readColors();
+  setInterval(readColors, 1000);
+
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    W = r.width; H = r.height; dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    scale = Math.min(W, H) / 2 * 0.96;
+  }
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  const nucR = a => Math.max(0.42 * Math.sqrt(a / 240), 0.07);
+  const ballFor = a => Math.min(nucR(a) * 0.92 / Math.sqrt(a), 0.065);
+
+  // Sunflower packing: spreads n balls evenly over a disc.
+  function layoutGroup(g) {
+    const members = nucleons.filter(n => n.g === g);
+    members.sort((a, b) => (a.lx * a.lx + a.ly * a.ly) - (b.lx * b.lx + b.ly * b.ly));
+    const R = ball * Math.sqrt(members.length) / 0.92;
+    members.forEach((n, i) => {
+      const rr = R * Math.sqrt((i + 0.5) / members.length);
+      const a = i * 2.39996;
+      n.lx = rr * Math.cos(a); n.ly = rr * Math.sin(a);
+    });
+  }
+
+  function build(newIso) {
+    iso = newIso;
+    timers = []; particles = []; rays = []; busy = false; split = false; eFade = 1; flash = 0;
+    ball = ballFor(iso.a);
+    const kinds = [...Array(iso.z).fill("p"), ...Array(iso.n).fill("n")];
+    for (let i = kinds.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [kinds[i], kinds[j]] = [kinds[j], kinds[i]]; }
+    nucleons = kinds.map(k => ({ kind: k, lx: 0, ly: 0, x: 0, y: 0, g: 0, ph: Math.random() * 6.28, glow: 0 }));
+    groups = [{ cx: 0, cy: 0, tx: 0, ty: 0, sx: 1, sy: 1, label: "" }];
+    layoutGroup(0);
+    for (const n of nucleons) { n.x = n.lx; n.y = n.ly; }
+    nextEmit = clock + 0.6;
+    updateControls();
+    idleCaption();
+  }
+
+  function idleCaption() {
+    if (iso.hl == null) caption.textContent = `${iso.name}-${iso.a} is stable. Its nucleus holds together, so nothing shoots out.`;
+    else caption.textContent = radiating
+      ? `${iso.name}-${iso.a} is radioactive. Each little flash shows radiation leaving the nucleus. Press "One more iteration" to watch it decay.`
+      : `Press "One more iteration" to watch ${iso.name}-${iso.a} decay, or turn radiation on.`;
+  }
+
+  function updateControls() {
+    radBtn.setAttribute("aria-pressed", String(radiating));
+    radBtn.textContent = radiating ? "Radiation: on" : "Radiation: off";
+    splitBtn.disabled = busy || split || iso.z < 90;
+    splitBtn.title = iso.z < 90 ? "Only very heavy atoms like uranium and plutonium can be split." : "";
+    resetBtn.disabled = busy || !split;
+  }
+
+  const after = (sec, fn) => timers.push({ at: clock + sec, fn });
+  const edgeScore = (n, a) => n.lx * Math.cos(a) + n.ly * Math.sin(a);
+
+  function gamma(angle, delay = 0) {
+    after(delay, () => rays.push({ a: angle, t: 0, from: nucR(iso.a) * 0.9 }));
+  }
+
+  function setIsotope(newIso) {
+    const p = nucleons.filter(n => n.kind === "p").length;
+    const keep = !split && iso && newIso.z === p && nucleons.length === newIso.a;
+    if (keep) { iso = newIso; ball = ballFor(iso.a); busy = false; updateControls(); idleCaption(); }
+    else build(newIso);
+  }
+
+  function decay(onDone) {
+    if (busy || split || iso.hl == null) return false;
+    busy = true; updateControls();
+    const ang = Math.random() * Math.PI * 2;
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    if (iso.mode === "α") {
+      caption.textContent = `Alpha decay: a clump of 2 protons and 2 neutrons bursts out of the nucleus.`;
+      const byEdge = [...nucleons].sort((a, b) => edgeScore(b, ang) - edgeScore(a, ang));
+      const out = [...byEdge.filter(n => n.kind === "p").slice(0, 2), ...byEdge.filter(n => n.kind === "n").slice(0, 2)];
+      out.forEach(n => n.glow = 1);
+      after(0.35, () => {
+        nucleons = nucleons.filter(n => !out.includes(n));
+        const mx = out.reduce((s, n) => s + n.x, 0) / 4, my = out.reduce((s, n) => s + n.y, 0) / 4;
+        const off = [[-1,-1],[1,1],[-1,1],[1,-1]];
+        particles.push({ type: "alpha", x: mx, y: my, vx: dx * 1.5, vy: dy * 1.5, life: 0, max: 1.6, label: "α particle",
+          balls: out.map((n, i) => ({ kind: n.kind, dx: off[i][0] * ball * 0.8, dy: off[i][1] * ball * 0.8 })) });
+        layoutGroup(0);
+        flash = 1;
+        gamma(ang + 2.4, 0.25);
+      });
+    } else {
+      caption.textContent = `Beta decay: a neutron turns into a proton and throws out a fast electron.`;
+      const n = nucleons.filter(n => n.kind === "n").sort((a, b) => edgeScore(b, ang) - edgeScore(a, ang))[0];
+      n.glow = 1;
+      after(0.55, () => {
+        n.kind = "p"; n.glow = 1;
+        particles.push({ type: "e", x: n.x, y: n.y, vx: dx * 1.9, vy: dy * 1.9, life: 0, max: 1.4, label: "β electron" });
+        particles.push({ type: "nu", x: n.x, y: n.y, vx: Math.cos(ang + 0.9) * 1.6, vy: Math.sin(ang + 0.9) * 1.6, life: 0, max: 1.2, label: "antineutrino" });
+        flash = 0.7;
+        gamma(ang - 2.2, 0.2);
+      });
+    }
+    after(1.55, () => { busy = false; nucleons.forEach(n => n.glow = 0); onDone && onDone(); });
+    return true;
+  }
+
+  function fission() {
+    if (busy || split || iso.z < 90) return;
+    busy = true; updateControls();
+    const name = `${iso.name}-${iso.a}`;
+    caption.textContent = `A neutron flies in and hits ${name}…`;
+    const startX = -W / scale / 2;
+    particles.push({ type: "n", x: startX, y: 0, vx: (0 - startX) / 0.7, vy: 0, life: 0, max: 0.7, label: "neutron", absorb: true });
+    after(0.7, () => {
+      nucleons.push({ kind: "n", lx: -nucR(iso.a), ly: 0, x: -nucR(iso.a), y: 0, g: 0, ph: 0, glow: 1 });
+      layoutGroup(0);
+      caption.textContent = `The nucleus soaks up the neutron, wobbles and stretches…`;
+    });
+    // Stretch into a peanut shape before it tears.
+    for (let i = 1; i <= 10; i++) after(0.7 + i * 0.07, () => { groups[0].sx = 1 + i * 0.06; groups[0].sy = 1 - i * 0.03; });
+    after(1.5, () => {
+      const Z = iso.z, A = nucleons.length;
+      const Z1 = Math.round(Z * 56 / 92), Z2 = Z - Z1;
+      const A1 = Math.round((A - 3) * 0.605), A2 = A - 3 - A1;
+      const N1 = A1 - Z1;
+      const byX = arr => arr.sort((a, b) => b.lx - a.lx);
+      const neutrons = nucleons.filter(n => n.kind === "n").sort((a, b) => Math.hypot(a.lx, a.ly) - Math.hypot(b.lx, b.ly));
+      const free = neutrons.slice(0, 3);
+      const ps = byX(nucleons.filter(n => n.kind === "p"));
+      const ns = byX(neutrons.slice(3));
+      ps.forEach((n, i) => n.g = i < Z1 ? 1 : 2);
+      ns.forEach((n, i) => n.g = i < N1 ? 1 : 2);
+      nucleons = nucleons.filter(n => !free.includes(n));
+      free.forEach((n, i) => {
+        const a = -Math.PI / 2 + (i - 1) * 2.1 + Math.random() * 0.4;
+        particles.push({ type: "n", x: n.x, y: n.y, vx: Math.cos(a) * 1.7, vy: Math.sin(a) * 1.7, life: 0, max: 1.6, label: i === 0 ? "free neutron" : "" });
+      });
+      const f1 = `${SYMBOLS[Z1 - 1]}-${A1}`, f2 = `${SYMBOLS[Z2 - 1]}-${A2}`;
+      groups = [{ cx: 0, cy: 0, tx: 0, ty: 0, sx: 1, sy: 1, label: "" },
+        { cx: 0.12, cy: 0, tx: 0.62, ty: 0.05, sx: 1, sy: 1, label: f1 },
+        { cx: -0.12, cy: 0, tx: -0.62, ty: -0.05, sx: 1, sy: 1, label: f2 }];
+      layoutGroup(1); layoutGroup(2);
+      split = true; flash = 1.4;
+      for (let i = 0; i < 4; i++) gamma(Math.random() * 6.28, i * 0.12);
+      caption.textContent = `${name} split into ${NAMES[Z1 - 1]}-${A1} and ${NAMES[Z2 - 1]}-${A2}, set 3 neutrons free and released a huge burst of energy. This is nuclear fission, the reaction inside nuclear power plants.`;
+    });
+    after(2.4, () => { busy = false; updateControls(); });
+  }
+
+  function emitAmbient() {
+    const ang = Math.random() * Math.PI * 2;
+    const R = nucR(iso.a);
+    const x = Math.cos(ang) * R, y = Math.sin(ang) * R;
+    if (Math.random() < 0.25) { rays.push({ a: ang, t: 0, from: R, small: true }); return; }
+    if (iso.mode === "α") particles.push({ type: "spark-a", x, y, vx: Math.cos(ang) * 0.9, vy: Math.sin(ang) * 0.9, life: 0, max: 0.7 });
+    else particles.push({ type: "spark-e", x, y, vx: Math.cos(ang) * 1.2, vy: Math.sin(ang) * 1.2, life: 0, max: 0.6 });
+  }
+
+  function step(dt) {
+    clock += dt;
+    timers = timers.filter(t => { if (clock >= t.at) { t.fn(); return false; } return true; });
+    if (radiating && !busy && !split && iso.hl != null && clock >= nextEmit) {
+      emitAmbient();
+      const gap = [0, 2.6, 1.6, 1.0, 0.55, 0.28][ratingOf(iso)];
+      nextEmit = clock + gap * (0.6 + Math.random() * 0.8);
+    }
+    for (const g of groups) {
+      const k = Math.min(1, dt * 2.2);
+      g.cx += (g.tx - g.cx) * k; g.cy += (g.ty - g.cy) * k;
+    }
+    if (!split && !busy) { groups[0].sx += (1 - groups[0].sx) * Math.min(1, dt * 4); groups[0].sy += (1 - groups[0].sy) * Math.min(1, dt * 4); }
+    for (const n of nucleons) {
+      const g = groups[n.g];
+      const tx = g.cx + n.lx * g.sx, ty = g.cy + n.ly * g.sy;
+      const k = Math.min(1, dt * 7);
+      n.x += (tx - n.x) * k; n.y += (ty - n.y) * k;
+      n.glow = Math.max(0, n.glow - dt * 0.5);
+    }
+    for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.life += dt; }
+    particles = particles.filter(p => p.life < p.max);
+    for (const r of rays) r.t += dt;
+    rays = rays.filter(r => r.t < (r.small ? 0.5 : 0.9));
+    flash = Math.max(0, flash - dt * 2);
+    eFade += ((split ? 0 : 1) - eFade) * Math.min(1, dt * 3);
+  }
+
+  function dot(x, y, r, fill, alpha = 1) {
+    ctx.globalAlpha = alpha;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  function nucleonBall(x, y, kind, glow) {
+    const r = ball * 1.12;
+    if (glow > 0) dot(x, y, r * (1.6 + glow), col.accent, 0.35 * glow);
+    dot(x, y, r, kind === "p" ? col.proton : col.neutron);
+    dot(x - r * 0.3, y - r * 0.3, r * 0.35, "#ffffff", 0.35);
+  }
+  function label(text, x, y) {
+    if (!text) return;
+    ctx.font = `600 ${12 / scale}px "IBM Plex Mono", ui-monospace, monospace`;
+    ctx.fillStyle = col.text; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y);
+  }
+
+  function draw() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * W / 2, dpr * H / 2);
+    const R = nucR(iso.a);
+
+    // Electron shells
+    if (eFade > 0.02) {
+      const shells = shellsFor(iso.z);
+      const inner = R + 0.1, outer = 0.97;
+      const gap = shells.length > 1 ? (outer - inner) / (shells.length - 1) : 0;
+      shells.forEach((count, s) => {
+        const rr = shells.length > 1 ? inner + gap * s : Math.max(inner, 0.4);
+        ctx.globalAlpha = 0.6 * eFade;
+        ctx.strokeStyle = col.border; ctx.lineWidth = 1 / scale;
+        ctx.beginPath(); ctx.arc(0, 0, rr, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+        const speed = reduce ? 0 : 0.9 / (s + 1);
+        for (let i = 0; i < count; i++) {
+          const a = (i / count) * Math.PI * 2 + clock * speed + s;
+          dot(Math.cos(a) * rr, Math.sin(a) * rr, 3 / scale, col.electron, eFade);
+        }
+      });
+    }
+
+    if (flash > 0) dot(0, 0, R * (1.4 + flash * 0.6), col.accent, Math.min(0.45, flash * 0.35));
+
+    // Gamma rays: a wiggly line racing outwards
+    for (const r of rays) {
+      const life = r.small ? 0.5 : 0.9;
+      const head = r.from + r.t * 2.2, len = r.small ? 0.16 : 0.32;
+      ctx.save(); ctx.rotate(r.a);
+      ctx.strokeStyle = col.accent; ctx.lineWidth = (r.small ? 1.5 : 2.2) / scale;
+      ctx.globalAlpha = 1 - r.t / life;
+      ctx.beginPath();
+      for (let d = Math.max(r.from, head - len); d <= head; d += 0.005) {
+        const y = Math.sin(d * 90) * 0.018;
+        d === Math.max(r.from, head - len) ? ctx.moveTo(d, y) : ctx.lineTo(d, y);
+      }
+      ctx.stroke(); ctx.restore(); ctx.globalAlpha = 1;
+      if (!r.small && r.t < 0.6) label("γ ray", Math.cos(r.a) * (head + 0.06), Math.sin(r.a) * (head + 0.06));
+    }
+
+    // Nucleons, back to front so the middle looks domed
+    const amp = reduce ? 0 : ball * (0.12 + ratingOf(iso) * 0.05);
+    const sorted = [...nucleons].sort((a, b) => (b.lx * b.lx + b.ly * b.ly) - (a.lx * a.lx + a.ly * a.ly));
+    for (const n of sorted) {
+      nucleonBall(n.x + Math.sin(clock * 9 + n.ph) * amp, n.y + Math.cos(clock * 11 + n.ph) * amp, n.kind, n.glow);
+    }
+    for (const g of groups) {
+      if (!g.label) continue;
+      const count = nucleons.filter(n => n.g === groups.indexOf(g)).length;
+      label(g.label, g.cx, g.cy + ball * Math.sqrt(count) / 0.92 + 0.08);
+    }
+
+    // Flying particles
+    for (const p of particles) {
+      const fade = p.type.startsWith("spark") ? 1 - p.life / p.max : Math.min(1, (p.max - p.life) * 3);
+      ctx.globalAlpha = fade;
+      if (p.type === "alpha") p.balls.forEach(b => nucleonBall(p.x + b.dx, p.y + b.dy, b.kind, 0));
+      else if (p.type === "e") { dot(p.x, p.y, 9 / scale, col.electron, 0.25 * fade); dot(p.x, p.y, 4.5 / scale, col.electron, fade); }
+      else if (p.type === "nu") dot(p.x, p.y, 3 / scale, col.muted, fade);
+      else if (p.type === "n") nucleonBall(p.x, p.y, "n", 0);
+      else if (p.type === "spark-a") { for (const [ox, oy] of [[-1,-1],[1,1],[-1,1],[1,-1]]) dot(p.x + ox * 2.2 / scale, p.y + oy * 2.2 / scale, 2.4 / scale, ox * oy > 0 ? col.proton : col.neutron, fade); }
+      else if (p.type === "spark-e") dot(p.x, p.y, 3 / scale, col.electron, fade);
+      ctx.globalAlpha = fade;
+      if (p.label) label(p.label, p.x, p.y - 0.09);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function frame(ts) {
+    const dt = last ? Math.min(0.05, (ts - last) / 1000) : 0;
+    last = ts;
+    if (iso) { step(dt); draw(); }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  radBtn.addEventListener("click", () => { radiating = !radiating; nextEmit = clock + 0.2; updateControls(); if (!busy && !split) idleCaption(); });
+  splitBtn.addEventListener("click", fission);
+  resetBtn.addEventListener("click", () => build(iso));
+
+  return { setIsotope, decay, get busy() { return busy; }, reduce };
+})();
 
 const fromHash = decodeURIComponent(location.hash.slice(1));
 select(ISOTOPES[fromHash] ? fromHash : "U-236");
