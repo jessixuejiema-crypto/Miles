@@ -200,6 +200,42 @@
   .ident .facts { color: var(--muted); font-family: var(--mono); font-size: 0.82rem; }
   .ident .blurb { margin: 2px 0 0; font-size: 0.92rem; max-width: 60ch; }
 
+  .decay {
+    display: flex;
+    align-items: center;
+    gap: 10px 14px;
+    flex-wrap: wrap;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+  }
+  .iterate {
+    font: inherit;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: 0.02em;
+    padding: 10px 18px;
+    border-radius: 7px;
+    border: 0;
+    background: var(--accent);
+    color: #1b1300;
+    cursor: pointer;
+  }
+  .iterate:hover:not(:disabled) { filter: brightness(1.08); }
+  .iterate:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .iterate:disabled { background: var(--track); color: var(--muted); cursor: not-allowed; }
+  .decay-msg { font-size: 0.88rem; color: var(--muted); min-width: 0; flex: 1 1 220px; }
+  .decay-msg b { color: var(--text); }
+  @media (prefers-reduced-motion: no-preference) {
+    .readout.flash .badge { animation: zap 0.6s ease; }
+    @keyframes zap {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 var(--accent); }
+      40% { transform: scale(1.08); box-shadow: 0 0 0 10px transparent; }
+      100% { transform: scale(1); }
+    }
+  }
   .bars { display: grid; gap: 18px; }
   .bar { display: grid; gap: 6px; }
   .bar-head {
@@ -499,6 +535,7 @@ const grid = document.getElementById("grid");
 const search = document.getElementById("search");
 const readout = document.getElementById("readout");
 let current = "U-236";
+let lastDecay = null; // { from, to, mode } after pressing the button
 
 const LIST = Object.values(ISOTOPES).sort((a, b) => a.z - b.z || a.a - b.a);
 
@@ -599,6 +636,10 @@ function renderReadout() {
         ${BLURBS[iso.id] ? `<p class="blurb">${BLURBS[iso.id]}</p>` : ""}
       </div>
     </div>
+    <div class="decay">
+      <button id="iterate" class="iterate" ${iso.hl == null ? "disabled" : ""}>One more iteration</button>
+      <span class="decay-msg">${decayMessage(iso)}</span>
+    </div>
     <div class="bars">
       ${particles}
       <div class="legend"><span><i style="background:var(--proton)"></i>Protons</span><span><i style="background:var(--neutron)"></i>Neutrons</span><span><i style="background:var(--electron)"></i>Electrons</span><span>Each line on a bar marks 1 particle.</span></div>
@@ -608,8 +649,33 @@ function renderReadout() {
     </div>`;
 }
 
-function select(id) {
+function decayMessage(iso) {
+  let msg = "";
+  if (lastDecay && lastDecay.to === iso.id) {
+    const f = ISOTOPES[lastDecay.from];
+    msg = lastDecay.mode === "α"
+      ? `<b>${f.name}-${f.a} decayed into ${iso.name}-${iso.a}.</b> Alpha decay: it shot out 2 protons and 2 neutrons. `
+      : `<b>${f.name}-${f.a} decayed into ${iso.name}-${iso.a}.</b> Beta decay: a neutron turned into a proton. `;
+  }
+  if (iso.hl == null) return msg + `${iso.name}-${iso.a} is stable, so it cannot decay any further.`;
+  const next = ISOTOPES[iso.daughter];
+  return msg + `Press to decay into ${next.name}-${next.a}.`;
+}
+
+function iterate() {
+  const iso = ISOTOPES[current];
+  if (iso.hl == null) return;
+  lastDecay = { from: iso.id, to: iso.daughter, mode: iso.mode };
+  select(iso.daughter, true);
+  readout.classList.remove("flash");
+  void readout.offsetWidth;
+  readout.classList.add("flash");
+  document.getElementById("iterate").focus();
+}
+
+function select(id, fromDecay = false) {
   if (!ISOTOPES[id]) return;
+  if (!fromDecay) lastDecay = null;
   current = id;
   renderGrid();
   renderReadout();
@@ -623,6 +689,7 @@ grid.addEventListener("click", e => {
   if (t) select(t.dataset.id);
 });
 readout.addEventListener("click", e => {
+  if (e.target.closest("#iterate")) { iterate(); return; }
   const s = e.target.closest(".seg");
   if (s) { select(s.dataset.id); readout.scrollIntoView({ block: "start", behavior: "smooth" }); }
 });
