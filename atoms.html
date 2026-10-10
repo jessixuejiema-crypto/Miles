@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Atom Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: an isotope picker grid, then a detail "readout" of stacked, unit-ruled bars. */
+  :root {
+    --bg: #eef1f4;
+    --panel: #ffffff;
+    --panel-2: #f5f7f9;
+    --border: #d5dbe2;
+    --text: #18212b;
+    --muted: #5f6b78;
+    --track: #e2e7ec;
+    --tick: rgba(255, 255, 255, 0.75);
+    --tick-dark: rgba(10, 18, 28, 0.35);
+    --accent: #c98a00;
+    --proton: #d6362f;
+    --neutron: #2f66d6;
+    --electron: #23a352;
+    --halflife: #8350c8;
+    --chain: #4d6070;
+    --stable: #c98a00;
+    --r0: #8a96a3;
+    --r1: #9cbb2f;
+    --r2: #e1b320;
+    --r3: #ec8a1d;
+    --r4: #e3561f;
+    --r5: #c5172e;
+    --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f141a;
+      --panel: #171e26;
+      --panel-2: #1c242e;
+      --border: #2b3643;
+      --text: #e3e9ef;
+      --muted: #8f9cab;
+      --track: #232d38;
+      --tick: rgba(0, 0, 0, 0.45);
+      --tick-dark: rgba(0, 0, 0, 0.5);
+      --accent: #f0b429;
+      --proton: #ef5049;
+      --neutron: #4f86f0;
+      --electron: #36c06a;
+      --halflife: #a375e8;
+      --chain: #5b7285;
+      --stable: #e0a72a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f141a;
+    --panel: #171e26;
+    --panel-2: #1c242e;
+    --border: #2b3643;
+    --text: #e3e9ef;
+    --muted: #8f9cab;
+    --track: #232d38;
+    --tick: rgba(0, 0, 0, 0.45);
+    --tick-dark: rgba(0, 0, 0, 0.5);
+    --accent: #f0b429;
+    --proton: #ef5049;
+    --neutron: #4f86f0;
+    --electron: #36c06a;
+    --halflife: #a375e8;
+    --chain: #5b7285;
+    --stable: #e0a72a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 860px;
+    margin: 0 auto;
+    padding-inline: 16px;
+    padding-block: 20px 48px;
+    display: grid;
+    gap: 20px;
+  }
+  header.top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1.7rem;
+    letter-spacing: 0.02em;
+    margin: 0;
+  }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 0; font-size: 0.9rem; }
+
+  /* ---- Picker ---- */
+  .picker {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    display: grid;
+    gap: 12px;
+  }
+  .search {
+    width: 100%;
+    font: inherit;
+    padding: 9px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+  }
+  .search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 8px;
+    max-height: 236px;
+    overflow-y: auto;
+    padding: 2px;
+  }
+  .tile {
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 6px 8px 7px;
+    cursor: pointer;
+    display: grid;
+    gap: 1px;
+    position: relative;
+  }
+  .tile:hover { border-color: var(--muted); }
+  .tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tile.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .tile .mass { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
+  .tile .sym { font-family: var(--display); font-weight: 700; font-size: 1.3rem; line-height: 1; }
+  .tile .nm { font-size: 0.7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .dot {
+    position: absolute; top: 7px; right: 7px;
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .empty { color: var(--muted); font-size: 0.9rem; padding: 6px 2px; }
+
+  /* ---- Readout ---- */
+  .readout {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    display: grid;
+    gap: 22px;
+  }
+  .ident {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .badge {
+    width: 92px; height: 92px;
+    border: 2px solid var(--text);
+    border-radius: 6px;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    padding: 6px 8px;
+    flex: none;
+  }
+  .badge .z { font-family: var(--mono); font-size: 0.78rem; }
+  .badge .s { font-family: var(--display); font-weight: 700; font-size: 2.6rem; line-height: 1; align-self: center; justify-self: center; }
+  .ident-text { min-width: 0; display: grid; gap: 4px; }
+  .ident h2 {
+    font-family: var(--display);
+    font-size: 1.8rem;
+    margin: 0;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+  .ident .facts { color: var(--muted); font-family: var(--mono); font-size: 0.82rem; }
+  .ident .blurb { margin: 2px 0 0; font-size: 0.92rem; max-width: 60ch; }
+
+  .bars { display: grid; gap: 18px; }
+  .bar { display: grid; gap: 6px; }
+  .bar-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .bar-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .bar-value {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1.35rem;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .bar-value small {
+    font-family: var(--body);
+    font-weight: 500;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+  .track {
+    height: 30px;
+    background: var(--track);
+    border-radius: 5px;
+    overflow: hidden;
+    position: relative;
+  }
+  .track svg { display: block; width: 100%; height: 100%; }
+  .bar-foot { font-size: 0.8rem; color: var(--muted); }
+
+  .scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  /* Decay chain: one segment per atom, divided by lines, not gaps */
+  .chain-scroll { overflow-x: auto; padding-bottom: 4px; }
+  .chain {
+    display: flex;
+    min-height: 56px;
+    border-radius: 5px;
+    overflow: hidden;
+    min-width: 100%;
+  }
+  .seg {
+    flex: 1 0 76px;
+    font: inherit;
+    color: #fff;
+    background: var(--chain);
+    border: 0;
+    border-right: 2px solid var(--tick-dark);
+    padding: 6px 4px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 0;
+    position: relative;
+  }
+  .seg:last-child { border-right: 0; }
+  .seg.start { background: var(--neutron); }
+  .seg.end { background: var(--stable); color: #1b1300; }
+  .seg:hover { filter: brightness(1.12); }
+  .seg:focus-visible { outline: 2px solid var(--text); outline-offset: -3px; }
+  .seg .ss { font-family: var(--display); font-weight: 700; font-size: 0.98rem; line-height: 1.1; white-space: nowrap; }
+  .seg .sm { font-family: var(--mono); font-size: 0.62rem; opacity: 0.85; }
+  .seg .arrow {
+    position: absolute; right: -9px; top: 50%;
+    transform: translateY(-50%);
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--panel); color: var(--text);
+    font-size: 0.6rem; line-height: 16px; text-align: center;
+    z-index: 1; font-family: var(--mono); font-weight: 600;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.78rem; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+  @media (max-width: 480px) {
+    .readout { padding: 16px; }
+    .badge { width: 76px; height: 76px; }
+    .badge .s { font-size: 2.1rem; }
+    .ident h2 { font-size: 1.45rem; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .fill { transition: width 0.5s ease; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Atom <span>Viewer</span></h1>
+    <p class="sub">Pick an atom to see what is inside it and how it decays.</p>
+  </header>
+
+  <section class="picker" aria-label="Choose an atom">
+    <input id="search" class="search" type="search" placeholder="Search: uranium, U-236, lead, 238…" autocomplete="off">
+    <div id="grid" class="grid" role="list"></div>
+  </section>
+
+  <section id="readout" class="readout" aria-live="polite"></section>
+</div>
+
+<script>
+// ---------- Element names ----------
+const ELEMENTS = {
+  1: ["H", "Hydrogen"], 2: ["He", "Helium"], 6: ["C", "Carbon"], 7: ["N", "Nitrogen"],
+  8: ["O", "Oxygen"], 11: ["Na", "Sodium"], 19: ["K", "Potassium"], 20: ["Ca", "Calcium"],
+  26: ["Fe", "Iron"], 27: ["Co", "Cobalt"], 28: ["Ni", "Nickel"], 29: ["Cu", "Copper"],
+  38: ["Sr", "Strontium"], 39: ["Y", "Yttrium"], 40: ["Zr", "Zirconium"], 43: ["Tc", "Technetium"],
+  44: ["Ru", "Ruthenium"], 47: ["Ag", "Silver"], 53: ["I", "Iodine"], 54: ["Xe", "Xenon"],
+  55: ["Cs", "Caesium"], 56: ["Ba", "Barium"], 79: ["Au", "Gold"], 81: ["Tl", "Thallium"],
+  82: ["Pb", "Lead"], 83: ["Bi", "Bismuth"], 84: ["Po", "Polonium"], 85: ["At", "Astatine"],
+  86: ["Rn", "Radon"], 87: ["Fr", "Francium"], 88: ["Ra", "Radium"], 89: ["Ac", "Actinium"],
+  90: ["Th", "Thorium"], 91: ["Pa", "Protactinium"], 92: ["U", "Uranium"], 93: ["Np", "Neptunium"],
+  94: ["Pu", "Plutonium"], 95: ["Am", "Americium"], 96: ["Cm", "Curium"], 98: ["Cf", "Californium"],
+};
+
+// ---------- Time units ----------
+const S = 1, MIN = 60, H = 3600, D = 86400, Y = 31557600;
+
+// ---------- Isotopes: [Z, A, half-life in seconds (null = stable), decay mode] ----------
+// Alpha decay: Z-2, A-4. Beta-minus decay: Z+1, A same. The daughter is worked out from the mode.
+const RAW = [
+  // Stable
+  [1, 1, null], [2, 3, null], [2, 4, null], [6, 12, null], [7, 14, null], [8, 16, null],
+  [11, 23, null], [20, 40, null], [26, 56, null], [28, 60, null], [29, 63, null],
+  [40, 90, null], [44, 99, null], [47, 107, null], [54, 131, null], [56, 135, null],
+  [56, 137, null], [79, 197, null], [81, 205, null], [82, 206, null], [82, 207, null], [82, 208, null],
+  // Light and medium radioactive
+  [1, 3, 12.32 * Y, "β"], [6, 14, 5730 * Y, "β"], [19, 40, 1.248e9 * Y, "β"],
+  [27, 60, 5.2714 * Y, "β"], [38, 90, 28.79 * Y, "β"], [39, 90, 64.05 * H, "β"],
+  [43, 99, 2.111e5 * Y, "β"], [53, 131, 8.0252 * D, "β"], [54, 135, 9.14 * H, "β"],
+  [55, 135, 2.3e6 * Y, "β"], [55, 137, 30.08 * Y, "β"],
+  // Uranium-238 (radium) series
+  [92, 238, 4.468e9 * Y, "α"], [90, 234, 24.1 * D, "β"], [91, 234, 1.17 * MIN, "β"],
+  [92, 234, 2.455e5 * Y, "α"], [90, 230, 7.54e4 * Y, "α"], [88, 226, 1600 * Y, "α"],
+  [86, 222, 3.8235 * D, "α"], [84, 218, 3.098 * MIN, "α"], [82, 214, 26.8 * MIN, "β"],
+  [83, 214, 19.9 * MIN, "β"], [84, 214, 164.3e-6, "α"], [82, 210, 22.2 * Y, "β"],
+  [83, 210, 5.012 * D, "β"], [84, 210, 138.376 * D, "α"],
+  // Uranium-235 (actinium) series
+  [92, 235, 7.04e8 * Y, "α"], [90, 231, 25.52 * H, "β"], [91, 231, 32760 * Y, "α"],
+  [89, 227, 21.772 * Y, "β"], [90, 227, 18.68 * D, "α"], [88, 223, 11.43 * D, "α"],
+  [86, 219, 3.96, "α"], [84, 215, 1.781e-3, "α"], [82, 211, 36.1 * MIN, "β"],
+  [83, 211, 2.14 * MIN, "α"], [81, 207, 4.77 * MIN, "β"],
+  // Uranium-236 and the thorium series
+  [92, 236, 2.342e7 * Y, "α"], [90, 232, 1.405e10 * Y, "α"], [88, 228, 5.75 * Y, "β"],
+  [89, 228, 6.15 * H, "β"], [90, 228, 1.9116 * Y, "α"], [88, 224, 3.6319 * D, "α"],
+  [86, 220, 55.6, "α"], [84, 216, 0.145, "α"], [82, 212, 10.64 * H, "β"],
+  [83, 212, 60.55 * MIN, "β"], [84, 212, 0.294e-6, "α"],
+  // Neptunium series
+  [95, 241, 432.2 * Y, "α"], [93, 237, 2.144e6 * Y, "α"], [91, 233, 26.975 * D, "β"],
+  [92, 233, 1.592e5 * Y, "α"], [90, 229, 7932 * Y, "α"], [88, 225, 14.9 * D, "β"],
+  [89, 225, 9.92 * D, "α"], [87, 221, 4.8 * MIN, "α"], [85, 217, 32.3e-3, "α"],
+  [83, 213, 45.61 * MIN, "β"], [84, 213, 3.72e-6, "α"], [82, 209, 3.234 * H, "β"],
+  [83, 209, 2.01e19 * Y, "α"],
+  // Heavier man-made atoms
+  [94, 238, 87.7 * Y, "α"], [94, 239, 24110 * Y, "α"], [94, 240, 6561 * Y, "α"],
+  [94, 244, 8.0e7 * Y, "α"], [92, 240, 14.1 * H, "β"], [93, 240, 61.9 * MIN, "β"],
+  [96, 248, 3.48e5 * Y, "α"], [98, 252, 2.645 * Y, "α"],
+];
+
+const BLURBS = {
+  "U-236": "Made inside nuclear reactors when uranium-235 grabs a neutron but does not split. It decays into thorium-232 and then down a long chain to lead-208.",
+  "U-238": "The most common uranium in nature. Its half-life is about the age of the Earth.",
+  "U-235": "The uranium that splits in nuclear power plants. Only 0.7% of natural uranium is this kind.",
+  "C-14": "Made in the upper atmosphere. Archaeologists use it to date things that were once alive.",
+  "H-3": "Tritium. It glows in some watch dials and exit signs.",
+  "K-40": "A tiny part of the potassium in bananas and in your body is this kind.",
+  "Rn-222": "A radioactive gas that seeps out of the ground from uranium in rocks.",
+  "Po-210": "Very toxic. A tiny amount gives off a lot of radiation.",
+  "Pu-239": "Made in reactors from uranium-238. Used as nuclear fuel.",
+  "Am-241": "Found in many household smoke detectors.",
+  "Co-60": "Used in hospitals to treat cancer and to sterilise medical tools.",
+  "I-131": "Used in medicine to treat thyroid problems.",
+  "Cs-137": "A leftover from nuclear accidents and weapons tests.",
+  "Sr-90": "A leftover from nuclear fission. The body mistakes it for calcium.",
+  "Bi-209": "Thought to be stable for a long time. In 2003 scientists found it decays, but so slowly that it barely counts.",
+  "Ra-226": "Discovered by Marie and Pierre Curie. It once glowed on clock hands.",
+  "Th-232": "The most common thorium. It lasts longer than the age of the universe.",
+  "Cf-252": "Gives off lots of neutrons. Used to start up nuclear reactors.",
+  "Fe-56": "One of the most tightly bound nuclei. Stars build up to iron and then stop.",
+  "Pb-208": "The heaviest stable atom. Many decay chains end here.",
+  "Au-197": "The only stable form of gold.",
+};
+
+const ISOTOPES = {};
+for (const [z, a, hl, mode] of RAW) {
+  const [sym, name] = ELEMENTS[z];
+  const id = `${sym}-${a}`;
+  let daughter = null;
+  if (hl != null) {
+    const dz = mode === "α" ? z - 2 : z + 1;
+    const da = mode === "α" ? a - 4 : a;
+    daughter = `${ELEMENTS[dz][0]}-${da}`;
+  }
+  ISOTOPES[id] = { id, z, a, n: a - z, sym, name, hl, mode: mode || null, daughter };
+}
+
+// ---------- Helpers ----------
+function chainOf(id) {
+  const out = [];
+  let cur = ISOTOPES[id];
+  while (cur && out.length < 40) {
+    out.push(cur);
+    if (cur.hl == null) break;
+    cur = ISOTOPES[cur.daughter];
+  }
+  return out;
+}
+
+const RATINGS = [
+  { word: "Not radioactive (stable)", short: "Stable", color: "var(--r0)" },
+  { word: "Slightly radioactive", short: "Slight", color: "var(--r1)" },
+  { word: "Mildly radioactive", short: "Mild", color: "var(--r2)" },
+  { word: "Moderately radioactive", short: "Moderate", color: "var(--r3)" },
+  { word: "Highly radioactive", short: "High", color: "var(--r4)" },
+  { word: "Extremely radioactive", short: "Extreme", color: "var(--r5)" },
+];
+// A shorter half-life means atoms decay faster, so a sample gives off radiation faster.
+function ratingOf(iso) {
+  const hl = iso.hl;
+  if (hl == null) return 0;
+  if (hl >= 1e9 * Y) return 1;
+  if (hl >= 1e5 * Y) return 2;
+  if (hl >= 1 * Y) return 3;
+  if (hl >= 1 * H) return 4;
+  return 5;
+}
+
+// Pick the biggest unit where the half-life is at least 1 of it.
+const UNITS = [
+  { s: 1e18 * Y, one: "quintillion years", many: "quintillion years", head: "Quintillion years" },
+  { s: 1e9 * Y, one: "billion years", many: "billion years", head: "Billion years" },
+  { s: 1e6 * Y, one: "million years", many: "million years", head: "Million years" },
+  { s: 1e3 * Y, one: "thousand years", many: "thousand years", head: "Thousand years" },
+  { s: Y, one: "year", many: "years", head: "Years" },
+  { s: D, one: "day", many: "days", head: "Days" },
+  { s: H, one: "hour", many: "hours", head: "Hours" },
+  { s: MIN, one: "minute", many: "minutes", head: "Minutes" },
+  { s: 1, one: "second", many: "seconds", head: "Seconds" },
+  { s: 1e-3, one: "millisecond", many: "milliseconds", head: "Milliseconds" },
+  { s: 1e-6, one: "microsecond", many: "microseconds", head: "Microseconds" },
+  { s: 1e-9, one: "nanosecond", many: "nanoseconds", head: "Nanoseconds" },
+];
+function halfLifeParts(sec) {
+  const u = UNITS.find(u => sec >= u.s * 0.9995) || UNITS[UNITS.length - 1];
+  const v = sec / u.s;
+  const rounded = v >= 100 ? Math.round(v) : v >= 10 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100;
+  return { unit: u, value: v, text: `${fmtNum(rounded)} ${rounded === 1 ? u.one : u.many}` };
+}
+function fmtNum(x) { return x.toLocaleString("en-US", { maximumFractionDigits: 2 }); }
+function shortHL(iso) { return iso.hl == null ? "stable" : halfLifeParts(iso.hl).text; }
+
+// One bar: filled up to `value`, with a thin line at every whole unit inside the fill.
+// `total` is how many units the full track stands for.
+function ruledBar(value, total, color) {
+  const w = 1000;
+  const fillW = total > 0 ? (value / total) * w : 0;
+  const ticks = Math.floor(value - 1e-9);
+  const step = total > 0 ? w / total : 0;
+  const thin = step < 4;
+  let lines = "";
+  for (let i = 1; i <= ticks; i++) {
+    const x = (i * step).toFixed(3);
+    lines += `<line x1="${x}" x2="${x}" y1="0" y2="1"/>`;
+  }
+  return `<div class="track"><svg viewBox="0 0 ${w} 1" preserveAspectRatio="none" aria-hidden="true">
+    <rect class="fill" x="0" y="0" width="${fillW.toFixed(3)}" height="1" fill="${color}"/>
+    <g stroke="var(--tick)" stroke-width="${thin ? 0.75 : 1.5}" vector-effect="non-scaling-stroke" style="vector-effect:non-scaling-stroke">${lines}</g>
+  </svg></div>`;
+}
+
+function barBlock({ label, value, extra = "", body, foot = "" }) {
+  return `<div class="bar">
+    <div class="bar-head"><span class="bar-label">${label}</span><span class="bar-value">${value}${extra ? `<small>${extra}</small>` : ""}</span></div>
+    ${body}
+    ${foot ? `<div class="bar-foot">${foot}</div>` : ""}
+  </div>`;
+}
+
+// ---------- Rendering ----------
+const grid = document.getElementById("grid");
+const search = document.getElementById("search");
+const readout = document.getElementById("readout");
+let current = "U-236";
+
+const LIST = Object.values(ISOTOPES).sort((a, b) => a.z - b.z || a.a - b.a);
+
+function renderGrid() {
+  const q = search.value.trim().toLowerCase().replace(/\s+/g, "");
+  const items = LIST.filter(i => !q ||
+    i.name.toLowerCase().startsWith(q) ||
+    i.id.toLowerCase().replace("-", "").startsWith(q.replace("-", "")) ||
+    `${i.name}-${i.a}`.toLowerCase().startsWith(q) ||
+    `${i.name}${i.a}`.toLowerCase().startsWith(q) ||
+    String(i.a) === q);
+  if (!items.length) {
+    grid.innerHTML = `<div class="empty">No atom matches “${search.value}”. Try a name like “lead” or a symbol like “Pb-208”.</div>`;
+    return;
+  }
+  grid.innerHTML = items.map(i => {
+    const r = RATINGS[ratingOf(i)];
+    return `<button class="tile${i.id === current ? " on" : ""}" role="listitem" data-id="${i.id}" title="${i.name}-${i.a} · ${r.word}">
+      <span class="dot" style="background:${r.color}"></span>
+      <span class="mass">${i.a}</span>
+      <span class="sym">${i.sym}</span>
+      <span class="nm">${i.name}</span>
+    </button>`;
+  }).join("");
+}
+
+function renderReadout() {
+  const iso = ISOTOPES[current];
+  const rating = ratingOf(iso);
+  const r = RATINGS[rating];
+  const maxCount = Math.max(iso.z, iso.n, 1);
+
+  const particles = [
+    barBlock({ label: "Protons", value: iso.z, body: ruledBar(iso.z, maxCount, "var(--proton)") }),
+    barBlock({ label: "Neutrons", value: iso.n, body: ruledBar(iso.n, maxCount, "var(--neutron)") }),
+    barBlock({ label: "Electrons", value: iso.z, body: ruledBar(iso.z, maxCount, "var(--electron)") }),
+  ].join("");
+
+  const ratingBar = barBlock({
+    label: "Radioactivity rating",
+    value: r.word,
+    extra: `${rating} / 5`,
+    body: ruledBar(rating, 5, r.color) +
+      `<div class="scale"><span>Stable</span><span>Slight</span><span>Mild</span><span>Moderate</span><span>High</span><span>Extreme</span></div>`,
+  });
+
+  let hlBar;
+  if (iso.hl == null) {
+    hlBar = barBlock({
+      label: "Half-life",
+      value: "Never decays",
+      body: ruledBar(0, 1, "var(--halflife)"),
+      foot: "This atom is stable, so it has no half-life.",
+    });
+  } else {
+    const p = halfLifeParts(iso.hl);
+    const total = Math.max(1, Math.ceil(p.value - 1e-9));
+    hlBar = barBlock({
+      label: "Half-life",
+      value: p.unit.head,
+      extra: p.text,
+      body: ruledBar(p.value, total, "var(--halflife)"),
+      foot: `After ${p.text}, half of a sample of ${iso.name}-${iso.a} has turned into something else. Each section of the bar is 1 ${p.unit.one}.`,
+    });
+  }
+
+  const chain = chainOf(iso.id);
+  const end = chain[chain.length - 1];
+  const steps = chain.length - 1;
+  const chainHead = steps === 0
+    ? "Already stable"
+    : `${chain.length} atoms`;
+  const chainExtra = steps === 0 ? "" : `${steps} decay${steps === 1 ? "" : "s"} until stable`;
+  const segs = chain.map((c, i) => {
+    const cls = i === chain.length - 1 && c.hl == null ? " end" : i === 0 ? " start" : "";
+    const arrow = i < chain.length - 1 ? `<span class="arrow" title="${c.mode === "α" ? "alpha" : "beta"} decay">${c.mode}</span>` : "";
+    return `<button class="seg${cls}" data-id="${c.id}" title="${c.name}-${c.a} · ${shortHL(c)}">
+      <span class="ss">${c.sym}-${c.a}</span><span class="sm">${c.hl == null ? "stable" : shortHL(c)}</span>${arrow}
+    </button>`;
+  }).join("");
+  const chainText = chain.map(c => c.name).join(" → ");
+  const chainBar = barBlock({
+    label: "Decay chain",
+    value: chainHead,
+    extra: chainExtra,
+    body: `<div class="chain-scroll"><div class="chain">${segs}</div></div>`,
+    foot: steps === 0
+      ? `${iso.name}-${iso.a} does not decay, so its chain is just itself.`
+      : `${chainText}. It stops at ${end.name}-${end.a}, which is stable. Tap any atom in the chain to view it. α = alpha decay (loses 2 protons and 2 neutrons), β = beta decay (a neutron turns into a proton).`,
+  });
+
+  readout.innerHTML = `
+    <div class="ident">
+      <div class="badge"><span class="z">${iso.z}</span><span class="s">${iso.sym}</span></div>
+      <div class="ident-text">
+        <h2>${iso.name}-${iso.a}</h2>
+        <div class="facts">${iso.sym}-${iso.a} · atomic number ${iso.z} · mass number ${iso.a}</div>
+        ${BLURBS[iso.id] ? `<p class="blurb">${BLURBS[iso.id]}</p>` : ""}
+      </div>
+    </div>
+    <div class="bars">
+      ${particles}
+      <div class="legend"><span><i style="background:var(--proton)"></i>Protons</span><span><i style="background:var(--neutron)"></i>Neutrons</span><span><i style="background:var(--electron)"></i>Electrons</span><span>Each line on a bar marks 1 particle.</span></div>
+      ${ratingBar}
+      ${hlBar}
+      ${chainBar}
+    </div>`;
+}
+
+function select(id) {
+  if (!ISOTOPES[id]) return;
+  current = id;
+  renderGrid();
+  renderReadout();
+  try { history.replaceState(null, "", "#" + id); } catch (e) {}
+  const tile = grid.querySelector(`[data-id="${id}"]`);
+  if (tile) tile.scrollIntoView({ block: "nearest" });
+}
+
+grid.addEventListener("click", e => {
+  const t = e.target.closest(".tile");
+  if (t) select(t.dataset.id);
+});
+readout.addEventListener("click", e => {
+  const s = e.target.closest(".seg");
+  if (s) { select(s.dataset.id); readout.scrollIntoView({ block: "start", behavior: "smooth" }); }
+});
+search.addEventListener("input", renderGrid);
+search.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const first = grid.querySelector(".tile");
+    if (first) select(first.dataset.id);
+  }
+});
+
+const fromHash = decodeURIComponent(location.hash.slice(1));
+select(ISOTOPES[fromHash] ? fromHash : "U-236");
+</script>
+</body>
+</html>
