@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gene Playground</title>
+<style>
+  :root {
+    --bg: #eef1f7;
+    --panel: #ffffff;
+    --panel-2: #f6f7fb;
+    --border: #d9deea;
+    --text: #1f2433;
+    --muted: #6b7388;
+    --accent: #5b5bf0;
+    --world: #0f1a2b;
+    --world-grid: rgba(255,255,255,0.04);
+    --shadow: rgba(25, 30, 60, 0.12);
+    --danger: #d9443a;
+
+    --hat: #f5a623;
+    --hat-dark: #c98411;
+    --osc: #9b5cf6;
+    --osc-dark: #7a3fd6;
+    --die: #e2453c;
+    --die-dark: #b0302a;
+    --dup: #2bb673;
+    --dup-dark: #1e8e58;
+    --col: #e8559a;
+    --col-dark: #bd3b78;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11141c;
+      --panel: #1a1e2a;
+      --panel-2: #212637;
+      --border: #2e3448;
+      --text: #e6e9f2;
+      --muted: #9098b0;
+      --accent: #8b8bff;
+      --world: #070d18;
+      --shadow: rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11141c;
+    --panel: #1a1e2a;
+    --panel-2: #212637;
+    --border: #2e3448;
+    --text: #e6e9f2;
+    --muted: #9098b0;
+    --accent: #8b8bff;
+    --world: #070d18;
+    --shadow: rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 16px;
+  }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .layout {
+    display: grid;
+    grid-template-columns: 280px minmax(300px, 1fr) minmax(360px, 1.3fr);
+    gap: 12px;
+    padding: 0 16px 16px;
+    align-items: start;
+  }
+  .pane {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 2px 10px var(--shadow);
+    overflow: hidden;
+  }
+  .pane h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 0; padding: 12px 14px 8px;
+  }
+  .pane-body { padding: 0 14px 14px; }
+
+  /* ---------- creature editor ---------- */
+  .species-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); background: var(--panel-2);
+    color: var(--text); border-radius: 999px; padding: 4px 10px 4px 6px;
+    cursor: pointer; font: inherit; font-size: 13px;
+  }
+  .chip .dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); }
+  .chip.on { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .chip.add { padding-left: 10px; color: var(--accent); font-weight: 600; }
+  .editor { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; }
+  .editor canvas { width: 96px; height: 96px; border-radius: 12px; background: var(--world); }
+  .fields { display: grid; gap: 6px; }
+  .fields label { display: grid; grid-template-columns: 54px 1fr; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .fields input[type="text"] {
+    font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; min-width: 0;
+  }
+  .fields input[type="range"] { width: 100%; }
+  .fields input[type="color"] { width: 100%; height: 26px; border: none; background: none; padding: 0; }
+  .editor-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  button.btn {
+    font: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+    border-radius: 8px; padding: 5px 10px; cursor: pointer;
+  }
+  button.btn:hover { border-color: var(--accent); }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.btn.danger { color: var(--danger); }
+
+  /* ---------- palette ---------- */
+  .palette { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding-bottom: 6px; }
+  .pal-group { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+  .palette-pane.trash-hover { outline: 3px dashed var(--danger); outline-offset: -6px; }
+  .trash-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* ---------- blocks ---------- */
+  .blk {
+    position: relative;
+    display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    min-height: 40px;
+    padding: 7px 12px 9px;
+    border-radius: 6px;
+    color: #fff; font-weight: 700; font-size: 13px;
+    text-shadow: 0 1px 0 rgba(0,0,0,.18);
+    border-bottom: 3px solid rgba(0,0,0,.22);
+    cursor: grab; user-select: none; touch-action: none;
+    max-width: 100%;
+  }
+  .blk::after { /* bottom tab: something can connect below */
+    content: ""; position: absolute; left: 16px; bottom: -9px;
+    width: 22px; height: 7px; background: inherit;
+    border-radius: 0 0 5px 5px; border-bottom: 3px solid rgba(0,0,0,.22);
+    z-index: 1;
+  }
+  .blk.cap::after { display: none; }
+  .blk.cap { border-radius: 6px 6px 14px 14px; }
+  .blk.hat { border-radius: 22px 22px 6px 6px; padding-top: 12px; min-width: 170px; }
+  .blk.hat { background: var(--hat); }
+  .blk.osc { background: var(--osc); }
+  .blk.die { background: var(--die); }
+  .blk.dup { background: var(--dup); }
+  .blk.color { background: var(--col); }
+  .blk select, .blk input[type="number"], .blk input[type="text"] {
+    font: inherit; font-size: 12px; font-weight: 600; color: #222;
+    background: #fff; border: none; border-radius: 999px; padding: 3px 8px;
+    cursor: pointer; text-shadow: none; max-width: 140px;
+  }
+  .blk input[type="number"] { width: 58px; cursor: text; }
+  .blk input[type="text"] { width: 82px; cursor: text; font-family: ui-monospace, Menlo, monospace; }
+  .blk input[type="text"].bad { outline: 2px solid #ffde59; }
+  .blk input[type="color"] { width: 34px; height: 24px; border: 2px solid #fff; border-radius: 6px; padding: 0; background: none; cursor: pointer; }
+  .blk input[type="range"] { width: 110px; accent-color: #fff; }
+  .blk .sw { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
+  .blk .x {
+    margin-left: auto; border: none; background: rgba(0,0,0,.2); color: #fff;
+    width: 20px; height: 20px; border-radius: 50%; cursor: pointer; font-weight: 800; line-height: 1;
+  }
+  .blk.insert-after { box-shadow: 0 6px 0 -1px #fff, 0 6px 0 2px var(--accent); }
+  .blk.src-drag { opacity: .3; }
+  .ghost { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; opacity: .9; filter: drop-shadow(0 8px 14px rgba(0,0,0,.3)); }
+  .ghost .stack { padding: 0; }
+
+  /* ---------- workspace ---------- */
+  .ws-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-right: 14px; }
+  .ws-head .who { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; color: var(--text); }
+  .workspace {
+    min-height: 420px; max-height: 70vh; overflow: auto;
+    margin: 0 14px 14px; padding: 14px;
+    border-radius: 10px;
+    background-color: var(--panel-2);
+    background-image: radial-gradient(var(--border) 1px, transparent 1px);
+    background-size: 18px 18px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 22px;
+  }
+  .workspace.drop-hover { outline: 3px dashed var(--accent); outline-offset: -6px; }
+  .stack { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 2px; border-radius: 10px; max-width: 100%; }
+  .stack .blk + .blk { margin-top: 1px; }
+  .stack.drop-hover { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .empty-ws { color: var(--muted); font-size: 13px; max-width: 320px; }
+  .empty-ws b { color: var(--text); }
+
+  /* ---------- world ---------- */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 14px 10px; }
+  .toolbar select { font: inherit; font-size: 13px; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; }
+  .world-wrap { position: relative; margin: 0 14px; border-radius: 12px; overflow: hidden; background: var(--world); height: min(62vh, 560px); min-height: 320px; }
+  .world-wrap canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  .world-hint { position: absolute; left: 10px; bottom: 8px; font-size: 12px; color: rgba(255,255,255,.6); pointer-events: none; }
+  .stats { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 14px 14px; font-size: 13px; }
+  .stats .s { display: inline-flex; align-items: center; gap: 6px; }
+  .stats .s .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .stats .total { color: var(--muted); }
+  .legend { padding: 0 14px 14px; font-size: 12px; color: var(--muted); display: grid; gap: 3px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px);
+    background: #222738; color: #fff; padding: 9px 14px; border-radius: 10px;
+    font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 2000;
+    max-width: calc(100vw - 32px);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 280px 1fr; }
+    .world-pane { grid-column: 1 / -1; grid-row: 1; }
+  }
+  @media (max-width: 680px) {
+    .layout { grid-template-columns: 1fr; }
+    .world-pane { grid-column: auto; }
+    .workspace { min-height: 260px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧬 Gene Playground</h1>
+  <span class="sub">Design a blob, snap genes onto it like Scratch blocks, then drop it in the world and watch.</span>
+</header>
+
+<div class="layout">
+  <!-- left: creatures + gene palette -->
+  <div style="display:grid; gap:12px;">
+    <section class="pane">
+      <h2>Creatures</h2>
+      <div class="pane-body">
+        <div class="species-list" id="speciesList"></div>
+        <div class="editor">
+          <canvas id="preview" width="192" height="192"></canvas>
+          <div class="fields">
+            <label>Name <input type="text" id="fName" maxlength="20"></label>
+            <label>Color <input type="color" id="fColor"></label>
+            <label>Size <input type="range" id="fSize" min="8" max="30" step="1"></label>
+            <label>Wobble <input type="range" id="fWobble" min="0" max="1" step="0.05"></label>
+            <label>Lumps <input type="range" id="fLumps" min="2" max="9" step="1"></label>
+          </div>
+        </div>
+        <div class="editor-actions">
+          <button class="btn primary" id="spawnOne">Drop 1</button>
+          <button class="btn" id="spawnFive">Drop 5</button>
+          <button class="btn danger" id="delSpecies">Delete creature</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane palette-pane" id="palettePane">
+      <h2>Genes</h2>
+      <div class="pane-body">
+        <div class="palette" id="palette"></div>
+        <div class="trash-hint">Drag blocks into the gene editor (or tap one to add it). Drag a block back here to delete it.</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- middle: script workspace -->
+  <section class="pane">
+    <div class="ws-head">
+      <h2>Gene editor</h2>
+      <span class="who" id="wsWho"></span>
+    </div>
+    <div class="workspace" id="workspace"></div>
+  </section>
+
+  <!-- right: world -->
+  <section class="pane world-pane">
+    <h2>World</h2>
+    <div class="toolbar">
+      <button class="btn primary" id="playBtn">⏸ Pause</button>
+      <select id="speedSel" aria-label="Speed">
+        <option value="0.5">½× speed</option>
+        <option value="1" selected>1× speed</option>
+        <option value="2">2× speed</option>
+        <option value="4">4× speed</option>
+      </select>
+      <button class="btn" id="mixBtn">Drop 5 of every creature</button>
+      <button class="btn danger" id="clearBtn">Clear world</button>
+    </div>
+    <div class="world-wrap" id="worldWrap">
+      <canvas id="world"></canvas>
+      <div class="world-hint" id="worldHint"></div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="legend">
+      <div><b>Strangers</b> = cells of a different creature · <b>Family</b> = cells of the same creature · <b>Any cell</b> = either.</div>
+      <div>Genes fire when a cell gets close to a matching cell, then can fire again every 2.5 s while it stays close.</div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ================= constants =================
+  const BASIC_COLORS = { red: '#ef4444', yellow: '#facc15', green: '#22c55e', blue: '#3b82f6' };
+  const TRIGGERS = [
+    ['strangers', 'strangers'],
+    ['family', 'family'],
+    ['any', 'any cell'],
+  ];
+  const OSC_MODES = [
+    ['run', 'run'],
+    ['stop', 'stop activity'],
+    ['attack', 'attack'],
+    ['defend', 'defend'],
+    ['diving', 'diving'],
+    ['infecting', 'infecting'],
+  ];
+  const DUP_MODES = [['2', 'into 2'], ['3', 'into 3'], ['4', 'into 4'], ['custom', 'type how many…']];
+  const COLOR_MODES = [
+    ['red', 'red'], ['yellow', 'yellow'], ['green', 'green'], ['blue', 'blue'],
+    ['panel', 'color panel'], ['slider', 'color slider'], ['hex', 'hex code'],
+  ];
+  const MAX_CELLS = 400;
+  const GENE_COOLDOWN = 2.5;
+  const SENSE_GAP = 34;           // edge-to-edge distance that counts as "near"
+  const ACT_TIME = { run: 2.5, stop: 2.5, attack: 4, defend: 4, diving: 3, infecting: 4 };
+  const STORE_KEY = 'genePlayground.v1';
+
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  // ================= color helpers =================
+  function hslToHex(h, s, l) {
+    s /= 100; l /= 100;
+    const k = n => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    const to = x => Math.round(x * 255).toString(16).padStart(2, '0');
+    return '#' + to(f(0)) + to(f(8)) + to(f(4));
+  }
+  function normHex(s) {
+    if (typeof s !== 'string') return null;
+    let h = s.trim().replace(/^#/, '');
+    if (/^[0-9a-f]{3}$/i.test(h)) h = h.split('').map(c => c + c).join('');
+    return /^[0-9a-f]{6}$/i.test(h) ? '#' + h.toLowerCase() : null;
+  }
+  function shade(hex, amt) {
+    const h = normHex(hex) || '#888888';
+    const n = parseInt(h.slice(1), 16);
+    let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    const t = amt < 0 ? 0 : 255, p = Math.abs(amt);
+    r = Math.round((t - r) * p + r); g = Math.round((t - g) * p + g); b = Math.round((t - b) * p + b);
+    return `rgb(${r},${g},${b})`;
+  }
+  function resolveColor(a) {
+    switch (a.mode) {
+      case 'panel': return normHex(a.panel) || '#ff66cc';
+      case 'slider': return hslToHex(a.hue, 85, 55);
+      case 'hex': return normHex(a.hex) || '#ffffff';
+      default: return BASIC_COLORS[a.mode] || '#ffffff';
+    }
+  }
+  function dupCount(a) {
+    if (a.mode === 'custom') return clamp(parseInt(a.n, 10) || 2, 2, 50);
+    return parseInt(a.mode, 10) || 2;
+  }
+
+  // ================= block factories =================
+  function makeBlock(type) {
+    switch (type) {
+      case 'osc': return { type: 'osc', mode: 'run' };
+      case 'die': return { type: 'die' };
+      case 'dup': return { type: 'dup', mode: '2', n: 5 };
+      case 'color': return { type: 'color', mode: 'red', panel: '#ff66cc', hue: 200, hex: '#ff8800' };
+    }
+  }
+  function makeScript(trigger, actions = []) {
+    return { id: uid(), trigger, actions };
+  }
+
+  // ================= state =================
+  function defaultSpecies() {
+    return [
+      {
+        id: uid(), name: 'Blobby', color: '#4ade80', size: 16, wobble: 0.5, lumps: 5,
+        scripts: [
+          makeScript('strangers', [{ type: 'osc', mode: 'attack' }]),
+          makeScript('family', [{ ...makeBlock('color'), mode: 'yellow' }]),
+        ],
+      },
+      {
+        id: uid(), name: 'Goo', color: '#a78bfa', size: 13, wobble: 0.8, lumps: 3,
+        scripts: [
+          makeScript('strangers', [{ type: 'osc', mode: 'infecting' }]),
+          makeScript('family', [{ type: 'osc', mode: 'diving' }]),
+        ],
+      },
+      {
+        id: uid(), name: 'Sprout', color: '#38bdf8', size: 11, wobble: 0.3, lumps: 7,
+        scripts: [
+          makeScript('any', [{ ...makeBlock('dup'), mode: '2' }, { type: 'osc', mode: 'run' }]),
+          makeScript('strangers', [{ type: 'osc', mode: 'defend' }]),
+        ],
+      },
+    ];
+  }
+
+  function sanitizeAction(a) {
+    if (!a || typeof a !== 'object') return null;
+    const base = makeBlock(a.type);
+    if (!base) return null;
+    return { ...base, ...a };
+  }
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data.species) || !data.species.length) return null;
+      data.species.forEach(sp => {
+        sp.id = sp.id || uid();
+        sp.name = String(sp.name || 'Blob').slice(0, 20);
+        sp.color = normHex(sp.color) || '#4ade80';
+        sp.size = clamp(+sp.size || 16, 8, 30);
+        sp.wobble = clamp(+sp.wobble || 0, 0, 1);
+        sp.lumps = clamp(+sp.lumps || 4, 2, 9);
+        sp.scripts = (Array.isArray(sp.scripts) ? sp.scripts : []).map(s => ({
+          id: s.id || uid(),
+          trigger: TRIGGERS.some(t => t[0] === s.trigger) ? s.trigger : 'any',
+          actions: (Array.isArray(s.actions) ? s.actions : []).map(sanitizeAction).filter(Boolean),
+        }));
+      });
+      return data;
+    } catch (e) { return null; }
+  }
+  const saved = loadState();
+  const state = {
+    species: saved ? saved.species : defaultSpecies(),
+    selected: null,
+  };
+  state.selected = (saved && state.species.find(s => s.id === saved.selected)) ? saved.selected : state.species[0].id;
+  let saveTimer = 0;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try { localStorage.setItem(STORE_KEY, JSON.stringify({ species: state.species, selected: state.selected })); } catch (e) { /* storage unavailable */ }
+    }, 200);
+  }
+  const cur = () => state.species.find(s => s.id === state.selected) || state.species[0];
+  const speciesById = id => state.species.find(s => s.id === id);
+
+  // ================= toast =================
+  const toastEl = document.getElementById('toast');
+  let toastTimer = 0;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
+  }
+
+  // ================= block rendering =================
+  function mkSelect(options, value, onChange) {
+    const s = document.createElement('select');
+    for (const [v, label] of options) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = label;
+      if (v === value) o.selected = true;
+      s.appendChild(o);
+    }
+    s.addEventListener('change', () => onChange(s.value));
+    return s;
+  }
+  function txt(t) { const s = document.createElement('span'); s.textContent = t; return s; }
+
+  // opts: { rerender(), changed(), onDelete? }
+  function blockEl(data, opts = {}) {
+    const el = document.createElement('div');
+    const rerender = opts.rerender || (() => {});
+    const changed = opts.changed || (() => {});
+    if (data.type === 'hat') {
+      el.className = 'blk hat';
+      el.append(txt('When near'), mkSelect(TRIGGERS, data.trigger, v => { data.trigger = v; changed(); }));
+      if (opts.onDelete) {
+        const x = document.createElement('button');
+        x.className = 'x'; x.textContent = '×'; x.title = 'Delete this gene';
+        x.addEventListener('click', opts.onDelete);
+        el.append(x);
+      }
+    } else if (data.type === 'osc') {
+      el.className = 'blk osc';
+      el.append(txt('do oscillating'), mkSelect(OSC_MODES, data.mode, v => { data.mode = v; changed(); }));
+    } else if (data.type === 'die') {
+      el.className = 'blk die cap';
+      el.append(txt('do dying ☠'));
+      el.title = 'A true ending — no more genes can connect below it.';
+    } else if (data.type === 'dup') {
+      el.className = 'blk dup';
+      el.append(txt('do duplicating'), mkSelect(DUP_MODES, data.mode, v => { data.mode = v; changed(); rerender(); }));
+      if (data.mode === 'custom') {
+        const n = document.createElement('input');
+        n.type = 'number'; n.min = 2; n.max = 50; n.value = data.n;
+        n.title = 'How many cells it becomes (2–50)';
+        n.addEventListener('input', () => { data.n = n.value; changed(); });
+        el.append(n);
+      }
+    } else if (data.type === 'color') {
+      el.className = 'blk color';
+      const sw = document.createElement('span');
+      sw.className = 'sw';
+      const refresh = () => { sw.style.background = resolveColor(data); };
+      el.append(txt('do turning into a color'), mkSelect(COLOR_MODES, data.mode, v => { data.mode = v; changed(); rerender(); }));
+      if (data.mode === 'panel') {
+        const c = document.createElement('input');
+        c.type = 'color'; c.value = normHex(data.panel) || '#ff66cc';
+        c.addEventListener('input', () => { data.panel = c.value; refresh(); changed(); });
+        el.append(c);
+      } else if (data.mode === 'slider') {
+        const r = document.createElement('input');
+        r.type = 'range'; r.min = 0; r.max = 360; r.value = data.hue;
+        r.title = 'Slide to pick a hue';
+        r.addEventListener('input', () => { data.hue = +r.value; refresh(); changed(); });
+        el.append(r);
+      } else if (data.mode === 'hex') {
+        const h = document.createElement('input');
+        h.type = 'text'; h.maxLength = 7; h.value = data.hex; h.placeholder = '#ff8800';
+        h.spellcheck = false;
+        const check = () => h.classList.toggle('bad', !normHex(h.value));
+        h.addEventListener('input', () => { data.hex = h.value; check(); refresh(); changed(); });
+        check();
+        el.append(h);
+      }
+      refresh();
+      el.append(sw);
+    }
+    return el;
+  }
+
+  // ================= palette =================
+  const paletteEl = document.getElementById('palette');
+  const palettePane = document.getElementById('palettePane');
+  const paletteDefs = [
+    { group: 'When… (start a gene)' },
+    { type: 'hat', trigger: 'strangers' },
+    { type: 'hat', trigger: 'family' },
+    { type: 'hat', trigger: 'any' },
+    { group: 'Do… (snap under a When)' },
+    makeBlock('osc'),
+    makeBlock('dup'),
+    makeBlock('color'),
+    makeBlock('die'),
+  ];
+  function renderPalette() {
+    paletteEl.innerHTML = '';
+    paletteDefs.forEach((def) => {
+      if (def.group) {
+        const g = document.createElement('div');
+        g.className = 'pal-group'; g.textContent = def.group;
+        paletteEl.appendChild(g);
+        return;
+      }
+      const el = blockEl(def, { rerender: renderPalette });
+      el.addEventListener('pointerdown', e => beginPointer(e, el, () => ({ kind: 'new', block: JSON.parse(JSON.stringify(def)) })));
+      paletteEl.appendChild(el);
+    });
+  }
+
+  // ================= workspace =================
+  const wsEl = document.getElementById('workspace');
+  const wsWho = document.getElementById('wsWho');
+  function renderWorkspace() {
+    const sp = cur();
+    wsWho.innerHTML = '';
+    const dot = document.createElement('span');
+    dot.style.cssText = `width:14px;height:14px;border-radius:50%;background:${sp.color};display:inline-block;border:1px solid rgba(0,0,0,.2)`;
+    wsWho.append(dot, document.createTextNode(sp.name + "'s genes"));
+
+    wsEl.innerHTML = '';
+    if (!sp.scripts.length) {
+      const e = document.createElement('div');
+      e.className = 'empty-ws';
+      e.innerHTML = `<b>${escapeHtml(sp.name)}</b> has no genes yet. Drag a yellow <b>When near…</b> block here, then snap <b>do…</b> blocks underneath it.`;
+      wsEl.appendChild(e);
+    }
+    sp.scripts.forEach(script => {
+      const stack = document.createElement('div');
+      stack.className = 'stack';
+      stack.dataset.script = script.id;
+
+      const hatData = { type: 'hat', get trigger() { return script.trigger; }, set trigger(v) { script.trigger = v; } };
+      const hat = blockEl(hatData, {
+        changed: save,
+        onDelete: () => { sp.scripts = sp.scripts.filter(s => s !== script); save(); renderWorkspace(); },
+      });
+      hat.dataset.index = -1;
+      hat.addEventListener('pointerdown', e => beginPointer(e, hat, () => ({ kind: 'moveScript', scriptId: script.id })));
+      stack.appendChild(hat);
+
+      script.actions.forEach((a, i) => {
+        const el = blockEl(a, { changed: save, rerender: renderWorkspace });
+        el.dataset.index = i;
+        el.addEventListener('pointerdown', e => beginPointer(e, el, () => ({ kind: 'move', scriptId: script.id, index: i })));
+        stack.appendChild(el);
+      });
+      wsEl.appendChild(stack);
+    });
+  }
+  function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  // Dying must be the last block in a gene. Returns the new list or null if invalid.
+  function tryInsert(actions, after, blocks) {
+    const next = actions.slice(0, after + 1).concat(blocks, actions.slice(after + 1));
+    const dieIdx = next.findIndex(a => a.type === 'die');
+    if (dieIdx !== -1 && dieIdx !== next.length - 1) return null;
+    return next;
+  }
+
+  // ================= drag & drop (pointer based; works with touch) =================
+  let drag = null;
+  let hoverEls = [];
+  function beginPointer(e, el, payloadFn) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest('input, select, button, textarea')) return;
+    e.preventDefault();
+    drag = { el, payloadFn, sx: e.clientX, sy: e.clientY, started: false, ghost: null, payload: null, srcEls: [], hover: null, ox: 0, oy: 0 };
+  }
+  function startDrag(e) {
+    const p = drag.payloadFn();
+    drag.payload = p;
+    const sp = cur();
+    let ghostBlocks = [];
+    if (p.kind === 'new') {
+      ghostBlocks = [p.block];
+    } else {
+      const script = sp.scripts.find(s => s.id === p.scriptId);
+      if (!script) { drag = null; return; }
+      if (p.kind === 'moveScript') ghostBlocks = [{ type: 'hat', trigger: script.trigger }, ...script.actions];
+      else ghostBlocks = script.actions.slice(p.index);
+      const stackEl = drag.el.parentElement;
+      drag.srcEls = [...stackEl.children].filter(c => +c.dataset.index >= (p.kind === 'moveScript' ? -1 : p.index));
+      drag.srcEls.forEach(c => c.classList.add('src-drag'));
+    }
+    const ghost = document.createElement('div');
+    ghost.className = 'ghost';
+    const st = document.createElement('div');
+    st.className = 'stack';
+    ghostBlocks.forEach(b => st.appendChild(blockEl(JSON.parse(JSON.stringify(b)))));
+    ghost.appendChild(st);
+    document.body.appendChild(ghost);
+    const r = drag.el.getBoundingClientRect();
+    drag.ox = drag.sx - r.left; drag.oy = drag.sy - r.top;
+    drag.ghost = ghost;
+    drag.started = true;
+    document.body.style.cursor = 'grabbing';
+  }
+  function clearHover() {
+    hoverEls.forEach(([el, cls]) => el.classList.remove(cls));
+    hoverEls = [];
+  }
+  function markHover(el, cls) { el.classList.add(cls); hoverEls.push([el, cls]); }
+  function computeHover(x, y) {
+    const target = document.elementFromPoint(x, y);
+    if (!target) return null;
+    if (target.closest('#palettePane')) return { type: 'trash' };
+    const stack = target.closest('#workspace .stack');
+    if (stack) {
+      const blk = target.closest('.blk');
+      const script = cur().scripts.find(s => s.id === stack.dataset.script);
+      if (!script) return null;
+      const after = blk && blk.dataset.index != null ? +blk.dataset.index : script.actions.length - 1;
+      return { type: 'stack', scriptId: script.id, after, stack, blk: blk || stack.lastElementChild };
+    }
+    if (target.closest('#workspace')) return { type: 'workspace' };
+    return null;
+  }
+  function moveDrag(e) {
+    if (!drag) return;
+    if (!drag.started) {
+      if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) return;
+      startDrag(e);
+      if (!drag) return;
+    }
+    drag.ghost.style.transform = `translate(${e.clientX - drag.ox}px, ${e.clientY - drag.oy}px)`;
+    const h = computeHover(e.clientX, e.clientY);
+    drag.hover = h;
+    clearHover();
+    if (!h) return;
+    const p = drag.payload;
+    const isHat = (p.kind === 'new' && p.block.type === 'hat') || p.kind === 'moveScript';
+    if (h.type === 'trash' && p.kind !== 'new') markHover(palettePane, 'trash-hover');
+    else if (h.type === 'stack' && !isHat) markHover(h.blk, 'insert-after');
+    else if ((h.type === 'workspace' || h.type === 'stack') && isHat && p.kind === 'new') markHover(wsEl, 'drop-hover');
+  }
+  function endDrag(e) {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    if (!d.started) {
+      // a tap on a palette block adds it
+      const p = d.payloadFn();
+      if (p.kind === 'new') tapAdd(p.block);
+      return;
+    }
+    clearHover();
+    d.ghost.remove();
+    d.srcEls.forEach(c => c.classList.remove('src-drag'));
+    document.body.style.cursor = '';
+    applyDrop(d.payload, d.hover);
+  }
+  window.addEventListener('pointermove', moveDrag);
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', () => {
+    if (drag && drag.started) { clearHover(); drag.ghost.remove(); drag.srcEls.forEach(c => c.classList.remove('src-drag')); document.body.style.cursor = ''; }
+    drag = null;
+  });
+
+  const CAP_MSG = 'Dying is a true ending — no more genes can connect below it.';
+  function tapAdd(block) {
+    const sp = cur();
+    if (block.type === 'hat') {
+      sp.scripts.push(makeScript(block.trigger));
+    } else {
+      const script = sp.scripts[sp.scripts.length - 1];
+      if (!script) { toast('Add a "When near…" block first, then snap do-blocks under it.'); return; }
+      const next = tryInsert(script.actions, script.actions.length - 1, [block]);
+      if (!next) { toast(CAP_MSG); return; }
+      script.actions = next;
+    }
+    save(); renderWorkspace();
+  }
+  function applyDrop(p, h) {
+    const sp = cur();
+    if (p.kind === 'new') {
+      if (!h || h.type === 'trash') return;
+      if (p.block.type === 'hat') {
+        sp.scripts.push(makeScript(p.block.trigger));
+      } else if (h.type === 'stack') {
+        const script = sp.scripts.find(s => s.id === h.scriptId);
+        const next = tryInsert(script.actions, h.after, [p.block]);
+        if (!next) { toast(CAP_MSG); return; }
+        script.actions = next;
+      } else {
+        toast('Snap do-blocks under a yellow "When near…" block.');
+        return;
+      }
+    } else if (p.kind === 'moveScript') {
+      if (h && h.type === 'trash') sp.scripts = sp.scripts.filter(s => s.id !== p.scriptId);
+      else return;
+    } else if (p.kind === 'move') {
+      const src = sp.scripts.find(s => s.id === p.scriptId);
+      if (!src) return;
+      if (h && h.type === 'trash') {
+        src.actions = src.actions.slice(0, p.index);
+      } else if (h && h.type === 'stack') {
+        const dst = sp.scripts.find(s => s.id === h.scriptId);
+        if (dst === src && h.after >= p.index - 1) return; // dropped onto itself / same spot
+        const moving = src.actions.slice(p.index);
+        const remaining = src.actions.slice(0, p.index);
+        const base = dst === src ? remaining : dst.actions;
+        const next = tryInsert(base, h.after, moving);
+        if (!next) { toast(CAP_MSG); return; }
+        if (dst === src) src.actions = next;
+        else { src.actions = remaining; dst.actions = next; }
+      } else return;
+    }
+    save(); renderWorkspace();
+  }
+
+  // ================= creature editor =================
+  const listEl = document.getElementById('speciesList');
+  const fName = document.getElementById('fName');
+  const fColor = document.getElementById('fColor');
+  const fSize = document.getElementById('fSize');
+  const fWobble = document.getElementById('fWobble');
+  const fLumps = document.getElementById('fLumps');
+  const worldHint = document.getElementById('worldHint');
+
+  function renderSpeciesList() {
+    listEl.innerHTML = '';
+    state.species.forEach(sp => {
+      const b = document.createElement('button');
+      b.className = 'chip' + (sp.id === state.selected ? ' on' : '');
+      const dot = document.createElement('span');
+      dot.className = 'dot'; dot.style.background = sp.color;
+      b.append(dot, document.createTextNode(sp.name));
+      b.addEventListener('click', () => { state.selected = sp.id; save(); renderAll(); });
+      listEl.appendChild(b);
+    });
+    const add = document.createElement('button');
+    add.className = 'chip add'; add.textContent = '+ New creature';
+    add.addEventListener('click', () => {
+      const sp = {
+        id: uid(), name: 'Blob ' + (state.species.length + 1),
+        color: hslToHex(Math.floor(rand(0, 360)), 80, 60),
+        size: Math.round(rand(11, 20)), wobble: 0.5, lumps: Math.round(rand(3, 7)), scripts: [],
+      };
+      state.species.push(sp);
+      state.selected = sp.id;
+      save(); renderAll();
+    });
+    listEl.appendChild(add);
+  }
+  function renderEditor() {
+    const sp = cur();
+    fName.value = sp.name;
+    fColor.value = sp.color;
+    fSize.value = sp.size;
+    fWobble.value = sp.wobble;
+    fLumps.value = sp.lumps;
+    worldHint.textContent = `Click the world to drop a ${sp.name}`;
+  }
+  fName.addEventListener('input', () => { cur().name = fName.value.trim() || 'Blob'; save(); renderSpeciesList(); renderWorkspaceHeader(); worldHint.textContent = `Click the world to drop a ${cur().name}`; });
+  fColor.addEventListener('input', () => { cur().color = fColor.value; save(); renderSpeciesList(); renderWorkspaceHeader(); });
+  fSize.addEventListener('input', () => { cur().size = +fSize.value; save(); });
+  fWobble.addEventListener('input', () => { cur().wobble = +fWobble.value; save(); });
+  fLumps.addEventListener('input', () => { cur().lumps = +fLumps.value; save(); });
+  function renderWorkspaceHeader() {
+    const sp = cur();
+    const dot = wsWho.firstChild;
+    if (dot) dot.style.background = sp.color;
+    if (wsWho.childNodes[1]) wsWho.childNodes[1].textContent = sp.name + "'s genes";
+  }
+  document.getElementById('delSpecies').addEventListener('click', () => {
+    if (state.species.length <= 1) { toast('You need at least one creature.'); return; }
+    const sp = cur();
+    if (!confirm(`Delete ${sp.name} and all of its cells?`)) return;
+    state.species = state.species.filter(s => s !== sp);
+    cells = cells.filter(c => c.sp !== sp.id);
+    state.selected = state.species[0].id;
+    save(); renderAll();
+  });
+  document.getElementById('spawnOne').addEventListener('click', () => spawnRandom(cur(), 1));
+  document.getElementById('spawnFive').addEventListener('click', () => spawnRandom(cur(), 5));
+
+  function renderAll() { renderSpeciesList(); renderEditor(); renderWorkspace(); }
+
+  // ================= simulation =================
+  const canvas = document.getElementById('world');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('worldWrap');
+  let W = 600, H = 400, DPR = 1;
+  function resize() {
+    const r = wrap.getBoundingClientRect();
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = Math.max(200, r.width); H = Math.max(200, r.height);
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    for (const c of cells) { c.x = clamp(c.x, 0, W); c.y = clamp(c.y, 0, H); }
+  }
+  let cells = [];
+  let particles = [];
+  let running = true;
+  let speed = 1;
+  let simTime = 0;
+  let capWarned = 0;
+
+  function newCell(sp, x, y, color) {
+    const ang = rand(0, Math.PI * 2);
+    return {
+      id: uid(), sp: sp.id, x, y,
+      vx: Math.cos(ang) * 20, vy: Math.sin(ang) * 20,
+      heading: ang, color: color || sp.color,
+      seed: rand(0, 100), hp: 100,
+      act: null, actT: 0, target: null,
+      cool: {}, born: 0.6, dead: false, flash: 0,
+    };
+  }
+  function spawnRandom(sp, n) {
+    for (let i = 0; i < n; i++) addCell(newCell(sp, rand(30, W - 30), rand(30, H - 30)));
+  }
+  function addCell(c) {
+    if (cells.length >= MAX_CELLS) {
+      if (simTime - capWarned > 3) { toast(`Population cap reached (${MAX_CELLS} cells).`); capWarned = simTime; }
+      return false;
+    }
+    cells.push(c);
+    return true;
+  }
+  canvas.addEventListener('click', e => {
+    const r = canvas.getBoundingClientRect();
+    addCell(newCell(cur(), e.clientX - r.left, e.clientY - r.top));
+  });
+
+  function puff(x, y, color, n = 10, spd = 80) {
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, Math.PI * 2), s = rand(spd * 0.3, spd);
+      particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rand(0.4, 0.9), max: 0.9, color });
+    }
+  }
+  function kill(c) {
+    if (c.dead) return;
+    c.dead = true;
+    puff(c.x, c.y, c.color, 16, 110);
+  }
+  function radiusOf(c) {
+    const sp = speciesById(c.sp);
+    const base = sp ? sp.size : 14;
+    return base * (1 - c.born * 0.8);
+  }
+
+  function runGene(c, sp, script, target) {
+    for (const a of script.actions) {
+      if (c.dead) return;
+      if (a.type === 'osc') {
+        c.act = a.mode; c.actT = ACT_TIME[a.mode] || 3; c.target = target;
+        if (a.mode === 'stop') { c.vx *= 0.1; c.vy *= 0.1; }
+      } else if (a.type === 'die') {
+        kill(c);
+        return;
+      } else if (a.type === 'dup') {
+        const n = dupCount(a) - 1;
+        const r = radiusOf(c);
+        for (let i = 0; i < n; i++) {
+          const ang = (i / n) * Math.PI * 2 + rand(-0.3, 0.3);
+          const kid = newCell(sp, clamp(c.x + Math.cos(ang) * r * 1.6, 0, W), clamp(c.y + Math.sin(ang) * r * 1.6, 0, H), c.color);
+          kid.vx = Math.cos(ang) * 60; kid.vy = Math.sin(ang) * 60;
+          for (const s of sp.scripts) kid.cool[s.id] = GENE_COOLDOWN;
+          if (!addCell(kid)) break;
+        }
+        puff(c.x, c.y, c.color, 6, 50);
+      } else if (a.type === 'color') {
+        c.color = resolveColor(a);
+        c.flash = 0.4;
+      }
+    }
+  }
+
+  function step(dt) {
+    simTime += dt;
+    const n = cells.length;
+    // sensing
+    for (let i = 0; i < n; i++) {
+      const c = cells[i];
+      c.r = radiusOf(c);
+      c.nS = c.nF = c.nA = null;
+      c.dS = c.dF = c.dA = Infinity;
+    }
+    for (let i = 0; i < n; i++) {
+      const a = cells[i];
+      if (a.dead || a.act === 'diving') continue;
+      for (let j = i + 1; j < n; j++) {
+        const b = cells[j];
+        if (b.dead || b.act === 'diving') continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const lim = a.r + b.r + SENSE_GAP;
+        if (dx > lim || dx < -lim || dy > lim || dy < -lim) continue;
+        const d = Math.hypot(dx, dy);
+        if (d > lim) continue;
+        const gap = d - a.r - b.r;
+        if (gap < a.dA) { a.dA = gap; a.nA = b; }
+        if (gap < b.dA) { b.dA = gap; b.nA = a; }
+        if (a.sp === b.sp) {
+          if (gap < a.dF) { a.dF = gap; a.nF = b; }
+          if (gap < b.dF) { b.dF = gap; b.nF = a; }
+        } else {
+          if (gap < a.dS) { a.dS = gap; a.nS = b; }
+          if (gap < b.dS) { b.dS = gap; b.nS = a; }
+        }
+        // soft collision
+        if (gap < 0 && d > 0.001) {
+          const push = (-gap) * 0.5 / d;
+          a.x -= dx * push; a.y -= dy * push;
+          b.x += dx * push; b.y += dy * push;
+        }
+      }
+    }
+    // genes
+    for (let i = 0; i < n; i++) {
+      const c = cells[i];
+      if (c.dead) continue;
+      const sp = speciesById(c.sp);
+      if (!sp) { c.dead = true; continue; }
+      for (const k in c.cool) c.cool[k] -= dt;
+      if (c.born > 0 || c.act === 'diving') continue;
+      for (const script of sp.scripts) {
+        if (!script.actions.length) continue;
+        if ((c.cool[script.id] || 0) > 0) continue;
+        const t = script.trigger === 'strangers' ? c.nS : script.trigger === 'family' ? c.nF : c.nA;
+        if (!t) continue;
+        c.cool[script.id] = GENE_COOLDOWN;
+        runGene(c, sp, script, t);
+        if (c.dead) break;
+      }
+    }
+    // movement & activities
+    for (const c of cells) {
+      if (c.dead) continue;
+      c.born = Math.max(0, c.born - dt);
+      c.flash = Math.max(0, c.flash - dt);
+      c.hp = Math.min(100, c.hp + dt * 4);
+      if (c.act) {
+        c.actT -= dt;
+        if (c.actT <= 0) { c.act = null; c.target = null; }
+      }
+      const t = c.target && !c.target.dead ? c.target : null;
+      c.heading += rand(-1, 1) * dt * 2.2;
+      let tvx = Math.cos(c.heading) * 26, tvy = Math.sin(c.heading) * 26, steer = 1.5;
+      if (c.act === 'run') {
+        if (t) {
+          const dx = c.x - t.x, dy = c.y - t.y, d = Math.hypot(dx, dy) || 1;
+          c.heading = Math.atan2(dy, dx);
+          tvx = dx / d * 150; tvy = dy / d * 150;
+        } else { tvx *= 5; tvy *= 5; }
+        steer = 4;
+      } else if (c.act === 'stop') {
+        tvx = 0; tvy = 0; steer = 8;
+      } else if (c.act === 'attack' || c.act === 'infecting') {
+        if (t && t.act !== 'diving') {
+          const dx = t.x - c.x, dy = t.y - c.y, d = Math.hypot(dx, dy) || 1;
+          const sp = c.act === 'attack' ? 115 : 95;
+          tvx = dx / d * sp; tvy = dy / d * sp; steer = 4;
+          c.heading = Math.atan2(dy, dx);
+          if (d < c.r + t.r + 2) {
+            if (c.act === 'attack') {
+              const dmg = (t.act === 'defend' ? 8 : 60) * dt;
+              t.hp -= dmg;
+              if (Math.random() < dt * 12) puff(t.x, t.y, '#ff5a5a', 1, 60);
+              if (t.hp <= 0) kill(t);
+            } else if (t.act !== 'defend' && t.sp !== c.sp) {
+              const sp2 = speciesById(c.sp);
+              t.sp = c.sp; t.color = c.color; t.act = null; t.target = null; t.hp = 100;
+              t.cool = {};
+              if (sp2) for (const s of sp2.scripts) t.cool[s.id] = GENE_COOLDOWN;
+              puff(t.x, t.y, '#7dff9a', 12, 70);
+              c.act = null; c.target = null;
+            }
+          }
+        }
+      } else if (c.act === 'defend') {
+        tvx *= 0.25; tvy *= 0.25; steer = 3;
+      } else if (c.act === 'diving') {
+        tvx *= 1.4; tvy *= 1.4;
+      }
+      const k = Math.min(1, dt * steer);
+      c.vx += (tvx - c.vx) * k; c.vy += (tvy - c.vy) * k;
+      c.x += c.vx * dt; c.y += c.vy * dt;
+      const r = c.r || 10;
+      if (c.x < r) { c.x = r; c.vx = Math.abs(c.vx); c.heading = Math.PI - c.heading; }
+      if (c.x > W - r) { c.x = W - r; c.vx = -Math.abs(c.vx); c.heading = Math.PI - c.heading; }
+      if (c.y < r) { c.y = r; c.vy = Math.abs(c.vy); c.heading = -c.heading; }
+      if (c.y > H - r) { c.y = H - r; c.vy = -Math.abs(c.vy); c.heading = -c.heading; }
+    }
+    if (cells.some(c => c.dead)) {
+      for (const c of cells) if (c.target && c.target.dead) c.target = null;
+      cells = cells.filter(c => !c.dead);
+    }
+    for (const p of particles) {
+      p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94;
+    }
+    particles = particles.filter(p => p.life > 0);
+  }
+
+  // ================= drawing =================
+  function blobPath(g, x, y, r, sp, t, seed, squash = 1) {
+    const N = 28;
+    const wob = sp ? sp.wobble : 0.4;
+    const lumps = sp ? sp.lumps : 4;
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const k = 1
+        + wob * 0.16 * Math.sin(a * lumps + t * 2.2 + seed)
+        + wob * 0.07 * Math.sin(a * 3 - t * 3.3 + seed * 1.7);
+      pts.push([x + Math.cos(a) * r * k * squash, y + Math.sin(a) * r * k / squash]);
+    }
+    g.beginPath();
+    const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+    let m = mid(pts[N - 1], pts[0]);
+    g.moveTo(m[0], m[1]);
+    for (let i = 0; i < N; i++) {
+      const p = pts[i], q = pts[(i + 1) % N];
+      m = mid(p, q);
+      g.quadraticCurveTo(p[0], p[1], m[0], m[1]);
+    }
+    g.closePath();
+  }
+  function drawBlob(g, x, y, r, color, sp, t, seed, opt = {}) {
+    const pulse = opt.pulse || 1;
+    const rr = r * pulse;
+    blobPath(g, x, y, rr, sp, t, seed, opt.squash || 1);
+    const grad = g.createRadialGradient(x - rr * 0.35, y - rr * 0.4, rr * 0.1, x, y, rr * 1.2);
+    grad.addColorStop(0, shade(color, 0.45));
+    grad.addColorStop(0.6, color);
+    grad.addColorStop(1, shade(color, -0.25));
+    g.fillStyle = grad;
+    g.fill();
+    g.lineWidth = Math.max(1.2, rr * 0.09);
+    g.strokeStyle = shade(color, -0.45);
+    g.stroke();
+    // eyes
+    const look = opt.look || 0;
+    const ex = Math.cos(look) * rr * 0.12, ey = Math.sin(look) * rr * 0.12;
+    const er = Math.max(1.6, rr * 0.2);
+    const blink = Math.sin(t * 1.3 + seed * 3) > 0.985 ? 0.15 : 1;
+    for (const s of [-1, 1]) {
+      const cx = x + s * rr * 0.32 + ex * 0.4, cy = y - rr * 0.12 + ey * 0.4;
+      g.fillStyle = '#fff';
+      g.beginPath(); g.ellipse(cx, cy, er, er * blink, 0, 0, Math.PI * 2); g.fill();
+      if (blink > 0.5) {
+        g.fillStyle = '#111';
+        g.beginPath(); g.arc(cx + ex * 0.6, cy + ey * 0.6, er * 0.5, 0, Math.PI * 2); g.fill();
+      }
+    }
+    if (opt.angry) {
+      g.strokeStyle = '#111'; g.lineWidth = Math.max(1, rr * 0.08);
+      g.beginPath();
+      g.moveTo(x - rr * 0.55, y - rr * 0.45); g.lineTo(x - rr * 0.15, y - rr * 0.3);
+      g.moveTo(x + rr * 0.55, y - rr * 0.45); g.lineTo(x + rr * 0.15, y - rr * 0.3);
+      g.stroke();
+    }
+  }
+
+  function draw(t) {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.fillStyle = getComputedStyle(wrap).backgroundColor || '#0f1a2b';
+    ctx.fillRect(0, 0, W, H);
+    // grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.045)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x < W; x += 32) { ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, H); }
+    for (let y = 0; y < H; y += 32) { ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); }
+    ctx.stroke();
+
+    for (const p of particles) {
+      ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    for (const c of cells) {
+      const sp = speciesById(c.sp);
+      const r = c.r || radiusOf(c);
+      const look = Math.atan2(c.vy, c.vx);
+      let pulse = 1, squash = 1, alpha = 1;
+      // every activity is an "oscillation": the body throbs in its own rhythm
+      if (c.act === 'run') { squash = 1 + 0.12 * Math.sin(t * 22 + c.seed); }
+      else if (c.act === 'attack') { pulse = 1 + 0.1 * Math.sin(t * 18 + c.seed); }
+      else if (c.act === 'defend') { pulse = 1 + 0.04 * Math.sin(t * 6 + c.seed); }
+      else if (c.act === 'diving') { pulse = 0.7 + 0.05 * Math.sin(t * 4 + c.seed); alpha = 0.3; }
+      else if (c.act === 'infecting') { pulse = 1 + 0.08 * Math.sin(t * 10 + c.seed); }
+      else if (c.act === 'stop') { pulse = 1; }
+      else { pulse = 1 + 0.03 * Math.sin(t * 3 + c.seed); }
+
+      // auras behind the body
+      if (c.act === 'diving') {
+        ctx.strokeStyle = 'rgba(140,200,255,0.5)'; ctx.lineWidth = 1.2;
+        for (let k = 0; k < 2; k++) {
+          const ph = ((t * 0.9 + k * 0.5 + c.seed) % 1);
+          ctx.globalAlpha = 1 - ph;
+          ctx.beginPath(); ctx.ellipse(c.x, c.y, r * (1 + ph * 1.4), r * (0.5 + ph * 0.7), 0, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+      if (c.act === 'attack') {
+        ctx.fillStyle = 'rgba(255,70,70,0.85)';
+        const spikes = 9;
+        for (let k = 0; k < spikes; k++) {
+          const a = k / spikes * Math.PI * 2 + t * 2;
+          const r1 = r * 0.9, r2 = r * (1.45 + 0.1 * Math.sin(t * 18 + k));
+          ctx.beginPath();
+          ctx.moveTo(c.x + Math.cos(a - 0.18) * r1, c.y + Math.sin(a - 0.18) * r1);
+          ctx.lineTo(c.x + Math.cos(a) * r2, c.y + Math.sin(a) * r2);
+          ctx.lineTo(c.x + Math.cos(a + 0.18) * r1, c.y + Math.sin(a + 0.18) * r1);
+          ctx.fill();
+        }
+      }
+      if (c.act === 'run') {
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.5;
+        const back = Math.atan2(-c.vy, -c.vx);
+        for (let k = -1; k <= 1; k++) {
+          const a = back + k * 0.35;
+          ctx.beginPath();
+          ctx.moveTo(c.x + Math.cos(a) * r * 1.2, c.y + Math.sin(a) * r * 1.2);
+          ctx.lineTo(c.x + Math.cos(a) * r * 2.1, c.y + Math.sin(a) * r * 2.1);
+          ctx.stroke();
+        }
+      }
+
+      ctx.globalAlpha = alpha;
+      const color = c.flash > 0 ? shade(c.color, c.flash) : c.color;
+      drawBlob(ctx, c.x, c.y, r, color, sp, t, c.seed, { look, pulse, squash, angry: c.act === 'attack' });
+      ctx.globalAlpha = 1;
+
+      // overlays
+      if (c.act === 'defend') {
+        ctx.strokeStyle = 'rgba(120,190,255,0.9)'; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(c.x, c.y, r * 1.45, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(120,190,255,0.12)'; ctx.fill();
+      }
+      if (c.act === 'infecting') {
+        ctx.fillStyle = '#7dff9a';
+        for (let k = 0; k < 5; k++) {
+          const a = t * 3 + k / 5 * Math.PI * 2;
+          ctx.beginPath(); ctx.arc(c.x + Math.cos(a) * r * 1.5, c.y + Math.sin(a) * r * 1.5, 2.2, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      if (c.act === 'stop') {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        const s = Math.max(3, r * 0.3);
+        ctx.fillRect(c.x - s * 0.9, c.y - r - s * 2.4, s * 0.6, s * 1.6);
+        ctx.fillRect(c.x + s * 0.3, c.y - r - s * 2.4, s * 0.6, s * 1.6);
+      }
+      if (c.hp < 99) {
+        const w = r * 2;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(c.x - w / 2, c.y + r + 5, w, 3);
+        ctx.fillStyle = c.hp > 40 ? '#4ade80' : '#f87171'; ctx.fillRect(c.x - w / 2, c.y + r + 5, w * c.hp / 100, 3);
+      }
+    }
+  }
+
+  // preview of the selected creature
+  const pv = document.getElementById('preview');
+  const pctx = pv.getContext('2d');
+  function drawPreview(t) {
+    const sp = cur();
+    pctx.setTransform(2, 0, 0, 2, 0, 0);
+    pctx.fillStyle = getComputedStyle(pv).backgroundColor || '#0f1a2b';
+    pctx.fillRect(0, 0, 96, 96);
+    const r = 14 + sp.size * 0.9;
+    drawBlob(pctx, 48, 50, r, sp.color, sp, t, 1.3, { look: Math.sin(t * 0.8) * 2, pulse: 1 + 0.03 * Math.sin(t * 3) });
+  }
+
+  // ================= stats =================
+  const statsEl = document.getElementById('stats');
+  let statsT = 0;
+  function renderStats() {
+    const counts = {};
+    for (const c of cells) counts[c.sp] = (counts[c.sp] || 0) + 1;
+    statsEl.innerHTML = '';
+    const total = document.createElement('span');
+    total.className = 'total';
+    total.textContent = `${cells.length} cell${cells.length === 1 ? '' : 's'}`;
+    statsEl.appendChild(total);
+    state.species.forEach(sp => {
+      const s = document.createElement('span');
+      s.className = 's';
+      const d = document.createElement('span');
+      d.className = 'dot'; d.style.background = sp.color;
+      s.append(d, document.createTextNode(`${sp.name}: ${counts[sp.id] || 0}`));
+      statsEl.appendChild(s);
+    });
+  }
+
+  // ================= controls =================
+  const playBtn = document.getElementById('playBtn');
+  playBtn.addEventListener('click', () => {
+    running = !running;
+    playBtn.textContent = running ? '⏸ Pause' : '▶ Play';
+  });
+  document.getElementById('speedSel').addEventListener('change', e => { speed = +e.target.value; });
+  document.getElementById('clearBtn').addEventListener('click', () => { cells = []; particles = []; });
+  document.getElementById('mixBtn').addEventListener('click', () => state.species.forEach(sp => spawnRandom(sp, 5)));
+
+  // ================= loop =================
+  let last = performance.now();
+  let animT = 0;
+  function frame(now) {
+    const realDt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    animT += realDt;
+    if (running) {
+      const total = realDt * speed;
+      const steps = Math.ceil(total / 0.025);
+      for (let i = 0; i < steps; i++) step(total / steps);
+    }
+    draw(running ? simTime : simTime);
+    drawPreview(animT);
+    statsT -= realDt;
+    if (statsT <= 0) { renderStats(); statsT = 0.25; }
+    requestAnimationFrame(frame);
+  }
+
+  // ================= boot =================
+  renderPalette();
+  renderAll();
+  new ResizeObserver(resize).observe(wrap);
+  resize();
+  state.species.forEach(sp => spawnRandom(sp, 6));
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
