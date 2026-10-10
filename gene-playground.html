@@ -826,7 +826,15 @@
   document.getElementById('delSpecies').addEventListener('click', () => {
     if (state.species.length <= 1) { toast('You need at least one creature.'); return; }
     const sp = cur();
-    if (!confirm(`Delete ${sp.name} and all of its cells?`)) return;
+    const btn = document.getElementById('delSpecies');
+    if (btn.dataset.armed !== sp.id) {
+      btn.dataset.armed = sp.id;
+      btn.textContent = `Tap again to delete ${sp.name}`;
+      setTimeout(() => { if (btn.dataset.armed === sp.id) { delete btn.dataset.armed; btn.textContent = 'Delete creature'; } }, 3000);
+      return;
+    }
+    delete btn.dataset.armed;
+    btn.textContent = 'Delete creature';
     state.species = state.species.filter(s => s !== sp);
     cells = cells.filter(c => c.sp !== sp.id);
     state.selected = state.species[0].id;
