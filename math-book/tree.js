@@ -205,8 +205,15 @@
   const ALL = [];
   (function walk(n, path, parent) { n.path = path; n.parent = parent; ALL.push(n); n.kids.forEach((c, i) => walk(c, path + "." + i, n)); })(TREE, "0", null);
 
-  const UNIT = 100, LEVEL = 96, NODE_W = 88, NODE_H = 58;
-  const state = { open: null, zoom: null, sel: "0" };
+  // Box sizes. "Smaller buttons" switches to tiny boxes that show only the symbol.
+  let UNIT, LEVEL, NODE_W, NODE_H, TOGGLE_GAP;
+  const state = { open: null, zoom: null, sel: "0", tiny: false };
+  function setSize() {
+    if (state.tiny) { UNIT = 38; LEVEL = 60; NODE_W = 32; NODE_H = 30; TOGGLE_GAP = 10; }
+    else { UNIT = 100; LEVEL = 96; NODE_W = 88; NODE_H = 58; TOGGLE_GAP = 12; }
+  }
+  try { state.tiny = localStorage.getItem("mathbook-tree-tiny") === "1"; } catch (e) { /* ignore */ }
+  setSize();
 
   function initOpen() { state.open = new Set(["0"]); }
   const nodeAt = p => ALL.find(n => n.path === p) || TREE;
@@ -250,7 +257,7 @@
       const cx = n => pad + (n.x + (UNIT - NODE_W) / 2 + NODE_W / 2) * z;
       let paths = "";
       L.edges.forEach(e => {
-        const x1 = cx(e.from), y1 = (e.from.y + NODE_H) * z + 12, x2 = cx(e.to), y2 = e.to.y * z + 1;
+        const x1 = cx(e.from), y1 = (e.from.y + NODE_H) * z + TOGGLE_GAP, x2 = cx(e.to), y2 = e.to.y * z + 1;
         const my = (y1 + y2) / 2;
         paths += '<path d="M' + x1.toFixed(1) + " " + y1.toFixed(1) + " C" + x1.toFixed(1) + " " + my.toFixed(1) + " " + x2.toFixed(1) + " " + my.toFixed(1) + " " + x2.toFixed(1) + " " + y2.toFixed(1) + '"/>';
       });
@@ -260,21 +267,23 @@
       L.nodes.forEach(nd => {
         const n = nd.n, I = info(n);
         const left = cx(nd) - NODE_W * z / 2, top = nd.y * z;
-        const sym = I.sym.length > 7 ? I.sym.slice(0, 7) + "…" : I.sym;
-        const btn = h("button", { class: "tnode g-" + I.group + (state.sel === n.path ? " sel" : "") + (nd.depth === 0 ? " root" : "") + (I.e ? "" : " plain"),
+        const max = state.tiny ? 3 : 7;
+        const sym = [...I.sym].length > max ? [...I.sym].slice(0, max).join("") + (state.tiny ? "" : "…") : I.sym;
+        const btn = h("button", { class: "tnode g-" + I.group + (state.sel === n.path ? " sel" : "") + (nd.depth === 0 ? " root" : "") + (I.e ? "" : " plain") + (state.tiny ? " tiny" : ""),
           style: "left:" + left.toFixed(1) + "px;top:" + top.toFixed(1) + "px;width:" + (NODE_W * z).toFixed(1) + "px;height:" + (NODE_H * z).toFixed(1) + "px;font-size:" + (z * 0.92).toFixed(3) + "em",
           title: I.name, "aria-label": I.name + (n.code ? ", code " + n.code : ""),
           onclick: () => { state.sel = n.path; draw(); showDetail(); } },
           h("span", { class: "tn-sym" }, sym),
-          h("span", { class: "tn-name" }, I.name),
-          n.code ? h("span", { class: "tn-code" }, n.code) : null);
+          state.tiny ? null : h("span", { class: "tn-name" }, I.name),
+          n.code && !state.tiny ? h("span", { class: "tn-code" }, n.code) : null);
         if (state.sel === n.path) selBox = { x: cx(nd), y: top };
         frag.append(btn);
         if (n.kids.length) {
-          frag.append(h("button", { class: "tn-toggle", style: "left:" + (cx(nd) - 13).toFixed(1) + "px;top:" + ((nd.y + NODE_H) * z + 1).toFixed(1) + "px",
+          const tw = state.tiny ? 8 : 13;
+          frag.append(h("button", { class: "tn-toggle" + (state.tiny ? " tiny" : ""), style: "left:" + (cx(nd) - tw).toFixed(1) + "px;top:" + ((nd.y + NODE_H) * z + 1).toFixed(1) + "px",
             "aria-label": (nd.open ? "Hide" : "Show") + " the " + n.kids.length + " below " + I.name,
             onclick: () => { if (state.open.has(n.path)) state.open.delete(n.path); else state.open.add(n.path); draw(); } },
-            nd.open ? "−" : "+" + n.kids.length));
+            nd.open ? "−" : state.tiny ? "+" : "+" + n.kids.length));
         }
       });
       canvas.append(frag);
@@ -327,8 +336,17 @@
         hits.append(h("button", { class: "code-chip", type: "button", onclick: () => reveal(n) }, I.name + (n.parent ? "  (" + info(n.parent).name + ")" : "")));
       });
     });
+    const sizeBtn = h("button", { class: "btn btn-small", "aria-pressed": String(state.tiny), onclick: () => {
+      state.tiny = !state.tiny;
+      try { localStorage.setItem("mathbook-tree-tiny", state.tiny ? "1" : "0"); } catch (e) { /* ignore */ }
+      setSize(); state.zoom = 1; centerOn = true;
+      sizeBtn.textContent = state.tiny ? "Bigger buttons" : "Smaller buttons";
+      sizeBtn.setAttribute("aria-pressed", String(state.tiny));
+      draw();
+    } }, state.tiny ? "Bigger buttons" : "Smaller buttons");
     const tools = h("div", { class: "tree-tools" },
-      h("button", { class: "btn btn-small", onclick: () => { ALL.forEach(n => n.kids.length && state.open.add(n.path)); draw(); } }, "Show everything"),
+      h("button", { class: "btn btn-small btn-accent", onclick: () => { ALL.forEach(n => n.kids.length && state.open.add(n.path)); draw(); } }, "Show all"),
+      sizeBtn,
       h("button", { class: "btn btn-small", onclick: () => { initOpen(); state.zoom = null; state.sel = "0"; scroll.innerHTML = ""; draw(); showDetail(); } }, "Back to start"),
       h("span", { class: "stepper" }, "Zoom",
         h("button", { class: "btn btn-small", "aria-label": "Zoom out", onclick: () => { state.zoom = Math.max(0.4, +(state.zoom - 0.15).toFixed(2)); draw(); } }, "−"),

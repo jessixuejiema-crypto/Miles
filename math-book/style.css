@@ -647,3 +647,6 @@ body.on-calc .wrap { max-width: 760px; }
 .tree-hits { display: flex; flex-wrap: wrap; gap: 6px; }
 .tree-hits:empty { display: none; }
 .td-trail { font-size: 14px; }
+.tnode.tiny { border-radius: 7px; padding: 0; justify-content: center; }
+.tnode.tiny .tn-sym { font-size: 1.05em; line-height: 1; }
+.tn-toggle.tiny { width: 16px; height: 13px; font-size: 9px; line-height: 1; border-width: 1px; }
