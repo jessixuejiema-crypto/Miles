@@ -40,6 +40,8 @@
     else if (hash === "beginner" || (m = hash.match(/^learn-(.+)$/))) { mark("beginner"); renderBeginner(m ? fromHid[m[1]] : null); }
     else if (hash === "calc") { mark("calc"); renderCalc(); }
     else if (hash === "tree") { mark("tree"); window.MathTree.render(view); }
+    else if (hash === "lessons") { mark("lessons"); window.Lessons.renderList(view); }
+    else if ((m = hash.match(/^lesson-(.+)$/))) { mark("lessons"); window.Lessons.renderLesson(view, m[1]); }
     else { mark("book"); renderBook(); }
     if (!(m && hash.startsWith("learn-"))) window.scrollTo(0, 0);
     document.body.classList.toggle("on-calc", hash === "calc");
