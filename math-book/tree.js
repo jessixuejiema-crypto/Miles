@@ -206,40 +206,64 @@
   (function walk(n, path, parent) { n.path = path; n.parent = parent; ALL.push(n); n.kids.forEach((c, i) => walk(c, path + "." + i, n)); })(TREE, "0", null);
 
   // Box sizes. "Smaller buttons" switches to tiny boxes that show only the symbol.
-  let UNIT, LEVEL, NODE_W, NODE_H, TOGGLE_GAP;
-  const state = { open: null, zoom: null, sel: "0", tiny: false };
+  let LEVEL, NODE_W, NODE_H, TOGGLE_GAP, GAP;
+  const state = { open: null, zoom: null, sel: "0", tiny: false, clump: false };
   function setSize() {
-    if (state.tiny) { UNIT = 38; LEVEL = 60; NODE_W = 32; NODE_H = 30; TOGGLE_GAP = 10; }
-    else { UNIT = 100; LEVEL = 96; NODE_W = 88; NODE_H = 58; TOGGLE_GAP = 12; }
+    if (state.tiny) { NODE_W = 32; NODE_H = 30; TOGGLE_GAP = 10; LEVEL = state.clump ? 46 : 60; GAP = state.clump ? 2 : 6; }
+    else { NODE_W = 88; NODE_H = 58; TOGGLE_GAP = 12; LEVEL = state.clump ? 80 : 96; GAP = state.clump ? 3 : 12; }
   }
-  try { state.tiny = localStorage.getItem("mathbook-tree-tiny") === "1"; } catch (e) { /* ignore */ }
+  try {
+    state.tiny = localStorage.getItem("mathbook-tree-tiny") === "1";
+    state.clump = localStorage.getItem("mathbook-tree-clump") === "1";
+  } catch (e) { /* ignore */ }
   setSize();
 
   function initOpen() { state.open = new Set(["0"]); }
   const nodeAt = p => ALL.find(n => n.path === p) || TREE;
 
+  // Tidy layout: each subtree keeps a left/right outline per row, and the next
+  // sibling slides in until it is GAP away from the outline at every row.
   function layout() {
     const nodes = [], edges = [];
-    let leaf = 0, maxDepth = 0;
-    const place = (n, depth) => {
+    let maxDepth = 0;
+    const build = (n, depth) => {
       maxDepth = Math.max(maxDepth, depth);
       const open = state.open.has(n.path) && n.kids.length > 0;
-      let x;
-      const me = { n, depth, y: depth * LEVEL, open };
-      if (open) {
-        const kids = n.kids.map(c => place(c, depth + 1));
-        x = (kids[0].x + kids[kids.length - 1].x) / 2;
-        kids.forEach(k => edges.push({ from: me, to: k }));
-      } else {
-        x = leaf * UNIT;
-        leaf++;
-      }
-      me.x = x;
-      nodes.push(me);
+      const me = { n, depth, y: depth * LEVEL, open, kids: [], off: 0 };
+      const half = NODE_W / 2;
+      if (!open) { me.contour = [[-half, half]]; return me; }
+      let acc = null;
+      n.kids.forEach(c => {
+        const k = build(c, depth + 1);
+        if (!acc) { k.off = 0; acc = k.contour.map(r => r.slice()); }
+        else {
+          let shift = -Infinity;
+          for (let d = 0; d < Math.min(acc.length, k.contour.length); d++) shift = Math.max(shift, acc[d][1] - k.contour[d][0] + GAP);
+          k.off = shift;
+          k.contour.forEach((r, d) => {
+            const L = r[0] + shift, R = r[1] + shift;
+            if (d < acc.length) { acc[d][0] = Math.min(acc[d][0], L); acc[d][1] = Math.max(acc[d][1], R); }
+            else acc.push([L, R]);
+          });
+        }
+        me.kids.push(k);
+      });
+      const mid = (me.kids[0].off + me.kids[me.kids.length - 1].off) / 2;
+      me.kids.forEach(k => { k.off -= mid; });
+      me.contour = [[-half, half]].concat(acc.map(r => [r[0] - mid, r[1] - mid]));
       return me;
     };
-    place(TREE, 0);
-    return { nodes, edges, width: Math.max(1, leaf) * UNIT, height: maxDepth * LEVEL + NODE_H + 40 };
+    const root = build(TREE, 0);
+    let minX = Infinity, maxX = -Infinity;
+    const place = (me, x) => {
+      me.x = x;
+      minX = Math.min(minX, x - NODE_W / 2); maxX = Math.max(maxX, x + NODE_W / 2);
+      nodes.push(me);
+      me.kids.forEach(k => { edges.push({ from: me, to: k }); place(k, x + k.off); });
+    };
+    place(root, 0);
+    nodes.forEach(nd => { nd.x -= minX; });
+    return { nodes, edges, width: maxX - minX, height: maxDepth * LEVEL + NODE_H + 30 };
   }
 
   function render(view) {
@@ -249,12 +273,12 @@
     let centerOn = null;
     const draw = () => {
       const L = layout();
-      if (state.zoom == null) state.zoom = Math.max(0.9, Math.min(1, ((scroll.clientWidth || 1000) - 50) / L.width));
+      if (state.zoom == null) state.zoom = Math.max(0.9, Math.min(1, ((scroll.clientWidth || 1000) - 40) / L.width));
       const z = state.zoom;
       const pad = 20;
       const W = L.width * z + pad * 2, H = L.height * z + pad;
       const canvas = h("div", { class: "tree-canvas", style: "width:" + W + "px;height:" + H + "px" });
-      const cx = n => pad + (n.x + (UNIT - NODE_W) / 2 + NODE_W / 2) * z;
+      const cx = n => pad + n.x * z;
       let paths = "";
       L.edges.forEach(e => {
         const x1 = cx(e.from), y1 = (e.from.y + NODE_H) * z + TOGGLE_GAP, x2 = cx(e.to), y2 = e.to.y * z + 1;
@@ -344,9 +368,18 @@
       sizeBtn.setAttribute("aria-pressed", String(state.tiny));
       draw();
     } }, state.tiny ? "Bigger buttons" : "Smaller buttons");
+    const clumpBtn = h("button", { class: "btn btn-small", "aria-pressed": String(state.clump), onclick: () => {
+      state.clump = !state.clump;
+      try { localStorage.setItem("mathbook-tree-clump", state.clump ? "1" : "0"); } catch (e) { /* ignore */ }
+      setSize(); centerOn = true;
+      clumpBtn.textContent = state.clump ? "Spread out" : "Clump together";
+      clumpBtn.setAttribute("aria-pressed", String(state.clump));
+      draw();
+    } }, state.clump ? "Spread out" : "Clump together");
     const tools = h("div", { class: "tree-tools" },
       h("button", { class: "btn btn-small btn-accent", onclick: () => { ALL.forEach(n => n.kids.length && state.open.add(n.path)); draw(); } }, "Show all"),
       sizeBtn,
+      clumpBtn,
       h("button", { class: "btn btn-small", onclick: () => { initOpen(); state.zoom = null; state.sel = "0"; scroll.innerHTML = ""; draw(); showDetail(); } }, "Back to start"),
       h("span", { class: "stepper" }, "Zoom",
         h("button", { class: "btn btn-small", "aria-label": "Zoom out", onclick: () => { state.zoom = Math.max(0.4, +(state.zoom - 0.15).toFixed(2)); draw(); } }, "−"),
