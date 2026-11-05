@@ -594,12 +594,12 @@
   const ENTRIES = [];
   const BY_ID = {};
   GROUPS.forEach(g => {
-    (RAW[g.key] || []).forEach(([id, name, sym, text, x]) => {
+    (RAW[g.key] || []).concat((window.MATH_MORE || {})[g.key] || []).forEach(([id, name, sym, text, x]) => {
       const e = Object.assign({ id, name, sym, text, group: g.key }, x || {});
       ENTRIES.push(e);
       BY_ID[id] = e;
     });
   });
 
-  window.MATH = { GROUPS, ENTRIES, BY_ID, BEGINNER, METHODS };
+  window.MATH = { GROUPS, ENTRIES, BY_ID, BEGINNER, METHODS, TREE: window.MATH_TREE };
 })();

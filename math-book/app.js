@@ -39,6 +39,7 @@
     else if ((m = hash.match(/^methods-(.+)$/)) && fromHid[m[1]]) { mark("index"); renderMethods(fromHid[m[1]]); }
     else if (hash === "beginner" || (m = hash.match(/^learn-(.+)$/))) { mark("beginner"); renderBeginner(m ? fromHid[m[1]] : null); }
     else if (hash === "calc") { mark("calc"); renderCalc(); }
+    else if (hash === "tree") { mark("tree"); window.MathTree.render(view); }
     else { mark("book"); renderBook(); }
     if (!(m && hash.startsWith("learn-"))) window.scrollTo(0, 0);
     document.body.classList.toggle("on-calc", hash === "calc");
@@ -92,6 +93,7 @@
       h("div", { class: "book-tools" },
         search,
         h("a", { class: "btn btn-accent lens-btn", href: "#index", html: SEARCH_SVG + "<span>Open the Math Index</span>" })),
+      window.MathTree.codeSearch({ id: "book-code" }),
       h("a", { class: "beginner-card", href: "#beginner" },
         h("span", { class: "bc-sym" }, "1+1"),
         h("span", { class: "bc-text" }, h("b", null, "The Beginner’s Math Book"),

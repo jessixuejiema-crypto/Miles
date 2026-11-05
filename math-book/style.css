@@ -485,3 +485,82 @@ body.on-calc .wrap { max-width: 760px; }
   opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 60; max-width: calc(100% - 32px); text-align: center;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------------- Code search (beta) ---------------- */
+.code-search {
+  display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 14px;
+  background: var(--paper); border: 1.5px dashed var(--accent);
+}
+.code-label { display: flex; align-items: center; gap: 10px; }
+.code-label label { font: 800 19px var(--font-display); }
+.beta {
+  font: 700 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.12em;
+  padding: 4px 8px; border-radius: 999px; background: var(--hl); color: var(--ink); border: 1px solid var(--hl-strong);
+}
+.code-input { font-family: var(--font-mono); font-weight: 600; flex: none; width: 100%; }
+.code-examples { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.code-examples > span { font-size: 14px; color: var(--muted); font-weight: 700; }
+.code-chip {
+  font: 600 14px var(--font-mono); padding: 5px 10px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.code-chip:hover { border-color: var(--accent); }
+.code-out { display: flex; flex-direction: column; gap: 8px; }
+.code-out:empty { display: none; }
+.code-err { color: var(--danger); font-weight: 700; }
+.code-hit {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; text-decoration: none; color: var(--ink);
+  padding: 12px 14px; border-radius: 12px; background: var(--bg); border-left: 5px solid var(--c);
+}
+.code-hit:hover { box-shadow: var(--shadow); }
+.code-hit-sym { font: 400 40px/1 var(--font-math); color: var(--c); min-width: 1.4em; text-align: center; }
+.code-hit-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 15px; color: var(--ink-soft); }
+.code-hit-body b { font: 700 18px var(--font-display); color: var(--ink); }
+.code-hit-go { color: var(--c); }
+.code-trail { margin: 0; padding-left: 1.4em; font: 14px var(--font-mono); color: var(--ink-soft); display: flex; flex-direction: column; gap: 2px; }
+.code-trail small { font-family: var(--font-body); color: var(--muted); }
+.code-help summary { cursor: pointer; font-weight: 700; color: var(--accent); }
+.code-help dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 10px 0; }
+.code-help dt { font: 700 15px var(--font-mono); color: var(--accent); }
+.code-help dd { margin: 0; }
+.code-help code { font: 600 14px var(--font-mono); background: var(--hl); padding: 1px 5px; border-radius: 4px; }
+.code-help p { font-size: 15px; color: var(--ink-soft); }
+
+/* ---------------- The Math Tree ---------------- */
+.tree-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tree-count { margin-left: auto; font-size: 14px; font-variant-numeric: tabular-nums; }
+.tree-scroll {
+  overflow: auto; max-height: 72vh; min-height: 320px; border-radius: 16px; border: 1px solid var(--line);
+  background:
+    linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 24px 24px,
+    var(--paper);
+}
+.tree-canvas { position: relative; margin: 0 auto; padding-top: 18px; }
+.tree-lines { position: absolute; inset: 18px 0 0 0; pointer-events: none; }
+.tree-lines path { fill: none; stroke: var(--ink-soft); stroke-width: 2; opacity: 0.55; }
+.tnode {
+  position: absolute; margin-top: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15em;
+  border-radius: 12px; border: 1.5px solid var(--c); background: var(--paper); color: var(--ink); cursor: pointer;
+  padding: 0.3em 0.4em; box-shadow: 0 2px 0 color-mix(in srgb, var(--c) 35%, transparent); overflow: hidden;
+}
+.tnode:hover { background: var(--bg); }
+.tnode.sel { background: var(--c); color: var(--paper); }
+.tnode.sel .tn-sym, .tnode.sel .tn-code { color: var(--paper); }
+.tnode.root { border-width: 3px; }
+.tn-sym { font: 400 1.55em/1 var(--font-math); color: var(--c); white-space: nowrap; }
+.tn-name { font: 700 0.76em/1.15 var(--font-body); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tn-code { font: 600 0.68em/1 var(--font-mono); color: var(--muted); }
+.tn-toggle {
+  position: absolute; margin-top: 18px; width: 28px; height: 22px; border-radius: 999px; padding: 0;
+  border: 1.5px solid var(--line); background: var(--paper); color: var(--accent); font: 700 12px/1 var(--font-body); cursor: pointer; z-index: 1;
+}
+.tn-toggle:hover { border-color: var(--accent); }
+.tree-detail {
+  display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; padding: 20px; border-radius: 16px;
+  background: var(--paper); border: 1px solid var(--line);
+}
+.td-sym { font: 400 64px/1 var(--font-math); color: var(--c); min-width: 1.5em; text-align: center; padding: 10px; }
+.td-body { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.td-body h2 { font-size: 26px; font-weight: 800; }
+.td-code code { font: 600 15px var(--font-mono); background: var(--hl); padding: 2px 7px; border-radius: 5px; }
