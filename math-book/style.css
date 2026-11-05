@@ -633,3 +633,17 @@ body.on-calc .wrap { max-width: 760px; }
 .chat-status { font-size: 13px; color: var(--muted); padding: 0 16px 12px; }
 .chat-status:empty { display: none; }
 .lesson-links { text-align: center; font-size: 15px; }
+
+/* Tree: smaller boxes and the finder */
+.tnode { border-radius: 9px; padding: 0.2em 0.3em; gap: 0.1em; border-width: 1.5px; }
+.tnode.plain { border-style: dashed; }
+.g-tree { --c: var(--ink-soft); }
+.tn-sym { font-size: 1.3em; }
+.tn-name { font-size: 0.7em; white-space: normal; line-height: 1.1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tn-code { font-size: 0.6em; }
+.tn-toggle { width: 26px; height: 18px; font-size: 11px; }
+.tree-findrow { display: flex; flex-direction: column; gap: 8px; }
+.tree-find { flex: none; width: 100%; }
+.tree-hits { display: flex; flex-wrap: wrap; gap: 6px; }
+.tree-hits:empty { display: none; }
+.td-trail { font-size: 14px; }

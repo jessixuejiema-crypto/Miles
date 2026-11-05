@@ -601,5 +601,5 @@
     });
   });
 
-  window.MATH = { GROUPS, ENTRIES, BY_ID, BEGINNER, METHODS, TREE: window.MATH_TREE };
+  window.MATH = { GROUPS, ENTRIES, BY_ID, BEGINNER, METHODS };
 })();

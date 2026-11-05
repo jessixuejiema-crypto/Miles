@@ -314,35 +314,3 @@ window.MATH_MORE = {
     ["four_dim", "Fourth dimension", "w", "A direction at right angles to all three we know. Mathematicians handle it easily with a fourth coordinate.", { pre: ["dimension"] }]
   ]
 };
-
-/* The Math Tree: starts at + and branches out. Each node: [entry id, code, children]. */
-window.MATH_TREE = ["add", "+", [
-  ["sub", "<o+>", [
-    ["negation", "", [["abs", "", []], ["neg", "", [["number_line", "", []]]]]],
-    ["delta", "<s−>", [["forward_diff", "", [["backward_diff", "", []]]], ["slope", "", []]]]
-  ]],
-  ["mul", "<r+>", [
-    ["pow", "<r<r+>>", [
-      ["tetration", "<r<r<r+>>>", [["pentation", "", [["hyperoperation", "", []]]]]],
-      ["nroot", "<o<r<r+>>>", [["sqrt", "", [["cbrt", "", []]]]]],
-      ["exponential", "<s<r<r+>>>", [["euler", "", []]]],
-      ["exp_factorial", "<O<r<r+>>>", []]
-    ]],
-    ["fact", "<O<r+>>", [["superfactorial", "<O<O<r+>>>", []], ["gamma", "<s<O<r+>>>", []], ["choose", "", [["pascal", "", []]]], ["perm", "", []]]],
-    ["div", "<o<r+>>", [["frac", "", [["decimal", "", []], ["pct", "", []]]], ["mod", "", [["congruence", "", []]]], ["log", "<r÷>", [["ln", "", []]]],
-      ["prime", "", [["fta", "", []], ["gcd", "", [["lcm", "", []]]]]]]]
-  ]],
-  ["sigma", "<s+>", [
-    ["prodsym", "<s<r+>>", [["primorial", "", []]]],
-    ["integral", "<s<s+>>", [["double_int", "<r∫>", [["triple_int", "", []]]], ["ftc", "", []], ["contour", "", []]]],
-    ["series", "", [["taylor", "", []], ["zeta", "", []]]],
-    ["mean", "", [["stdev", "", []]]]
-  ]],
-  ["triangular", "<O+>", [["square_nums", "", []], ["tetrahedral", "", []]]],
-  ["function", "", [
-    ["linear", "", [["quadratic", "", [["polynomial", "", []]]]]],
-    ["sin", "", [["cos", "", []], ["tan", "", []]]],
-    ["inverse", "", []],
-    ["deriv", "<o∫>", [["deriv2", "<r d/dx>", []], ["partial", "", [["nabla", "", [["gradient", "", []], ["divergence", "", []], ["curl", "", []]]]]]]]
-  ]]
-]];

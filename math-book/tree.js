@@ -162,120 +162,184 @@
 
   /* ---------------- The Math Tree ---------------- */
 
-  const UNIT = 140, LEVEL = 136, NODE_W = 126, NODE_H = 88;
+  // Build the tree from the outline in tree-data.js.
+  const norm = t => t.toLowerCase().replace(/\(.*?\)/g, "").replace(/[’']/g, "").replace(/^the /, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const BY_NAME = {};
+  M.ENTRIES.forEach(e => {
+    [e.name, e.name.split(" (")[0]].forEach(n => { const k = norm(n); if (k && !BY_NAME[k]) BY_NAME[k] = e.id; });
+  });
+  function buildTree(src) {
+    const lines = src.split("\n").filter(l => l.trim());
+    const root = { kids: [] }, stack = [{ depth: -1, node: root }];
+    const used = new Set();
+    const groupLines = [];
+    lines.forEach(line => {
+      const depth = (line.match(/^ */)[0].length) / 2;
+      const t = line.trim();
+      while (stack[stack.length - 1].depth >= depth) stack.pop();
+      const parent = stack[stack.length - 1].node;
+      if (t.startsWith("@group ")) { groupLines.push({ parent, key: t.slice(7).trim() }); return; }
+      const m = t.match(/^(?:«([^»]+)»\s*)?(.*?)(?:\s*\{([a-z0-9_]+)\})?(?:\s*\[([^\]]+)\])?(?:\s+—\s+(.*))?$/);
+      let [, sym, label, id, code, desc] = m;
+      if (!id) id = BY_NAME[norm(label)];
+      if (id && !M.BY_ID[id]) { console.warn("Tree: no entry " + id); id = undefined; }
+      if (id) used.add(id);
+      const node = { label: label.trim(), id, code: code || "", desc: desc || "", sym: sym || "", kids: [] };
+      parent.kids.push(node);
+      stack.push({ depth, node });
+    });
+    // "@group key" adds every entry of that group that isn't already somewhere in the tree.
+    groupLines.forEach(({ parent, key }) => {
+      M.ENTRIES.filter(e => e.group === key && !used.has(e.id)).forEach(e => {
+        used.add(e.id);
+        parent.kids.push({ label: e.name.split(" (")[0], id: e.id, code: "", desc: "", sym: "", kids: [] });
+      });
+    });
+    return root.kids[0];
+  }
+  const TREE = buildTree(window.MATH_TREE_OUTLINE || "Addition {add}");
+  const info = n => {
+    const e = n.id ? M.BY_ID[n.id] : null;
+    return { e, sym: n.sym || (e ? e.sym : n.label.charAt(0)), name: n.label, group: e ? e.group : "tree", text: e ? e.text : n.desc };
+  };
+  const ALL = [];
+  (function walk(n, path, parent) { n.path = path; n.parent = parent; ALL.push(n); n.kids.forEach((c, i) => walk(c, path + "." + i, n)); })(TREE, "0", null);
+
+  const UNIT = 100, LEVEL = 96, NODE_W = 88, NODE_H = 58;
   const state = { open: null, zoom: null, sel: "0" };
 
-  function initOpen() {
-    // Start with + open, and −, × and Σ open below it.
-    state.open = new Set(["0"]);
-    M.TREE[2].forEach((c, i) => { if (["sub", "mul", "sigma"].includes(c[0])) state.open.add("0." + i); });
-  }
-  function allPaths(fn) {
-    const walk = (n, path) => { fn(n, path); n[2].forEach((c, i) => walk(c, path + "." + i)); };
-    walk(M.TREE, "0");
-  }
+  function initOpen() { state.open = new Set(["0"]); }
+  const nodeAt = p => ALL.find(n => n.path === p) || TREE;
 
   function layout() {
     const nodes = [], edges = [];
     let leaf = 0, maxDepth = 0;
-    const place = (n, path, depth) => {
+    const place = (n, depth) => {
       maxDepth = Math.max(maxDepth, depth);
-      const open = state.open.has(path) && n[2].length;
+      const open = state.open.has(n.path) && n.kids.length > 0;
       let x;
+      const me = { n, depth, y: depth * LEVEL, open };
       if (open) {
-        const kids = n[2].map((c, i) => place(c, path + "." + i, depth + 1));
+        const kids = n.kids.map(c => place(c, depth + 1));
         x = (kids[0].x + kids[kids.length - 1].x) / 2;
-        kids.forEach(k => edges.push({ from: null, to: k, parentPath: path }));
+        kids.forEach(k => edges.push({ from: me, to: k }));
       } else {
         x = leaf * UNIT;
         leaf++;
       }
-      const node = { n, path, depth, x, y: depth * LEVEL, open };
-      nodes.push(node);
-      edges.filter(e => e.parentPath === path && !e.from).forEach(e => { e.from = node; });
-      return node;
+      me.x = x;
+      nodes.push(me);
+      return me;
     };
-    place(M.TREE, "0", 0);
+    place(TREE, 0);
     return { nodes, edges, width: Math.max(1, leaf) * UNIT, height: maxDepth * LEVEL + NODE_H + 40 };
   }
 
   function render(view) {
     if (!state.open) initOpen();
-    const total = (() => { let c = 0; allPaths(() => c++); return c; })();
     const scroll = h("div", { class: "tree-scroll", tabindex: "0", "aria-label": "Math tree. Scroll to see more." });
     const detail = h("div", { class: "tree-detail", "aria-live": "polite" });
+    let centerOn = null;
     const draw = () => {
       const L = layout();
-      if (state.zoom == null) state.zoom = Math.max(0.62, Math.min(1, ((scroll.clientWidth || 1000) - 50) / L.width));
+      if (state.zoom == null) state.zoom = Math.max(0.9, Math.min(1, ((scroll.clientWidth || 1000) - 50) / L.width));
       const z = state.zoom;
-      const pad = 24;
+      const pad = 20;
       const W = L.width * z + pad * 2, H = L.height * z + pad;
       const canvas = h("div", { class: "tree-canvas", style: "width:" + W + "px;height:" + H + "px" });
       const cx = n => pad + (n.x + (UNIT - NODE_W) / 2 + NODE_W / 2) * z;
       let paths = "";
       L.edges.forEach(e => {
-        const x1 = cx(e.from), y1 = (e.from.y + NODE_H) * z + 14, x2 = cx(e.to), y2 = e.to.y * z + 2;
+        const x1 = cx(e.from), y1 = (e.from.y + NODE_H) * z + 12, x2 = cx(e.to), y2 = e.to.y * z + 1;
         const my = (y1 + y2) / 2;
-        paths += '<path d="M' + x1 + " " + y1 + " C" + x1 + " " + my + " " + x2 + " " + my + " " + x2 + " " + y2 + '"/>';
+        paths += '<path d="M' + x1.toFixed(1) + " " + y1.toFixed(1) + " C" + x1.toFixed(1) + " " + my.toFixed(1) + " " + x2.toFixed(1) + " " + my.toFixed(1) + " " + x2.toFixed(1) + " " + y2.toFixed(1) + '"/>';
       });
       canvas.append(h("div", { class: "tree-lines", html: '<svg width="' + W + '" height="' + H + '" aria-hidden="true">' + paths + "</svg>" }));
+      const frag = document.createDocumentFragment();
+      let selBox = null;
       L.nodes.forEach(nd => {
-        const [id, code, kids] = nd.n;
-        const e = M.BY_ID[id];
+        const n = nd.n, I = info(n);
         const left = cx(nd) - NODE_W * z / 2, top = nd.y * z;
-        const btn = h("button", { class: "tnode g-" + e.group + (state.sel === nd.path ? " sel" : "") + (nd.depth === 0 ? " root" : ""),
-          style: "left:" + left + "px;top:" + top + "px;width:" + NODE_W * z + "px;height:" + NODE_H * z + "px;font-size:" + (z * 1.12) + "em",
-          "aria-label": e.name + (code ? ", code " + code : ""),
-          onclick: () => { state.sel = nd.path; draw(); showDetail(); } },
-          h("span", { class: "tn-sym" }, e.sym.length > 7 ? e.sym.slice(0, 7) + "…" : e.sym),
-          h("span", { class: "tn-name" }, e.name.replace(/ \(.*\)$/, "")),
-          code ? h("span", { class: "tn-code" }, code) : null);
-        canvas.append(btn);
-        if (kids.length) {
-          canvas.append(h("button", { class: "tn-toggle", style: "left:" + (cx(nd) - 14) + "px;top:" + ((nd.y + NODE_H) * z + 1) + "px",
-            "aria-label": (nd.open ? "Hide" : "Show") + " the " + kids.length + " below " + e.name,
-            onclick: () => { if (state.open.has(nd.path)) state.open.delete(nd.path); else state.open.add(nd.path); draw(); } },
-            nd.open ? "−" : "+" + kids.length));
+        const sym = I.sym.length > 7 ? I.sym.slice(0, 7) + "…" : I.sym;
+        const btn = h("button", { class: "tnode g-" + I.group + (state.sel === n.path ? " sel" : "") + (nd.depth === 0 ? " root" : "") + (I.e ? "" : " plain"),
+          style: "left:" + left.toFixed(1) + "px;top:" + top.toFixed(1) + "px;width:" + (NODE_W * z).toFixed(1) + "px;height:" + (NODE_H * z).toFixed(1) + "px;font-size:" + (z * 0.92).toFixed(3) + "em",
+          title: I.name, "aria-label": I.name + (n.code ? ", code " + n.code : ""),
+          onclick: () => { state.sel = n.path; draw(); showDetail(); } },
+          h("span", { class: "tn-sym" }, sym),
+          h("span", { class: "tn-name" }, I.name),
+          n.code ? h("span", { class: "tn-code" }, n.code) : null);
+        if (state.sel === n.path) selBox = { x: cx(nd), y: top };
+        frag.append(btn);
+        if (n.kids.length) {
+          frag.append(h("button", { class: "tn-toggle", style: "left:" + (cx(nd) - 13).toFixed(1) + "px;top:" + ((nd.y + NODE_H) * z + 1).toFixed(1) + "px",
+            "aria-label": (nd.open ? "Hide" : "Show") + " the " + n.kids.length + " below " + I.name,
+            onclick: () => { if (state.open.has(n.path)) state.open.delete(n.path); else state.open.add(n.path); draw(); } },
+            nd.open ? "−" : "+" + n.kids.length));
         }
       });
+      canvas.append(frag);
       const keep = scroll.firstChild ? { l: scroll.scrollLeft, t: scroll.scrollTop } : null;
       scroll.innerHTML = "";
       scroll.append(canvas);
-      if (keep) { scroll.scrollLeft = keep.l; scroll.scrollTop = keep.t; }
+      if (centerOn && selBox) {
+        scroll.scrollLeft = selBox.x - scroll.clientWidth / 2;
+        scroll.scrollTop = Math.max(0, selBox.y - scroll.clientHeight / 3);
+        centerOn = null;
+      } else if (keep) { scroll.scrollLeft = keep.l; scroll.scrollTop = keep.t; }
       else requestAnimationFrame(() => {
         const root = L.nodes.find(n => n.depth === 0);
         scroll.scrollLeft = W <= scroll.clientWidth + 4 ? 0 : cx(root) - scroll.clientWidth / 2;
       });
     };
-    const findPath = p => { let n = M.TREE; p.split(".").slice(1).forEach(i => { n = n[2][+i]; }); return n; };
     const showDetail = () => {
-      const n = findPath(state.sel), e = M.BY_ID[n[0]];
-      const parentPath = state.sel.split(".").slice(0, -1).join(".");
-      const parent = parentPath ? M.BY_ID[findPath(parentPath)[0]] : null;
-      const meth = M.METHODS[e.id];
+      const n = nodeAt(state.sel), I = info(n);
+      const meth = I.e && M.METHODS[I.e.id];
+      const trail = [];
+      for (let p = n.parent; p; p = p.parent) trail.unshift(info(p).name);
       detail.innerHTML = "";
-      detail.append(h("div", { class: "td-sym g-" + e.group }, e.sym),
+      detail.append(h("div", { class: "td-sym g-" + I.group }, I.sym),
         h("div", { class: "td-body" },
-          h("h2", null, e.name),
-          n[1] ? h("p", { class: "td-code" }, "Code: ", h("code", null, n[1])) : null,
-          parent ? h("p", { class: "muted" }, "Comes from ", h("b", null, parent.name), " above it.") : h("p", { class: "muted" }, "The top of the tree. Everything below grows out of adding."),
-          h("p", null, e.text),
+          h("h2", null, I.name),
+          n.code ? h("p", { class: "td-code" }, "Code: ", h("code", null, n.code)) : null,
+          trail.length ? h("p", { class: "muted td-trail" }, trail.join(" › ") + " › " + I.name) : h("p", { class: "muted" }, "The top of the tree. Everything below grows out of adding."),
+          I.text ? h("p", null, I.text) : null,
+          n.kids.length ? h("p", { class: "muted" }, n.kids.length + " " + (n.kids.length === 1 ? "box comes" : "boxes come") + " from this one.") : null,
           h("div", { class: "entry-actions" },
-            h("a", { class: "btn btn-accent", href: "#entry-" + hid(e.id) }, "Open in the Math Index"),
-            meth ? h("a", { class: "btn", href: "#methods-" + hid(e.id) }, "Methods") : null)));
+            I.e ? h("a", { class: "btn btn-accent", href: "#entry-" + hid(I.e.id) }, "Open in the Math Index") : null,
+            meth ? h("a", { class: "btn", href: "#methods-" + hid(I.e.id) }, "Methods") : null,
+            n.kids.length ? h("button", { class: "btn", onclick: () => { (function op(x) { if (x.kids.length) { state.open.add(x.path); x.kids.forEach(op); } })(n); centerOn = true; draw(); } }, "Open this whole branch") : null)));
     };
+    const reveal = n => {
+      for (let p = n.parent; p; p = p.parent) state.open.add(p.path);
+      state.sel = n.path; centerOn = true; draw(); showDetail();
+    };
+    // Find in the tree
+    const findBox = h("input", { id: "tree-find", class: "search tree-find", type: "search", placeholder: "Find in the tree: radius, prime, tetration…", "aria-label": "Find in the tree", autocomplete: "off" });
+    const hits = h("div", { class: "tree-hits" });
+    findBox.addEventListener("input", () => {
+      const q = norm(findBox.value);
+      hits.innerHTML = "";
+      if (!q) return;
+      const found = ALL.filter(n => norm(info(n).name).includes(q)).slice(0, 10);
+      if (!found.length) { hits.append(h("span", { class: "muted" }, "Not in the tree.")); return; }
+      found.forEach(n => {
+        const I = info(n);
+        hits.append(h("button", { class: "code-chip", type: "button", onclick: () => reveal(n) }, I.name + (n.parent ? "  (" + info(n.parent).name + ")" : "")));
+      });
+    });
     const tools = h("div", { class: "tree-tools" },
-      h("button", { class: "btn btn-small", onclick: () => { allPaths((n, p) => n[2].length && state.open.add(p)); draw(); } }, "Show everything"),
-      h("button", { class: "btn btn-small", onclick: () => { initOpen(); state.zoom = null; scroll.innerHTML = ""; draw(); } }, "Back to start"),
+      h("button", { class: "btn btn-small", onclick: () => { ALL.forEach(n => n.kids.length && state.open.add(n.path)); draw(); } }, "Show everything"),
+      h("button", { class: "btn btn-small", onclick: () => { initOpen(); state.zoom = null; state.sel = "0"; scroll.innerHTML = ""; draw(); showDetail(); } }, "Back to start"),
       h("span", { class: "stepper" }, "Zoom",
-        h("button", { class: "btn btn-small", "aria-label": "Zoom out", onclick: () => { state.zoom = Math.max(0.5, +(state.zoom - 0.15).toFixed(2)); draw(); } }, "−"),
-        h("button", { class: "btn btn-small", "aria-label": "Zoom in", onclick: () => { state.zoom = Math.min(1.6, +(state.zoom + 0.15).toFixed(2)); draw(); } }, "+")),
-      h("span", { class: "muted tree-count" }, total + " entries in the tree"));
+        h("button", { class: "btn btn-small", "aria-label": "Zoom out", onclick: () => { state.zoom = Math.max(0.4, +(state.zoom - 0.15).toFixed(2)); draw(); } }, "−"),
+        h("button", { class: "btn btn-small", "aria-label": "Zoom in", onclick: () => { state.zoom = Math.min(1.8, +(state.zoom + 0.15).toFixed(2)); draw(); } }, "+")),
+      h("span", { class: "muted tree-count" }, ALL.length + " boxes in the tree"));
     view.append(
       h("header", { class: "page-head" },
         h("p", { class: "eyebrow" }, "Visualiser"),
         h("h1", null, "The Math Tree"),
-        h("p", { class: "lede" }, "Everything starts with + at the top. Undo it and you get −, repeat it and you get ×, and so on down. Press a + under a box to open more, and press a box to read about it.")),
+        h("p", { class: "lede" }, "Everything starts with + at the top. Undo it and you get −, repeat it and you get ×, and so on down into numbers, geometry, algebra and more. Press a + under a box to open more, and press a box to read about it.")),
+      h("div", { class: "tree-findrow" }, findBox, hits),
       tools, scroll, detail,
       codeSearch({ id: "tree-code" }));
     state.zoom = null;
@@ -283,5 +347,5 @@
     showDetail();
   }
 
-  window.MathTree = { render, codeSearch, runCode };
+  window.MathTree = { render, codeSearch, runCode, TREE, ALL };
 })();
