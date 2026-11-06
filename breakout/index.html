@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Pixel Breaker</title>
 <style>
+  :root { color-scheme: dark; }
   html, body {
     margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -58,39 +59,44 @@
   .buy.ok { background: #2c6b45; }
   .buy:disabled { color: #789; }
 
-  /* skill tree */
-  #tree {
-    position: fixed; inset: 0; z-index: 5; background: #05010b; display: none;
-    overflow-y: auto; padding: 16px 16px 40px; box-sizing: border-box;
-  }
-  #tree.open { display: block; }
-  #tree h2 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 10px; }
-  .treeTop { display: flex; align-items: center; gap: 12px; margin: 0 auto 16px; max-width: 640px; }
-  .treeTop .close { margin-left: auto; background: #222; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 700; cursor: pointer; }
-  .chain { max-width: 640px; margin: 0 auto; }
-  .tnode {
-    border: 2px solid #3a2556; border-radius: 14px; background: #0f0818; padding: 12px; position: relative;
-  }
-  .tnode.lock { opacity: .55; }
-  .link { width: 4px; height: 20px; margin: 0 auto; background: #3a2556; }
-  .link.on { background: #a64dff; }
-  .thead { display: flex; align-items: center; gap: 10px; }
-  .thead .ball { width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto; }
-  .thead .t { font-weight: 800; }
-  .thead .d { font-size: 12px; color: #a99bbb; }
-  .thead button, .up button {
-    margin-left: auto; border: 0; border-radius: 8px; padding: 7px 10px; font: inherit; font-weight: 800; font-size: 13px;
-    background: #5a2a99; color: #fff; display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap;
-  }
-  .thead button:disabled, .up button:disabled { background: #2a2235; color: #8a7d99; cursor: default; }
-  .ups { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 10px; }
-  .up { background: #170e24; border-radius: 10px; padding: 8px; display: flex; align-items: center; gap: 8px; }
-  .up .l { font-size: 13px; font-weight: 700; }
-  .up .v { font-size: 11px; color: #a99bbb; }
-  .pips { display: flex; gap: 3px; margin-top: 3px; }
-  .pips i { width: 9px; height: 5px; background: #3a2b4d; border-radius: 2px; }
-  .pips i.on { background: #c46bff; }
-  .reset { display: block; margin: 26px auto 0; background: none; border: 1px solid #533; color: #c88; border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+  /* skill tree: a pannable tree of nodes */
+  #tree { position: fixed; inset: 0; z-index: 5; background: #05010b; display: none; flex-direction: column; }
+  #tree.open { display: flex; }
+  .treeTop { display: flex; align-items: center; gap: 12px; padding: 12px 14px; z-index: 2; background: #05010b; border-bottom: 1px solid #1d1230; }
+  .treeTop .cur { font-size: 22px; }
+  .treeTop .lbl { color: #a99bbb; font-size: 13px; }
+  .treeTop button { background: #1c1426; color: #fff; border: 0; border-radius: 8px; padding: 8px 12px; font: inherit; font-weight: 700; cursor: pointer; }
+  .treeTop .close { margin-left: auto; }
+  #treeView { position: relative; flex: 1; overflow: hidden; touch-action: none; cursor: grab;
+    background: radial-gradient(circle at 50% 100%, #160a26 0%, #05010b 70%); }
+  #treeView.drag { cursor: grabbing; }
+  #treeWorld { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #treeWorld svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+  .tn { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+  .tn .o { border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff;
+    border: 3px solid #3a2b4d; background: #120a1c; box-sizing: border-box; transition: transform .12s; }
+  .tn:hover .o { transform: scale(1.07); }
+  .tn.sel .o { outline: 3px solid #fff; outline-offset: 3px; }
+  .tn.ball .o { width: 70px; height: 70px; }
+  .tn.ball .o i { width: 38px; height: 38px; border-radius: 50%; display: block; }
+  .tn.up .o { width: 50px; height: 50px; font-size: 14px; }
+  .tn.up.got .o { border-color: #c46bff; background: #2a1245; }
+  .tn.up.max .o { border-color: #f2d0ff; background: #4d1f80; box-shadow: 0 0 14px #a640ff; }
+  .tn.can .o { animation: can 1.4s ease-in-out infinite; }
+  @keyframes can { 50% { box-shadow: 0 0 16px #c46bff; } }
+  .tn.lock .o { border-color: #241a33; color: #5d5070; box-shadow: none !important; }
+  .tn.lock .o i { opacity: .35; }
+  .tn.lock .nm { color: #6d6080; }
+  .tn .nm { margin-top: 6px; font-size: 12px; font-weight: 700; white-space: nowrap; color: #e8dcf5; text-shadow: 0 1px 3px #000; }
+  #nodeInfo { background: #0f0818; border-top: 2px solid #3a2556; padding: 12px 14px 16px; display: flex; align-items: center; gap: 12px; min-height: 64px; }
+  #nodeInfo .txt { flex: 1; min-width: 0; }
+  #nodeInfo .t { font-weight: 800; font-size: 16px; }
+  #nodeInfo .d { font-size: 13px; color: #b9abcc; margin-top: 3px; }
+  #nodeInfo button { border: 0; border-radius: 10px; padding: 10px 14px; font: inherit; font-weight: 800; background: #6a2fb8; color: #fff;
+    display: flex; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; }
+  #nodeInfo button:disabled { background: #2a2235; color: #8a7d99; cursor: default; }
+  #resetBtn.arm { background: #6b1d1d; }
+  @media (prefers-reduced-motion: reduce) { .tn.can .o { animation: none; } }
 </style>
 </head>
 <body>
@@ -107,12 +113,13 @@
 
 <div id="tree">
   <div class="treeTop">
-    <h2><span class="dia p"></span><span id="treePurple">0</span></h2>
-    <span style="color:#a99bbb;font-size:13px">Skill Tree</span>
-    <button class="close" id="treeClose">Close</button>
+    <div class="cur"><span class="dia p"></span><span id="treePurple">0</span></div>
+    <span class="lbl">Skill Tree · drag to move</span>
+    <button class="close" id="resetBtn">Reset</button>
+    <button id="treeClose">Close</button>
   </div>
-  <div class="chain" id="chain"></div>
-  <button class="reset" id="resetBtn">Reset game</button>
+  <div id="treeView"><div id="treeWorld"><svg id="treeLinks"></svg><div id="treeNodes"></div></div></div>
+  <div id="nodeInfo"></div>
 </div>
 
 <script>
@@ -673,7 +680,7 @@ function buildBar() {
       ${unlocked[k] ? `<button class="buy" data-k="${k}"><span class="dia s"></span>${fmt(price(k))}</button>`
                     : `<button class="buy" disabled><span class="dia p s"></span>${d.unlock}</button>`}`;
     c.addEventListener('click', ev => {
-      if (!unlocked[k]) { openTree(); return; }
+      if (!unlocked[k]) { tsel = { k, key: null }; tv.init = false; openTree(); return; }
       if (ev.target.closest('.buy')) buy(k);
       selected = k; dirtyUI = true;
     });
@@ -704,58 +711,157 @@ function setHint() {
 }
 function flashHint() { setHint(); const h = $('hint'); h.style.display = ''; h.animate([{ opacity: .3 }, { opacity: 1 }], 300); }
 
-function openTree() { buildTree(); $('tree').classList.add('open'); }
+// Skill tree: the Piercing Ball is the root at the bottom; each ball grows the next one above it,
+// and its upgrades branch off to the sides.
+const TW = 640, ROW = 165, TTOP = 80, TH = TTOP + (ORDER.length - 1) * ROW + 100;
+const BRANCH = [[-120, -10], [120, -10], [-215, -62], [215, -62]];
+const ballPos = n => ({ x: TW / 2, y: TTOP + (ORDER.length - 1 - n) * ROW });
+const tv = { x: 0, y: 0, s: 1, init: false };
+let tsel = { k: 'orange', key: null }, tDragged = false;
+
+function openTree() {
+  $('tree').classList.add('open');
+  buildTree();
+  if (!tv.init) {                       // first open: fit the width and look at the newest branch
+    const v = $('treeView'), w = v.clientWidth, h = v.clientHeight;
+    tv.s = Math.max(0.5, Math.min(1.1, w / TW));
+    const n = Math.min(ORDER.length - 1, ORDER.filter(k => unlocked[k]).length);
+    tv.x = (w - TW * tv.s) / 2;
+    tv.y = h * 0.55 - ballPos(n).y * tv.s;
+    tv.init = true;
+  }
+  clampTree(); applyTree();
+}
 $('treeBtn').addEventListener('click', openTree);
 $('treeClose').addEventListener('click', () => $('tree').classList.remove('open'));
 
-function buildTree() {
-  $('treePurple').textContent = purple;
-  const ch = $('chain'); ch.innerHTML = '';
-  ORDER.forEach((k, n) => {
-    const d = DEF[k];
-    if (n > 0) { const l = document.createElement('div'); l.className = 'link' + (unlocked[k] ? ' on' : ''); ch.appendChild(l); }
-    const box = document.createElement('div');
-    box.className = 'tnode' + (unlocked[k] ? '' : ' lock');
-    const canUnlock = !unlocked[k] && unlocked[d.req] && purple >= d.unlock;
-    let head = `<div class="thead"><div class="ball" style="background:${d.color};box-shadow:0 0 10px ${d.color}"></div>
-      <div><div class="t">${d.name}</div><div class="d">${fmt1(d.dmg)} dmg · ${d.min === d.max ? d.min : d.min + '–' + d.max} b/s — ${d.desc}</div></div>`;
-    if (!unlocked[k]) {
-      head += unlocked[d.req]
-        ? `<button data-unlock="${k}" ${canUnlock ? '' : 'disabled'}>Unlock <span class="dia p s"></span>${d.unlock}</button>`
-        : `<button disabled>Needs ${DEF[d.req].short}</button>`;
-    }
-    head += '</div>';
-    let ups = '';
-    if (unlocked[k]) {
-      ups = '<div class="ups">' + NODES[k].map(([key, label, max]) => {
-        const lv = up[k][key], maxed = lv >= max, cost = maxed ? 0 : nodeCost(max, lv);
-        const pips = Array.from({ length: max }, (_, q) => `<i class="${q < lv ? 'on' : ''}"></i>`).join('');
-        return `<div class="up"><div><div class="l">${label}</div>
-          <div class="v">${nodeValue(k, key, lv)}${maxed ? '' : ' → ' + nodeValue(k, key, lv + 1)}</div>
-          <div class="pips">${pips}</div></div>
-          <button data-up="${k}:${key}" ${maxed || purple < cost ? 'disabled' : ''}>${maxed ? 'MAX' : `<span class="dia p s"></span>${cost}`}</button></div>`;
-      }).join('') + '</div>';
-    }
-    box.innerHTML = head + ups;
-    ch.appendChild(box);
-  });
-  ch.querySelectorAll('[data-unlock]').forEach(b => b.addEventListener('click', () => {
-    const k = b.dataset.unlock, d = DEF[k];
-    if (unlocked[k] || !unlocked[d.req] || purple < d.unlock) return;
-    purple -= d.unlock; unlocked[k] = true; inv[k]++; selected = k; dirtyUI = true; buildTree(); save();
-  }));
-  ch.querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => {
-    const [k, key] = b.dataset.up.split(':'), node = NODES[k].find(n => n[0] === key);
-    const lv = up[k][key]; if (lv >= node[2]) return;
-    const cost = nodeCost(node[2], lv); if (purple < cost) return;
-    purple -= cost; up[k][key]++; dirtyUI = true; buildTree(); save();
-  }));
+function applyTree() { $('treeWorld').style.transform = `translate(${tv.x}px,${tv.y}px) scale(${tv.s})`; }
+function clampTree() {
+  const v = $('treeView'), w = v.clientWidth, h = v.clientHeight, m = 120;
+  tv.x = Math.min(w - m, Math.max(m - TW * tv.s, tv.x));
+  tv.y = Math.min(h - m, Math.max(m - TH * tv.s, tv.y));
 }
 
+function upState(k, key, max) {
+  const lv = up[k][key];
+  return { lv, max, cost: lv >= max ? 0 : nodeCost(max, lv) };
+}
+
+function buildTree() {
+  $('treePurple').textContent = purple;
+  let lines = '', nodes = '';
+  ORDER.forEach((k, n) => {
+    const d = DEF[k], p = ballPos(n);
+    if (n < ORDER.length - 1) {
+      const q = ballPos(n + 1), on = unlocked[ORDER[n + 1]];
+      lines += `<line x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}" stroke="${on ? '#a64dff' : '#2e2140'}" stroke-width="${on ? 8 : 6}" stroke-linecap="round"/>`;
+    }
+    const can = !unlocked[k] && unlocked[d.req] && purple >= d.unlock;
+    nodes += `<div class="tn ball${unlocked[k] ? '' : ' lock'}${can ? ' can' : ''}${tsel.k === k && !tsel.key ? ' sel' : ''}" data-k="${k}" style="left:${p.x}px;top:${p.y}px">
+      <div class="o" style="${unlocked[k] ? `border-color:${d.color};box-shadow:0 0 18px ${d.color}66` : ''}"><i style="background:${d.color}"></i></div>
+      <div class="nm">${d.short}</div></div>`;
+    NODES[k].forEach(([key, label, max], j) => {
+      const o = BRANCH[j], ux = p.x + o[0], uy = p.y + o[1], st = upState(k, key, max);
+      lines += `<line x1="${p.x}" y1="${p.y}" x2="${ux}" y2="${uy}" stroke="${st.lv ? '#a64dff' : '#2e2140'}" stroke-width="4" stroke-linecap="round"/>`;
+      const cls = !unlocked[k] ? ' lock' : st.lv >= max ? ' max got' : st.lv ? ' got' : '';
+      const canUp = unlocked[k] && st.lv < max && purple >= st.cost;
+      nodes += `<div class="tn up${cls}${canUp ? ' can' : ''}${tsel.k === k && tsel.key === key ? ' sel' : ''}" data-k="${k}" data-key="${key}" style="left:${ux}px;top:${uy}px">
+        <div class="o">${st.lv}/${max}</div><div class="nm">${label}</div></div>`;
+    });
+  });
+  const svg = $('treeLinks');
+  svg.setAttribute('width', TW); svg.setAttribute('height', TH); svg.innerHTML = lines;
+  const box = $('treeNodes'); box.innerHTML = nodes;
+  box.querySelectorAll('.tn').forEach(el => el.addEventListener('click', () => {
+    if (tDragged) return;
+    tsel = { k: el.dataset.k, key: el.dataset.key || null }; buildTree();
+  }));
+  renderInfo();
+}
+
+function renderInfo() {
+  const { k, key } = tsel, d = DEF[k], box = $('nodeInfo');
+  let title, desc, btn;
+  if (!key) {
+    title = d.name;
+    desc = `${fmt1(d.dmg)} dmg · ${d.min === d.max ? d.min : d.min + '–' + d.max} b/s. ${d.desc}`;
+    if (unlocked[k]) btn = `<button disabled>Unlocked</button>`;
+    else if (!unlocked[d.req]) btn = `<button disabled>Needs ${DEF[d.req].short}</button>`;
+    else btn = `<button id="infoBuy" ${purple >= d.unlock ? '' : 'disabled'}>Unlock <span class="dia p s"></span>${d.unlock}</button>`;
+  } else {
+    const node = NODES[k].find(nd => nd[0] === key), st = upState(k, key, node[2]);
+    title = `${d.short}: ${node[1]} (${st.lv}/${st.max})`;
+    desc = nodeValue(k, key, st.lv) + (st.lv < st.max ? ' → ' + nodeValue(k, key, st.lv + 1) : ' (max)');
+    if (!unlocked[k]) btn = `<button disabled>Unlock ${d.short} first</button>`;
+    else if (st.lv >= st.max) btn = `<button disabled>MAX</button>`;
+    else btn = `<button id="infoBuy" ${purple >= st.cost ? '' : 'disabled'}>Buy <span class="dia p s"></span>${st.cost}</button>`;
+  }
+  box.innerHTML = `<div class="txt"><div class="t">${title}</div><div class="d">${desc}</div></div>${btn}`;
+  const b = $('infoBuy'); if (b) b.addEventListener('click', buyNode);
+}
+
+function buyNode() {
+  const { k, key } = tsel, d = DEF[k];
+  if (!key) {
+    if (unlocked[k] || !unlocked[d.req] || purple < d.unlock) return;
+    purple -= d.unlock; unlocked[k] = true; inv[k]++; selected = k;
+  } else {
+    const node = NODES[k].find(nd => nd[0] === key), lv = up[k][key];
+    if (!unlocked[k] || lv >= node[2]) return;
+    const cost = nodeCost(node[2], lv); if (purple < cost) return;
+    purple -= cost; up[k][key]++;
+  }
+  dirtyUI = true; buildTree(); save();
+}
+
+// drag to pan, pinch / wheel to zoom
+(() => {
+  const view = $('treeView'), pts = new Map();
+  let start = null;
+  const zoomAt = (cx, cy, ns) => {
+    ns = Math.max(0.35, Math.min(1.8, ns));
+    const r = view.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+    tv.x = px - (px - tv.x) * ns / tv.s; tv.y = py - (py - tv.y) * ns / tv.s; tv.s = ns;
+    clampTree(); applyTree();
+  };
+  view.addEventListener('pointerdown', e => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1) { tDragged = false; start = { x: e.clientX, y: e.clientY, tx: tv.x, ty: tv.y }; }
+  });
+  view.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()], d0 = Math.hypot(a.x - b.x, a.y - b.y);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const [c, d] = [...pts.values()], d1 = Math.hypot(c.x - d.x, c.y - d.y);
+      if (d0 > 0) zoomAt((c.x + d.x) / 2, (c.y + d.y) / 2, tv.s * d1 / d0);
+      tDragged = true; return;
+    }
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!start) return;
+    const dx = e.clientX - start.x, dy = e.clientY - start.y;
+    if (!tDragged && Math.hypot(dx, dy) > 6) { tDragged = true; view.classList.add('drag'); }
+    if (tDragged) { tv.x = start.tx + dx; tv.y = start.ty + dy; clampTree(); applyTree(); }
+  });
+  const end = e => {
+    pts.delete(e.pointerId);
+    if (pts.size === 0) { start = null; view.classList.remove('drag'); setTimeout(() => { tDragged = false; }, 0); }
+    else if (pts.size === 1) { const [a] = [...pts.values()]; start = { x: a.x, y: a.y, tx: tv.x, ty: tv.y }; }
+  };
+  view.addEventListener('pointerup', end); view.addEventListener('pointercancel', end);
+  view.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, tv.s * Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+  addEventListener('resize', () => { if ($('tree').classList.contains('open')) { clampTree(); applyTree(); } });
+})();
+
+// two-tap reset (pop-up confirm dialogs are not allowed everywhere)
+let resetArmed = 0;
 $('resetBtn').addEventListener('click', () => {
-  if (!confirm('Start over? This erases all progress.')) return;
+  const b = $('resetBtn');
+  if (Date.now() - resetArmed > 3000) { resetArmed = Date.now(); b.textContent = 'Tap again to erase'; b.classList.add('arm');
+    setTimeout(() => { b.textContent = 'Reset'; b.classList.remove('arm'); }, 3000); return; }
+  resetArmed = 0; b.textContent = 'Reset'; b.classList.remove('arm');
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
-  resetMeta(); genWorld(); rebuildDerived(); cam.init = false; dirtyUI = true;
+  resetMeta(); genWorld(); rebuildDerived(); cam.init = false; dirtyUI = true; tv.init = false; tsel = { k: 'orange', key: null };
   $('tree').classList.remove('open');
 });
 
