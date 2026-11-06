@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Pixel Breaker</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+    display: flex; align-items: center; gap: 18px; padding: 12px 14px;
+    pointer-events: none;
+  }
+  .cur { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .dia { width: 13px; height: 13px; background: #fff; transform: rotate(45deg); box-shadow: 0 0 8px rgba(255,255,255,.55); flex: 0 0 auto; }
+  .dia.p { background: #c46bff; box-shadow: 0 0 10px #a640ff; }
+  .dia.s { width: 8px; height: 8px; box-shadow: none; }
+  #treeBtn {
+    pointer-events: auto; margin-left: auto; background: #140a1f; color: #e7cfff;
+    border: 2px solid #7b3cc4; border-radius: 10px; padding: 8px 12px; font: inherit; font-weight: 700;
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+  }
+  #ballCount { font-size: 13px; color: #8aa; font-weight: 600; }
+
+  #hint {
+    position: fixed; left: 50%; bottom: 128px; transform: translateX(-50%); z-index: 2;
+    background: rgba(0,0,0,.7); border: 1px solid #234; color: #cfe; padding: 8px 14px; border-radius: 10px;
+    font-size: 14px; text-align: center; max-width: calc(100% - 40px); pointer-events: none;
+  }
+
+  #bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 2;
+    display: flex; gap: 8px; overflow-x: auto; padding: 10px 12px 14px;
+    background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.9) 28%);
+    scrollbar-width: none;
+  }
+  #bar::-webkit-scrollbar { display: none; }
+  .card {
+    flex: 0 0 auto; width: 96px; border: 2px solid #26302b; border-radius: 12px; background: #07100c;
+    padding: 7px 6px 6px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;
+  }
+  .card.sel { border-color: #fff; box-shadow: 0 0 12px rgba(255,255,255,.25); }
+  .card.locked { opacity: .4; }
+  .card .ball { width: 22px; height: 22px; border-radius: 50%; position: relative; }
+  .card .name { font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .card .hand { font-size: 11px; color: #9ab; }
+  .card .hand b { color: #fff; }
+  .buy {
+    width: 100%; border: 0; border-radius: 8px; padding: 6px 0; font: inherit; font-size: 13px; font-weight: 800;
+    background: #1d2a24; color: #fff; display: flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer;
+  }
+  .buy.ok { background: #2c6b45; }
+  .buy:disabled { color: #789; }
+
+  /* skill tree */
+  #tree {
+    position: fixed; inset: 0; z-index: 5; background: #05010b; display: none;
+    overflow-y: auto; padding: 16px 16px 40px; box-sizing: border-box;
+  }
+  #tree.open { display: block; }
+  #tree h2 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 10px; }
+  .treeTop { display: flex; align-items: center; gap: 12px; margin: 0 auto 16px; max-width: 640px; }
+  .treeTop .close { margin-left: auto; background: #222; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 700; cursor: pointer; }
+  .chain { max-width: 640px; margin: 0 auto; }
+  .tnode {
+    border: 2px solid #3a2556; border-radius: 14px; background: #0f0818; padding: 12px; position: relative;
+  }
+  .tnode.lock { opacity: .55; }
+  .link { width: 4px; height: 20px; margin: 0 auto; background: #3a2556; }
+  .link.on { background: #a64dff; }
+  .thead { display: flex; align-items: center; gap: 10px; }
+  .thead .ball { width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto; }
+  .thead .t { font-weight: 800; }
+  .thead .d { font-size: 12px; color: #a99bbb; }
+  .thead button, .up button {
+    margin-left: auto; border: 0; border-radius: 8px; padding: 7px 10px; font: inherit; font-weight: 800; font-size: 13px;
+    background: #5a2a99; color: #fff; display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap;
+  }
+  .thead button:disabled, .up button:disabled { background: #2a2235; color: #8a7d99; cursor: default; }
+  .ups { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 10px; }
+  .up { background: #170e24; border-radius: 10px; padding: 8px; display: flex; align-items: center; gap: 8px; }
+  .up .l { font-size: 13px; font-weight: 700; }
+  .up .v { font-size: 11px; color: #a99bbb; }
+  .pips { display: flex; gap: 3px; margin-top: 3px; }
+  .pips i { width: 9px; height: 5px; background: #3a2b4d; border-radius: 2px; }
+  .pips i.on { background: #c46bff; }
+  .reset { display: block; margin: 26px auto 0; background: none; border: 1px solid #533; color: #c88; border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div class="cur"><span class="dia"></span><span id="money">0</span></div>
+  <div class="cur"><span class="dia p"></span><span id="purple">0</span></div>
+  <span id="ballCount"></span>
+  <button id="treeBtn"><span class="dia p s"></span>Skill Tree</button>
+</div>
+<div id="hint"></div>
+<div id="bar"></div>
+
+<div id="tree">
+  <div class="treeTop">
+    <h2><span class="dia p"></span><span id="treePurple">0</span></h2>
+    <span style="color:#a99bbb;font-size:13px">Skill Tree</span>
+    <button class="close" id="treeClose">Close</button>
+  </div>
+  <div class="chain" id="chain"></div>
+  <button class="reset" id="resetBtn">Reset game</button>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+// ---------------------------------------------------------------- blocks
+// Color = the tier for the block's remaining hits ("damage units" = hits from an orange ball).
+const TIERS = [
+  { hp: 1,   c: '#e4e4e4', n: 'White' },
+  { hp: 2,   c: '#2f7fe8', n: 'Blue' },
+  { hp: 3,   c: '#45b532', n: 'Green' },
+  { hp: 5,   c: '#dccf36', n: 'Yellow' },
+  { hp: 7,   c: '#e8842a', n: 'Orange' },
+  { hp: 10,  c: '#d8302a', n: 'Red' },
+  { hp: 20,  c: '#ad2262', n: 'Red-Purple' },
+  { hp: 35,  c: '#7a34cc', n: 'Purple' },
+  { hp: 50,  c: '#f07ab8', n: 'Pink' },
+  { hp: 100, c: '#6d7280', n: 'Gray' },
+];
+// Tougher blocks are rarer. Gray ends up about 1 in 500.
+const WEIGHTS = [30, 22, 18, 12, 8, 5, 2.5, 1.2, 0.6, 0.2];
+const WSUM = WEIGHTS.reduce((a, b) => a + b, 0);
+
+const FREE = 0, BLOCK = 1, GEM = 2;  // GEM = glowing purple pixel (gives purple currency)
+const N = 81, C = 40;                // grid size, center cell
+const REVEAL = 3;                    // blocks within 3 steps of open space are visible
+const BR = 0.22;                     // ball radius in blocks
+const FREE_COLOR = '#0f2018';
+
+// ---------------------------------------------------------------- balls
+const DEF = {
+  orange: { name: 'Piercing Ball',    short: 'Piercing',    color: '#ff8a1c', dmg: 1, min: 0.5, max: 3,   unlock: 0, req: null,     cost: 10,
+            desc: 'Drag strength sets speed (0.5–3 b/s).' },
+  green:  { name: 'Poison Ball',      short: 'Poison',      color: '#3ddc4a', dmg: 1, min: 1,   max: 1.5, unlock: 1, req: 'orange', cost: 40,
+            desc: 'Hits poison every block within 3 for 0.5 dmg/sec for 5 seconds.' },
+  blue:   { name: 'Directional Ball', short: 'Directional', color: '#2f8cff', dmg: 3, min: 20,  max: 20,  unlock: 1, req: 'green',  cost: 120,
+            desc: 'Only launches up, down, left or right. Always 20 b/s.' },
+  purple: { name: 'Fast Ball',        short: 'Fast',        color: '#b05cff', dmg: 2, min: 30,  max: 30,  unlock: 1, req: 'blue',   cost: 300,
+            desc: 'Just fast. 30 b/s.' },
+  yellow: { name: 'Lightning Ball',   short: 'Lightning',   color: '#ffe23a', dmg: 3, min: 6,   max: 6,   unlock: 3, req: 'purple', cost: 800,
+            desc: 'Strikes the nearest block every 0.5 s (range 200) for 2 dmg.' },
+  red:    { name: 'Seeker Ball',      short: 'Seeker',      color: '#ff3b3b', dmg: 6, min: 18,  max: 18,  unlock: 3, req: 'yellow', cost: 2000,
+            desc: 'After a bounce it flies at the nearest block in front of it (never the same one).' },
+  cyan:   { name: 'Gravity Ball',     short: 'Gravity',     color: '#33f0ff', dmg: 1, min: 0.5, max: 3,   unlock: 4, req: 'red',    cost: 4000,
+            desc: 'Pulled toward an invisible orb circling the edge of the open space.' },
+  white:  { name: 'Splitter Ball',    short: 'Splitter',    color: '#ffffff', dmg: 2, min: 30,  max: 30,  unlock: 5, req: 'cyan',   cost: 10000,
+            desc: 'Fast ball that makes 3 one-use Fast Balls every time it hits a block.' },
+};
+const ORDER = Object.keys(DEF);
+
+const DMG = ['dmg', 'Damage', 5], SPD = ['spd', 'Speed', 5];
+const NODES = {
+  orange: [DMG, SPD, ['pierce', 'Pierce Force', 3]],
+  green:  [DMG, SPD, ['prange', 'Poison Range', 3], ['pdmg', 'Poison Damage', 5]],
+  blue:   [DMG, SPD],
+  purple: [DMG, SPD],
+  yellow: [DMG, SPD, ['rate', 'Strikes / sec', 5], ['sdmg', 'Strike Damage', 5]],
+  red:    [DMG, SPD],
+  cyan:   [DMG, SPD, ['grav', 'Gravity Pull', 5]],
+  white:  [DMG, SPD, ['split', 'Split Count', 3]],
+};
+// Most upgrades cost 1 purple; the last levels cost more, never more than 5.
+const nodeCost = (max, lv) => (max === 3 ? [1, 2, 3] : [1, 1, 1, 2, 3])[lv];
+
+// ---------------------------------------------------------------- state
+let type, hp, dist;
+let frontier = new Set();          // blocks touching open space
+let poison = new Map();            // idx -> { until, dps }
+let balls = [];
+let money = 10, purple = 0;
+let inv = {}, bought = {}, unlocked = {}, up = {};
+let selected = 'orange';
+let everLaunched = false;
+let freeBounds, freeSum, freeCount;
+let T = 0;
+let fx = [], bolts = [], texts = [];
+let orb = { ang: 0, r: 1, cx: C + 0.5, cy: C + 0.5, dirty: true };
+
+const idx = (x, y) => y * N + x;
+
+function resetMeta() {
+  money = 10; purple = 0; balls = []; poison = new Map(); everLaunched = false; selected = 'orange';
+  for (const k of ORDER) { inv[k] = 0; bought[k] = 0; unlocked[k] = k === 'orange'; up[k] = {}; for (const n of NODES[k]) up[k][n[0]] = 0; }
+}
+
+function pickTierHp() {
+  let r = Math.random() * WSUM;
+  for (let i = 0; i < TIERS.length; i++) { r -= WEIGHTS[i]; if (r < 0) return TIERS[i].hp; }
+  return 1;
+}
+
+function genWorld() {
+  type = new Uint8Array(N * N); hp = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const i = idx(x, y);
+    if (Math.abs(x - C) <= 1 && Math.abs(y - C) <= 1) { type[i] = FREE; continue; }
+    const man = Math.abs(x - C) + Math.abs(y - C);
+    // glowing purple pixel: 1 in 100–200
+    if (man > 5 && Math.random() < 1 / (100 + Math.random() * 100)) { type[i] = GEM; hp[i] = 1; continue; }
+    type[i] = BLOCK; hp[i] = pickTierHp();
+  }
+}
+
+function rebuildDerived() {
+  dist = new Uint8Array(N * N).fill(REVEAL + 1);
+  const q = [];
+  freeBounds = { x0: N, y0: N, x1: -1, y1: -1 }; freeSum = { x: 0, y: 0 }; freeCount = 0;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const i = idx(x, y);
+    if (type[i] === FREE) { dist[i] = 0; q.push(i); addFreeStats(x, y); }
+  }
+  for (let h = 0; h < q.length; h++) {
+    const i = q[h], d = dist[i]; if (d >= REVEAL) continue;
+    const x = i % N, y = (i / N) | 0;
+    for (const [nx, ny] of [[x+1,y],[x-1,y],[x,y+1],[x,y-1]]) {
+      if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+      const j = idx(nx, ny);
+      if (dist[j] > d + 1) { dist[j] = d + 1; q.push(j); }
+    }
+  }
+  frontier = new Set();
+  for (let i = 0; i < N * N; i++) if (type[i] !== FREE && dist[i] === 1) frontier.add(i);
+  orb.dirty = true;
+}
+
+function addFreeStats(x, y) {
+  freeBounds.x0 = Math.min(freeBounds.x0, x); freeBounds.y0 = Math.min(freeBounds.y0, y);
+  freeBounds.x1 = Math.max(freeBounds.x1, x); freeBounds.y1 = Math.max(freeBounds.y1, y);
+  freeSum.x += x + 0.5; freeSum.y += y + 0.5; freeCount++;
+}
+
+function breakCell(i) {
+  const x = i % N, y = (i / N) | 0;
+  const col = type[i] === GEM ? '#c46bff' : tierOf(Math.max(hp[i], 0.01)).c;
+  type[i] = FREE; hp[i] = 0; dist[i] = 0;
+  frontier.delete(i); poison.delete(i);
+  addFreeStats(x, y);
+  // local BFS: distances only ever shrink
+  const q = [i];
+  for (let h = 0; h < q.length; h++) {
+    const a = q[h], d = dist[a]; if (d >= REVEAL) continue;
+    const ax = a % N, ay = (a / N) | 0;
+    for (const [nx, ny] of [[ax+1,ay],[ax-1,ay],[ax,ay+1],[ax,ay-1]]) {
+      if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+      const j = idx(nx, ny);
+      if (dist[j] > d + 1) { dist[j] = d + 1; q.push(j); if (d + 1 === 1 && type[j] !== FREE) frontier.add(j); }
+    }
+  }
+  orb.dirty = true;
+  for (let k = 0; k < 6; k++) fx.push({ x: x + 0.5, y: y + 0.5, vx: (Math.random() - .5) * 4, vy: (Math.random() - .5) * 4, t: 0.5, c: col });
+}
+
+function tierOf(h) {
+  const v = Math.ceil(h - 1e-6);
+  let t = TIERS[0];
+  for (const tr of TIERS) if (tr.hp <= v) t = tr;
+  return t;
+}
+
+function damage(i, amt) {
+  if (type[i] === FREE) return false;
+  if (type[i] === GEM) {
+    purple++;
+    const x = i % N, y = (i / N) | 0;
+    texts.push({ x: x + 0.5, y: y + 0.2, s: '+1', t: 1.2, c: '#d28bff' });
+    breakCell(i); dirtyUI = true; return true;
+  }
+  money += Math.min(amt, hp[i]);
+  hp[i] -= amt;
+  if (hp[i] <= 1e-4) { breakCell(i); return true; }
+  return false;
+}
+
+// ---------------------------------------------------------------- ball stats
+function stat(k) {
+  const d = DEF[k], u = up[k];
+  const sm = 1 + 0.2 * u.spd;
+  return { dmg: d.dmg * (1 + 0.5 * u.dmg), min: d.min * sm, max: d.max * sm };
+}
+const pierceHp = () => up.orange.pierce;                      // 1 = white, 2 = blue, 3 = green
+const poisonRange = () => 3 + up.green.prange;
+const poisonDps = () => 0.5 + 0.25 * up.green.pdmg;
+const strikeInterval = () => 0.5 / (1 + 0.4 * up.yellow.rate);
+const strikeDmg = () => 2 + up.yellow.sdmg;
+const gravity = () => 5 * (1 + 0.3 * up.cyan.grav);
+const splitCount = () => 3 + up.white.split;
+const fmt1 = v => (Math.round(v * 100) / 100).toString();
+
+function nodeValue(k, key, lv) {
+  const d = DEF[k];
+  switch (key) {
+    case 'dmg': return fmt1(d.dmg * (1 + 0.5 * lv)) + ' dmg';
+    case 'spd': return d.min === d.max ? fmt1(d.min * (1 + 0.2 * lv)) + ' b/s' : fmt1(d.min * (1 + .2 * lv)) + '–' + fmt1(d.max * (1 + .2 * lv)) + ' b/s';
+    case 'pierce': return ['none', 'White', 'White + Blue', 'White → Green'][lv];
+    case 'prange': return (3 + lv) + ' blocks';
+    case 'pdmg': return fmt1(0.5 + 0.25 * lv) + ' dmg/s';
+    case 'rate': return fmt1(1 / (0.5 / (1 + 0.4 * lv))) + ' /s';
+    case 'sdmg': return (2 + lv) + ' dmg';
+    case 'grav': return '×' + fmt1(1 + 0.3 * lv);
+    case 'split': return (3 + lv) + ' balls';
+  }
+  return '';
+}
+
+// ---------------------------------------------------------------- physics
+function spawnBall(k, x, y, dx, dy, f, extra) {
+  const b = Object.assign({ k, x, y, vx: dx, vy: dy, f, last: [-1, -1], st: 0, cs: 0 }, extra || {});
+  if (k === 'cyan') { const s = stat(k); b.cs = s.min + (s.max - s.min) * f; }
+  balls.push(b);
+  return b;
+}
+
+function ballSpeed(b) {
+  if (b.k === 'cyan') return b.cs;
+  const s = stat(b.k);
+  return s.min + (s.max - s.min) * b.f;
+}
+
+function solidAt(cx, cy) {
+  if (cx < 0 || cy < 0 || cx >= N || cy >= N) return -2;   // edge of the world
+  const i = idx(cx, cy);
+  return type[i] === FREE ? -1 : i;
+}
+
+function moveAxis(b, ax, d) {
+  if (!d) return;
+  const sgn = d > 0 ? 1 : -1;
+  let nx = b.x, ny = b.y, c1, c2;
+  if (ax === 0) {
+    nx += d; const ex = Math.floor(nx + sgn * BR);
+    c1 = solidAt(ex, Math.floor(b.y - BR * 0.7)); c2 = solidAt(ex, Math.floor(b.y + BR * 0.7));
+  } else {
+    ny += d; const ey = Math.floor(ny + sgn * BR);
+    c1 = solidAt(Math.floor(b.x - BR * 0.7), ey); c2 = solidAt(Math.floor(b.x + BR * 0.7), ey);
+  }
+  const hit = c1 !== -1 ? c1 : c2;
+  if (hit === -1) { b.x = nx; b.y = ny; return; }
+  if (hit === -2) { reflect(b, ax); return; }
+  if (onHit(b, hit)) { b.x = nx; b.y = ny; return; }   // pierced through
+  reflect(b, ax);
+  afterBounce(b, hit);
+}
+
+function reflect(b, ax) { if (ax === 0) b.vx = -b.vx; else b.vy = -b.vy; }
+
+function onHit(b, i) {
+  // Pierce Force: orange ball smashes weak blocks and keeps going.
+  if (b.k === 'orange' && type[i] === BLOCK && pierceHp() > 0 && hp[i] <= pierceHp() + 1e-6) {
+    damage(i, hp[i]);
+    return true;
+  }
+  damage(i, stat(b.k).dmg);
+  if (b.k === 'green') poisonAround(i);
+  return false;
+}
+
+function afterBounce(b, hit) {
+  b.last = [hit, b.last[0]];
+  if (b.oneUse) { b.dead = true; return; }
+  if (b.k === 'red') seek(b, hit);
+  if (b.k === 'white') {
+    let minis = 0; for (const o of balls) if (o.oneUse) minis++;
+    const n = Math.min(splitCount(), 80 - minis);
+    const base = Math.atan2(b.vy, b.vx);
+    for (let s = 0; s < n; s++) {
+      const a = base + (s - (n - 1) / 2) * 0.45;
+      spawnBall('purple', b.x, b.y, Math.cos(a), Math.sin(a), 1, { oneUse: true });
+    }
+  }
+}
+
+function seek(b, hit) {
+  // nearest block in the 180° half in front of the ball, never one it just hit
+  let best = -1, bd = Infinity;
+  for (const j of frontier) {
+    if (j === hit || j === b.last[1]) continue;
+    const dx = (j % N) + 0.5 - b.x, dy = ((j / N) | 0) + 0.5 - b.y;
+    const dd = dx * dx + dy * dy;
+    if (dx * b.vx + dy * b.vy <= 0.05 * Math.sqrt(dd)) continue;
+    if (dd < bd) { bd = dd; best = j; }
+  }
+  if (best < 0) return;
+  const dx = (best % N) + 0.5 - b.x, dy = ((best / N) | 0) + 0.5 - b.y, l = Math.hypot(dx, dy);
+  b.vx = dx / l; b.vy = dy / l;
+}
+
+function poisonAround(i) {
+  const x = i % N, y = (i / N) | 0, r = poisonRange(), until = T + 5, dps = poisonDps();
+  for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++) {
+    if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+    const j = idx(xx, yy);
+    if (type[j] === BLOCK) poison.set(j, { until, dps });
+  }
+}
+
+function nearestFrontier(x, y, maxD) {
+  let best = -1, bd = maxD * maxD;
+  for (const j of frontier) {
+    const dx = (j % N) + 0.5 - x, dy = ((j / N) | 0) + 0.5 - y, dd = dx * dx + dy * dy;
+    if (dd < bd) { bd = dd; best = j; }
+  }
+  return best;
+}
+
+function updateOrb(dt) {
+  if (orb.dirty && freeCount) {
+    orb.cx = freeSum.x / freeCount; orb.cy = freeSum.y / freeCount;
+    let s = 0, n = 0;
+    for (const j of frontier) { s += Math.hypot((j % N) + 0.5 - orb.cx, ((j / N) | 0) + 0.5 - orb.cy); n++; }
+    orb.r = Math.max(0.6, (n ? s / n : 1) - 0.9);   // as close to the unbroken edge as possible
+    orb.dirty = false;
+  }
+  orb.ang += (2.5 / Math.max(orb.r, 0.6)) * dt;
+}
+
+function updateBall(b, dt) {
+  if (b.k === 'cyan') {
+    const s = stat('cyan');
+    const ox = orb.cx + Math.cos(orb.ang) * orb.r, oy = orb.cy + Math.sin(orb.ang) * orb.r;
+    const dx = ox - b.x, dy = oy - b.y, l = Math.hypot(dx, dy) || 1, g = gravity();
+    let vx = b.vx * b.cs + dx / l * g * dt, vy = b.vy * b.cs + dy / l * g * dt;
+    const sp = Math.hypot(vx, vy) || 1;
+    b.vx = vx / sp; b.vy = vy / sp; b.cs = Math.min(s.max, Math.max(s.min, sp));
+  }
+  if (b.k === 'yellow') {
+    b.st += dt;
+    const iv = strikeInterval();
+    while (b.st >= iv) {
+      b.st -= iv;
+      const j = nearestFrontier(b.x, b.y, 200);
+      if (j >= 0) {
+        bolts.push({ x1: b.x, y1: b.y, x2: (j % N) + 0.5, y2: ((j / N) | 0) + 0.5, t: 0.18 });
+        damage(j, strikeDmg());
+      }
+    }
+  }
+  const travel = ballSpeed(b) * dt;
+  const steps = Math.max(1, Math.ceil(travel / 0.08)), st = travel / steps;
+  for (let s = 0; s < steps && !b.dead; s++) {
+    moveAxis(b, 0, b.vx * st);
+    if (b.dead) break;
+    moveAxis(b, 1, b.vy * st);
+  }
+  // safety: if a ball ever ends up inside a block, pop it back into open space
+  const cx = Math.floor(b.x), cy = Math.floor(b.y);
+  if (solidAt(cx, cy) !== -1) { const p = nearestFreeCenter(b.x, b.y); b.x = p.x; b.y = p.y; }
+}
+
+function nearestFreeCenter(x, y) {
+  let best = { x: C + 0.5, y: C + 0.5 }, bd = Infinity;
+  for (let yy = freeBounds.y0; yy <= freeBounds.y1; yy++) for (let xx = freeBounds.x0; xx <= freeBounds.x1; xx++) {
+    if (type[idx(xx, yy)] !== FREE) continue;
+    const d = (xx + .5 - x) ** 2 + (yy + .5 - y) ** 2;
+    if (d < bd) { bd = d; best = { x: xx + .5, y: yy + .5 }; }
+  }
+  return best;
+}
+
+function update(dt) {
+  T += dt;
+  updateOrb(dt);
+  for (const [j, p] of poison) {
+    if (T > p.until || type[j] !== BLOCK) { poison.delete(j); continue; }
+    damage(j, p.dps * dt);
+  }
+  for (const b of balls) updateBall(b, dt);
+  if (balls.some(b => b.dead)) balls = balls.filter(b => !b.dead);
+  for (const p of fx) { p.x += p.vx * dt; p.y += p.vy * dt; p.t -= dt; }
+  fx = fx.filter(p => p.t > 0);
+  for (const b of bolts) b.t -= dt;
+  bolts = bolts.filter(b => b.t > 0);
+  for (const t of texts) { t.y -= dt * 0.8; t.t -= dt; }
+  texts = texts.filter(t => t.t > 0);
+}
+
+// ---------------------------------------------------------------- rendering
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+const cam = { x: C + 0.5, y: C + 0.5, s: 40, init: false };
+const TOP = 56, BOTTOM = 124;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+}
+addEventListener('resize', resize);
+
+function camTarget() {
+  const x0 = freeBounds.x0 - REVEAL - 1, x1 = freeBounds.x1 + REVEAL + 2;
+  const y0 = freeBounds.y0 - REVEAL - 1, y1 = freeBounds.y1 + REVEAL + 2;
+  const vw = Math.max(x1 - x0, 11), vh = Math.max(y1 - y0, 11);
+  const ph = Math.max(100, H - TOP - BOTTOM);
+  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, s: Math.min(W / vw, ph / vh) };
+}
+
+const toScreen = (wx, wy) => [(wx - cam.x) * cam.s + W / 2, (wy - cam.y) * cam.s + TOP + (H - TOP - BOTTOM) / 2];
+const toWorld = (sx, sy) => [(sx - W / 2) / cam.s + cam.x, (sy - TOP - (H - TOP - BOTTOM) / 2) / cam.s + cam.y];
+
+const shadeCache = new Map();
+function shade(hex, f) {
+  const key = hex + f; let v = shadeCache.get(key);
+  if (!v) {
+    const n = parseInt(hex.slice(1), 16);
+    v = `rgb(${((n >> 16) & 255) * f | 0},${((n >> 8) & 255) * f | 0},${(n & 255) * f | 0})`;
+    shadeCache.set(key, v);
+  }
+  return v;
+}
+const DIST_SHADE = [1, 1, 0.6, 0.3];
+
+function draw() {
+  const t = camTarget();
+  if (!cam.init) { Object.assign(cam, t); cam.init = true; }
+  const k = 0.08;
+  cam.x += (t.x - cam.x) * k; cam.y += (t.y - cam.y) * k; cam.s += (t.s - cam.s) * k;
+
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+
+  const [wx0, wy0] = toWorld(0, 0), [wx1, wy1] = toWorld(W, H);
+  const gx0 = Math.max(0, Math.floor(wx0)), gy0 = Math.max(0, Math.floor(wy0));
+  const gx1 = Math.min(N - 1, Math.ceil(wx1)), gy1 = Math.min(N - 1, Math.ceil(wy1));
+  const s = cam.s, pulse = 0.55 + 0.45 * Math.sin(T * 3);
+
+  for (let y = gy0; y <= gy1; y++) for (let x = gx0; x <= gx1; x++) {
+    const i = idx(x, y), d = dist[i], ty = type[i];
+    const [sx, sy] = toScreen(x, y);
+    if (ty === FREE) { ctx.fillStyle = FREE_COLOR; ctx.fillRect(sx, sy, s + 0.6, s + 0.6); continue; }
+    if (ty === GEM) {
+      const f = d <= REVEAL ? DIST_SHADE[d] : 0.22;
+      ctx.fillStyle = shade('#b45cff', Math.min(1, f * (0.75 + 0.25 * pulse)));
+      ctx.shadowColor = '#a640ff'; ctx.shadowBlur = s * 0.6 * pulse;
+      ctx.fillRect(sx, sy, s + 0.6, s + 0.6);
+      ctx.shadowBlur = 0;
+      continue;
+    }
+    if (d > REVEAL) continue;                         // out of reach: black
+    const tr = tierOf(hp[i]);
+    ctx.fillStyle = shade(tr.c, DIST_SHADE[d]);
+    ctx.fillRect(sx, sy, s + 0.6, s + 0.6);
+    if (tr.hp === 100) {                              // stone texture so gray reads differently from dim white
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(sx + s * 0.18, sy + s * 0.18, s * 0.64, s * 0.64);
+    }
+    const p = poison.get(i);
+    if (p) { ctx.fillStyle = `rgba(80,255,60,${0.18 + 0.12 * pulse})`; ctx.fillRect(sx, sy, s + 0.6, s + 0.6); }
+  }
+
+  // lightning
+  ctx.lineCap = 'round';
+  for (const b of bolts) {
+    const [x1, y1] = toScreen(b.x1, b.y1), [x2, y2] = toScreen(b.x2, b.y2);
+    ctx.strokeStyle = `rgba(255,240,120,${b.t / 0.18})`; ctx.lineWidth = Math.max(1.5, s * 0.07);
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    for (let q = 1; q < 6; q++) {
+      const f = q / 6, j = (Math.random() - .5) * s * 0.5;
+      ctx.lineTo(x1 + (x2 - x1) * f + j, y1 + (y2 - y1) * f - j);
+    }
+    ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  // particles
+  for (const p of fx) {
+    const [sx, sy] = toScreen(p.x, p.y); ctx.globalAlpha = p.t / 0.5;
+    ctx.fillStyle = p.c; ctx.fillRect(sx - s * .08, sy - s * .08, s * .16, s * .16);
+  }
+  ctx.globalAlpha = 1;
+  // balls
+  for (const b of balls) drawBall(b.x, b.y, DEF[b.k].color, b.oneUse ? 0.7 : 1);
+  // aim
+  if (aim) drawAim();
+  // floating text
+  ctx.textAlign = 'center'; ctx.font = `800 ${Math.max(12, s * 0.45)}px system-ui`;
+  for (const t of texts) {
+    const [sx, sy] = toScreen(t.x, t.y); ctx.globalAlpha = Math.min(1, t.t);
+    ctx.fillStyle = t.c; ctx.fillText(t.s, sx, sy);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBall(x, y, col, scale) {
+  const [sx, sy] = toScreen(x, y), r = Math.max(3, BR * cam.s * scale);
+  ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = r;
+  ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function drawAim() {
+  const a = aimInfo();
+  drawBall(aim.ox, aim.oy, DEF[selected].color, 1);
+  if (!a) return;
+  const [sx, sy] = toScreen(aim.ox, aim.oy);
+  const len = 30 + a.f * 110;
+  ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + a.dx * len, sy + a.dy * len); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#fff'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText(fmt1(a.speed) + ' b/s', sx + a.dx * (len + 18), sy + a.dy * (len + 18) + 4);
+}
+
+// ---------------------------------------------------------------- input
+let aim = null;
+function aimInfo() {
+  let dx = aim.sx - aim.cx, dy = aim.sy - aim.cy;   // pull back, release to shoot the other way
+  const l = Math.hypot(dx, dy);
+  if (l < 12) return null;
+  dx /= l; dy /= l;
+  if (selected === 'blue') {                         // directional ball: snap to nearest straight direction
+    if (Math.abs(dx) >= Math.abs(dy)) { dx = Math.sign(dx); dy = 0; } else { dy = Math.sign(dy); dx = 0; }
+  }
+  const f = Math.min(1, l / (Math.min(W, H) * 0.32));
+  const s = stat(selected);
+  return { dx, dy, f, speed: s.min + (s.max - s.min) * f };
+}
+
+cv.addEventListener('pointerdown', e => {
+  if (!inv[selected]) { flashHint(); return; }
+  cv.setPointerCapture(e.pointerId);
+  let [wx, wy] = toWorld(e.clientX, e.clientY);
+  if (solidAt(Math.floor(wx), Math.floor(wy)) !== -1) { const p = nearestFreeCenter(wx, wy); wx = p.x; wy = p.y; }
+  aim = { id: e.pointerId, sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, ox: wx, oy: wy };
+});
+cv.addEventListener('pointermove', e => { if (aim && e.pointerId === aim.id) { aim.cx = e.clientX; aim.cy = e.clientY; } });
+cv.addEventListener('pointerup', e => {
+  if (!aim || e.pointerId !== aim.id) return;
+  aim.cx = e.clientX; aim.cy = e.clientY;
+  const a = aimInfo();
+  if (a && inv[selected] > 0) {
+    inv[selected]--;
+    spawnBall(selected, aim.ox, aim.oy, a.dx, a.dy, a.f);
+    everLaunched = true; dirtyUI = true;
+  }
+  aim = null;
+});
+cv.addEventListener('pointercancel', () => { aim = null; });
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+let dirtyUI = true;
+const price = k => Math.round(DEF[k].cost * Math.pow(1.5, bought[k]));
+const fmt = v => {
+  v = Math.floor(v);
+  if (v < 10000) return String(v);
+  const u = ['K', 'M', 'B', 'T']; let i = -1;
+  while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
+  return v.toFixed(v < 100 ? 1 : 0) + u[i];
+};
+
+function buildBar() {
+  const bar = $('bar'); bar.innerHTML = '';
+  for (const k of ORDER) {
+    const d = DEF[k], c = document.createElement('div');
+    c.className = 'card' + (k === selected ? ' sel' : '') + (unlocked[k] ? '' : ' locked');
+    c.innerHTML = `<div class="ball" style="background:${d.color};box-shadow:0 0 8px ${d.color}"></div>
+      <div class="name">${d.short}</div>
+      <div class="hand">${unlocked[k] ? `in hand: <b>${inv[k]}</b>` : 'locked'}</div>
+      ${unlocked[k] ? `<button class="buy" data-k="${k}"><span class="dia s"></span>${fmt(price(k))}</button>`
+                    : `<button class="buy" disabled><span class="dia p s"></span>${d.unlock}</button>`}`;
+    c.addEventListener('click', ev => {
+      if (!unlocked[k]) { openTree(); return; }
+      if (ev.target.closest('.buy')) buy(k);
+      selected = k; dirtyUI = true;
+    });
+    bar.appendChild(c);
+  }
+}
+
+function buy(k) {
+  const p = price(k);
+  if (money < p) return;
+  money -= p; bought[k]++; inv[k]++; dirtyUI = true;
+}
+
+function refreshAffordable() {
+  for (const b of document.querySelectorAll('.buy[data-k]')) {
+    const ok = money >= price(b.dataset.k);
+    b.classList.toggle('ok', ok); b.disabled = !ok;
+  }
+}
+
+function setHint() {
+  const h = $('hint');
+  if (everLaunched && balls.length) { h.style.display = 'none'; return; }
+  h.style.display = '';
+  if (inv[selected] > 0) h.textContent = 'Drag back on the dark green space and release to launch';
+  else if (Object.values(inv).some(v => v > 0)) h.textContent = 'Select a ball you have in hand';
+  else h.textContent = 'Buy a ball below';
+}
+function flashHint() { setHint(); const h = $('hint'); h.style.display = ''; h.animate([{ opacity: .3 }, { opacity: 1 }], 300); }
+
+function openTree() { buildTree(); $('tree').classList.add('open'); }
+$('treeBtn').addEventListener('click', openTree);
+$('treeClose').addEventListener('click', () => $('tree').classList.remove('open'));
+
+function buildTree() {
+  $('treePurple').textContent = purple;
+  const ch = $('chain'); ch.innerHTML = '';
+  ORDER.forEach((k, n) => {
+    const d = DEF[k];
+    if (n > 0) { const l = document.createElement('div'); l.className = 'link' + (unlocked[k] ? ' on' : ''); ch.appendChild(l); }
+    const box = document.createElement('div');
+    box.className = 'tnode' + (unlocked[k] ? '' : ' lock');
+    const canUnlock = !unlocked[k] && unlocked[d.req] && purple >= d.unlock;
+    let head = `<div class="thead"><div class="ball" style="background:${d.color};box-shadow:0 0 10px ${d.color}"></div>
+      <div><div class="t">${d.name}</div><div class="d">${fmt1(d.dmg)} dmg · ${d.min === d.max ? d.min : d.min + '–' + d.max} b/s — ${d.desc}</div></div>`;
+    if (!unlocked[k]) {
+      head += unlocked[d.req]
+        ? `<button data-unlock="${k}" ${canUnlock ? '' : 'disabled'}>Unlock <span class="dia p s"></span>${d.unlock}</button>`
+        : `<button disabled>Needs ${DEF[d.req].short}</button>`;
+    }
+    head += '</div>';
+    let ups = '';
+    if (unlocked[k]) {
+      ups = '<div class="ups">' + NODES[k].map(([key, label, max]) => {
+        const lv = up[k][key], maxed = lv >= max, cost = maxed ? 0 : nodeCost(max, lv);
+        const pips = Array.from({ length: max }, (_, q) => `<i class="${q < lv ? 'on' : ''}"></i>`).join('');
+        return `<div class="up"><div><div class="l">${label}</div>
+          <div class="v">${nodeValue(k, key, lv)}${maxed ? '' : ' → ' + nodeValue(k, key, lv + 1)}</div>
+          <div class="pips">${pips}</div></div>
+          <button data-up="${k}:${key}" ${maxed || purple < cost ? 'disabled' : ''}>${maxed ? 'MAX' : `<span class="dia p s"></span>${cost}`}</button></div>`;
+      }).join('') + '</div>';
+    }
+    box.innerHTML = head + ups;
+    ch.appendChild(box);
+  });
+  ch.querySelectorAll('[data-unlock]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.unlock, d = DEF[k];
+    if (unlocked[k] || !unlocked[d.req] || purple < d.unlock) return;
+    purple -= d.unlock; unlocked[k] = true; inv[k]++; selected = k; dirtyUI = true; buildTree(); save();
+  }));
+  ch.querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => {
+    const [k, key] = b.dataset.up.split(':'), node = NODES[k].find(n => n[0] === key);
+    const lv = up[k][key]; if (lv >= node[2]) return;
+    const cost = nodeCost(node[2], lv); if (purple < cost) return;
+    purple -= cost; up[k][key]++; dirtyUI = true; buildTree(); save();
+  }));
+}
+
+$('resetBtn').addEventListener('click', () => {
+  if (!confirm('Start over? This erases all progress.')) return;
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  resetMeta(); genWorld(); rebuildDerived(); cam.init = false; dirtyUI = true;
+  $('tree').classList.remove('open');
+});
+
+// ---------------------------------------------------------------- save / load
+const SAVE_KEY = 'pixelBreaker.v1';
+function save() {
+  try {
+    const hpArr = Array.from(hp, v => Math.round(v * 1000) / 1000);
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      type: Array.from(type).join(''), hp: hpArr, money, purple, inv, bought, unlocked, up, selected, everLaunched,
+      balls: balls.filter(b => !b.oneUse).map(b => ({ k: b.k, x: b.x, y: b.y, vx: b.vx, vy: b.vy, f: b.f, cs: b.cs })),
+    }));
+  } catch (e) {}
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (!s || s.type.length !== N * N) return false;
+    type = Uint8Array.from(s.type, ch => +ch); hp = Float32Array.from(s.hp);
+    money = s.money; purple = s.purple; selected = s.selected || 'orange'; everLaunched = !!s.everLaunched;
+    for (const k of ORDER) {
+      inv[k] = s.inv?.[k] || 0; bought[k] = s.bought?.[k] || 0; unlocked[k] = k === 'orange' || !!s.unlocked?.[k];
+      for (const n of NODES[k]) up[k][n[0]] = s.up?.[k]?.[n[0]] || 0;
+    }
+    balls = (s.balls || []).filter(b => DEF[b.k]).map(b => ({ ...b, last: [-1, -1], st: 0 }));
+    return true;
+  } catch (e) { return false; }
+}
+setInterval(save, 4000);
+addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+
+// ---------------------------------------------------------------- loop
+resetMeta();
+if (!load()) genWorld();
+rebuildDerived();
+resize();
+
+let last = performance.now(), uiT = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  update(dt);
+  draw();
+  uiT += dt;
+  if (dirtyUI) { buildBar(); dirtyUI = false; uiT = 1; }
+  if (uiT > 0.1) {
+    uiT = 0;
+    $('money').textContent = fmt(money);
+    $('purple').textContent = purple;
+    const live = balls.filter(b => !b.oneUse).length;
+    $('ballCount').textContent = live ? live + (live === 1 ? ' ball' : ' balls') : '';
+    refreshAffordable(); setHint();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// test hook
+window.__pb = { get state() { return { money, purple, balls: balls.length, frontier: frontier.size, freeCount }; },
+  give(m, p) { money += m; purple += p; dirtyUI = true; } };
+})();
+</script>
+</body>
+</html>
