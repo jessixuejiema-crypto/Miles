@@ -169,7 +169,7 @@ const DEF = {
   cyan:   { name: 'Gravity Ball',     short: 'Gravity',     color: '#33f0ff', dmg: 1, min: 0.5, max: 3,   unlock: 4, req: 'red',    cost: 4000,
             desc: 'Pulled toward an invisible orb circling the edge of the open space.' },
   white:  { name: 'Splitter Ball',    short: 'Splitter',    color: '#ffffff', dmg: 2, min: 30,  max: 30,  unlock: 5, req: 'cyan',   cost: 10000,
-            desc: 'Fast ball that makes 3 one-use Fast Balls every time it hits a block.' },
+            desc: 'Big fast white ball. Every time it hits a block it splits off 3 small one-use white balls and keeps going.' },
 };
 const ORDER = Object.keys(DEF);
 
@@ -349,14 +349,14 @@ function solidAt(cx, cy) {
 
 function moveAxis(b, ax, d) {
   if (!d) return;
-  const sgn = d > 0 ? 1 : -1;
+  const sgn = d > 0 ? 1 : -1, R = b.k === 'white' && !b.oneUse ? BR * 1.5 : BR;
   let nx = b.x, ny = b.y, c1, c2;
   if (ax === 0) {
-    nx += d; const ex = Math.floor(nx + sgn * BR);
-    c1 = solidAt(ex, Math.floor(b.y - BR * 0.7)); c2 = solidAt(ex, Math.floor(b.y + BR * 0.7));
+    nx += d; const ex = Math.floor(nx + sgn * R);
+    c1 = solidAt(ex, Math.floor(b.y - R * 0.7)); c2 = solidAt(ex, Math.floor(b.y + R * 0.7));
   } else {
-    ny += d; const ey = Math.floor(ny + sgn * BR);
-    c1 = solidAt(Math.floor(b.x - BR * 0.7), ey); c2 = solidAt(Math.floor(b.x + BR * 0.7), ey);
+    ny += d; const ey = Math.floor(ny + sgn * R);
+    c1 = solidAt(Math.floor(b.x - R * 0.7), ey); c2 = solidAt(Math.floor(b.x + R * 0.7), ey);
   }
   const hit = c1 !== -1 ? c1 : c2;
   if (hit === -1) { b.x = nx; b.y = ny; return; }
@@ -389,7 +389,7 @@ function afterBounce(b, hit) {
     const base = Math.atan2(b.vy, b.vx);
     for (let s = 0; s < n; s++) {
       const a = base + (s - (n - 1) / 2) * 0.45;
-      spawnBall('purple', b.x, b.y, Math.cos(a), Math.sin(a), 1, { oneUse: true });
+      spawnBall('white', b.x, b.y, Math.cos(a), Math.sin(a), 1, { oneUse: true });   // small one-use white balls; the big one keeps going
     }
   }
 }
@@ -591,7 +591,7 @@ function draw() {
   }
   ctx.globalAlpha = 1;
   // balls
-  for (const b of balls) drawBall(b.x, b.y, DEF[b.k].color, b.oneUse ? 0.7 : 1);
+  for (const b of balls) drawBall(b.x, b.y, DEF[b.k].color, b.oneUse ? 0.5 : b.k === 'white' ? 1.5 : 1);   // big Splitter, small splits
   // aim
   if (aim) drawAim();
   // floating text
@@ -612,7 +612,7 @@ function drawBall(x, y, col, scale) {
 
 function drawAim() {
   const a = aimInfo();
-  drawBall(aim.ox, aim.oy, DEF[selected].color, 1);
+  drawBall(aim.ox, aim.oy, DEF[selected].color, selected === 'white' ? 1.5 : 1);
   if (!a) return;
   const [sx, sy] = toScreen(aim.ox, aim.oy);
   const len = 30 + a.f * 110;
