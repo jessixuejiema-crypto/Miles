@@ -28,6 +28,7 @@
     display: flex; align-items: center; gap: 8px; cursor: pointer;
   }
   #ballCount { font-size: 13px; color: #8aa; font-weight: 600; }
+  #centerBtn { pointer-events: auto; background: #10201a; color: #cfe; border: 2px solid #2c6b45; border-radius: 10px; padding: 8px 10px; font: inherit; font-weight: 700; cursor: pointer; }
 
   #hint {
     position: fixed; left: 50%; bottom: 128px; transform: translateX(-50%); z-index: 2;
@@ -106,6 +107,7 @@
   <div class="cur"><span class="dia"></span><span id="money">0</span></div>
   <div class="cur"><span class="dia p"></span><span id="purple">0</span></div>
   <span id="ballCount"></span>
+  <button id="centerBtn" hidden>Recenter</button>
   <button id="treeBtn"><span class="dia p s"></span>Skill Tree</button>
 </div>
 <div id="hint"></div>
@@ -536,7 +538,7 @@ function draw() {
   const t = camTarget();
   if (!cam.init) { Object.assign(cam, t); cam.init = true; }
   const k = 0.08;
-  cam.x += (t.x - cam.x) * k; cam.y += (t.y - cam.y) * k; cam.s += (t.s - cam.s) * k;
+  if (!cam.manual) { cam.x += (t.x - cam.x) * k; cam.y += (t.y - cam.y) * k; cam.s += (t.s - cam.s) * k; }
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
@@ -636,26 +638,72 @@ function aimInfo() {
   return { dx, dy, f, speed: s.min + (s.max - s.min) * f };
 }
 
+// One finger on the dark green space with a ball in hand: aim and launch.
+// One finger anywhere else: drag to move. Two fingers: pinch to zoom and move. Mouse wheel zooms.
+const ZOOM_MAX = 160;                              // pixels per block when zoomed all the way in
+const gp = new Map();
+let pan = null, pinch = null;
+function setManual() { cam.manual = true; $('centerBtn').hidden = false; }
+function zoomAt(sx, sy, ns) {
+  ns = Math.max(1e-6, Math.min(ZOOM_MAX, ns));     // no limit on zooming out
+  const [wx, wy] = toWorld(sx, sy);
+  cam.s = ns;
+  cam.x = wx - (sx - W / 2) / ns;
+  cam.y = wy - (sy - TOP - (H - TOP - BOTTOM) / 2) / ns;
+  setManual();
+}
+function startPan(x, y) { pan = { x, y, cx: cam.x, cy: cam.y }; }
+function startPinch() {
+  const [a, b] = [...gp.values()];
+  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+}
+
 cv.addEventListener('pointerdown', e => {
-  if (!inv[selected]) { flashHint(); return; }
   cv.setPointerCapture(e.pointerId);
-  let [wx, wy] = toWorld(e.clientX, e.clientY);
-  if (solidAt(Math.floor(wx), Math.floor(wy)) !== -1) { const p = nearestFreeCenter(wx, wy); wx = p.x; wy = p.y; }
-  aim = { id: e.pointerId, sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, ox: wx, oy: wy };
+  gp.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gp.size >= 2) { aim = null; pan = null; startPinch(); return; }
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  if (inv[selected] > 0 && solidAt(Math.floor(wx), Math.floor(wy)) === -1) {
+    aim = { id: e.pointerId, sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, ox: wx, oy: wy };
+  } else startPan(e.clientX, e.clientY);
 });
-cv.addEventListener('pointermove', e => { if (aim && e.pointerId === aim.id) { aim.cx = e.clientX; aim.cy = e.clientY; } });
-cv.addEventListener('pointerup', e => {
-  if (!aim || e.pointerId !== aim.id) return;
-  aim.cx = e.clientX; aim.cy = e.clientY;
-  const a = aimInfo();
-  if (a && inv[selected] > 0) {
-    inv[selected]--;
-    spawnBall(selected, aim.ox, aim.oy, a.dx, a.dy, a.f);
-    everLaunched = true; dirtyUI = true;
+cv.addEventListener('pointermove', e => {
+  if (!gp.has(e.pointerId)) return;
+  gp.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gp.size >= 2 && pinch) {
+    const [a, b] = [...gp.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    zoomAt(pinch.mx, pinch.my, cam.s * d / pinch.d);
+    cam.x -= (mx - pinch.mx) / cam.s; cam.y -= (my - pinch.my) / cam.s;
+    pinch = { d, mx, my };
+    return;
   }
-  aim = null;
+  if (aim && e.pointerId === aim.id) { aim.cx = e.clientX; aim.cy = e.clientY; return; }
+  if (pan) {
+    const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+    if (cam.manual || Math.hypot(dx, dy) > 4) { cam.x = pan.cx - dx / cam.s; cam.y = pan.cy - dy / cam.s; setManual(); }
+  }
 });
-cv.addEventListener('pointercancel', () => { aim = null; });
+function pointerEnd(e, cancel) {
+  if (!gp.has(e.pointerId)) return;
+  gp.delete(e.pointerId);
+  if (aim && e.pointerId === aim.id) {
+    aim.cx = e.clientX; aim.cy = e.clientY;
+    const a = cancel ? null : aimInfo();
+    if (a && inv[selected] > 0) {
+      inv[selected]--;
+      spawnBall(selected, aim.ox, aim.oy, a.dx, a.dy, a.f);
+      everLaunched = true; dirtyUI = true;
+    }
+    aim = null;
+  }
+  pinch = null; pan = null;
+  if (gp.size === 1) { const [q] = [...gp.values()]; startPan(q.x, q.y); }   // keep moving with the finger left down
+}
+cv.addEventListener('pointerup', e => pointerEnd(e, false));
+cv.addEventListener('pointercancel', e => pointerEnd(e, true));
+cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, cam.s * Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+document.getElementById('centerBtn').addEventListener('click', () => { cam.manual = false; document.getElementById('centerBtn').hidden = true; });
 
 // ---------------------------------------------------------------- UI
 const $ = id => document.getElementById(id);
@@ -705,7 +753,7 @@ function setHint() {
   const h = $('hint');
   if (everLaunched && balls.length) { h.style.display = 'none'; return; }
   h.style.display = '';
-  if (inv[selected] > 0) h.textContent = 'Drag back on the dark green space and release to launch';
+  if (inv[selected] > 0) h.textContent = 'Drag back on the dark green space and release to launch. Drag elsewhere to move, pinch to zoom.';
   else if (Object.values(inv).some(v => v > 0)) h.textContent = 'Select a ball you have in hand';
   else h.textContent = 'Buy a ball below';
 }
@@ -819,7 +867,7 @@ function buyNode() {
   const view = $('treeView'), pts = new Map();
   let start = null;
   const zoomAt = (cx, cy, ns) => {
-    ns = Math.max(0.35, Math.min(1.8, ns));
+    ns = Math.max(1e-6, Math.min(3, ns));   // zoom out as far as you like
     const r = view.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
     tv.x = px - (px - tv.x) * ns / tv.s; tv.y = py - (py - tv.y) * ns / tv.s; tv.s = ns;
     clampTree(); applyTree();
@@ -861,7 +909,7 @@ $('resetBtn').addEventListener('click', () => {
     setTimeout(() => { b.textContent = 'Reset'; b.classList.remove('arm'); }, 3000); return; }
   resetArmed = 0; b.textContent = 'Reset'; b.classList.remove('arm');
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
-  resetMeta(); genWorld(); rebuildDerived(); cam.init = false; dirtyUI = true; tv.init = false; tsel = { k: 'orange', key: null };
+  resetMeta(); genWorld(); rebuildDerived(); cam.init = false; cam.manual = false; $('centerBtn').hidden = true; dirtyUI = true; tv.init = false; tsel = { k: 'orange', key: null };
   $('tree').classList.remove('open');
 });
 
