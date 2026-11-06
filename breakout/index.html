@@ -147,7 +147,6 @@ const WEIGHTS = [30, 22, 18, 12, 8, 5, 2.5, 1.2, 0.6, 0.2];
 const WSUM = WEIGHTS.reduce((a, b) => a + b, 0);
 
 const FREE = 0, BLOCK = 1, GEM = 2;  // GEM = glowing purple pixel (gives purple currency)
-const N = 81, C = 40;                // grid size, center cell
 const REVEAL = 3;                    // blocks within 3 steps of open space are visible
 const BR = 0.22;                     // ball radius in blocks
 const FREE_COLOR = '#0f2018';
@@ -188,9 +187,13 @@ const NODES = {
 const nodeCost = (max, lv) => (max === 3 ? [1, 2, 3] : [1, 1, 1, 2, 3])[lv];
 
 // ---------------------------------------------------------------- state
-let type, hp, dist;
+// The grid never ends. A cell is generated from its coordinates the first time anything looks at it
+// (the same spot always gives the same block), and only cells that changed are stored.
+let seed = 1;
+let mod = new Map();               // key -> [type, hp] for cells that were hit or broken
+let distMap = new Map();           // key -> steps to the nearest open cell (only 0–3 are stored)
 let frontier = new Set();          // blocks touching open space
-let poison = new Map();            // idx -> { until, dps }
+let poison = new Map();            // key -> { until, dps }
 let balls = [];
 let money = 10, purple = 0;
 let inv = {}, bought = {}, unlocked = {}, up = {};
@@ -199,52 +202,66 @@ let everLaunched = false;
 let freeBounds, freeSum, freeCount;
 let T = 0;
 let fx = [], bolts = [], texts = [];
-let orb = { ang: 0, r: 1, cx: C + 0.5, cy: C + 0.5, dirty: true };
+let orb = { ang: 0, r: 1, cx: 0.5, cy: 0.5, dirty: true };
 
-const idx = (x, y) => y * N + x;
+const OFF = 2 ** 20, M = 2 ** 21;  // cells from -1,048,576 to +1,048,575 each way: effectively endless
+const key = (x, y) => (x + OFF) * M + (y + OFF);
+const kx = k => Math.floor(k / M) - OFF;
+const ky = k => (k % M) - OFF;
+
+function rnd(x, y, salt) {          // deterministic 0..1 for a cell
+  let h = (seed + salt * 0x9e3779b9) ^ Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b); h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function baseType(x, y) {
+  if (Math.abs(x) <= 1 && Math.abs(y) <= 1) return FREE;
+  // glowing purple pixel: 1 in 100–200
+  if (Math.abs(x) + Math.abs(y) > 5 && rnd(x, y, 1) < 1 / (100 + rnd(x, y, 2) * 100)) return GEM;
+  return BLOCK;
+}
+function baseHp(x, y) {
+  let r = rnd(x, y, 3) * WSUM;
+  for (let i = 0; i < TIERS.length; i++) { r -= WEIGHTS[i]; if (r < 0) return TIERS[i].hp; }
+  return 1;
+}
+function cellType(k) { const m = mod.get(k); return m ? m[0] : baseType(kx(k), ky(k)); }
+function cellHp(k) {
+  const m = mod.get(k); if (m) return m[1];
+  const x = kx(k), y = ky(k), t = baseType(x, y);
+  return t === FREE ? 0 : t === GEM ? 1 : baseHp(x, y);
+}
+const cellDist = k => distMap.get(k) ?? REVEAL + 1;
 
 function resetMeta() {
   money = 10; purple = 0; balls = []; poison = new Map(); everLaunched = false; selected = 'orange';
   for (const k of ORDER) { inv[k] = 0; bought[k] = 0; unlocked[k] = k === 'orange'; up[k] = {}; for (const n of NODES[k]) up[k][n[0]] = 0; }
 }
 
-function pickTierHp() {
-  let r = Math.random() * WSUM;
-  for (let i = 0; i < TIERS.length; i++) { r -= WEIGHTS[i]; if (r < 0) return TIERS[i].hp; }
-  return 1;
+function genWorld() {
+  seed = (Math.random() * 2 ** 31) | 0;
+  mod = new Map();
+  for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) mod.set(key(x, y), [FREE, 0]);
 }
 
-function genWorld() {
-  type = new Uint8Array(N * N); hp = new Float32Array(N * N);
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const i = idx(x, y);
-    if (Math.abs(x - C) <= 1 && Math.abs(y - C) <= 1) { type[i] = FREE; continue; }
-    const man = Math.abs(x - C) + Math.abs(y - C);
-    // glowing purple pixel: 1 in 100–200
-    if (man > 5 && Math.random() < 1 / (100 + Math.random() * 100)) { type[i] = GEM; hp[i] = 1; continue; }
-    type[i] = BLOCK; hp[i] = pickTierHp();
+const NB = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+function spreadDist(q) {             // BFS outward from open cells; distances only ever shrink
+  for (let h = 0; h < q.length; h++) {
+    const a = q[h], d = distMap.get(a); if (d >= REVEAL) continue;
+    const ax = kx(a), ay = ky(a);
+    for (const [ox, oy] of NB) {
+      const j = key(ax + ox, ay + oy);
+      if (cellDist(j) > d + 1) { distMap.set(j, d + 1); q.push(j); if (d + 1 === 1 && cellType(j) !== FREE) frontier.add(j); }
+    }
   }
 }
 
 function rebuildDerived() {
-  dist = new Uint8Array(N * N).fill(REVEAL + 1);
+  distMap = new Map(); frontier = new Set();
+  freeBounds = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; freeSum = { x: 0, y: 0 }; freeCount = 0;
   const q = [];
-  freeBounds = { x0: N, y0: N, x1: -1, y1: -1 }; freeSum = { x: 0, y: 0 }; freeCount = 0;
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const i = idx(x, y);
-    if (type[i] === FREE) { dist[i] = 0; q.push(i); addFreeStats(x, y); }
-  }
-  for (let h = 0; h < q.length; h++) {
-    const i = q[h], d = dist[i]; if (d >= REVEAL) continue;
-    const x = i % N, y = (i / N) | 0;
-    for (const [nx, ny] of [[x+1,y],[x-1,y],[x,y+1],[x,y-1]]) {
-      if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
-      const j = idx(nx, ny);
-      if (dist[j] > d + 1) { dist[j] = d + 1; q.push(j); }
-    }
-  }
-  frontier = new Set();
-  for (let i = 0; i < N * N; i++) if (type[i] !== FREE && dist[i] === 1) frontier.add(i);
+  for (const [k, m] of mod) if (m[0] === FREE) { distMap.set(k, 0); q.push(k); addFreeStats(kx(k), ky(k)); }
+  spreadDist(q);
   orb.dirty = true;
 }
 
@@ -255,22 +272,12 @@ function addFreeStats(x, y) {
 }
 
 function breakCell(i) {
-  const x = i % N, y = (i / N) | 0;
-  const col = type[i] === GEM ? '#c46bff' : tierOf(Math.max(hp[i], 0.01)).c;
-  type[i] = FREE; hp[i] = 0; dist[i] = 0;
+  const x = kx(i), y = ky(i);
+  const col = cellType(i) === GEM ? '#c46bff' : tierOf(Math.max(cellHp(i), 0.01)).c;
+  mod.set(i, [FREE, 0]); distMap.set(i, 0);
   frontier.delete(i); poison.delete(i);
   addFreeStats(x, y);
-  // local BFS: distances only ever shrink
-  const q = [i];
-  for (let h = 0; h < q.length; h++) {
-    const a = q[h], d = dist[a]; if (d >= REVEAL) continue;
-    const ax = a % N, ay = (a / N) | 0;
-    for (const [nx, ny] of [[ax+1,ay],[ax-1,ay],[ax,ay+1],[ax,ay-1]]) {
-      if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
-      const j = idx(nx, ny);
-      if (dist[j] > d + 1) { dist[j] = d + 1; q.push(j); if (d + 1 === 1 && type[j] !== FREE) frontier.add(j); }
-    }
-  }
+  spreadDist([i]);
   orb.dirty = true;
   for (let k = 0; k < 6; k++) fx.push({ x: x + 0.5, y: y + 0.5, vx: (Math.random() - .5) * 4, vy: (Math.random() - .5) * 4, t: 0.5, c: col });
 }
@@ -283,16 +290,17 @@ function tierOf(h) {
 }
 
 function damage(i, amt) {
-  if (type[i] === FREE) return false;
-  if (type[i] === GEM) {
+  const t = cellType(i);
+  if (t === FREE) return false;
+  if (t === GEM) {
     purple++;
-    const x = i % N, y = (i / N) | 0;
-    texts.push({ x: x + 0.5, y: y + 0.2, s: '+1', t: 1.2, c: '#d28bff' });
+    texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.2, s: '+1', t: 1.2, c: '#d28bff' });
     breakCell(i); dirtyUI = true; return true;
   }
-  money += Math.min(amt, hp[i]);
-  hp[i] -= amt;
-  if (hp[i] <= 1e-4) { breakCell(i); return true; }
+  const h = cellHp(i);
+  money += Math.min(amt, h);
+  if (h - amt <= 1e-4) { breakCell(i); return true; }
+  mod.set(i, [BLOCK, h - amt]);
   return false;
 }
 
@@ -342,9 +350,8 @@ function ballSpeed(b) {
 }
 
 function solidAt(cx, cy) {
-  if (cx < 0 || cy < 0 || cx >= N || cy >= N) return -2;   // edge of the world
-  const i = idx(cx, cy);
-  return type[i] === FREE ? -1 : i;
+  const i = key(cx, cy);
+  return cellType(i) === FREE ? -1 : i;
 }
 
 function moveAxis(b, ax, d) {
@@ -360,7 +367,6 @@ function moveAxis(b, ax, d) {
   }
   const hit = c1 !== -1 ? c1 : c2;
   if (hit === -1) { b.x = nx; b.y = ny; return; }
-  if (hit === -2) { reflect(b, ax); return; }
   if (onHit(b, hit)) { b.x = nx; b.y = ny; return; }   // pierced through
   reflect(b, ax);
   afterBounce(b, hit);
@@ -370,8 +376,8 @@ function reflect(b, ax) { if (ax === 0) b.vx = -b.vx; else b.vy = -b.vy; }
 
 function onHit(b, i) {
   // Pierce Force: orange ball smashes weak blocks and keeps going.
-  if (b.k === 'orange' && type[i] === BLOCK && pierceHp() > 0 && hp[i] <= pierceHp() + 1e-6) {
-    damage(i, hp[i]);
+  if (b.k === 'orange' && pierceHp() > 0 && cellType(i) === BLOCK && cellHp(i) <= pierceHp() + 1e-6) {
+    damage(i, cellHp(i));
     return true;
   }
   damage(i, stat(b.k).dmg);
@@ -399,29 +405,28 @@ function seek(b, hit) {
   let best = -1, bd = Infinity;
   for (const j of frontier) {
     if (j === hit || j === b.last[1]) continue;
-    const dx = (j % N) + 0.5 - b.x, dy = ((j / N) | 0) + 0.5 - b.y;
+    const dx = kx(j) + 0.5 - b.x, dy = ky(j) + 0.5 - b.y;
     const dd = dx * dx + dy * dy;
     if (dx * b.vx + dy * b.vy <= 0.05 * Math.sqrt(dd)) continue;
     if (dd < bd) { bd = dd; best = j; }
   }
   if (best < 0) return;
-  const dx = (best % N) + 0.5 - b.x, dy = ((best / N) | 0) + 0.5 - b.y, l = Math.hypot(dx, dy);
+  const dx = kx(best) + 0.5 - b.x, dy = ky(best) + 0.5 - b.y, l = Math.hypot(dx, dy);
   b.vx = dx / l; b.vy = dy / l;
 }
 
 function poisonAround(i) {
-  const x = i % N, y = (i / N) | 0, r = poisonRange(), until = T + 5, dps = poisonDps();
+  const x = kx(i), y = ky(i), r = poisonRange(), until = T + 5, dps = poisonDps();
   for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++) {
-    if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
-    const j = idx(xx, yy);
-    if (type[j] === BLOCK) poison.set(j, { until, dps });
+    const j = key(xx, yy);
+    if (cellType(j) === BLOCK) poison.set(j, { until, dps });
   }
 }
 
 function nearestFrontier(x, y, maxD) {
   let best = -1, bd = maxD * maxD;
   for (const j of frontier) {
-    const dx = (j % N) + 0.5 - x, dy = ((j / N) | 0) + 0.5 - y, dd = dx * dx + dy * dy;
+    const dx = kx(j) + 0.5 - x, dy = ky(j) + 0.5 - y, dd = dx * dx + dy * dy;
     if (dd < bd) { bd = dd; best = j; }
   }
   return best;
@@ -431,7 +436,7 @@ function updateOrb(dt) {
   if (orb.dirty && freeCount) {
     orb.cx = freeSum.x / freeCount; orb.cy = freeSum.y / freeCount;
     let s = 0, n = 0;
-    for (const j of frontier) { s += Math.hypot((j % N) + 0.5 - orb.cx, ((j / N) | 0) + 0.5 - orb.cy); n++; }
+    for (const j of frontier) { s += Math.hypot(kx(j) + 0.5 - orb.cx, ky(j) + 0.5 - orb.cy); n++; }
     orb.r = Math.max(0.6, (n ? s / n : 1) - 0.9);   // as close to the unbroken edge as possible
     orb.dirty = false;
   }
@@ -454,7 +459,7 @@ function updateBall(b, dt) {
       b.st -= iv;
       const j = nearestFrontier(b.x, b.y, 200);
       if (j >= 0) {
-        bolts.push({ x1: b.x, y1: b.y, x2: (j % N) + 0.5, y2: ((j / N) | 0) + 0.5, t: 0.18 });
+        bolts.push({ x1: b.x, y1: b.y, x2: kx(j) + 0.5, y2: ky(j) + 0.5, t: 0.18 });
         damage(j, strikeDmg());
       }
     }
@@ -472,9 +477,9 @@ function updateBall(b, dt) {
 }
 
 function nearestFreeCenter(x, y) {
-  let best = { x: C + 0.5, y: C + 0.5 }, bd = Infinity;
+  let best = { x: 0.5, y: 0.5 }, bd = Infinity;
   for (let yy = freeBounds.y0; yy <= freeBounds.y1; yy++) for (let xx = freeBounds.x0; xx <= freeBounds.x1; xx++) {
-    if (type[idx(xx, yy)] !== FREE) continue;
+    if (cellType(key(xx, yy)) !== FREE) continue;
     const d = (xx + .5 - x) ** 2 + (yy + .5 - y) ** 2;
     if (d < bd) { bd = d; best = { x: xx + .5, y: yy + .5 }; }
   }
@@ -485,7 +490,7 @@ function update(dt) {
   T += dt;
   updateOrb(dt);
   for (const [j, p] of poison) {
-    if (T > p.until || type[j] !== BLOCK) { poison.delete(j); continue; }
+    if (T > p.until || cellType(j) !== BLOCK) { poison.delete(j); continue; }
     damage(j, p.dps * dt);
   }
   for (const b of balls) updateBall(b, dt);
@@ -501,7 +506,7 @@ function update(dt) {
 // ---------------------------------------------------------------- rendering
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
-const cam = { x: C + 0.5, y: C + 0.5, s: 40, init: false };
+const cam = { x: 0.5, y: 0.5, s: 40, init: false };
 const TOP = 56, BOTTOM = 124;
 
 function resize() {
@@ -544,32 +549,45 @@ function draw() {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
 
   const [wx0, wy0] = toWorld(0, 0), [wx1, wy1] = toWorld(W, H);
-  const gx0 = Math.max(0, Math.floor(wx0)), gy0 = Math.max(0, Math.floor(wy0));
-  const gx1 = Math.min(N - 1, Math.ceil(wx1)), gy1 = Math.min(N - 1, Math.ceil(wy1));
+  const gx0 = Math.floor(wx0), gy0 = Math.floor(wy0), gx1 = Math.ceil(wx1), gy1 = Math.ceil(wy1);
   const s = cam.s, pulse = 0.55 + 0.45 * Math.sin(T * 3);
+  const area = (gx1 - gx0 + 1) * (gy1 - gy0 + 1);
 
-  for (let y = gy0; y <= gy1; y++) for (let x = gx0; x <= gx1; x++) {
-    const i = idx(x, y), d = dist[i], ty = type[i];
+  const drawCell = (x, y, i, d, ty) => {
     const [sx, sy] = toScreen(x, y);
-    if (ty === FREE) { ctx.fillStyle = FREE_COLOR; ctx.fillRect(sx, sy, s + 0.6, s + 0.6); continue; }
+    if (ty === FREE) { ctx.fillStyle = FREE_COLOR; ctx.fillRect(sx, sy, s + 0.6, s + 0.6); return; }
     if (ty === GEM) {
       const f = d <= REVEAL ? DIST_SHADE[d] : 0.22;
       ctx.fillStyle = shade('#b45cff', Math.min(1, f * (0.75 + 0.25 * pulse)));
-      ctx.shadowColor = '#a640ff'; ctx.shadowBlur = s * 0.6 * pulse;
-      ctx.fillRect(sx, sy, s + 0.6, s + 0.6);
+      if (s > 2) { ctx.shadowColor = '#a640ff'; ctx.shadowBlur = s * 0.6 * pulse; }
+      ctx.fillRect(sx, sy, Math.max(s + 0.6, 1.5), Math.max(s + 0.6, 1.5));
       ctx.shadowBlur = 0;
-      continue;
+      return;
     }
-    if (d > REVEAL) continue;                         // out of reach: black
-    const tr = tierOf(hp[i]);
+    if (d > REVEAL) return;                           // out of reach: black
+    const tr = tierOf(cellHp(i));
     ctx.fillStyle = shade(tr.c, DIST_SHADE[d]);
     ctx.fillRect(sx, sy, s + 0.6, s + 0.6);
-    if (tr.hp === 100) {                              // stone texture so gray reads differently from dim white
+    if (tr.hp === 100 && s > 4) {                     // stone texture so gray reads differently from dim white
       ctx.fillStyle = 'rgba(0,0,0,0.28)';
       ctx.fillRect(sx + s * 0.18, sy + s * 0.18, s * 0.64, s * 0.64);
     }
-    const p = poison.get(i);
-    if (p) { ctx.fillStyle = `rgba(80,255,60,${0.18 + 0.12 * pulse})`; ctx.fillRect(sx, sy, s + 0.6, s + 0.6); }
+    if (poison.has(i)) { ctx.fillStyle = `rgba(80,255,60,${0.18 + 0.12 * pulse})`; ctx.fillRect(sx, sy, s + 0.6, s + 0.6); }
+  };
+
+  if (area <= 60000) {
+    // close up: every visible cell, including the glowing purple pixels hidden in the dark
+    for (let y = gy0; y <= gy1; y++) for (let x = gx0; x <= gx1; x++) {
+      const i = key(x, y);
+      drawCell(x, y, i, cellDist(i), cellType(i));
+    }
+  } else {
+    // zoomed far out: only the open space and the blocks around it
+    for (const [i, d] of distMap) {
+      const x = kx(i), y = ky(i);
+      if (x < gx0 || x > gx1 || y < gy0 || y > gy1) continue;
+      drawCell(x, y, i, d, cellType(i));
+    }
   }
 
   // lightning
@@ -914,27 +932,41 @@ $('resetBtn').addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------- save / load
-const SAVE_KEY = 'pixelBreaker.v1';
+const SAVE_KEY = 'pixelBreaker.v2', OLD_KEY = 'pixelBreaker.v1';
 function save() {
   try {
-    const hpArr = Array.from(hp, v => Math.round(v * 1000) / 1000);
+    const cells = [];
+    for (const [k, m] of mod) cells.push(kx(k), ky(k), m[0], Math.round(m[1] * 1000) / 1000);
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      type: Array.from(type).join(''), hp: hpArr, money, purple, inv, bought, unlocked, up, selected, everLaunched,
+      seed, cells, money, purple, inv, bought, unlocked, up, selected, everLaunched,
       balls: balls.filter(b => !b.oneUse).map(b => ({ k: b.k, x: b.x, y: b.y, vx: b.vx, vy: b.vy, f: b.f, cs: b.cs })),
     }));
   } catch (e) {}
 }
+function loadMeta(s) {
+  money = s.money; purple = s.purple; selected = s.selected || 'orange'; everLaunched = !!s.everLaunched;
+  for (const k of ORDER) {
+    inv[k] = s.inv?.[k] || 0; bought[k] = s.bought?.[k] || 0; unlocked[k] = k === 'orange' || !!s.unlocked?.[k];
+    for (const n of NODES[k]) up[k][n[0]] = s.up?.[k]?.[n[0]] || 0;
+  }
+}
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-    if (!s || s.type.length !== N * N) return false;
-    type = Uint8Array.from(s.type, ch => +ch); hp = Float32Array.from(s.hp);
-    money = s.money; purple = s.purple; selected = s.selected || 'orange'; everLaunched = !!s.everLaunched;
-    for (const k of ORDER) {
-      inv[k] = s.inv?.[k] || 0; bought[k] = s.bought?.[k] || 0; unlocked[k] = k === 'orange' || !!s.unlocked?.[k];
-      for (const n of NODES[k]) up[k][n[0]] = s.up?.[k]?.[n[0]] || 0;
+    if (s && Array.isArray(s.cells)) {
+      seed = s.seed | 0; mod = new Map();
+      for (let q = 0; q < s.cells.length; q += 4) mod.set(key(s.cells[q], s.cells[q + 1]), [s.cells[q + 2], s.cells[q + 3]]);
+      loadMeta(s);
+      balls = (s.balls || []).filter(b => DEF[b.k]).map(b => ({ ...b, last: [-1, -1], st: 0 }));
+      return true;
     }
-    balls = (s.balls || []).filter(b => DEF[b.k]).map(b => ({ ...b, last: [-1, -1], st: 0 }));
+    // older save from the fixed 81×81 grid: it becomes the middle of the endless grid
+    const o = JSON.parse(localStorage.getItem(OLD_KEY));
+    if (!o || typeof o.type !== 'string' || o.type.length !== 81 * 81) return false;
+    seed = (Math.random() * 2 ** 31) | 0; mod = new Map();
+    for (let q = 0; q < 81 * 81; q++) mod.set(key((q % 81) - 40, Math.floor(q / 81) - 40), [+o.type[q], o.hp[q]]);
+    loadMeta(o);
+    balls = (o.balls || []).filter(b => DEF[b.k]).map(b => ({ ...b, x: b.x - 40, y: b.y - 40, last: [-1, -1], st: 0 }));
     return true;
   } catch (e) { return false; }
 }
@@ -967,7 +999,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // test hook
-window.__pb = { get state() { return { money, purple, balls: balls.length, frontier: frontier.size, freeCount }; },
+window.__pb = { get state() { return { money, purple, balls: balls.length, frontier: frontier.size, freeCount, freeBounds, stored: mod.size }; },
   give(m, p) { money += m; purple += p; dirtyUI = true; } };
 })();
 </script>
