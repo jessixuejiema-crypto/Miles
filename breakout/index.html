@@ -165,10 +165,14 @@ const DEF = {
             desc: 'Strikes the nearest block every 0.5 s (range 200) for 2 dmg.' },
   red:    { name: 'Seeker Ball',      short: 'Seeker',      color: '#ff3b3b', dmg: 6, min: 18,  max: 18,  unlock: 3, req: 'yellow', cost: 2000,
             desc: 'After a bounce it flies at the nearest block in front of it (never the same one).' },
-  cyan:   { name: 'Gravity Ball',     short: 'Gravity',     color: '#33f0ff', dmg: 1, min: 0.5, max: 3,   unlock: 4, req: 'red',    cost: 4000,
+  cyan:   { name: 'Gravity Ball',     short: 'Gravity',     color: '#33f0ff', dmg: 1, min: 0.5, max: 3,   unlock: 4, req: 'red',    cost: 4000, gmul: 1,
             desc: 'Pulled toward an invisible orb circling the edge of the open space.' },
   white:  { name: 'Splitter Ball',    short: 'Splitter',    color: '#ffffff', dmg: 2, min: 30,  max: 30,  unlock: 5, req: 'cyan',   cost: 10000,
             desc: 'Big fast white ball. Every time it hits a block it splits off 3 small one-use white balls and keeps going.' },
+  indigo: { name: 'Indigo Gravity Ball', short: 'Indigo',   color: '#5b3cff', dmg: 25, min: 3,   max: 8,   unlock: 5, req: 'white',  cost: 25000, gmul: 12.5,
+            desc: 'A faster, much heavier Gravity Ball: 5× the pull of a fully upgraded (5/5) Gravity Ball, and 25 damage.' },
+  pink:   { name: 'Pink Box Ball',    short: 'Pink',        color: '#ff6ec7', dmg: 6, min: 18,  max: 18,  unlock: 5, req: 'indigo', cost: 50000,
+            desc: 'A Seeker Ball trapped in an invisible box around everything broken so far. It bounces off the box and only breaks blocks inside it; other balls pass through. The box grows as the open area grows.' },
 };
 const ORDER = Object.keys(DEF);
 
@@ -181,7 +185,9 @@ const NODES = {
   yellow: [DMG, SPD, ['rate', 'Strikes / sec', 5], ['sdmg', 'Strike Damage', 5]],
   red:    [DMG, SPD],
   cyan:   [DMG, SPD, ['grav', 'Gravity Pull', 5]],
+  indigo: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   white:  [DMG, SPD, ['split', 'Split Count', 3]],
+  pink:   [DMG, SPD],
 };
 // Most upgrades cost 1 purple; the last levels cost more, never more than 5.
 const nodeCost = (max, lv) => (max === 3 ? [1, 2, 3] : [1, 1, 1, 2, 3])[lv];
@@ -315,7 +321,7 @@ const poisonRange = () => 3 + up.green.prange;
 const poisonDps = () => 0.5 + 0.25 * up.green.pdmg;
 const strikeInterval = () => 0.5 / (1 + 0.4 * up.yellow.rate);
 const strikeDmg = () => 2 + up.yellow.sdmg;
-const gravity = () => 5 * (1 + 0.3 * up.cyan.grav);
+const gravity = k => 5 * DEF[k].gmul * (1 + 0.3 * up[k].grav);   // b/s² toward the invisible orb
 const splitCount = () => 3 + up.white.split;
 const fmt1 = v => (Math.round(v * 100) / 100).toString();
 
@@ -329,7 +335,7 @@ function nodeValue(k, key, lv) {
     case 'pdmg': return fmt1(0.5 + 0.25 * lv) + ' dmg/s';
     case 'rate': return fmt1(1 / (0.5 / (1 + 0.4 * lv))) + ' /s';
     case 'sdmg': return (2 + lv) + ' dmg';
-    case 'grav': return '×' + fmt1(1 + 0.3 * lv);
+    case 'grav': return '×' + fmt1(d.gmul * (1 + 0.3 * lv));
     case 'split': return (3 + lv) + ' balls';
   }
   return '';
@@ -338,13 +344,13 @@ function nodeValue(k, key, lv) {
 // ---------------------------------------------------------------- physics
 function spawnBall(k, x, y, dx, dy, f, extra) {
   const b = Object.assign({ k, x, y, vx: dx, vy: dy, f, last: [-1, -1], st: 0, cs: 0 }, extra || {});
-  if (k === 'cyan') { const s = stat(k); b.cs = s.min + (s.max - s.min) * f; }
+  if (DEF[k].gmul) { const s = stat(k); b.cs = s.min + (s.max - s.min) * f; }
   balls.push(b);
   return b;
 }
 
 function ballSpeed(b) {
-  if (b.k === 'cyan') return b.cs;
+  if (DEF[b.k].gmul) return b.cs;
   const s = stat(b.k);
   return s.min + (s.max - s.min) * b.f;
 }
@@ -357,6 +363,12 @@ function solidAt(cx, cy) {
 function moveAxis(b, ax, d) {
   if (!d) return;
   const sgn = d > 0 ? 1 : -1, R = b.k === 'white' && !b.oneUse ? BR * 1.5 : BR;
+  if (b.k === 'pink') {
+    // the invisible box: the smallest rectangle around every broken cell. Only the pink ball feels it.
+    const lo = ax === 0 ? freeBounds.x0 : freeBounds.y0, hi = (ax === 0 ? freeBounds.x1 : freeBounds.y1) + 1;
+    const edge = (ax === 0 ? b.x : b.y) + d + sgn * R;
+    if (edge < lo || edge > hi) { reflect(b, ax); seek(b, -1); return; }
+  }
   let nx = b.x, ny = b.y, c1, c2;
   if (ax === 0) {
     nx += d; const ex = Math.floor(nx + sgn * R);
@@ -388,7 +400,7 @@ function onHit(b, i) {
 function afterBounce(b, hit) {
   b.last = [hit, b.last[0]];
   if (b.oneUse) { b.dead = true; return; }
-  if (b.k === 'red') seek(b, hit);
+  if (b.k === 'red' || b.k === 'pink') seek(b, hit);
   if (b.k === 'white') {
     let minis = 0; for (const o of balls) if (o.oneUse) minis++;
     const n = Math.min(splitCount(), 80 - minis);
@@ -400,11 +412,14 @@ function afterBounce(b, hit) {
   }
 }
 
+const inBox = j => { const x = kx(j), y = ky(j); return x >= freeBounds.x0 && x <= freeBounds.x1 && y >= freeBounds.y0 && y <= freeBounds.y1; };
+
 function seek(b, hit) {
   // nearest block in the 180° half in front of the ball, never one it just hit
   let best = -1, bd = Infinity;
   for (const j of frontier) {
     if (j === hit || j === b.last[1]) continue;
+    if (b.k === 'pink' && !inBox(j)) continue;          // pink only goes for blocks inside its box
     const dx = kx(j) + 0.5 - b.x, dy = ky(j) + 0.5 - b.y;
     const dd = dx * dx + dy * dy;
     if (dx * b.vx + dy * b.vy <= 0.05 * Math.sqrt(dd)) continue;
@@ -444,10 +459,10 @@ function updateOrb(dt) {
 }
 
 function updateBall(b, dt) {
-  if (b.k === 'cyan') {
-    const s = stat('cyan');
+  if (DEF[b.k].gmul) {
+    const s = stat(b.k);
     const ox = orb.cx + Math.cos(orb.ang) * orb.r, oy = orb.cy + Math.sin(orb.ang) * orb.r;
-    const dx = ox - b.x, dy = oy - b.y, l = Math.hypot(dx, dy) || 1, g = gravity();
+    const dx = ox - b.x, dy = oy - b.y, l = Math.hypot(dx, dy) || 1, g = gravity(b.k);
     let vx = b.vx * b.cs + dx / l * g * dt, vy = b.vy * b.cs + dy / l * g * dt;
     const sp = Math.hypot(vx, vy) || 1;
     b.vx = vx / sp; b.vy = vy / sp; b.cs = Math.min(s.max, Math.max(s.min, sp));
@@ -999,7 +1014,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // test hook
-window.__pb = { get state() { return { money, purple, balls: balls.length, frontier: frontier.size, freeCount, freeBounds, stored: mod.size }; },
+window.__pb = { get state() { return { money, purple, balls: balls.length, frontier: frontier.size, freeCount, freeBounds, stored: mod.size, list: balls.map(b => [b.k, b.x, b.y]) }; },
   give(m, p) { money += m; purple += p; dirtyUI = true; } };
 })();
 </script>
