@@ -181,6 +181,8 @@ const DEF = {
             desc: 'Smashes straight through any block with less health than its damage. Every block it hits fires 100 small one-use Nuke Balls, and it keeps going.' },
   chain:  { name: 'Chain Ball',       short: 'Chain',       color: '#1e6bff', dmg: 3, min: 14, max: 14, unlock: 5, req: 'nuke', cost: 200000, sym: '⛓',
             desc: 'Every hit makes 2 smaller, lighter one-use copies, and those copies split again when they hit. Splits 2 times; upgrade up to 10.' },
+  magnet: { name: 'Magnet Ball',      short: 'Magnet',      color: '#e04cff', dmg: 3, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
+            desc: 'Pulled hard toward the nearest glowing purple pixel, even ones hidden in the dark, so it digs its way to them.' },
 };
 const ORDER = Object.keys(DEF);
 
@@ -198,6 +200,7 @@ const NODES = {
   pink:   [DMG, SPD],
   nuke:   [DMG, SPD],
   chain:  [DMG, SPD, ['depth', 'Split Times', 8]],
+  magnet: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
 };
 // Most upgrades cost 1 purple; the last levels cost more, never more than 5.
 const nodeCost = (max, lv) => max === 3 ? [1, 2, 3][lv] : max === 5 ? [1, 1, 1, 2, 3][lv] : [1, 1, 1, 1, 2, 2, 3, 3][lv];
@@ -444,6 +447,25 @@ function afterBounce(b, hit) {
 
 const inBox = j => { const x = kx(j), y = ky(j); return x >= freeBounds.x0 && x <= freeBounds.x1 && y >= freeBounds.y0 && y <= freeBounds.y1; };
 
+function nearestGem(x, y) {
+  // search outward ring by ring (up to 80 blocks away)
+  const cx = Math.floor(x), cy = Math.floor(y);
+  let best = -1, bd = Infinity;
+  for (let r = 0; r <= 80; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const edge = Math.abs(dx) === r;
+      for (let dy = -r; dy <= r; dy += edge ? 1 : 2 * r || 1) {
+        const k = key(cx + dx, cy + dy);
+        if (cellType(k) !== GEM) continue;
+        const d = (cx + dx + 0.5 - x) ** 2 + (cy + dy + 0.5 - y) ** 2;
+        if (d < bd) { bd = d; best = k; }
+      }
+    }
+    if (best >= 0 && r * r > bd) break;              // nothing closer can be further out
+  }
+  return best;
+}
+
 function nukeBurst(b) {
   // 100 small one-use nukes in every direction
   const n = Math.min(100, MAX_MINIS - miniCount), a0 = Math.random() * Math.PI * 2;
@@ -503,7 +525,12 @@ function updateOrb(dt) {
 function updateBall(b, dt) {
   if (DEF[b.k].gmul) {
     const s = stat(b.k);
-    const ox = orb.cx + Math.cos(orb.ang) * orb.r, oy = orb.cy + Math.sin(orb.ang) * orb.r;
+    let ox = orb.cx + Math.cos(orb.ang) * orb.r, oy = orb.cy + Math.sin(orb.ang) * orb.r;
+    if (b.k === 'magnet') {
+      // re-check the nearest purple pixel twice a second; with none nearby it circles like a Gravity Ball
+      if (b.gem == null || T >= (b.gemT || 0) || cellType(b.gem) !== GEM) { b.gem = nearestGem(b.x, b.y); b.gemT = T + 0.5; }
+      if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
+    }
     const dx = ox - b.x, dy = oy - b.y, l = Math.hypot(dx, dy) || 1, g = gravity(b.k);
     let vx = b.vx * b.cs + dx / l * g * dt, vy = b.vy * b.cs + dy / l * g * dt;
     const sp = Math.hypot(vx, vy) || 1;
@@ -702,6 +729,9 @@ function drawSym(k, x, y, scale) {
   if (k === 'nuke') {                                          // Δ
     ctx.strokeStyle = '#1a0800'; ctx.lineWidth = Math.max(1.5, r * 0.2); ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(0, -r * 0.55); ctx.lineTo(r * 0.55, r * 0.42); ctx.lineTo(-r * 0.55, r * 0.42); ctx.closePath(); ctx.stroke();
+  } else if (k === 'magnet') {                                 // purple-pixel diamond
+    ctx.fillStyle = '#fff'; ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-r * 0.32, -r * 0.32, r * 0.64, r * 0.64);
   } else if (k === 'chain') {                                  // two linked chain rings
     ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.2, r * 0.16); ctx.rotate(-Math.PI / 4);
     const w = r * 0.62, h = r * 0.34, rr = h / 2;
@@ -874,9 +904,11 @@ function flashHint() { setHint(); const h = $('hint'); h.style.display = ''; h.a
 
 // Skill tree: the Piercing Ball is the root at the bottom; each ball grows the next one above it,
 // and its upgrades branch off to the sides.
-const TW = 640, ROW = 165, TTOP = 80, TH = TTOP + (ORDER.length - 1) * ROW + 100;
+const TREE = ['magnet', ...ORDER.filter(k => k !== 'magnet')];   // bottom to top; Magnet is its own root
+const TW = 640, ROW = 165, TTOP = 80, TH = TTOP + (TREE.length - 1) * ROW + 100;
 const BRANCH = [[-120, -10], [120, -10], [-215, -62], [215, -62]];
-const ballPos = n => ({ x: TW / 2, y: TTOP + (ORDER.length - 1 - n) * ROW });
+const ballPos = n => ({ x: TW / 2, y: TTOP + (TREE.length - 1 - n) * ROW });
+const reqOk = k => !DEF[k].req || unlocked[DEF[k].req];
 const tv = { x: 0, y: 0, s: 1, init: false };
 let tsel = { k: 'orange', key: null }, tDragged = false;
 
@@ -886,7 +918,7 @@ function openTree() {
   if (!tv.init) {                       // first open: fit the width and look at the newest branch
     const v = $('treeView'), w = v.clientWidth, h = v.clientHeight;
     tv.s = Math.max(0.5, Math.min(1.1, w / TW));
-    const n = Math.min(ORDER.length - 1, ORDER.filter(k => unlocked[k]).length);
+    const n = Math.min(TREE.length - 1, TREE.filter(k => unlocked[k]).length);
     tv.x = (w - TW * tv.s) / 2;
     tv.y = h * 0.55 - ballPos(n).y * tv.s;
     tv.init = true;
@@ -911,13 +943,13 @@ function upState(k, key, max) {
 function buildTree() {
   $('treePurple').textContent = purple;
   let lines = '', nodes = '';
-  ORDER.forEach((k, n) => {
+  TREE.forEach((k, n) => {
     const d = DEF[k], p = ballPos(n);
-    if (n < ORDER.length - 1) {
-      const q = ballPos(n + 1), on = unlocked[ORDER[n + 1]];
+    if (d.req) {                                     // trunk link from the ball it needs
+      const q = ballPos(TREE.indexOf(d.req)), on = unlocked[k];
       lines += `<line x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}" stroke="${on ? '#a64dff' : '#2e2140'}" stroke-width="${on ? 8 : 6}" stroke-linecap="round"/>`;
     }
-    const can = !unlocked[k] && unlocked[d.req] && purple >= d.unlock;
+    const can = !unlocked[k] && reqOk(k) && purple >= d.unlock;
     nodes += `<div class="tn ball${unlocked[k] ? '' : ' lock'}${can ? ' can' : ''}${tsel.k === k && !tsel.key ? ' sel' : ''}" data-k="${k}" style="left:${p.x}px;top:${p.y}px">
       <div class="o" style="${unlocked[k] ? `border-color:${d.color};box-shadow:0 0 18px ${d.color}66` : ''}"><i style="background:${d.color}">${symHtml(k)}</i></div>
       <div class="nm">${d.short}</div></div>`;
@@ -947,7 +979,7 @@ function renderInfo() {
     title = d.name;
     desc = `${fmt1(d.dmg)} dmg · ${d.min === d.max ? d.min : d.min + '–' + d.max} b/s. ${d.desc}`;
     if (unlocked[k]) btn = `<button disabled>Unlocked</button>`;
-    else if (!unlocked[d.req]) btn = `<button disabled>Needs ${DEF[d.req].short}</button>`;
+    else if (!reqOk(k)) btn = `<button disabled>Needs ${DEF[d.req].short}</button>`;
     else btn = `<button id="infoBuy" ${purple >= d.unlock ? '' : 'disabled'}>Unlock <span class="dia p s"></span>${d.unlock}</button>`;
   } else {
     const node = NODES[k].find(nd => nd[0] === key), st = upState(k, key, node[2]);
@@ -964,7 +996,7 @@ function renderInfo() {
 function buyNode() {
   const { k, key } = tsel, d = DEF[k];
   if (!key) {
-    if (unlocked[k] || !unlocked[d.req] || purple < d.unlock) return;
+    if (unlocked[k] || !reqOk(k) || purple < d.unlock) return;
     purple -= d.unlock; unlocked[k] = true; inv[k]++; selected = k;
   } else {
     const node = NODES[k].find(nd => nd[0] === key), lv = up[k][key];
