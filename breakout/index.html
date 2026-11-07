@@ -191,8 +191,8 @@ const DEF = {
             desc: 'Only attracted to floating islands: chunks of blocks cut off from the outer wall, with open space all around them. It always heads for the nearest one.' },
   shooter:{ name: 'Shooter Ball',     short: 'Shooter',     color: '#c9d1d9', dmg: 2, min: 2, max: 6, unlock: 5, req: 'island', cost: 600000, sym: '+',
             desc: 'Has four cannon arms that turn on their own to line up with the nearest block in front, then fire out of all four at once, once a second. Shots earn 50× money on the blocks they hit.' },
-  cloud:  { name: 'Cloud Ball',       short: 'Cloud',       color: '#dfe9f5', dmg: 1, min: 1, max: 5, unlock: 5, req: 'shooter', cost: 700000, gmul: 3, sym: '☁',
-            desc: 'One Cloud Ball launches as a cloud of 10 balls. The 10 balls only attract each other, so they drift around together in a swarm.' },
+  cloud:  { name: 'Cloud Ball',       short: 'Cloud',       color: '#dfe9f5', dmg: 1, min: 1, max: 5, unlock: 5, req: 'shooter', cost: 700000, gmul: 20, sym: '☁',
+            desc: 'One Cloud Ball launches as a cloud of 10 balls. The 10 balls pull hard on each other only, and never get more than 0.3 blocks apart, so they move as one tight cloud.' },
   builder:{ name: 'Block Builder',    short: 'Builder',     color: '#b07a45', dmg: 1, min: 2, max: 6, unlock: 5, req: 'cloud', cost: 800000, sym: '■',
             desc: 'Builds a new random block in the open space 10 blocks away from itself every 2 seconds, giving your other balls more to break.' },
 };
@@ -697,6 +697,23 @@ function nearestFreeCenter(x, y) {
   return best;
 }
 
+// Each cloud's balls stay within 0.3 blocks of each other: pull any straggler back toward the cloud's middle.
+const CLOUD_SPREAD = 0.3;
+function keepCloudsTight() {
+  const groups = new Map();
+  for (const b of balls) if (b.k === 'cloud' && !b.dead) { const g = groups.get(b.grp); if (g) g.push(b); else groups.set(b.grp, [b]); }
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    let mx = 0, my = 0; for (const b of g) { mx += b.x; my += b.y; } mx /= g.length; my /= g.length;
+    for (const b of g) {
+      const dx = b.x - mx, dy = b.y - my, d = Math.hypot(dx, dy), lim = CLOUD_SPREAD / 2;
+      if (d <= lim) continue;
+      const nx = mx + dx / d * lim, ny = my + dy / d * lim;
+      if (solidAt(Math.floor(nx), Math.floor(ny)) === -1) { b.x = nx; b.y = ny; }
+    }
+  }
+}
+
 function update(dt) {
   T += dt;
   updateOrb(dt);
@@ -705,6 +722,7 @@ function update(dt) {
     if (T >= p.next) { p.next += 1; p.flash = T; damage(j, p.dps); }   // one slow tick a second
   }
   for (const b of balls) updateBall(b, dt);
+  keepCloudsTight();
   if (balls.some(b => b.dead)) { balls = balls.filter(b => !b.dead); miniCount = 0; for (const b of balls) if (b.oneUse) miniCount++; }
   for (const p of fx) { p.x += p.vx * dt; p.y += p.vy * dt; p.t -= dt; }
   fx = fx.filter(p => p.t > 0);
