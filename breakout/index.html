@@ -179,9 +179,7 @@ const DEF = {
             desc: 'A faster, much heavier Gravity Ball: 5× the pull of a fully upgraded (5/5) Gravity Ball, and 25 damage.' },
   pink:   { name: 'Pink Box Ball',    short: 'Pink',        color: '#ff6ec7', dmg: 6, min: 18,  max: 18,  unlock: 5, req: 'indigo', cost: 50000,
             desc: 'A Seeker Ball trapped in an invisible box around everything broken so far. It bounces off the box and only breaks blocks inside it; other balls pass through. The box grows as the open area grows.' },
-  nuke:   { name: 'Nuke Ball',        short: 'Nuke',        color: '#ff5a1f', dmg: 5, dmgStep: 5, min: 10, max: 10, unlock: 5, req: 'pink', cost: 100000, sym: 'Δ',
-            desc: 'Smashes straight through any block with less health than its damage. Every block it hits fires 20 small one-use Nuke Balls, and it keeps going.' },
-  chain:  { name: 'Chain Ball',       short: 'Chain',       color: '#1e6bff', dmg: 3, min: 14, max: 14, unlock: 5, req: 'nuke', cost: 200000, sym: '⛓',
+  chain:  { name: 'Chain Ball',       short: 'Chain',       color: '#1e6bff', dmg: 3, min: 14, max: 14, unlock: 5, req: 'pink', cost: 200000, sym: '⛓',
             desc: 'Once every 30–40 seconds a hit makes 2 smaller, lighter one-use copies, and those copies split again on every hit. Splits 2 times; upgrade up to 10.' },
   magnet: { name: 'Magnet Ball',      short: 'Magnet',      color: '#e04cff', dmg: 3, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
             desc: 'Pulled hard toward the nearest glowing purple pixel, even ones hidden in the dark, so it digs its way to them.' },
@@ -210,7 +208,6 @@ const NODES = {
   indigo: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   white:  [DMG, SPD, ['split', 'Split Count', 3]],
   pink:   [DMG, SPD],
-  nuke:   [DMG, SPD],
   chain:  [DMG, SPD, ['depth', 'Split Times', 8]],
   magnet: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   buddy:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
@@ -452,12 +449,6 @@ function onHit(b, i) {
     return true;
   }
   const dmg = stat(b.k).dmg;
-  // Nuke: anything weaker than its damage is destroyed and it flies on through.
-  if (b.k === 'nuke' && cellType(i) !== FREE && cellHp(i) < dmg) {
-    damage(i, dmg);
-    if (b.oneUse) b.dead = true; else nukeBurst(b);
-    return true;
-  }
   if (b.shot) {                                  // Shooter's shots: 50× the money
     const got = Math.min(dmg, cellHp(i)) * SHOT_PROFIT;
     if (cellType(i) === BLOCK && got >= 1) texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.3, s: '+' + fmt(got), t: 0.8, c: '#ffd76a' });
@@ -483,7 +474,6 @@ function afterBounce(b, hit) {
     }
   }
   if (b.oneUse) { b.dead = true; return; }
-  if (b.k === 'nuke') nukeBurst(b);
   if (b.k === 'red' || b.k === 'pink') seek(b, hit);
   if (b.k === 'white') {
     const n = Math.min(splitCount(), MAX_MINIS - miniCount);
@@ -540,15 +530,6 @@ function nearestGem(x, y) {
     if (best >= 0 && r * r > bd) break;              // nothing closer can be further out
   }
   return best;
-}
-
-function nukeBurst(b) {
-  // 20 small one-use nukes in every direction
-  const n = Math.min(20, MAX_MINIS - miniCount), a0 = Math.random() * Math.PI * 2;
-  for (let s = 0; s < n; s++) {
-    const a = a0 + (s / 20) * Math.PI * 2;
-    spawnBall('nuke', b.x, b.y, Math.cos(a), Math.sin(a), 1, { oneUse: true, gen: 1 });
-  }
 }
 
 function seek(b, hit) {
@@ -890,10 +871,7 @@ function drawSym(k, x, y, scale) {
   if (r < 6 || !DEF[k].sym) return;
   const [sx, sy] = toScreen(x, y);
   ctx.save(); ctx.translate(sx, sy);
-  if (k === 'nuke') {                                          // Δ
-    ctx.strokeStyle = '#1a0800'; ctx.lineWidth = Math.max(1.5, r * 0.2); ctx.lineJoin = 'round';
-    ctx.beginPath(); ctx.moveTo(0, -r * 0.55); ctx.lineTo(r * 0.55, r * 0.42); ctx.lineTo(-r * 0.55, r * 0.42); ctx.closePath(); ctx.stroke();
-  } else if (k === 'builder') {                                // a little brick
+  if (k === 'builder') {                                // a little brick
     ctx.fillStyle = '#fff'; ctx.fillRect(-r * 0.36, -r * 0.36, r * 0.72, r * 0.72);
     ctx.fillStyle = '#b07a45'; ctx.fillRect(-r * 0.36, -r * 0.03, r * 0.72, r * 0.06); ctx.fillRect(-r * 0.03, -r * 0.36, r * 0.06, r * 0.33);
   } else if (k === 'cloud') {                                  // little cloud
@@ -1043,7 +1021,7 @@ const fmt = v => {
   return v.toFixed(v < 100 ? 1 : 0) + u[i];
 };
 
-const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'nuke' || k === 'buddy' || k === 'island' || k === 'shooter' || k === 'cloud' ? ' dark' : ''}">${DEF[k].sym}</span>` : '';
+const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'buddy' || k === 'island' || k === 'shooter' || k === 'cloud' ? ' dark' : ''}">${DEF[k].sym}</span>` : '';
 
 function buildBar() {
   const bar = $('bar'); bar.innerHTML = '';
@@ -1256,7 +1234,11 @@ function save() {
   } catch (e) {}
 }
 function loadMeta(s) {
-  money = s.money; purple = s.purple; selected = s.selected || 'orange'; everLaunched = !!s.everLaunched;
+  money = s.money; purple = s.purple; selected = DEF[s.selected] ? s.selected : 'orange'; everLaunched = !!s.everLaunched;
+  if (s.unlocked?.nuke) {                           // the Nuke Ball was removed: give back the purple spent on it (once: new saves drop it)
+    purple += 5;
+    for (const key of ['dmg', 'spd']) for (let lv = 0; lv < (s.up?.nuke?.[key] || 0); lv++) purple += nodeCost(5, lv);
+  }
   for (const k of ORDER) {
     inv[k] = s.inv?.[k] || 0; bought[k] = s.bought?.[k] || 0; unlocked[k] = k === 'orange' || !!s.unlocked?.[k];
     for (const n of NODES[k]) up[k][n[0]] = s.up?.[k]?.[n[0]] || 0;
