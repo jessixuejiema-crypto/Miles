@@ -186,7 +186,7 @@ const DEF = {
   buddy:  { name: 'Buddy Ball',       short: 'Buddy',       color: '#7dffc4', dmg: 2, min: 2, max: 8, unlock: 5, req: 'chain', cost: 400000, gmul: 4, sym: '✦',
             desc: 'Attracted to every other ball at once, pulled hardest by the closest ones, so it chases the crowd.' },
   island: { name: 'Island Ball',      short: 'Island',      color: '#e8c872', dmg: 4, min: 3, max: 9, unlock: 5, req: 'buddy', cost: 500000, gmul: 5, sym: '▲',
-            desc: 'Only attracted to floating islands: chunks of blocks cut off from the outer wall, with open space all around them. Bigger islands pull harder.' },
+            desc: 'Only attracted to floating islands: chunks of blocks cut off from the outer wall, with open space all around them. It always heads for the nearest one.' },
 };
 const ORDER = Object.keys(DEF);
 
@@ -565,11 +565,11 @@ function updateBall(b, dt) {
       if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
     }
     if (b.k === 'island') {
-      // nearest island, but bigger islands count as closer
+      // the nearest island block, whatever its size
       let best = null, bs = Infinity;
       for (const isl of findIslands()) {
         for (const c of isl.cells) {
-          const d = Math.hypot(kx(c) + 0.5 - b.x, ky(c) + 0.5 - b.y) / Math.sqrt(isl.cells.length);
+          const d = Math.hypot(kx(c) + 0.5 - b.x, ky(c) + 0.5 - b.y);
           if (d < bs) { bs = d; best = c; }
         }
       }
