@@ -189,8 +189,8 @@ const DEF = {
             desc: 'Only attracted to floating islands: chunks of blocks cut off from the outer wall, with open space all around them. It always heads for the nearest one.' },
   shooter:{ name: 'Shooter Ball',     short: 'Shooter',     color: '#c9d1d9', dmg: 2, min: 2, max: 6, unlock: 5, req: 'island', cost: 600000, sym: '+',
             desc: 'Has four cannon arms that turn on their own to line up with the nearest block in front, then fire out of all four at once, once a second. Shots earn 50× money on the blocks they hit.' },
-  cloud:  { name: 'Cloud Ball',       short: 'Cloud',       color: '#dfe9f5', dmg: 1, min: 1, max: 5, unlock: 5, req: 'shooter', cost: 700000, gmul: 20, sym: '☁',
-            desc: 'One Cloud Ball launches as a cloud of 10 balls. The 10 balls pull hard on each other only, and never get more than 0.7 blocks apart, so they move as one tight cloud.' },
+  cloud:  { name: 'Cloud Ball',       short: 'Cloud',       color: '#dfe9f5', dmg: 1, min: 1, max: 5, unlock: 5, req: 'shooter', cost: 700000, gmul: 6, sym: '☁',
+            desc: 'One Cloud Ball launches as a cloud of 10 balls. The 10 balls pull on each other only (other clouds are ignored) with the same medium pull at any distance, and never get more than 0.7 blocks apart, so they move as one tight cloud.' },
   builder:{ name: 'Block Builder',    short: 'Builder',     color: '#b07a45', dmg: 1, min: 2, max: 6, unlock: 5, req: 'cloud', cost: 800000, sym: '■',
             desc: 'Builds a new random block in the open space 10 blocks away from itself every 2 seconds, giving your other balls more to break.' },
 };
@@ -606,7 +606,7 @@ function updateBall(b, dt) {
         if (o === b || o.dead || (b.k === 'cloud' && (o.k !== 'cloud' || o.grp !== b.grp))) continue;   // a cloud only feels its own 10 balls
         const ex = o.x - b.x, ey = o.y - b.y, d = Math.hypot(ex, ey);
         if (d < 1e-3) continue;
-        const w = 1 / Math.max(d, 1) ** 2;
+        const w = b.k === 'cloud' ? 1 : 1 / Math.max(d, 1) ** 2;   // cloud: same pull at every distance; buddy: closer pulls harder
         ax += ex / d * w; ay += ey / d * w;
       }
       if (ax || ay) { ox = b.x + ax; oy = b.y + ay; }   // with no other balls it circles like a Gravity Ball
@@ -1256,7 +1256,7 @@ function load() {
       seed = s.seed | 0; mod = new Map();
       for (let q = 0; q < s.cells.length; q += 4) mod.set(key(s.cells[q], s.cells[q + 1]), [s.cells[q + 2], s.cells[q + 3]]);
       loadMeta(s);
-      balls = (s.balls || []).filter(b => DEF[b.k]).map(b => ({ ...b, last: [-1, -1], st: 0 }));
+      balls = (s.balls || []).filter(b => DEF[b.k]).map(b => ({ ...b, last: [-1, -1], st: 0, grp: b.grp ?? (b.k === 'cloud' ? Math.random() : undefined) }));
       return true;
     }
     // older save from the fixed 81×81 grid: it becomes the middle of the endless grid
