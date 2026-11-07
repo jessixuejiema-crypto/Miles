@@ -28,6 +28,8 @@
     display: flex; align-items: center; gap: 8px; cursor: pointer;
   }
   #ballCount { font-size: 13px; color: #8aa; font-weight: 600; }
+  #hud button { white-space: nowrap; }
+  @media (max-width: 460px) { #hud { gap: 10px; } #ballCount { display: none; } .cur { font-size: 18px; gap: 8px; } #treeBtn, #centerBtn { padding: 7px 9px; } }
   #centerBtn { pointer-events: auto; background: #10201a; color: #cfe; border: 2px solid #2c6b45; border-radius: 10px; padding: 8px 10px; font: inherit; font-weight: 700; cursor: pointer; }
 
   #hint {
@@ -180,13 +182,15 @@ const DEF = {
   nuke:   { name: 'Nuke Ball',        short: 'Nuke',        color: '#ff5a1f', dmg: 5, dmgStep: 5, min: 10, max: 10, unlock: 5, req: 'pink', cost: 100000, sym: 'Δ',
             desc: 'Smashes straight through any block with less health than its damage. Every block it hits fires 100 small one-use Nuke Balls, and it keeps going.' },
   chain:  { name: 'Chain Ball',       short: 'Chain',       color: '#1e6bff', dmg: 3, min: 14, max: 14, unlock: 5, req: 'nuke', cost: 200000, sym: '⛓',
-            desc: 'Every hit makes 2 smaller, lighter one-use copies, and those copies split again when they hit. Splits 2 times; upgrade up to 10.' },
+            desc: 'Once every 30–40 seconds a hit makes 2 smaller, lighter one-use copies, and those copies split again on every hit. Splits 2 times; upgrade up to 10.' },
   magnet: { name: 'Magnet Ball',      short: 'Magnet',      color: '#e04cff', dmg: 3, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
             desc: 'Pulled hard toward the nearest glowing purple pixel, even ones hidden in the dark, so it digs its way to them.' },
   buddy:  { name: 'Buddy Ball',       short: 'Buddy',       color: '#7dffc4', dmg: 2, min: 2, max: 8, unlock: 5, req: 'chain', cost: 400000, gmul: 4, sym: '✦',
             desc: 'Attracted to every other ball at once, pulled hardest by the closest ones, so it chases the crowd.' },
   island: { name: 'Island Ball',      short: 'Island',      color: '#e8c872', dmg: 4, min: 3, max: 9, unlock: 5, req: 'buddy', cost: 500000, gmul: 5, sym: '▲',
             desc: 'Only attracted to floating islands: chunks of blocks cut off from the outer wall, with open space all around them. It always heads for the nearest one.' },
+  shooter:{ name: 'Shooter Ball',     short: 'Shooter',     color: '#c9d1d9', dmg: 2, min: 2, max: 6, unlock: 5, req: 'island', cost: 600000, sym: '+',
+            desc: 'Has four cannons. It turns its nearest cannon toward the nearest block in front of it and fires a shot once a second. Shots earn 50× money on the blocks they hit.' },
 };
 const ORDER = Object.keys(DEF);
 
@@ -207,6 +211,7 @@ const NODES = {
   magnet: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   buddy:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   island: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
+  shooter:[DMG, SPD, ['fire', 'Fire Rate', 5]],
 };
 // Most upgrades cost 1 purple; the last levels cost more, never more than 5.
 const nodeCost = (max, lv) => max === 3 ? [1, 2, 3][lv] : max === 5 ? [1, 1, 1, 2, 3][lv] : [1, 1, 1, 1, 2, 2, 3, 3][lv];
@@ -315,7 +320,7 @@ function tierOf(h) {
   return t;
 }
 
-function damage(i, amt) {
+function damage(i, amt, mult = 1) {
   const t = cellType(i);
   if (t === FREE) return false;
   if (t === GEM) {
@@ -324,7 +329,7 @@ function damage(i, amt) {
     breakCell(i); dirtyUI = true; return true;
   }
   const h = cellHp(i);
-  money += Math.min(amt, h);
+  money += Math.min(amt, h) * mult;
   if (h - amt <= 1e-4) { breakCell(i); return true; }
   mod.set(i, [BLOCK, h - amt]);
   return false;
@@ -344,6 +349,8 @@ const strikeDmg = () => 2 + up.yellow.sdmg;
 const gravity = k => 5 * DEF[k].gmul * (1 + 0.3 * up[k].grav);   // b/s² toward the invisible orb
 const splitCount = () => 3 + up.white.split;
 const chainDepth = () => 2 + up.chain.depth;
+const fireRate = () => 1 + 0.3 * up.shooter.fire;
+const SHOT_PROFIT = 50;
 const MAX_MINIS = 300;                                         // cap on one-use balls alive at once
 let miniCount = 0;
 const fmt1 = v => (Math.round(v * 100) / 100).toString();
@@ -353,6 +360,7 @@ function nodeValue(k, key, lv) {
   switch (key) {
     case 'dmg': return fmt1(d.dmgStep ? d.dmg + d.dmgStep * lv : d.dmg * (1 + 0.5 * lv)) + ' dmg';
     case 'depth': return (2 + lv) + ' times';
+    case 'fire': return fmt1(1 + 0.3 * lv) + ' shots/s';
     case 'spd': return d.min === d.max ? fmt1(d.min * (1 + 0.2 * lv)) + ' b/s' : fmt1(d.min * (1 + .2 * lv)) + '–' + fmt1(d.max * (1 + .2 * lv)) + ' b/s';
     case 'pierce': return ['none', 'White', 'White + Blue', 'White → Green'][lv];
     case 'prange': return (3 + lv) + ' blocks';
@@ -375,6 +383,7 @@ function spawnBall(k, x, y, dx, dy, f, extra) {
 }
 
 function ballSpeed(b) {
+  if (b.shot) return 14;
   if (DEF[b.k].gmul) return b.cs;
   const s = stat(b.k);
   return s.min + (s.max - s.min) * b.f;
@@ -387,7 +396,7 @@ function solidAt(cx, cy) {
 
 function moveAxis(b, ax, d) {
   if (!d) return;
-  const sgn = d > 0 ? 1 : -1, R = b.k === 'white' && !b.oneUse ? BR * 1.5 : BR;
+  const sgn = d > 0 ? 1 : -1, R = b.k === 'white' && !b.oneUse ? BR * 1.5 : b.k === 'shooter' && !b.shot ? BR * 1.3 : BR;
   if (b.k === 'pink') {
     // the invisible box: the smallest rectangle around every broken cell. Only the pink ball feels it.
     const lo = ax === 0 ? freeBounds.x0 : freeBounds.y0, hi = (ax === 0 ? freeBounds.x1 : freeBounds.y1) + 1;
@@ -424,6 +433,12 @@ function onHit(b, i) {
     if (b.oneUse) b.dead = true; else nukeBurst(b);
     return true;
   }
+  if (b.shot) {                                  // Shooter's shots: 50× the money
+    const got = Math.min(dmg, cellHp(i)) * SHOT_PROFIT;
+    if (cellType(i) === BLOCK && got >= 1) texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.3, s: '+' + fmt(got), t: 0.8, c: '#ffd76a' });
+    damage(i, dmg, SHOT_PROFIT);
+    return false;
+  }
   damage(i, dmg);
   if (b.k === 'green') poisonAround(i);
   return false;
@@ -431,7 +446,10 @@ function onHit(b, i) {
 
 function afterBounce(b, hit) {
   b.last = [hit, b.last[0]];
-  if (b.k === 'chain' && (b.gen || 0) < chainDepth()) {
+  // the big Chain Ball only splits once every 30–40 seconds; its copies split on every hit
+  const chainReady = b.k === 'chain' && (b.gen ? b.gen < chainDepth() : T >= (b.nextSplit || 0));
+  if (chainReady) {
+    if (!b.gen) b.nextSplit = T + 30 + Math.random() * 10;
     // two smaller, lighter one-use copies; they split again until the chain runs out
     const base = Math.atan2(b.vy, b.vx), g = (b.gen || 0) + 1;
     for (const off of [-0.5, 0.5]) {
@@ -591,6 +609,27 @@ function updateBall(b, dt) {
     let vx = b.vx * b.cs + dx / l * g * dt, vy = b.vy * b.cs + dy / l * g * dt;
     const sp = Math.hypot(vx, vy) || 1;
     b.vx = vx / sp; b.vy = vy / sp; b.cs = Math.min(s.max, Math.max(s.min, sp));
+  }
+  if (b.k === 'shooter' && !b.shot) {
+    // turn the closest cannon toward the nearest block in front, then fire when lined up
+    let tgt = -1, bd = Infinity;
+    for (const j of frontier) {
+      const ex = kx(j) + 0.5 - b.x, ey = ky(j) + 0.5 - b.y, dd = ex * ex + ey * ey;
+      if (ex * b.vx + ey * b.vy < 0) continue;              // only blocks it is facing
+      if (dd < bd) { bd = dd; tgt = j; }
+    }
+    if (tgt < 0) tgt = nearestFrontier(b.x, b.y, 200);
+    b.rot = b.rot || 0; b.cool = (b.cool || 0) - dt;
+    if (tgt >= 0) {
+      const want = Math.atan2(ky(tgt) + 0.5 - b.y, kx(tgt) + 0.5 - b.x);
+      let diff = ((want - b.rot) % (Math.PI / 2) + Math.PI * 2.25) % (Math.PI / 2) - Math.PI / 4;   // to the nearest of 4 cannons
+      const turn = 6 * dt;
+      b.rot += Math.max(-turn, Math.min(turn, diff));
+      if (Math.abs(diff) < 0.08 && b.cool <= 0 && miniCount < MAX_MINIS) {
+        b.cool = 1 / fireRate();
+        spawnBall('shooter', b.x + Math.cos(want) * BR, b.y + Math.sin(want) * BR, Math.cos(want), Math.sin(want), 1, { oneUse: true, shot: true });
+      }
+    }
   }
   if (b.k === 'yellow') {
     b.st += dt;
@@ -774,8 +813,16 @@ function drawBallOf(b) {
   if (b.k === 'white') scale = b.oneUse ? 0.5 : 1.5;         // big Splitter, small splits
   else if (b.k === 'chain') { const g = b.gen || 0; scale = Math.max(0.25, Math.pow(0.78, g)); col = lighten(col, Math.min(0.8, g * 0.16)); }
   else if (b.oneUse) scale = 0.5;
+  if (b.shot) { drawBall(b.x, b.y, '#ffd76a', 0.35); return; }
+  if (b.k === 'shooter') { scale = 1.3; drawCannons(b.x, b.y, b.rot || 0); }
   drawBall(b.x, b.y, col, scale);
   drawSym(b.k, b.x, b.y, scale);
+}
+function drawCannons(x, y, rot) {
+  const [sx, sy] = toScreen(x, y), r = Math.max(4, BR * cam.s * 1.3);
+  ctx.save(); ctx.translate(sx, sy); ctx.rotate(rot); ctx.fillStyle = '#7d8896'; ctx.strokeStyle = '#2a3038'; ctx.lineWidth = 1;
+  for (let q = 0; q < 4; q++) { ctx.fillRect(r * 0.55, -r * 0.3, r * 0.95, r * 0.6); ctx.strokeRect(r * 0.55, -r * 0.3, r * 0.95, r * 0.6); ctx.rotate(Math.PI / 2); }
+  ctx.restore();
 }
 function drawSym(k, x, y, scale) {
   const r = BR * cam.s * scale;
@@ -817,6 +864,7 @@ function drawBall(x, y, col, scale) {
 function drawAim() {
   const a = aimInfo();
   drawBall(aim.ox, aim.oy, DEF[selected].color, selected === 'white' ? 1.5 : 1);
+  if (selected === 'shooter') drawCannons(aim.ox, aim.oy, 0);   // drawn under the ball
   drawSym(selected, aim.ox, aim.oy, selected === 'white' ? 1.5 : 1);
   if (!a) return;
   const [sx, sy] = toScreen(aim.ox, aim.oy);
@@ -922,7 +970,7 @@ const fmt = v => {
   return v.toFixed(v < 100 ? 1 : 0) + u[i];
 };
 
-const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'nuke' || k === 'buddy' || k === 'island' ? ' dark' : ''}">${DEF[k].sym}</span>` : '';
+const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'nuke' || k === 'buddy' || k === 'island' || k === 'shooter' ? ' dark' : ''}">${DEF[k].sym}</span>` : '';
 
 function buildBar() {
   const bar = $('bar'); bar.innerHTML = '';
