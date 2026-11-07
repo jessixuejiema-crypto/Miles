@@ -180,7 +180,7 @@ const DEF = {
   pink:   { name: 'Pink Box Ball',    short: 'Pink',        color: '#ff6ec7', dmg: 6, min: 18,  max: 18,  unlock: 5, req: 'indigo', cost: 50000,
             desc: 'A Seeker Ball trapped in an invisible box around everything broken so far. It bounces off the box and only breaks blocks inside it; other balls pass through. The box grows as the open area grows.' },
   chain:  { name: 'Chain Ball',       short: 'Chain',       color: '#1e6bff', dmg: 3, min: 14, max: 14, unlock: 5, req: 'pink', cost: 200000, sym: '⛓',
-            desc: 'Once every 30–40 seconds a hit makes 2 smaller, lighter one-use copies, and those copies split again on every hit. Splits 2 times; upgrade up to 10.' },
+            desc: 'Once every 30–40 seconds a hit makes 2 smaller, lighter one-use copies, and those copies split again on every hit. Splits 2 times; upgrade up to 4.' },
   magnet: { name: 'Magnet Ball',      short: 'Magnet',      color: '#e04cff', dmg: 3, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
             desc: 'Pulled hard toward the nearest glowing purple pixel, even ones hidden in the dark, so it digs its way to them.' },
   buddy:  { name: 'Buddy Ball',       short: 'Buddy',       color: '#7dffc4', dmg: 2, min: 2, max: 8, unlock: 5, req: 'chain', cost: 400000, gmul: 4, sym: '✦',
@@ -208,7 +208,7 @@ const NODES = {
   indigo: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   white:  [DMG, SPD, ['split', 'Split Count', 3]],
   pink:   [DMG, SPD],
-  chain:  [DMG, SPD, ['depth', 'Split Times', 8]],
+  chain:  [DMG, SPD, ['depth', 'Split Times', 2]],   // 2 → 4 split times
   magnet: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   buddy:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   island: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
@@ -217,7 +217,7 @@ const NODES = {
   builder:[DMG, SPD, ['build', 'Build Speed', 5]],
 };
 // Most upgrades cost 1 purple; the last levels cost more, never more than 5.
-const nodeCost = (max, lv) => max === 3 ? [1, 2, 3][lv] : max === 5 ? [1, 1, 1, 2, 3][lv] : [1, 1, 1, 1, 2, 2, 3, 3][lv];
+const nodeCost = (max, lv) => max === 2 ? [1, 2][lv] : max === 3 ? [1, 2, 3][lv] : [1, 1, 1, 2, 3][lv];
 
 // ---------------------------------------------------------------- state
 // The grid never ends. A cell is generated from its coordinates the first time anything looks at it
@@ -1241,7 +1241,12 @@ function loadMeta(s) {
   }
   for (const k of ORDER) {
     inv[k] = s.inv?.[k] || 0; bought[k] = s.bought?.[k] || 0; unlocked[k] = k === 'orange' || !!s.unlocked?.[k];
-    for (const n of NODES[k]) up[k][n[0]] = s.up?.[k]?.[n[0]] || 0;
+    for (const n of NODES[k]) {
+      const had = s.up?.[k]?.[n[0]] || 0;
+      up[k][n[0]] = Math.min(had, n[2]);
+      // Split Times used to go to 8 levels: give back the purple for levels above the new max
+      if (k === 'chain' && n[0] === 'depth') for (let lv = n[2]; lv < had; lv++) purple += [1, 1, 1, 1, 2, 2, 3, 3][lv] || 0;
+    }
   }
 }
 function load() {
