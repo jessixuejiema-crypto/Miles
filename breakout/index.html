@@ -191,6 +191,8 @@ const DEF = {
             desc: 'Only attracted to floating islands: chunks of blocks cut off from the outer wall, with open space all around them. It always heads for the nearest one.' },
   shooter:{ name: 'Shooter Ball',     short: 'Shooter',     color: '#c9d1d9', dmg: 2, min: 2, max: 6, unlock: 5, req: 'island', cost: 600000, sym: '+',
             desc: 'Has four cannon arms that turn on their own to line up with the nearest block in front, then fire out of all four at once, once a second. Shots earn 50× money on the blocks they hit.' },
+  cloud:  { name: 'Cloud Ball',       short: 'Cloud',       color: '#dfe9f5', dmg: 1, min: 1, max: 5, unlock: 5, req: 'shooter', cost: 700000, gmul: 3, sym: '☁',
+            desc: 'One Cloud Ball launches as a cloud of 10 balls. The 10 balls only attract each other, so they drift around together in a swarm.' },
 };
 const ORDER = Object.keys(DEF);
 
@@ -212,6 +214,7 @@ const NODES = {
   buddy:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   island: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   shooter:[DMG, SPD, ['fire', 'Fire Rate', 5]],
+  cloud:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
 };
 // Most upgrades cost 1 purple; the last levels cost more, never more than 5.
 const nodeCost = (max, lv) => max === 3 ? [1, 2, 3][lv] : max === 5 ? [1, 1, 1, 2, 3][lv] : [1, 1, 1, 1, 2, 2, 3, 3][lv];
@@ -593,11 +596,11 @@ function updateBall(b, dt) {
       }
       if (best != null) { ox = kx(best) + 0.5; oy = ky(best) + 0.5; }   // no islands: circles like a Gravity Ball
     }
-    if (b.k === 'buddy') {
+    if (b.k === 'buddy' || b.k === 'cloud') {
       // pulled toward every other ball; closer balls pull harder
       let ax = 0, ay = 0;
       for (const o of balls) {
-        if (o === b || o.dead) continue;
+        if (o === b || o.dead || (b.k === 'cloud' && (o.k !== 'cloud' || o.grp !== b.grp))) continue;   // a cloud only feels its own 10 balls
         const ex = o.x - b.x, ey = o.y - b.y, d = Math.hypot(ex, ey);
         if (d < 1e-3) continue;
         const w = 1 / Math.max(d, 1) ** 2;
@@ -846,6 +849,9 @@ function drawSym(k, x, y, scale) {
   if (k === 'nuke') {                                          // Δ
     ctx.strokeStyle = '#1a0800'; ctx.lineWidth = Math.max(1.5, r * 0.2); ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(0, -r * 0.55); ctx.lineTo(r * 0.55, r * 0.42); ctx.lineTo(-r * 0.55, r * 0.42); ctx.closePath(); ctx.stroke();
+  } else if (k === 'cloud') {                                  // little cloud
+    ctx.fillStyle = '#7a8ca3';
+    for (const [cx, cy, cr] of [[-0.25, 0.08, 0.24], [0.05, -0.12, 0.3], [0.3, 0.08, 0.22], [0.02, 0.14, 0.24]]) { ctx.beginPath(); ctx.arc(cx * r, cy * r, cr * r, 0, Math.PI * 2); ctx.fill(); }
   } else if (k === 'island') {                                 // little hill
     ctx.fillStyle = '#3d2a08'; ctx.beginPath();
     ctx.moveTo(-r * 0.6, r * 0.3); ctx.lineTo(-r * 0.15, -r * 0.45); ctx.lineTo(r * 0.1, -r * 0.1); ctx.lineTo(r * 0.3, -r * 0.3); ctx.lineTo(r * 0.6, r * 0.3);
@@ -959,7 +965,13 @@ function pointerEnd(e, cancel) {
     const a = cancel ? null : aimInfo();
     if (a && inv[selected] > 0) {
       inv[selected]--;
-      spawnBall(selected, aim.ox, aim.oy, a.dx, a.dy, a.f);
+      if (selected === 'cloud') {                       // one Cloud Ball = a cloud of 10
+        const grp = Math.random(), base = Math.atan2(a.dy, a.dx);
+        for (let q = 0; q < 10; q++) {
+          const ang = base + (q - 4.5) * 0.12;
+          spawnBall('cloud', aim.ox + (Math.random() - .5) * 0.3, aim.oy + (Math.random() - .5) * 0.3, Math.cos(ang), Math.sin(ang), a.f, { grp });
+        }
+      } else spawnBall(selected, aim.ox, aim.oy, a.dx, a.dy, a.f);
       everLaunched = true; dirtyUI = true;
     }
     aim = null;
@@ -984,7 +996,7 @@ const fmt = v => {
   return v.toFixed(v < 100 ? 1 : 0) + u[i];
 };
 
-const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'nuke' || k === 'buddy' || k === 'island' || k === 'shooter' ? ' dark' : ''}">${DEF[k].sym}</span>` : '';
+const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'nuke' || k === 'buddy' || k === 'island' || k === 'shooter' || k === 'cloud' ? ' dark' : ''}">${DEF[k].sym}</span>` : '';
 
 function buildBar() {
   const bar = $('bar'); bar.innerHTML = '';
@@ -1192,7 +1204,7 @@ function save() {
     for (const [k, m] of mod) cells.push(kx(k), ky(k), m[0], Math.round(m[1] * 1000) / 1000);
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       seed, cells, money, purple, inv, bought, unlocked, up, selected, everLaunched,
-      balls: balls.filter(b => !b.oneUse).map(b => ({ k: b.k, x: b.x, y: b.y, vx: b.vx, vy: b.vy, f: b.f, cs: b.cs })),
+      balls: balls.filter(b => !b.oneUse).map(b => ({ k: b.k, x: b.x, y: b.y, vx: b.vx, vy: b.vy, f: b.f, cs: b.cs, grp: b.grp })),
     }));
   } catch (e) {}
 }
