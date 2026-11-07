@@ -49,7 +49,11 @@
   }
   .card.sel { border-color: #fff; box-shadow: 0 0 12px rgba(255,255,255,.25); }
   .card.locked { opacity: .4; }
-  .card .ball { width: 22px; height: 22px; border-radius: 50%; position: relative; }
+  .card .ball { width: 22px; height: 22px; border-radius: 50%; position: relative; display: grid; place-items: center; }
+  .sym { font-size: 13px; font-weight: 900; line-height: 1; color: #fff; font-style: normal; }
+  .sym.dark { color: #1a0800; }
+  .tn.ball .o i { display: grid; place-items: center; }
+  .tn.ball .o i .sym { font-size: 22px; }
   .card .name { font-size: 12px; font-weight: 700; white-space: nowrap; }
   .card .hand { font-size: 11px; color: #9ab; }
   .card .hand b { color: #fff; }
@@ -156,7 +160,7 @@ const DEF = {
   orange: { name: 'Piercing Ball',    short: 'Piercing',    color: '#ff8a1c', dmg: 1, min: 0.5, max: 3,   unlock: 0, req: null,     cost: 10,
             desc: 'Drag strength sets speed (0.5–3 b/s).' },
   green:  { name: 'Poison Ball',      short: 'Poison',      color: '#3ddc4a', dmg: 1, min: 1,   max: 1.5, unlock: 1, req: 'orange', cost: 40,
-            desc: 'Hits poison every block within 3 for 0.5 dmg/sec for 5 seconds.' },
+            desc: 'Hits poison the blocks within 3. Poisoned blocks pulse green and take 0.5 damage once a second for 5 seconds.' },
   blue:   { name: 'Directional Ball', short: 'Directional', color: '#2f8cff', dmg: 3, min: 20,  max: 20,  unlock: 1, req: 'green',  cost: 120,
             desc: 'Only launches up, down, left or right. Always 20 b/s.' },
   purple: { name: 'Fast Ball',        short: 'Fast',        color: '#b05cff', dmg: 2, min: 30,  max: 30,  unlock: 1, req: 'blue',   cost: 300,
@@ -173,6 +177,10 @@ const DEF = {
             desc: 'A faster, much heavier Gravity Ball: 5× the pull of a fully upgraded (5/5) Gravity Ball, and 25 damage.' },
   pink:   { name: 'Pink Box Ball',    short: 'Pink',        color: '#ff6ec7', dmg: 6, min: 18,  max: 18,  unlock: 5, req: 'indigo', cost: 50000,
             desc: 'A Seeker Ball trapped in an invisible box around everything broken so far. It bounces off the box and only breaks blocks inside it; other balls pass through. The box grows as the open area grows.' },
+  nuke:   { name: 'Nuke Ball',        short: 'Nuke',        color: '#ff5a1f', dmg: 30, dmgStep: 10, min: 10, max: 10, unlock: 5, req: 'pink', cost: 100000, sym: 'Δ',
+            desc: 'Smashes straight through any block with less health than its damage. Every block it hits fires 100 small one-use Nuke Balls, and it keeps going.' },
+  chain:  { name: 'Chain Ball',       short: 'Chain',       color: '#1e6bff', dmg: 3, min: 14, max: 14, unlock: 5, req: 'nuke', cost: 200000, sym: '⛓',
+            desc: 'Every hit makes 2 smaller, lighter one-use copies, and those copies split again when they hit. Splits 2 times; upgrade up to 10.' },
 };
 const ORDER = Object.keys(DEF);
 
@@ -188,9 +196,11 @@ const NODES = {
   indigo: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   white:  [DMG, SPD, ['split', 'Split Count', 3]],
   pink:   [DMG, SPD],
+  nuke:   [DMG, SPD],
+  chain:  [DMG, SPD, ['depth', 'Split Times', 8]],
 };
 // Most upgrades cost 1 purple; the last levels cost more, never more than 5.
-const nodeCost = (max, lv) => (max === 3 ? [1, 2, 3] : [1, 1, 1, 2, 3])[lv];
+const nodeCost = (max, lv) => max === 3 ? [1, 2, 3][lv] : max === 5 ? [1, 1, 1, 2, 3][lv] : [1, 1, 1, 1, 2, 2, 3, 3][lv];
 
 // ---------------------------------------------------------------- state
 // The grid never ends. A cell is generated from its coordinates the first time anything looks at it
@@ -314,7 +324,7 @@ function damage(i, amt) {
 function stat(k) {
   const d = DEF[k], u = up[k];
   const sm = 1 + 0.2 * u.spd;
-  return { dmg: d.dmg * (1 + 0.5 * u.dmg), min: d.min * sm, max: d.max * sm };
+  return { dmg: d.dmgStep ? d.dmg + d.dmgStep * u.dmg : d.dmg * (1 + 0.5 * u.dmg), min: d.min * sm, max: d.max * sm };
 }
 const pierceHp = () => up.orange.pierce;                      // 1 = white, 2 = blue, 3 = green
 const poisonRange = () => 3 + up.green.prange;
@@ -323,12 +333,16 @@ const strikeInterval = () => 0.5 / (1 + 0.4 * up.yellow.rate);
 const strikeDmg = () => 2 + up.yellow.sdmg;
 const gravity = k => 5 * DEF[k].gmul * (1 + 0.3 * up[k].grav);   // b/s² toward the invisible orb
 const splitCount = () => 3 + up.white.split;
+const chainDepth = () => 2 + up.chain.depth;
+const MAX_MINIS = 300;                                         // cap on one-use balls alive at once
+let miniCount = 0;
 const fmt1 = v => (Math.round(v * 100) / 100).toString();
 
 function nodeValue(k, key, lv) {
   const d = DEF[k];
   switch (key) {
-    case 'dmg': return fmt1(d.dmg * (1 + 0.5 * lv)) + ' dmg';
+    case 'dmg': return fmt1(d.dmgStep ? d.dmg + d.dmgStep * lv : d.dmg * (1 + 0.5 * lv)) + ' dmg';
+    case 'depth': return (2 + lv) + ' times';
     case 'spd': return d.min === d.max ? fmt1(d.min * (1 + 0.2 * lv)) + ' b/s' : fmt1(d.min * (1 + .2 * lv)) + '–' + fmt1(d.max * (1 + .2 * lv)) + ' b/s';
     case 'pierce': return ['none', 'White', 'White + Blue', 'White → Green'][lv];
     case 'prange': return (3 + lv) + ' blocks';
@@ -346,6 +360,7 @@ function spawnBall(k, x, y, dx, dy, f, extra) {
   const b = Object.assign({ k, x, y, vx: dx, vy: dy, f, last: [-1, -1], st: 0, cs: 0 }, extra || {});
   if (DEF[k].gmul) { const s = stat(k); b.cs = s.min + (s.max - s.min) * f; }
   balls.push(b);
+  if (b.oneUse) miniCount++;
   return b;
 }
 
@@ -392,18 +407,33 @@ function onHit(b, i) {
     damage(i, cellHp(i));
     return true;
   }
-  damage(i, stat(b.k).dmg);
+  const dmg = stat(b.k).dmg;
+  // Nuke: anything weaker than its damage is destroyed and it flies on through.
+  if (b.k === 'nuke' && cellType(i) !== FREE && cellHp(i) < dmg) {
+    damage(i, dmg);
+    if (b.oneUse) b.dead = true; else nukeBurst(b);
+    return true;
+  }
+  damage(i, dmg);
   if (b.k === 'green') poisonAround(i);
   return false;
 }
 
 function afterBounce(b, hit) {
   b.last = [hit, b.last[0]];
+  if (b.k === 'chain' && (b.gen || 0) < chainDepth()) {
+    // two smaller, lighter one-use copies; they split again until the chain runs out
+    const base = Math.atan2(b.vy, b.vx), g = (b.gen || 0) + 1;
+    for (const off of [-0.5, 0.5]) {
+      if (miniCount >= MAX_MINIS) break;
+      spawnBall('chain', b.x, b.y, Math.cos(base + off), Math.sin(base + off), 1, { oneUse: true, gen: g });
+    }
+  }
   if (b.oneUse) { b.dead = true; return; }
+  if (b.k === 'nuke') nukeBurst(b);
   if (b.k === 'red' || b.k === 'pink') seek(b, hit);
   if (b.k === 'white') {
-    let minis = 0; for (const o of balls) if (o.oneUse) minis++;
-    const n = Math.min(splitCount(), 80 - minis);
+    const n = Math.min(splitCount(), MAX_MINIS - miniCount);
     const base = Math.atan2(b.vy, b.vx);
     for (let s = 0; s < n; s++) {
       const a = base + (s - (n - 1) / 2) * 0.45;
@@ -413,6 +443,15 @@ function afterBounce(b, hit) {
 }
 
 const inBox = j => { const x = kx(j), y = ky(j); return x >= freeBounds.x0 && x <= freeBounds.x1 && y >= freeBounds.y0 && y <= freeBounds.y1; };
+
+function nukeBurst(b) {
+  // 100 small one-use nukes in every direction
+  const n = Math.min(100, MAX_MINIS - miniCount), a0 = Math.random() * Math.PI * 2;
+  for (let s = 0; s < n; s++) {
+    const a = a0 + (s / 100) * Math.PI * 2;
+    spawnBall('nuke', b.x, b.y, Math.cos(a), Math.sin(a), 1, { oneUse: true, gen: 1 });
+  }
+}
 
 function seek(b, hit) {
   // nearest block in the 180° half in front of the ball, never one it just hit
@@ -434,7 +473,10 @@ function poisonAround(i) {
   const x = kx(i), y = ky(i), r = poisonRange(), until = T + 5, dps = poisonDps();
   for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++) {
     const j = key(xx, yy);
-    if (cellType(j) === BLOCK) poison.set(j, { until, dps });
+    if ((xx - x) ** 2 + (yy - y) ** 2 > r * r + 0.5 || cellType(j) !== BLOCK) continue;   // round area, radius 3
+    const p = poison.get(j);
+    if (p) { p.until = until; p.dps = dps; }
+    else poison.set(j, { until, dps, next: T + 1, flash: -9 });
   }
 }
 
@@ -506,10 +548,10 @@ function update(dt) {
   updateOrb(dt);
   for (const [j, p] of poison) {
     if (T > p.until || cellType(j) !== BLOCK) { poison.delete(j); continue; }
-    damage(j, p.dps * dt);
+    if (T >= p.next) { p.next += 1; p.flash = T; damage(j, p.dps); }   // one slow tick a second
   }
   for (const b of balls) updateBall(b, dt);
-  if (balls.some(b => b.dead)) balls = balls.filter(b => !b.dead);
+  if (balls.some(b => b.dead)) { balls = balls.filter(b => !b.dead); miniCount = 0; for (const b of balls) if (b.oneUse) miniCount++; }
   for (const p of fx) { p.x += p.vx * dt; p.y += p.vy * dt; p.t -= dt; }
   fx = fx.filter(p => p.t > 0);
   for (const b of bolts) b.t -= dt;
@@ -587,7 +629,11 @@ function draw() {
       ctx.fillStyle = 'rgba(0,0,0,0.28)';
       ctx.fillRect(sx + s * 0.18, sy + s * 0.18, s * 0.64, s * 0.64);
     }
-    if (poison.has(i)) { ctx.fillStyle = `rgba(80,255,60,${0.18 + 0.12 * pulse})`; ctx.fillRect(sx, sy, s + 0.6, s + 0.6); }
+    const pz = poison.get(i);
+    if (pz) {                                         // faint tint while poisoned, a bright green pulse on each tick
+      const a = 0.12 + 0.55 * Math.max(0, 1 - (T - pz.flash) / 0.6);
+      ctx.fillStyle = `rgba(80,255,60,${a})`; ctx.fillRect(sx, sy, s + 0.6, s + 0.6);
+    }
   };
 
   if (area <= 60000) {
@@ -624,7 +670,7 @@ function draw() {
   }
   ctx.globalAlpha = 1;
   // balls
-  for (const b of balls) drawBall(b.x, b.y, DEF[b.k].color, b.oneUse ? 0.5 : b.k === 'white' ? 1.5 : 1);   // big Splitter, small splits
+  for (const b of balls) drawBallOf(b);
   // aim
   if (aim) drawAim();
   // floating text
@@ -636,6 +682,37 @@ function draw() {
   ctx.globalAlpha = 1;
 }
 
+function lighten(hex, f) {
+  const n = parseInt(hex.slice(1), 16), m = c => Math.round(c + (255 - c) * f);
+  return `rgb(${m((n >> 16) & 255)},${m((n >> 8) & 255)},${m(n & 255)})`;
+}
+function drawBallOf(b) {
+  let col = DEF[b.k].color, scale = 1;
+  if (b.k === 'white') scale = b.oneUse ? 0.5 : 1.5;         // big Splitter, small splits
+  else if (b.k === 'chain') { const g = b.gen || 0; scale = Math.max(0.25, Math.pow(0.78, g)); col = lighten(col, Math.min(0.8, g * 0.16)); }
+  else if (b.oneUse) scale = 0.5;
+  drawBall(b.x, b.y, col, scale);
+  drawSym(b.k, b.x, b.y, scale);
+}
+function drawSym(k, x, y, scale) {
+  const r = BR * cam.s * scale;
+  if (r < 6 || !DEF[k].sym) return;
+  const [sx, sy] = toScreen(x, y);
+  ctx.save(); ctx.translate(sx, sy);
+  if (k === 'nuke') {                                          // Δ
+    ctx.strokeStyle = '#1a0800'; ctx.lineWidth = Math.max(1.5, r * 0.2); ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(0, -r * 0.55); ctx.lineTo(r * 0.55, r * 0.42); ctx.lineTo(-r * 0.55, r * 0.42); ctx.closePath(); ctx.stroke();
+  } else if (k === 'chain') {                                  // two linked chain rings
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.2, r * 0.16); ctx.rotate(-Math.PI / 4);
+    const w = r * 0.62, h = r * 0.34, rr = h / 2;
+    for (const ox of [-w * 0.32, w * 0.32]) {
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(ox - w / 2, -h / 2, w, h, rr) : ctx.rect(ox - w / 2, -h / 2, w, h);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
 function drawBall(x, y, col, scale) {
   const [sx, sy] = toScreen(x, y), r = Math.max(3, BR * cam.s * scale);
   ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = r;
@@ -646,6 +723,7 @@ function drawBall(x, y, col, scale) {
 function drawAim() {
   const a = aimInfo();
   drawBall(aim.ox, aim.oy, DEF[selected].color, selected === 'white' ? 1.5 : 1);
+  drawSym(selected, aim.ox, aim.oy, selected === 'white' ? 1.5 : 1);
   if (!a) return;
   const [sx, sy] = toScreen(aim.ox, aim.oy);
   const len = 30 + a.f * 110;
@@ -750,12 +828,14 @@ const fmt = v => {
   return v.toFixed(v < 100 ? 1 : 0) + u[i];
 };
 
+const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'nuke' ? ' dark' : ''}">${DEF[k].sym}</span>` : '';
+
 function buildBar() {
   const bar = $('bar'); bar.innerHTML = '';
   for (const k of ORDER) {
     const d = DEF[k], c = document.createElement('div');
     c.className = 'card' + (k === selected ? ' sel' : '') + (unlocked[k] ? '' : ' locked');
-    c.innerHTML = `<div class="ball" style="background:${d.color};box-shadow:0 0 8px ${d.color}"></div>
+    c.innerHTML = `<div class="ball" style="background:${d.color};box-shadow:0 0 8px ${d.color}">${symHtml(k)}</div>
       <div class="name">${d.short}</div>
       <div class="hand">${unlocked[k] ? `in hand: <b>${inv[k]}</b>` : 'locked'}</div>
       ${unlocked[k] ? `<button class="buy" data-k="${k}"><span class="dia s"></span>${fmt(price(k))}</button>`
@@ -839,7 +919,7 @@ function buildTree() {
     }
     const can = !unlocked[k] && unlocked[d.req] && purple >= d.unlock;
     nodes += `<div class="tn ball${unlocked[k] ? '' : ' lock'}${can ? ' can' : ''}${tsel.k === k && !tsel.key ? ' sel' : ''}" data-k="${k}" style="left:${p.x}px;top:${p.y}px">
-      <div class="o" style="${unlocked[k] ? `border-color:${d.color};box-shadow:0 0 18px ${d.color}66` : ''}"><i style="background:${d.color}"></i></div>
+      <div class="o" style="${unlocked[k] ? `border-color:${d.color};box-shadow:0 0 18px ${d.color}66` : ''}"><i style="background:${d.color}">${symHtml(k)}</i></div>
       <div class="nm">${d.short}</div></div>`;
     NODES[k].forEach(([key, label, max], j) => {
       const o = BRANCH[j], ux = p.x + o[0], uy = p.y + o[1], st = upState(k, key, max);
