@@ -190,7 +190,7 @@ const DEF = {
   island: { name: 'Island Ball',      short: 'Island',      color: '#e8c872', dmg: 4, min: 3, max: 9, unlock: 5, req: 'buddy', cost: 500000, gmul: 5, sym: '▲',
             desc: 'Only attracted to floating islands: chunks of blocks cut off from the outer wall, with open space all around them. It always heads for the nearest one.' },
   shooter:{ name: 'Shooter Ball',     short: 'Shooter',     color: '#c9d1d9', dmg: 2, min: 2, max: 6, unlock: 5, req: 'island', cost: 600000, sym: '+',
-            desc: 'Has four cannons. It turns its nearest cannon toward the nearest block in front of it and fires a shot once a second. Shots earn 50× money on the blocks they hit.' },
+            desc: 'Has four cannon arms that turn on their own to line up with the nearest block in front, then fire out of all four at once, once a second. Shots earn 50× money on the blocks they hit.' },
 };
 const ORDER = Object.keys(DEF);
 
@@ -360,7 +360,7 @@ function nodeValue(k, key, lv) {
   switch (key) {
     case 'dmg': return fmt1(d.dmgStep ? d.dmg + d.dmgStep * lv : d.dmg * (1 + 0.5 * lv)) + ' dmg';
     case 'depth': return (2 + lv) + ' times';
-    case 'fire': return fmt1(1 + 0.3 * lv) + ' shots/s';
+    case 'fire': return fmt1(1 + 0.3 * lv) + ' volleys/s';
     case 'spd': return d.min === d.max ? fmt1(d.min * (1 + 0.2 * lv)) + ' b/s' : fmt1(d.min * (1 + .2 * lv)) + '–' + fmt1(d.max * (1 + .2 * lv)) + ' b/s';
     case 'pierce': return ['none', 'White', 'White + Blue', 'White → Green'][lv];
     case 'prange': return (3 + lv) + ' blocks';
@@ -611,7 +611,7 @@ function updateBall(b, dt) {
     b.vx = vx / sp; b.vy = vy / sp; b.cs = Math.min(s.max, Math.max(s.min, sp));
   }
   if (b.k === 'shooter' && !b.shot) {
-    // turn the closest cannon toward the nearest block in front, then fire when lined up
+    // only the ring of four cannons turns (the ball itself doesn't), lining one cannon up with the nearest block in front
     let tgt = -1, bd = Infinity;
     for (const j of frontier) {
       const ex = kx(j) + 0.5 - b.x, ey = ky(j) + 0.5 - b.y, dd = ex * ex + ey * ey;
@@ -625,9 +625,12 @@ function updateBall(b, dt) {
       let diff = ((want - b.rot) % (Math.PI / 2) + Math.PI * 2.25) % (Math.PI / 2) - Math.PI / 4;   // to the nearest of 4 cannons
       const turn = 6 * dt;
       b.rot += Math.max(-turn, Math.min(turn, diff));
-      if (Math.abs(diff) < 0.08 && b.cool <= 0 && miniCount < MAX_MINIS) {
+      if (Math.abs(diff) < 0.08 && b.cool <= 0 && miniCount + 4 <= MAX_MINIS) {
         b.cool = 1 / fireRate();
-        spawnBall('shooter', b.x + Math.cos(want) * BR, b.y + Math.sin(want) * BR, Math.cos(want), Math.sin(want), 1, { oneUse: true, shot: true });
+        for (let q = 0; q < 4; q++) {                  // every cannon fires at once
+          const a = b.rot + q * Math.PI / 2;
+          spawnBall('shooter', b.x + Math.cos(a) * BR, b.y + Math.sin(a) * BR, Math.cos(a), Math.sin(a), 1, { oneUse: true, shot: true });
+        }
       }
     }
   }
@@ -814,14 +817,25 @@ function drawBallOf(b) {
   else if (b.k === 'chain') { const g = b.gen || 0; scale = Math.max(0.25, Math.pow(0.78, g)); col = lighten(col, Math.min(0.8, g * 0.16)); }
   else if (b.oneUse) scale = 0.5;
   if (b.shot) { drawBall(b.x, b.y, '#ffd76a', 0.35); return; }
-  if (b.k === 'shooter') { scale = 1.3; drawCannons(b.x, b.y, b.rot || 0); }
+  if (b.k === 'shooter') scale = 1.3;
   drawBall(b.x, b.y, col, scale);
+  if (b.k === 'shooter') drawCannons(b.x, b.y, b.rot || 0);
   drawSym(b.k, b.x, b.y, scale);
 }
 function drawCannons(x, y, rot) {
+  // a turning ring with four cannon arms, on top of a ball body that stays still
   const [sx, sy] = toScreen(x, y), r = Math.max(4, BR * cam.s * 1.3);
-  ctx.save(); ctx.translate(sx, sy); ctx.rotate(rot); ctx.fillStyle = '#7d8896'; ctx.strokeStyle = '#2a3038'; ctx.lineWidth = 1;
-  for (let q = 0; q < 4; q++) { ctx.fillRect(r * 0.55, -r * 0.3, r * 0.95, r * 0.6); ctx.strokeRect(r * 0.55, -r * 0.3, r * 0.95, r * 0.6); ctx.rotate(Math.PI / 2); }
+  ctx.save(); ctx.translate(sx, sy);
+  ctx.strokeStyle = '#4a5360'; ctx.lineWidth = Math.max(1.5, r * 0.14);
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2); ctx.stroke();
+  ctx.rotate(rot); ctx.fillStyle = '#7d8896'; ctx.strokeStyle = '#2a3038'; ctx.lineWidth = 1;
+  for (let q = 0; q < 4; q++) {
+    ctx.fillRect(r * 0.55, -r * 0.24, r * 1.0, r * 0.48); ctx.strokeRect(r * 0.55, -r * 0.24, r * 1.0, r * 0.48);
+    ctx.fillStyle = '#2a3038'; ctx.fillRect(r * 1.42, -r * 0.13, r * 0.13, r * 0.26); ctx.fillStyle = '#7d8896';   // muzzle
+    ctx.rotate(Math.PI / 2);
+  }
+  ctx.rotate(-rot - Math.PI * 2);                    // undo: the hub stays put
+  ctx.fillStyle = '#2a3038'; ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 function drawSym(k, x, y, scale) {
@@ -864,8 +878,8 @@ function drawBall(x, y, col, scale) {
 function drawAim() {
   const a = aimInfo();
   drawBall(aim.ox, aim.oy, DEF[selected].color, selected === 'white' ? 1.5 : 1);
-  if (selected === 'shooter') drawCannons(aim.ox, aim.oy, 0);   // drawn under the ball
   drawSym(selected, aim.ox, aim.oy, selected === 'white' ? 1.5 : 1);
+  if (selected === 'shooter') drawCannons(aim.ox, aim.oy, 0);
   if (!a) return;
   const [sx, sy] = toScreen(aim.ox, aim.oy);
   const len = 30 + a.f * 110;
