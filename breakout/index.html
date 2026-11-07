@@ -59,6 +59,7 @@
   .tn.ball .o i { display: grid; place-items: center; }
   .tn.ball .o i .sym { font-size: 22px; }
   .card .name { font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .sep { flex: 0 0 auto; writing-mode: vertical-rl; transform: rotate(180deg); align-self: center; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #9fb3c8; border-left: 1px solid #2a3540; padding: 0 2px 0 6px; }
   .card .hand { font-size: 11px; color: #9ab; }
   .card .hand b { color: #fff; }
   .buy {
@@ -192,12 +193,16 @@ const DEF = {
             desc: 'Only attracted to floating islands: chunks of blocks cut off from the outer wall, with open space all around them. It always heads for the nearest one.' },
   shooter:{ name: 'Shooter Ball',     short: 'Shooter',     color: '#c9d1d9', dmg: 2, min: 2, max: 6, unlock: 5, req: 'island', cost: 600000, sym: '+',
             desc: 'Has four cannon arms that turn on their own to line up with the nearest block in front, then fire out of all four at once, once a second. Shots earn 50× money on the blocks they hit.' },
-  cloud:  { name: 'Cloud Ball',       short: 'Cloud',       color: '#dfe9f5', dmg: 1, min: 1, max: 5, unlock: 5, req: 'shooter', cost: 700000, gmul: 6, sym: '☁',
+  cloud:  { name: 'Cloud Ball',       short: 'Cloud',       color: '#dfe9f5', dmg: 1, min: 1, max: 5, cat: 'swarm', unlock: 5, req: 'shooter', cost: 700000, gmul: 6, sym: '☁',
             desc: 'One Cloud Ball launches as a cloud of 10 balls. The 10 balls pull on cloud balls only, and two clouds that touch merge into one bigger cloud, with the same medium pull at any distance, and bounce off each other like solid balls, staying loosely together, so they move as one tight cloud.' },
-  builder:{ name: 'Block Builder',    short: 'Builder',     color: '#b07a45', dmg: 1, min: 2, max: 6, unlock: 5, req: 'cloud', cost: 800000, sym: '■',
+  builder:{ name: 'Block Builder',    short: 'Builder',     color: '#b07a45', dmg: 1, min: 2, max: 6, unlock: 5, req: 'shooter', cost: 800000, sym: '■',
             desc: 'Builds a new random block in the open space 10 blocks away from itself every 2 seconds, giving your other balls more to break.' },
+  all:    { name: 'All Swarm',        short: 'All',         color: '#ffffff', dmg: 0, min: 0, max: 0, cat: 'swarm', unlock: 0, req: null, cost: 0, purpleCost: 10,
+            desc: 'One launch sends out one of every ball at once, and the whole group pulls toward each other. Bought with purple only.' },
 };
 const ORDER = Object.keys(DEF);
+const BALL_KINDS = ORDER.filter(k => DEF[k].cat !== 'swarm');   // real balls (swarms are launched as groups of them)
+const ALL_PULL = 12;                                             // b/s² pull inside an All swarm
 
 const DMG = ['dmg', 'Damage', 5], SPD = ['spd', 'Speed', 5];
 const NODES = {
@@ -218,6 +223,7 @@ const NODES = {
   shooter:[DMG, SPD, ['fire', 'Fire Rate', 5]],
   cloud:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   builder:[DMG, SPD, ['build', 'Build Speed', 5]],
+  all:    [],
 };
 // Most upgrades cost 1 purple; the last levels cost more, never more than 5.
 const nodeCost = (max, lv) => max === 2 ? [1, 2][lv] : max === 3 ? [1, 2, 3][lv] : [1, 1, 1, 2, 3][lv];
@@ -241,6 +247,7 @@ let fx = [], bolts = [], texts = [];
 let orb = { ang: 0, r: 1, cx: 0.5, cy: 0.5, dirty: true };
 
 let worldVer = 0;
+let allGroups = new Map();
 const OFF = 2 ** 20, M = 2 ** 21;  // cells from -1,048,576 to +1,048,575 each way: effectively endless
 const key = (x, y) => (x + OFF) * M + (y + OFF);
 const kx = k => Math.floor(k / M) - OFF;
@@ -289,7 +296,7 @@ const cellDist = k => distMap.get(k) ?? REVEAL + 1;
 
 function resetMeta() {
   money = 10; purple = 0; balls = []; poison = new Map(); everLaunched = false; selected = 'orange';
-  for (const k of ORDER) { inv[k] = 0; bought[k] = 0; unlocked[k] = k === 'orange'; up[k] = {}; for (const n of NODES[k]) up[k][n[0]] = 0; }
+  for (const k of ORDER) { inv[k] = 0; bought[k] = 0; unlocked[k] = k === 'orange' || k === 'all'; up[k] = {}; for (const n of NODES[k]) up[k][n[0]] = 0; }
 }
 
 function genWorld() {
@@ -623,6 +630,24 @@ function updateBall(b, dt) {
     const sp = Math.hypot(vx, vy) || 1;
     b.vx = vx / sp; b.vy = vy / sp; b.cs = Math.min(s.max, Math.max(s.min, sp));
   }
+  if (b.allGrp != null && b.k !== 'blue') {
+    const g = allGroups.get(b.allGrp);
+    if (g && g.length > 1) {
+      let ax = 0, ay = 0;
+      for (const o of g) {
+        if (o === b) continue;
+        const ex = o.x - b.x, ey = o.y - b.y, d = Math.hypot(ex, ey);
+        if (d > 1.5) { ax += ex / d; ay += ey / d; }
+      }
+      const l = Math.hypot(ax, ay);
+      if (l > 0) {
+        const sp = ballSpeed(b) || 1;
+        let vx = b.vx * sp + ax / l * ALL_PULL * dt, vy = b.vy * sp + ay / l * ALL_PULL * dt;
+        const n = Math.hypot(vx, vy) || 1;
+        b.vx = vx / n; b.vy = vy / n;               // turns the ball; its own speed stays the same
+      }
+    }
+  }
   if (b.k === 'shooter' && !b.shot) {
     // only the ring of four cannons turns (the ball itself doesn't), lining one cannon up with the nearest block in front
     let tgt = -1, bd = Infinity;
@@ -739,6 +764,8 @@ function update(dt) {
     if (T > p.until || cellType(j) !== BLOCK) { poison.delete(j); continue; }
     if (T >= p.next) { p.next += 1; p.flash = T; damage(j, p.dps); }   // one slow tick a second
   }
+  allGroups = new Map();
+  for (const b of balls) if (b.allGrp != null && !b.dead) { const g = allGroups.get(b.allGrp); if (g) g.push(b); else allGroups.set(b.allGrp, [b]); }
   for (const b of balls) updateBall(b, dt);
   keepCloudsTight(dt);
   if (balls.some(b => b.dead)) { balls = balls.filter(b => !b.dead); miniCount = 0; for (const b of balls) if (b.oneUse) miniCount++; }
@@ -955,7 +982,7 @@ function drawAim() {
   ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + a.dx * len, sy + a.dy * len); ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = '#fff'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText(fmt1(a.speed) + ' b/s', sx + a.dx * (len + 18), sy + a.dy * (len + 18) + 4);
+  ctx.fillText(selected === 'all' ? Math.round(a.f * 100) + '% power' : fmt1(a.speed) + ' b/s', sx + a.dx * (len + 18), sy + a.dy * (len + 18) + 4);
 }
 
 // ---------------------------------------------------------------- input
@@ -1027,7 +1054,14 @@ function pointerEnd(e, cancel) {
     const a = cancel ? null : aimInfo();
     if (a && inv[selected] > 0) {
       inv[selected]--;
-      if (selected === 'cloud') {                       // one Cloud Ball = a cloud of 10
+      if (selected === 'all') {                         // one of every ball, all in one pulling group
+        const allGrp = Math.random(), base = Math.atan2(a.dy, a.dx), n = BALL_KINDS.length;
+        BALL_KINDS.forEach((k, q) => {
+          let ang = base + (q - (n - 1) / 2) * (1.6 / n);
+          if (k === 'blue') ang = Math.round(ang / (Math.PI / 2)) * (Math.PI / 2);   // Directional stays straight
+          spawnBall(k, aim.ox, aim.oy, Math.cos(ang), Math.sin(ang), a.f, { allGrp });
+        });
+      } else if (selected === 'cloud') {                // one Cloud Ball = a cloud of 10
         const grp = Math.random(), base = Math.atan2(a.dy, a.dx);
         for (let q = 0; q < 10; q++) {
           const ang = base + (q - 4.5) * 0.12;
@@ -1062,13 +1096,17 @@ const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'buddy' || k === 'isl
 
 function buildBar() {
   const bar = $('bar'); bar.innerHTML = '';
-  for (const k of ORDER) {
+  const order = [...BALL_KINDS, ...ORDER.filter(k => DEF[k].cat === 'swarm')];
+  for (const k of order) {
     const d = DEF[k], c = document.createElement('div');
+    if (k === order.find(o => DEF[o].cat === 'swarm')) {
+      const sep = document.createElement('div'); sep.className = 'sep'; sep.textContent = 'Swarms'; bar.appendChild(sep);
+    }
     c.className = 'card' + (k === selected ? ' sel' : '') + (unlocked[k] ? '' : ' locked');
-    c.innerHTML = `<div class="ball" style="background:${d.color};box-shadow:0 0 8px ${d.color}">${symHtml(k)}</div>
+    c.innerHTML = `<div class="ball" style="background:${ballBg(k)};box-shadow:0 0 8px ${d.color}">${symHtml(k)}</div>
       <div class="name">${d.short}</div>
       <div class="hand">${unlocked[k] ? `in hand: <b>${inv[k]}</b>` : 'locked'}</div>
-      ${unlocked[k] ? `<button class="buy" data-k="${k}"><span class="dia s"></span>${fmt(price(k))}</button>`
+      ${unlocked[k] ? `<button class="buy" data-k="${k}"><span class="dia s${d.purpleCost ? ' p' : ''}"></span>${d.purpleCost ? d.purpleCost : fmt(price(k))}</button>`
                     : `<button class="buy" disabled><span class="dia p s"></span>${d.unlock}</button>`}`;
     c.addEventListener('click', ev => {
       if (!unlocked[k]) { tsel = { k, key: null }; tv.init = false; openTree(); return; }
@@ -1080,14 +1118,21 @@ function buildBar() {
 }
 
 function buy(k) {
+  if (DEF[k].purpleCost) {                            // swarms like All are bought with purple only
+    if (purple < DEF[k].purpleCost) return;
+    purple -= DEF[k].purpleCost; inv[k]++; dirtyUI = true; return;
+  }
   const p = price(k);
   if (money < p) return;
   money -= p; bought[k]++; inv[k]++; dirtyUI = true;
 }
+const canAfford = k => DEF[k].purpleCost ? purple >= DEF[k].purpleCost : money >= price(k);
+// All swarm shows every ball's colour
+const ballBg = k => k === 'all' ? `conic-gradient(${BALL_KINDS.map(o => DEF[o].color).join(',')},${DEF.orange.color})` : DEF[k].color;
 
 function refreshAffordable() {
   for (const b of document.querySelectorAll('.buy[data-k]')) {
-    const ok = money >= price(b.dataset.k);
+    const ok = canAfford(b.dataset.k);
     b.classList.toggle('ok', ok); b.disabled = !ok;
   }
 }
@@ -1104,7 +1149,7 @@ function flashHint() { setHint(); const h = $('hint'); h.style.display = ''; h.a
 
 // Skill tree: the Piercing Ball is the root at the bottom; each ball grows the next one above it,
 // and its upgrades branch off to the sides.
-const TREE = ['magnet', ...ORDER.filter(k => k !== 'magnet')];   // bottom to top; Magnet is its own root
+const TREE = [...ORDER.filter(k => DEF[k].cat === 'swarm').reverse(), 'magnet', ...BALL_KINDS.filter(k => k !== 'magnet')];   // bottom to top: swarms, Magnet (own root), then the ball trunk
 const TW = 640, ROW = 165, TTOP = 80, TH = TTOP + (TREE.length - 1) * ROW + 100;
 const BRANCH = [[-120, -10], [120, -10], [-215, -62], [215, -62]];
 const ballPos = n => ({ x: TW / 2, y: TTOP + (TREE.length - 1 - n) * ROW });
@@ -1145,14 +1190,14 @@ function buildTree() {
   let lines = '', nodes = '';
   TREE.forEach((k, n) => {
     const d = DEF[k], p = ballPos(n);
-    if (d.req) {                                     // trunk link from the ball it needs
+    if (d.req && d.cat !== 'swarm') {                 // trunk link from the ball it needs
       const q = ballPos(TREE.indexOf(d.req)), on = unlocked[k];
       lines += `<line x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}" stroke="${on ? '#a64dff' : '#2e2140'}" stroke-width="${on ? 8 : 6}" stroke-linecap="round"/>`;
     }
     const can = !unlocked[k] && reqOk(k) && purple >= d.unlock;
     nodes += `<div class="tn ball${unlocked[k] ? '' : ' lock'}${can ? ' can' : ''}${tsel.k === k && !tsel.key ? ' sel' : ''}" data-k="${k}" style="left:${p.x}px;top:${p.y}px">
-      <div class="o" style="${unlocked[k] ? `border-color:${d.color};box-shadow:0 0 18px ${d.color}66` : ''}"><i style="background:${d.color}">${symHtml(k)}</i></div>
-      <div class="nm">${d.short}</div></div>`;
+      <div class="o" style="${unlocked[k] ? `border-color:${d.color};box-shadow:0 0 18px ${d.color}66` : ''}"><i style="background:${ballBg(k)}">${symHtml(k)}</i></div>
+      <div class="nm">${d.short}${d.cat === 'swarm' ? ' · swarm' : ''}</div></div>`;
     NODES[k].forEach(([key, label, max], j) => {
       const o = BRANCH[j], ux = p.x + o[0], uy = p.y + o[1], st = upState(k, key, max);
       lines += `<line x1="${p.x}" y1="${p.y}" x2="${ux}" y2="${uy}" stroke="${st.lv ? '#a64dff' : '#2e2140'}" stroke-width="4" stroke-linecap="round"/>`;
@@ -1177,8 +1222,9 @@ function renderInfo() {
   let title, desc, btn;
   if (!key) {
     title = d.name;
-    desc = `${fmt1(d.dmg)} dmg · ${d.min === d.max ? d.min : d.min + '–' + d.max} b/s. ${d.desc}`;
-    if (unlocked[k]) btn = `<button disabled>Unlocked</button>`;
+    desc = k === 'all' ? d.desc : `${fmt1(d.dmg)} dmg · ${d.min === d.max ? d.min : d.min + '–' + d.max} b/s. ${d.desc}`;
+    if (d.purpleCost) btn = `<button disabled>Buy in the shop: <span class="dia p s"></span>${d.purpleCost}</button>`;
+    else if (unlocked[k]) btn = `<button disabled>Unlocked</button>`;
     else if (!reqOk(k)) btn = `<button disabled>Needs ${DEF[d.req].short}</button>`;
     else btn = `<button id="infoBuy" ${purple >= d.unlock ? '' : 'disabled'}>Unlock <span class="dia p s"></span>${d.unlock}</button>`;
   } else {
@@ -1286,7 +1332,7 @@ function save() {
     for (const [k, m] of mod) cells.push(kx(k), ky(k), m[0], Math.round(m[1] * 1000) / 1000);
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       seed, cells, money, purple, inv, bought, unlocked, up, selected, everLaunched,
-      balls: balls.filter(b => !b.oneUse).map(b => ({ k: b.k, x: b.x, y: b.y, vx: b.vx, vy: b.vy, f: b.f, cs: b.cs, grp: b.grp })),
+      balls: balls.filter(b => !b.oneUse).map(b => ({ k: b.k, x: b.x, y: b.y, vx: b.vx, vy: b.vy, f: b.f, cs: b.cs, grp: b.grp, allGrp: b.allGrp })),
     }));
   } catch (e) {}
 }
@@ -1297,7 +1343,7 @@ function loadMeta(s) {
     for (const key of ['dmg', 'spd']) for (let lv = 0; lv < (s.up?.nuke?.[key] || 0); lv++) purple += nodeCost(5, lv);
   }
   for (const k of ORDER) {
-    inv[k] = s.inv?.[k] || 0; bought[k] = s.bought?.[k] || 0; unlocked[k] = k === 'orange' || !!s.unlocked?.[k];
+    inv[k] = s.inv?.[k] || 0; bought[k] = s.bought?.[k] || 0; unlocked[k] = k === 'orange' || k === 'all' || !!s.unlocked?.[k];
     for (const n of NODES[k]) {
       const had = s.up?.[k]?.[n[0]] || 0;
       up[k][n[0]] = Math.min(had, n[2]);
