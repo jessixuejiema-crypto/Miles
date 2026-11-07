@@ -536,15 +536,18 @@ function nearestGem(x, y) {
 }
 
 function seek(b, hit) {
-  // nearest block in the 180° half in front of the ball, never one it just hit
+  // a block in the 180° half in front of the ball, never one it just hit. Blocks far from the middle
+  // of the open area count as farther away, so it clears the edge evenly instead of digging tunnels.
+  if (orb.dirty) updateOrb(0);
   let best = -1, bd = Infinity;
   for (const j of frontier) {
     if (j === hit || j === b.last[1]) continue;
     if (b.k === 'pink' && !inBox(j)) continue;          // pink only goes for blocks inside its box
-    const dx = kx(j) + 0.5 - b.x, dy = ky(j) + 0.5 - b.y;
-    const dd = dx * dx + dy * dy;
-    if (dx * b.vx + dy * b.vy <= 0.05 * Math.sqrt(dd)) continue;
-    if (dd < bd) { bd = dd; best = j; }
+    const jx = kx(j) + 0.5, jy = ky(j) + 0.5, dx = jx - b.x, dy = jy - b.y;
+    const d = Math.hypot(dx, dy);
+    if (dx * b.vx + dy * b.vy <= 0.05 * d) continue;
+    const score = d + Math.hypot(jx - orb.cx, jy - orb.cy);
+    if (score < bd) { bd = score; best = j; }
   }
   if (best < 0) return;
   const dx = kx(best) + 0.5 - b.x, dy = ky(best) + 0.5 - b.y, l = Math.hypot(dx, dy);
