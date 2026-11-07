@@ -190,7 +190,7 @@ const DEF = {
   shooter:{ name: 'Shooter Ball',     short: 'Shooter',     color: '#c9d1d9', dmg: 2, min: 2, max: 6, unlock: 5, req: 'island', cost: 600000, sym: '+',
             desc: 'Has four cannon arms that turn on their own to line up with the nearest block in front, then fire out of all four at once, once a second. Shots earn 50× money on the blocks they hit.' },
   cloud:  { name: 'Cloud Ball',       short: 'Cloud',       color: '#dfe9f5', dmg: 1, min: 1, max: 5, unlock: 5, req: 'shooter', cost: 700000, gmul: 20, sym: '☁',
-            desc: 'One Cloud Ball launches as a cloud of 10 balls. The 10 balls pull hard on each other only, and never get more than 0.3 blocks apart, so they move as one tight cloud.' },
+            desc: 'One Cloud Ball launches as a cloud of 10 balls. The 10 balls pull hard on each other only, and never get more than 0.7 blocks apart, so they move as one tight cloud.' },
   builder:{ name: 'Block Builder',    short: 'Builder',     color: '#b07a45', dmg: 1, min: 2, max: 6, unlock: 5, req: 'cloud', cost: 800000, sym: '■',
             desc: 'Builds a new random block in the open space 10 blocks away from itself every 2 seconds, giving your other balls more to break.' },
 };
@@ -678,8 +678,8 @@ function nearestFreeCenter(x, y) {
   return best;
 }
 
-// Each cloud's balls stay within 0.3 blocks of each other: pull any straggler back toward the cloud's middle.
-const CLOUD_SPREAD = 0.3;
+// Each cloud's balls stay within 0.7 blocks of each other: pull any straggler back toward the cloud's middle.
+const CLOUD_SPREAD = 0.7;
 function keepCloudsTight() {
   const groups = new Map();
   for (const b of balls) if (b.k === 'cloud' && !b.dead) { const g = groups.get(b.grp); if (g) g.push(b); else groups.set(b.grp, [b]); }
