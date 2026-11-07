@@ -250,8 +250,8 @@ function rnd(x, y, salt) {          // deterministic 0..1 for a cell
 }
 function baseType(x, y) {
   if (Math.abs(x) <= 1 && Math.abs(y) <= 1) return FREE;
-  // glowing purple pixel: 1 in 600
-  if (Math.abs(x) + Math.abs(y) > 5 && rnd(x, y, 1) < 1 / 600) return GEM;
+  // glowing purple pixel: 1 in 5 around the start (within 10 blocks), 1 in 1000 everywhere else
+  if (rnd(x, y, 1) < (x * x + y * y <= 100 ? 1 / 5 : 1 / 1000)) return GEM;
   return BLOCK;
 }
 function baseHp(x, y) {
