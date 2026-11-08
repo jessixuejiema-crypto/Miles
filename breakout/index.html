@@ -21,6 +21,7 @@
   .cur { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; font-variant-numeric: tabular-nums; }
   .dia { width: 13px; height: 13px; background: #fff; transform: rotate(45deg); box-shadow: 0 0 8px rgba(255,255,255,.55); flex: 0 0 auto; }
   .dia.p { background: #c46bff; box-shadow: 0 0 10px #a640ff; }
+  .dia.b { background: #4fb3ff; box-shadow: 0 0 10px #2b8cff; }
   .dia.s { width: 8px; height: 8px; box-shadow: none; }
   #treeBtn {
     pointer-events: auto; margin-left: auto; background: #140a1f; color: #e7cfff;
@@ -29,6 +30,9 @@
   }
   #ballCount { font-size: 13px; color: #8aa; font-weight: 600; }
   #hud button { white-space: nowrap; flex-shrink: 0; }
+  #blueBtn { pointer-events: auto; background: #071a30; border: 2px solid #2b8cff; border-radius: 10px; padding: 5px 10px; color: #cfe6ff; font: inherit; font-weight: 800; cursor: pointer; }
+  #blueBtn:disabled { border-color: #1d3550; color: #5d7a96; cursor: default; }
+  #blueBtn:not(:disabled) { box-shadow: 0 0 12px #2b8cff88; }
   #boardBtn { pointer-events: auto; background: #1a1410; color: #f3d9b8; border: 2px solid #7a5530; border-radius: 10px; padding: 8px 10px; font: inherit; font-weight: 700; cursor: pointer; }
   #boardBtn.arm { background: #6b3a1d; color: #fff; }
   @media (max-width: 460px) { #hud { gap: 10px; } #ballCount { display: none; } .cur { font-size: 18px; gap: 8px; } #treeBtn, #centerBtn, #boardBtn { padding: 7px 8px; font-size: 13px; } #centerBtn .w, #boardBtn:not(.arm) .w { display: none; } #centerBtn, #boardBtn { font-size: 16px; min-width: 36px; } }
@@ -117,6 +121,7 @@
     padding: 8px 2px; display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; }
   .pgrid button:hover, .pgrid button:focus-visible { border-color: #4fb3ff; outline: none; }
   .phead { grid-column: 1 / -1; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #7fa6cc; margin-top: 4px; }
+  .pclose { margin-top: 12px; width: 100%; background: #0c1f38; border: 1px solid #1f4a7a; border-radius: 10px; color: #cfe6ff; font: inherit; font-weight: 700; padding: 9px; cursor: pointer; }
   .pgrid .ball { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
   @media (prefers-reduced-motion: reduce) { .tn.can .o { animation: none; } }
 </style>
@@ -127,6 +132,7 @@
 <div id="hud">
   <div class="cur"><span class="dia"></span><span id="money">0</span></div>
   <div class="cur"><span class="dia p"></span><span id="purple">0</span></div>
+  <button class="cur" id="blueBtn" title="Spend blue: pick a ball or swarm, get 10"><span class="dia b"></span><span id="blueN">0</span></button>
   <span id="ballCount"></span>
   <button id="centerBtn" hidden title="Recenter">⌖<span class="w"> Recenter</span></button>
   <button id="boardBtn" title="New board: start a fresh 3×3 board and keep your balls">↺<span class="w"> New board</span></button>
@@ -137,9 +143,10 @@
 
 <div id="picker" hidden>
   <div class="pbox">
-    <div class="ptitle"><span class="bdia"></span>Blue pixel! Pick a ball or swarm: you get 10 of it.</div>
+    <div class="ptitle"><span class="bdia"></span>Spend 1 blue: pick a ball or swarm and get 10 of it.</div>
     <div class="pmore" id="pickMore"></div>
     <div class="pgrid" id="pickGrid"></div>
+    <button class="pclose" id="pickClose">Not now</button>
   </div>
 </div>
 
@@ -211,6 +218,8 @@ const DEF = {
             desc: 'Pulled hard toward the nearest glowing blue pixel (up to 150 blocks away), digging its way there. With none in range it circles like a Gravity Ball.' },
   graymag:{ name: 'Gray Magnet Ball', short: 'Gray Mag',    color: '#9aa0aa', dmg: 5, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
             desc: 'Pulled hard toward the nearest gray block (the toughest, 100-hit blocks), up to 60 blocks away, and hammers it. With none in range it circles like a Gravity Ball.' },
+  pinkmag:{ name: 'Pink Magnet Ball', short: 'Pink Mag',    color: '#f07ab8', dmg: 4, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
+            desc: 'Pulled hard toward the nearest pink block (the 50-hit blocks), up to 60 blocks away, and hammers it. With none in range it circles like a Gravity Ball.' },
   buddy:  { name: 'Buddy Ball',       short: 'Buddy',       color: '#7dffc4', dmg: 2, min: 2, max: 8, unlock: 5, req: 'chain', cost: 400000, gmul: 4, sym: '✦',
             desc: 'Attracted to every other ball at once, pulled hardest by the closest ones, so it chases the crowd.' },
   island: { name: 'Island Ball',      short: 'Island',      color: '#e8c872', dmg: 4, min: 3, max: 9, unlock: 5, req: 'buddy', cost: 500000, gmul: 5, sym: '▲',
@@ -221,12 +230,9 @@ const DEF = {
             desc: 'One Cloud Ball launches as a cloud of 10 balls. The 10 balls pull on cloud balls only, and two clouds that touch merge into one bigger cloud, with the same medium pull at any distance, and bounce off each other like solid balls, staying loosely together, so they move as one tight cloud.' },
   builder:{ name: 'Block Builder',    short: 'Builder',     color: '#b07a45', dmg: 1, min: 2, max: 6, unlock: 5, req: 'shooter', cost: 800000, sym: '■',
             desc: 'Builds a new random block in the open space 10 blocks away from itself every 2 seconds, giving your other balls more to break.' },
-  all:    { name: 'All Swarm',        short: 'All',         color: '#ffffff', dmg: 0, min: 0, max: 0, cat: 'swarm', unlock: 0, req: null, cost: 0, purpleCost: 10,
-            desc: 'One launch sends out one of every ball at once, and the whole group pulls toward each other. Bought with purple only.' },
 };
 const ORDER = Object.keys(DEF);
 const BALL_KINDS = ORDER.filter(k => DEF[k].cat !== 'swarm');   // real balls (swarms are launched as groups of them)
-const ALL_PULL = 12;                                             // b/s² pull inside an All swarm
 
 const DMG = ['dmg', 'Damage', 5], SPD = ['spd', 'Speed', 5];
 const NODES = {
@@ -244,14 +250,19 @@ const NODES = {
   magnet: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   bluemag:[DMG, SPD, ['grav', 'Gravity Pull', 5]],
   graymag:[DMG, SPD, ['grav', 'Gravity Pull', 5]],
+  pinkmag:[DMG, SPD, ['grav', 'Gravity Pull', 5]],
   buddy:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   island: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   shooter:[DMG, SPD, ['fire', 'Fire Rate', 5]],
   cloud:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   builder:[DMG, SPD, ['build', 'Build Speed', 5]],
-  all:    [],
 };
 // Most upgrades cost 1 purple; the last levels cost more, never more than 5.
+// A ball's unlock price is in purple unless it says ucur: 'blue'
+const ucur = k => DEF[k].ucur || 'purple';
+const haveCur = c => c === 'blue' ? bluePicks : purple;
+const spendCur = (c, n) => { if (c === 'blue') bluePicks -= n; else purple -= n; };
+const curDia = k => ucur(k) === 'blue' ? 'b' : 'p';
 const nodeCost = (max, lv) => max === 2 ? [1, 2][lv] : max === 3 ? [1, 2, 3][lv] : [1, 1, 1, 2, 3][lv];
 
 // ---------------------------------------------------------------- state
@@ -273,8 +284,7 @@ let fx = [], bolts = [], texts = [];
 let orb = { ang: 0, r: 1, cx: 0.5, cy: 0.5, dirty: true };
 
 let worldVer = 0;
-let bluePicks = 0;                 // blue-pixel rewards waiting to be picked
-let allGroups = new Map();
+let bluePicks = 0;                 // blue currency, from blue pixels
 const OFF = 2 ** 20, M = 2 ** 21;  // cells from -1,048,576 to +1,048,575 each way: effectively endless
 const key = (x, y) => (x + OFF) * M + (y + OFF);
 const kx = k => Math.floor(k / M) - OFF;
@@ -326,7 +336,7 @@ const cellDist = k => distMap.get(k) ?? REVEAL + 1;
 function resetMeta() {
   bluePicks = 0;
   money = 10; purple = 0; balls = []; poison = new Map(); everLaunched = false; selected = 'orange';
-  for (const k of ORDER) { inv[k] = 0; bought[k] = 0; unlocked[k] = k === 'orange' || k === 'all'; up[k] = {}; for (const n of NODES[k]) up[k][n[0]] = 0; }
+  for (const k of ORDER) { inv[k] = 0; bought[k] = 0; unlocked[k] = k === 'orange'; up[k] = {}; for (const n of NODES[k]) up[k][n[0]] = 0; }
 }
 
 function genWorld() {
@@ -388,10 +398,10 @@ function damage(i, amt, mult = 1) {
     texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.2, s: '+1', t: 1.2, c: '#d28bff' });
     breakCell(i); dirtyUI = true; return true;
   }
-  if (t === BGEM) {                                   // blue pixel: you pick a ball and get 10 of it
+  if (t === BGEM) {                                   // blue pixel: +1 blue currency
     bluePicks++;
-    texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.2, s: 'Pick a ball!', t: 2, c: '#7cc8ff' });
-    breakCell(i); dirtyUI = true; showPicker(); return true;
+    texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.2, s: '+1', t: 1.5, c: '#7cc8ff' });
+    breakCell(i); dirtyUI = true; return true;
   }
   const h = cellHp(i);
   money += Math.min(amt, h) * mult;
@@ -559,6 +569,7 @@ function findIslands() {
 }
 
 const isGray = k => cellType(k) === BLOCK && cellHp(k) > 50;
+const isPink = k => cellType(k) === BLOCK && tierOf(cellHp(k)).hp === 50;
 
 function nearestGem(x, y, want = GEM, maxR = 80) {
   // search outward ring by ring (up to maxR blocks away)
@@ -638,6 +649,10 @@ function updateBall(b, dt) {
       if (b.gem == null || T >= (b.gemT || 0) || cellType(b.gem) !== GEM) { b.gem = nearestGem(b.x, b.y); b.gemT = T + 0.5; }
       if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
     }
+    if (b.k === 'pinkmag') {
+      if (b.gem == null || T >= (b.gemT || 0) || !isPink(b.gem)) { b.gem = nearestGem(b.x, b.y, isPink, 60); b.gemT = T + 0.5; }
+      if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
+    }
     if (b.k === 'graymag') {
       // a gray block: still a block with more than 50 hits left (it stays gray until it drops to pink)
       if (b.gem == null || T >= (b.gemT || 0) || !isGray(b.gem)) { b.gem = nearestGem(b.x, b.y, isGray, 60); b.gemT = T + 0.5; }
@@ -676,24 +691,6 @@ function updateBall(b, dt) {
     let vx = b.vx * b.cs + dx / l * g * dt, vy = b.vy * b.cs + dy / l * g * dt;
     const sp = Math.hypot(vx, vy) || 1;
     b.vx = vx / sp; b.vy = vy / sp; b.cs = Math.min(s.max, Math.max(s.min, sp));
-  }
-  if (b.allGrp != null && b.k !== 'blue') {
-    const g = allGroups.get(b.allGrp);
-    if (g && g.length > 1) {
-      let ax = 0, ay = 0;
-      for (const o of g) {
-        if (o === b) continue;
-        const ex = o.x - b.x, ey = o.y - b.y, d = Math.hypot(ex, ey);
-        if (d > 1.5) { ax += ex / d; ay += ey / d; }
-      }
-      const l = Math.hypot(ax, ay);
-      if (l > 0) {
-        const sp = ballSpeed(b) || 1;
-        let vx = b.vx * sp + ax / l * ALL_PULL * dt, vy = b.vy * sp + ay / l * ALL_PULL * dt;
-        const n = Math.hypot(vx, vy) || 1;
-        b.vx = vx / n; b.vy = vy / n;               // turns the ball; its own speed stays the same
-      }
-    }
   }
   if (b.k === 'shooter' && !b.shot) {
     // only the ring of four cannons turns (the ball itself doesn't), lining one cannon up with the nearest block in front
@@ -811,8 +808,6 @@ function update(dt) {
     if (T > p.until || cellType(j) !== BLOCK) { poison.delete(j); continue; }
     if (T >= p.next) { p.next += 1; p.flash = T; damage(j, p.dps); }   // one slow tick a second
   }
-  allGroups = new Map();
-  for (const b of balls) if (b.allGrp != null && !b.dead) { const g = allGroups.get(b.allGrp); if (g) g.push(b); else allGroups.set(b.allGrp, [b]); }
   for (const b of balls) updateBall(b, dt);
   keepCloudsTight(dt);
   if (balls.some(b => b.dead)) { balls = balls.filter(b => !b.dead); miniCount = 0; for (const b of balls) if (b.oneUse) miniCount++; }
@@ -996,7 +991,7 @@ function drawSym(k, x, y, scale) {
     ctx.fillStyle = '#0b3b2a'; ctx.beginPath();
     for (let q = 0; q < 8; q++) { const a = q * Math.PI / 4 - Math.PI / 2, rr = q % 2 ? r * 0.2 : r * 0.62; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
     ctx.closePath(); ctx.fill();
-  } else if (k === 'magnet' || k === 'bluemag' || k === 'graymag') {   // diamond
+  } else if (k === 'magnet' || k === 'bluemag' || k === 'graymag' || k === 'pinkmag') {   // diamond
     ctx.fillStyle = '#fff'; ctx.rotate(Math.PI / 4);
     ctx.fillRect(-r * 0.32, -r * 0.32, r * 0.64, r * 0.64);
   } else if (k === 'chain') {                                  // two linked chain rings
@@ -1029,7 +1024,7 @@ function drawAim() {
   ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + a.dx * len, sy + a.dy * len); ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = '#fff'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText(selected === 'all' ? Math.round(a.f * 100) + '% power' : fmt1(a.speed) + ' b/s', sx + a.dx * (len + 18), sy + a.dy * (len + 18) + 4);
+  ctx.fillText(fmt1(a.speed) + ' b/s', sx + a.dx * (len + 18), sy + a.dy * (len + 18) + 4);
 }
 
 // ---------------------------------------------------------------- input
@@ -1101,14 +1096,7 @@ function pointerEnd(e, cancel) {
     const a = cancel ? null : aimInfo();
     if (a && inv[selected] > 0) {
       inv[selected]--;
-      if (selected === 'all') {                         // one of every ball, all in one pulling group
-        const allGrp = Math.random(), base = Math.atan2(a.dy, a.dx), n = BALL_KINDS.length;
-        BALL_KINDS.forEach((k, q) => {
-          let ang = base + (q - (n - 1) / 2) * (1.6 / n);
-          if (k === 'blue') ang = Math.round(ang / (Math.PI / 2)) * (Math.PI / 2);   // Directional stays straight
-          spawnBall(k, aim.ox, aim.oy, Math.cos(ang), Math.sin(ang), a.f, { allGrp });
-        });
-      } else if (selected === 'cloud') {                // one Cloud Ball = a cloud of 10
+      if (selected === 'cloud') {                // one Cloud Ball = a cloud of 10
         const grp = Math.random(), base = Math.atan2(a.dy, a.dx);
         for (let q = 0; q < 10; q++) {
           const ang = base + (q - 4.5) * 0.12;
@@ -1154,7 +1142,7 @@ function buildBar() {
       <div class="name">${d.short}</div>
       <div class="hand">${unlocked[k] || inv[k] ? `in hand: <b>${inv[k]}</b>` : 'locked'}</div>
       ${unlocked[k] ? `<button class="buy" data-k="${k}"><span class="dia s${d.purpleCost ? ' p' : ''}"></span>${d.purpleCost ? d.purpleCost : fmt(price(k))}</button>`
-                    : `<button class="buy" disabled><span class="dia p s"></span>${d.unlock}</button>`}`;
+                    : `<button class="buy" disabled><span class="dia ${curDia(k)} s"></span>${d.unlock}</button>`}`;
     c.addEventListener('click', ev => {
       if (!unlocked[k] && !inv[k]) { tsel = { k, key: null }; tv.init = false; openTree(); return; }
       if (ev.target.closest('.buy')) buy(k);
@@ -1167,11 +1155,11 @@ function buildBar() {
 // Blue-pixel picker
 function showPicker() {
   if (!bluePicks) { $('picker').hidden = true; return; }
-  $('pickMore').textContent = bluePicks > 1 ? `${bluePicks} picks waiting` : '';
+  $('pickMore').textContent = `You have ${bluePicks} blue`;
   const g = $('pickGrid');
   if (!g.childElementCount) {
     const head = t => { const h = document.createElement('div'); h.className = 'phead'; h.textContent = t; g.appendChild(h); };
-    const swarms = ORDER.filter(k => DEF[k].cat === 'swarm' && k !== 'all');   // the All swarm isn't on offer
+    const swarms = ORDER.filter(k => DEF[k].cat === 'swarm');
     for (const k of [...BALL_KINDS, ...swarms]) {
       if (k === BALL_KINDS[0]) head('Balls');
       if (k === swarms[0]) head('Swarms');
@@ -1181,7 +1169,7 @@ function showPicker() {
         if (!bluePicks) return;
         bluePicks--; inv[k] += 10; selected = k; dirtyUI = true;
         texts.push({ x: cam.x, y: cam.y, s: `+10 ${d.short}!`, t: 2, c: '#7cc8ff' });
-        save(); showPicker();
+        save(); $('picker').hidden = true;
       });
       g.appendChild(b);
     }
@@ -1190,7 +1178,7 @@ function showPicker() {
 }
 
 function buy(k) {
-  if (DEF[k].purpleCost) {                            // swarms like All are bought with purple only
+  if (DEF[k].purpleCost) {                            // a ball marked purpleCost is bought with purple instead of money
     if (purple < DEF[k].purpleCost) return;
     purple -= DEF[k].purpleCost; inv[k]++; dirtyUI = true; return;
   }
@@ -1199,8 +1187,7 @@ function buy(k) {
   money -= p; bought[k]++; inv[k]++; dirtyUI = true;
 }
 const canAfford = k => DEF[k].purpleCost ? purple >= DEF[k].purpleCost : money >= price(k);
-// All swarm shows every ball's colour
-const ballBg = k => k === 'all' ? `conic-gradient(${BALL_KINDS.map(o => DEF[o].color).join(',')},${DEF.orange.color})` : DEF[k].color;
+const ballBg = k => DEF[k].color;
 
 function refreshAffordable() {
   for (const b of document.querySelectorAll('.buy[data-k]')) {
@@ -1221,7 +1208,7 @@ function flashHint() { setHint(); const h = $('hint'); h.style.display = ''; h.a
 
 // Skill tree: the Piercing Ball is the root at the bottom; each ball grows the next one above it,
 // and its upgrades branch off to the sides.
-const TREE = [...ORDER.filter(k => DEF[k].cat === 'swarm').reverse(), 'graymag', 'bluemag', 'magnet', ...BALL_KINDS.filter(k => k !== 'magnet' && k !== 'bluemag' && k !== 'graymag')];   // bottom to top: swarms, Magnet (own root), then the ball trunk
+const TREE = [...ORDER.filter(k => DEF[k].cat === 'swarm').reverse(), 'pinkmag', 'graymag', 'bluemag', 'magnet', ...BALL_KINDS.filter(k => !['magnet', 'bluemag', 'graymag', 'pinkmag'].includes(k))];   // bottom to top: swarms, Magnet (own root), then the ball trunk
 const TW = 640, ROW = 165, TTOP = 80, TH = TTOP + (TREE.length - 1) * ROW + 100;
 const BRANCH = [[-120, -10], [120, -10], [-215, -62], [215, -62]];
 const ballPos = n => ({ x: TW / 2, y: TTOP + (TREE.length - 1 - n) * ROW });
@@ -1266,7 +1253,7 @@ function buildTree() {
       const q = ballPos(TREE.indexOf(d.req)), on = unlocked[k];
       lines += `<line x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}" stroke="${on ? '#a64dff' : '#2e2140'}" stroke-width="${on ? 8 : 6}" stroke-linecap="round"/>`;
     }
-    const can = !unlocked[k] && reqOk(k) && purple >= d.unlock;
+    const can = !unlocked[k] && reqOk(k) && haveCur(ucur(k)) >= d.unlock;
     nodes += `<div class="tn ball${unlocked[k] ? '' : ' lock'}${can ? ' can' : ''}${tsel.k === k && !tsel.key ? ' sel' : ''}" data-k="${k}" style="left:${p.x}px;top:${p.y}px">
       <div class="o" style="${unlocked[k] ? `border-color:${d.color};box-shadow:0 0 18px ${d.color}66` : ''}"><i style="background:${ballBg(k)}">${symHtml(k)}</i></div>
       <div class="nm">${d.short}${d.cat === 'swarm' ? ' · swarm' : ''}</div></div>`;
@@ -1294,11 +1281,11 @@ function renderInfo() {
   let title, desc, btn;
   if (!key) {
     title = d.name;
-    desc = k === 'all' ? d.desc : `${fmt1(d.dmg)} dmg · ${d.min === d.max ? d.min : d.min + '–' + d.max} b/s. ${d.desc}`;
+    desc = `${fmt1(d.dmg)} dmg · ${d.min === d.max ? d.min : d.min + '–' + d.max} b/s. ${d.desc}`;
     if (d.purpleCost) btn = `<button disabled>Buy in the shop: <span class="dia p s"></span>${d.purpleCost}</button>`;
     else if (unlocked[k]) btn = `<button disabled>Unlocked</button>`;
     else if (!reqOk(k)) btn = `<button disabled>Needs ${DEF[d.req].short}</button>`;
-    else btn = `<button id="infoBuy" ${purple >= d.unlock ? '' : 'disabled'}>Unlock <span class="dia p s"></span>${d.unlock}</button>`;
+    else btn = `<button id="infoBuy" ${haveCur(ucur(k)) >= d.unlock ? '' : 'disabled'}>Unlock <span class="dia ${curDia(k)} s"></span>${d.unlock}</button>`;
   } else {
     const node = NODES[k].find(nd => nd[0] === key), st = upState(k, key, node[2]);
     title = `${d.short}: ${node[1]} (${st.lv}/${st.max})`;
@@ -1314,8 +1301,8 @@ function renderInfo() {
 function buyNode() {
   const { k, key } = tsel, d = DEF[k];
   if (!key) {
-    if (unlocked[k] || !reqOk(k) || purple < d.unlock) return;
-    purple -= d.unlock; unlocked[k] = true; inv[k]++; selected = k;
+    if (unlocked[k] || !reqOk(k) || haveCur(ucur(k)) < d.unlock) return;
+    spendCur(ucur(k), d.unlock); unlocked[k] = true; inv[k]++; selected = k;
   } else {
     const node = NODES[k].find(nd => nd[0] === key), lv = up[k][key];
     if (!unlocked[k] || lv >= node[2]) return;
@@ -1404,19 +1391,20 @@ function save() {
     for (const [k, m] of mod) cells.push(kx(k), ky(k), m[0], Math.round(m[1] * 1000) / 1000);
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       seed, cells, money, purple, inv, bought, unlocked, up, selected, everLaunched, bluePicks,
-      balls: balls.filter(b => !b.oneUse).map(b => ({ k: b.k, x: b.x, y: b.y, vx: b.vx, vy: b.vy, f: b.f, cs: b.cs, grp: b.grp, allGrp: b.allGrp })),
+      balls: balls.filter(b => !b.oneUse).map(b => ({ k: b.k, x: b.x, y: b.y, vx: b.vx, vy: b.vy, f: b.f, cs: b.cs, grp: b.grp })),
     }));
   } catch (e) {}
 }
 function loadMeta(s) {
   bluePicks = s.bluePicks | 0;
-  money = s.money; purple = s.purple; selected = DEF[s.selected] ? s.selected : 'orange'; everLaunched = !!s.everLaunched;
+  const allRefund = (s.inv?.all || 0) * 10;            // the All swarm was removed: its price back in purple
+  money = s.money; purple = s.purple + allRefund; selected = DEF[s.selected] ? s.selected : 'orange'; everLaunched = !!s.everLaunched;
   if (s.unlocked?.nuke) {                           // the Nuke Ball was removed: give back the purple spent on it (once: new saves drop it)
     purple += 5;
     for (const key of ['dmg', 'spd']) for (let lv = 0; lv < (s.up?.nuke?.[key] || 0); lv++) purple += nodeCost(5, lv);
   }
   for (const k of ORDER) {
-    inv[k] = s.inv?.[k] || 0; bought[k] = s.bought?.[k] || 0; unlocked[k] = k === 'orange' || k === 'all' || !!s.unlocked?.[k];
+    inv[k] = s.inv?.[k] || 0; bought[k] = s.bought?.[k] || 0; unlocked[k] = k === 'orange' || !!s.unlocked?.[k];
     for (const n of NODES[k]) {
       const had = s.up?.[k]?.[n[0]] || 0;
       up[k][n[0]] = Math.min(had, n[2]);
@@ -1454,7 +1442,8 @@ if (!load()) genWorld();
 rebuildDerived();
 resize();
 
-showPicker();
+$('blueBtn').addEventListener('click', showPicker);
+$('pickClose').addEventListener('click', () => { $('picker').hidden = true; });
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -1466,6 +1455,7 @@ function frame(now) {
     uiT = 0;
     $('money').textContent = fmt(money);
     $('purple').textContent = purple;
+    $('blueN').textContent = bluePicks; $('blueBtn').disabled = !bluePicks;
     const live = balls.filter(b => !b.oneUse).length;
     $('ballCount').textContent = live ? live + (live === 1 ? ' ball' : ' balls') : '';
     refreshAffordable(); setHint();
