@@ -116,6 +116,7 @@
   .pgrid button { background: #0c1f38; border: 1px solid #1f4a7a; border-radius: 10px; color: #fff; font: inherit; font-size: 11px; font-weight: 700;
     padding: 8px 2px; display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; }
   .pgrid button:hover, .pgrid button:focus-visible { border-color: #4fb3ff; outline: none; }
+  .phead { grid-column: 1 / -1; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #7fa6cc; margin-top: 4px; }
   .pgrid .ball { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
   @media (prefers-reduced-motion: reduce) { .tn.can .o { animation: none; } }
 </style>
@@ -136,7 +137,7 @@
 
 <div id="picker" hidden>
   <div class="pbox">
-    <div class="ptitle"><span class="bdia"></span>Blue pixel! Pick a ball: you get 10 of it.</div>
+    <div class="ptitle"><span class="bdia"></span>Blue pixel! Pick a ball or swarm: you get 10 of it.</div>
     <div class="pmore" id="pickMore"></div>
     <div class="pgrid" id="pickGrid"></div>
   </div>
@@ -208,6 +209,8 @@ const DEF = {
             desc: 'Pulled hard toward the nearest glowing purple pixel, even ones hidden in the dark, so it digs its way to them.' },
   bluemag:{ name: 'Blue Magnet Ball', short: 'Blue Mag',    color: '#4fb3ff', dmg: 3, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
             desc: 'Pulled hard toward the nearest glowing blue pixel (up to 150 blocks away), digging its way there. With none in range it circles like a Gravity Ball.' },
+  graymag:{ name: 'Gray Magnet Ball', short: 'Gray Mag',    color: '#9aa0aa', dmg: 5, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
+            desc: 'Pulled hard toward the nearest gray block (the toughest, 100-hit blocks), up to 60 blocks away, and hammers it. With none in range it circles like a Gravity Ball.' },
   buddy:  { name: 'Buddy Ball',       short: 'Buddy',       color: '#7dffc4', dmg: 2, min: 2, max: 8, unlock: 5, req: 'chain', cost: 400000, gmul: 4, sym: '✦',
             desc: 'Attracted to every other ball at once, pulled hardest by the closest ones, so it chases the crowd.' },
   island: { name: 'Island Ball',      short: 'Island',      color: '#e8c872', dmg: 4, min: 3, max: 9, unlock: 5, req: 'buddy', cost: 500000, gmul: 5, sym: '▲',
@@ -240,6 +243,7 @@ const NODES = {
   chain:  [DMG, SPD, ['depth', 'Split Times', 2]],   // 2 → 4 split times
   magnet: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   bluemag:[DMG, SPD, ['grav', 'Gravity Pull', 5]],
+  graymag:[DMG, SPD, ['grav', 'Gravity Pull', 5]],
   buddy:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   island: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   shooter:[DMG, SPD, ['fire', 'Fire Rate', 5]],
@@ -554,6 +558,8 @@ function findIslands() {
   return islandCache.list;
 }
 
+const isGray = k => cellType(k) === BLOCK && cellHp(k) > 50;
+
 function nearestGem(x, y, want = GEM, maxR = 80) {
   // search outward ring by ring (up to maxR blocks away)
   const cx = Math.floor(x), cy = Math.floor(y);
@@ -563,7 +569,7 @@ function nearestGem(x, y, want = GEM, maxR = 80) {
       const edge = Math.abs(dx) === r;
       for (let dy = -r; dy <= r; dy += edge ? 1 : 2 * r || 1) {
         const k = key(cx + dx, cy + dy);
-        if (cellType(k) !== want) continue;
+        if (typeof want === 'function' ? !want(k) : cellType(k) !== want) continue;
         const d = (cx + dx + 0.5 - x) ** 2 + (cy + dy + 0.5 - y) ** 2;
         if (d < bd) { bd = d; best = k; }
       }
@@ -630,6 +636,11 @@ function updateBall(b, dt) {
     if (b.k === 'magnet') {
       // re-check the nearest purple pixel twice a second; with none nearby it circles like a Gravity Ball
       if (b.gem == null || T >= (b.gemT || 0) || cellType(b.gem) !== GEM) { b.gem = nearestGem(b.x, b.y); b.gemT = T + 0.5; }
+      if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
+    }
+    if (b.k === 'graymag') {
+      // a gray block: still a block with more than 50 hits left (it stays gray until it drops to pink)
+      if (b.gem == null || T >= (b.gemT || 0) || !isGray(b.gem)) { b.gem = nearestGem(b.x, b.y, isGray, 60); b.gemT = T + 0.5; }
       if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
     }
     if (b.k === 'bluemag') {
@@ -985,7 +996,7 @@ function drawSym(k, x, y, scale) {
     ctx.fillStyle = '#0b3b2a'; ctx.beginPath();
     for (let q = 0; q < 8; q++) { const a = q * Math.PI / 4 - Math.PI / 2, rr = q % 2 ? r * 0.2 : r * 0.62; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
     ctx.closePath(); ctx.fill();
-  } else if (k === 'magnet' || k === 'bluemag') {              // pixel diamond
+  } else if (k === 'magnet' || k === 'bluemag' || k === 'graymag') {   // diamond
     ctx.fillStyle = '#fff'; ctx.rotate(Math.PI / 4);
     ctx.fillRect(-r * 0.32, -r * 0.32, r * 0.64, r * 0.64);
   } else if (k === 'chain') {                                  // two linked chain rings
@@ -1159,7 +1170,11 @@ function showPicker() {
   $('pickMore').textContent = bluePicks > 1 ? `${bluePicks} picks waiting` : '';
   const g = $('pickGrid');
   if (!g.childElementCount) {
-    for (const k of BALL_KINDS) {
+    const head = t => { const h = document.createElement('div'); h.className = 'phead'; h.textContent = t; g.appendChild(h); };
+    const swarms = ORDER.filter(k => DEF[k].cat === 'swarm' && k !== 'all');   // the All swarm isn't on offer
+    for (const k of [...BALL_KINDS, ...swarms]) {
+      if (k === BALL_KINDS[0]) head('Balls');
+      if (k === swarms[0]) head('Swarms');
       const b = document.createElement('button'), d = DEF[k];
       b.innerHTML = `<div class="ball" style="background:${ballBg(k)};box-shadow:0 0 8px ${d.color}">${symHtml(k)}</div>${d.short}`;
       b.addEventListener('click', () => {
@@ -1206,7 +1221,7 @@ function flashHint() { setHint(); const h = $('hint'); h.style.display = ''; h.a
 
 // Skill tree: the Piercing Ball is the root at the bottom; each ball grows the next one above it,
 // and its upgrades branch off to the sides.
-const TREE = [...ORDER.filter(k => DEF[k].cat === 'swarm').reverse(), 'bluemag', 'magnet', ...BALL_KINDS.filter(k => k !== 'magnet' && k !== 'bluemag')];   // bottom to top: swarms, Magnet (own root), then the ball trunk
+const TREE = [...ORDER.filter(k => DEF[k].cat === 'swarm').reverse(), 'graymag', 'bluemag', 'magnet', ...BALL_KINDS.filter(k => k !== 'magnet' && k !== 'bluemag' && k !== 'graymag')];   // bottom to top: swarms, Magnet (own root), then the ball trunk
 const TW = 640, ROW = 165, TTOP = 80, TH = TTOP + (TREE.length - 1) * ROW + 100;
 const BRANCH = [[-120, -10], [120, -10], [-215, -62], [215, -62]];
 const ballPos = n => ({ x: TW / 2, y: TTOP + (TREE.length - 1 - n) * ROW });
@@ -1460,7 +1475,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // test hook
-window.__pb = { get state() { return { islands: findIslands().map(i => i.cells.length), money, purple, balls: balls.length, frontier: frontier.size, freeCount, freeBounds, stored: mod.size, list: balls.map(b => [b.k, b.x, b.y]) }; },
+window.__pb = { get state() { return { islands: findIslands().map(i => i.cells.length), money, purple, balls: balls.length, frontier: frontier.size, freeCount, freeBounds, stored: mod.size, list: balls.map(b => [b.k, b.x, b.y, b.gem >= 0 ? [kx(b.gem), ky(b.gem), cellType(b.gem), cellHp(b.gem)] : null]) }; },
   give(m, p) { money += m; purple += p; dirtyUI = true; } };
 })();
 </script>
