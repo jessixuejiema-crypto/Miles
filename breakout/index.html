@@ -187,6 +187,8 @@ const DEF = {
             desc: 'Once every 30–40 seconds a hit makes 2 smaller, lighter one-use copies, and those copies split again on every hit. Splits 2 times; upgrade up to 4.' },
   magnet: { name: 'Magnet Ball',      short: 'Magnet',      color: '#e04cff', dmg: 3, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
             desc: 'Pulled hard toward the nearest glowing purple pixel, even ones hidden in the dark, so it digs its way to them.' },
+  bluemag:{ name: 'Blue Magnet Ball', short: 'Blue Mag',    color: '#4fb3ff', dmg: 3, min: 4, max: 10, unlock: 10, req: null, cost: 300000, gmul: 6, sym: '◆',
+            desc: 'Pulled hard toward the nearest glowing blue pixel (up to 150 blocks away), digging its way there. With none in range it circles like a Gravity Ball.' },
   buddy:  { name: 'Buddy Ball',       short: 'Buddy',       color: '#7dffc4', dmg: 2, min: 2, max: 8, unlock: 5, req: 'chain', cost: 400000, gmul: 4, sym: '✦',
             desc: 'Attracted to every other ball at once, pulled hardest by the closest ones, so it chases the crowd.' },
   island: { name: 'Island Ball',      short: 'Island',      color: '#e8c872', dmg: 4, min: 3, max: 9, unlock: 5, req: 'buddy', cost: 500000, gmul: 5, sym: '▲',
@@ -218,6 +220,7 @@ const NODES = {
   pink:   [DMG, SPD],
   chain:  [DMG, SPD, ['depth', 'Split Times', 2]],   // 2 → 4 split times
   magnet: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
+  bluemag:[DMG, SPD, ['grav', 'Gravity Pull', 5]],
   buddy:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   island: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   shooter:[DMG, SPD, ['fire', 'Fire Rate', 5]],
@@ -531,16 +534,16 @@ function findIslands() {
   return islandCache.list;
 }
 
-function nearestGem(x, y) {
-  // search outward ring by ring (up to 80 blocks away)
+function nearestGem(x, y, want = GEM, maxR = 80) {
+  // search outward ring by ring (up to maxR blocks away)
   const cx = Math.floor(x), cy = Math.floor(y);
   let best = -1, bd = Infinity;
-  for (let r = 0; r <= 80; r++) {
+  for (let r = 0; r <= maxR; r++) {
     for (let dx = -r; dx <= r; dx++) {
       const edge = Math.abs(dx) === r;
       for (let dy = -r; dy <= r; dy += edge ? 1 : 2 * r || 1) {
         const k = key(cx + dx, cy + dy);
-        if (cellType(k) !== GEM) continue;
+        if (cellType(k) !== want) continue;
         const d = (cx + dx + 0.5 - x) ** 2 + (cy + dy + 0.5 - y) ** 2;
         if (d < bd) { bd = d; best = k; }
       }
@@ -607,6 +610,11 @@ function updateBall(b, dt) {
     if (b.k === 'magnet') {
       // re-check the nearest purple pixel twice a second; with none nearby it circles like a Gravity Ball
       if (b.gem == null || T >= (b.gemT || 0) || cellType(b.gem) !== GEM) { b.gem = nearestGem(b.x, b.y); b.gemT = T + 0.5; }
+      if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
+    }
+    if (b.k === 'bluemag') {
+      // blue pixels are rare, so look much further (150 blocks), once a second
+      if (b.gem == null || T >= (b.gemT || 0) || cellType(b.gem) !== BGEM) { b.gem = nearestGem(b.x, b.y, BGEM, 150); b.gemT = T + 1; }
       if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
     }
     if (b.k === 'island') {
@@ -957,7 +965,7 @@ function drawSym(k, x, y, scale) {
     ctx.fillStyle = '#0b3b2a'; ctx.beginPath();
     for (let q = 0; q < 8; q++) { const a = q * Math.PI / 4 - Math.PI / 2, rr = q % 2 ? r * 0.2 : r * 0.62; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
     ctx.closePath(); ctx.fill();
-  } else if (k === 'magnet') {                                 // purple-pixel diamond
+  } else if (k === 'magnet' || k === 'bluemag') {              // pixel diamond
     ctx.fillStyle = '#fff'; ctx.rotate(Math.PI / 4);
     ctx.fillRect(-r * 0.32, -r * 0.32, r * 0.64, r * 0.64);
   } else if (k === 'chain') {                                  // two linked chain rings
@@ -1091,7 +1099,7 @@ document.getElementById('centerBtn').addEventListener('click', () => { cam.manua
 // ---------------------------------------------------------------- UI
 const $ = id => document.getElementById(id);
 let dirtyUI = true;
-const price = k => Math.round(DEF[k].cost * Math.pow(1.5, bought[k]));
+const price = k => Math.round(DEF[k].cost * Math.pow(1.1, bought[k]));   // each extra copy costs only 10% more
 const fmt = v => {
   v = Math.floor(v);
   if (v < 10000) return String(v);
@@ -1157,7 +1165,7 @@ function flashHint() { setHint(); const h = $('hint'); h.style.display = ''; h.a
 
 // Skill tree: the Piercing Ball is the root at the bottom; each ball grows the next one above it,
 // and its upgrades branch off to the sides.
-const TREE = [...ORDER.filter(k => DEF[k].cat === 'swarm').reverse(), 'magnet', ...BALL_KINDS.filter(k => k !== 'magnet')];   // bottom to top: swarms, Magnet (own root), then the ball trunk
+const TREE = [...ORDER.filter(k => DEF[k].cat === 'swarm').reverse(), 'bluemag', 'magnet', ...BALL_KINDS.filter(k => k !== 'magnet' && k !== 'bluemag')];   // bottom to top: swarms, Magnet (own root), then the ball trunk
 const TW = 640, ROW = 165, TTOP = 80, TH = TTOP + (TREE.length - 1) * ROW + 100;
 const BRANCH = [[-120, -10], [120, -10], [-215, -62], [215, -62]];
 const ballPos = n => ({ x: TW / 2, y: TTOP + (TREE.length - 1 - n) * ROW });
