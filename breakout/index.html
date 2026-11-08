@@ -156,7 +156,7 @@ const TIERS = [
 const WEIGHTS = [30, 22, 18, 12, 8, 5, 2.5, 1.2, 0.6, 0.2];
 const WSUM = WEIGHTS.reduce((a, b) => a + b, 0);
 
-const FREE = 0, BLOCK = 1, GEM = 2;  // GEM = glowing purple pixel (gives purple currency)
+const FREE = 0, BLOCK = 1, GEM = 2, BGEM = 3;  // GEM = glowing purple pixel (purple currency), BGEM = glowing blue pixel (10 balls)
 const REVEAL = 3;                    // blocks within 3 steps of open space are visible
 const BR = 0.22;                     // ball radius in blocks
 const FREE_COLOR = '#0f2018';
@@ -260,6 +260,8 @@ function rnd(x, y, salt) {          // deterministic 0..1 for a cell
 }
 function baseType(x, y) {
   if (Math.abs(x) <= 1 && Math.abs(y) <= 1) return FREE;
+  // glowing blue pixel: 1 in 10,000
+  if (rnd(x, y, 4) < 1 / 10000) return BGEM;
   // glowing purple pixel: 1 in 5 around the start (within 10 blocks), 1 in 1000 everywhere else
   if (rnd(x, y, 1) < (x * x + y * y <= 100 ? 1 / 5 : 1 / 1000)) return GEM;
   return BLOCK;
@@ -290,7 +292,7 @@ function cellType(k) { const m = mod.get(k); return m ? m[0] : baseType(kx(k), k
 function cellHp(k) {
   const m = mod.get(k); if (m) return m[1];
   const x = kx(k), y = ky(k), t = baseType(x, y);
-  return t === FREE ? 0 : t === GEM ? 1 : baseHp(x, y);
+  return t === FREE ? 0 : t === GEM || t === BGEM ? 1 : baseHp(x, y);
 }
 const cellDist = k => distMap.get(k) ?? REVEAL + 1;
 
@@ -334,7 +336,7 @@ function addFreeStats(x, y) {
 
 function breakCell(i) {
   const x = kx(i), y = ky(i);
-  const col = cellType(i) === GEM ? '#c46bff' : tierOf(Math.max(cellHp(i), 0.01)).c;
+  const col = cellType(i) === GEM ? '#c46bff' : cellType(i) === BGEM ? '#4fb3ff' : tierOf(Math.max(cellHp(i), 0.01)).c;
   mod.set(i, [FREE, 0]); distMap.set(i, 0); worldVer++;
   frontier.delete(i); poison.delete(i);
   addFreeStats(x, y);
@@ -356,6 +358,12 @@ function damage(i, amt, mult = 1) {
   if (t === GEM) {
     purple++;
     texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.2, s: '+1', t: 1.2, c: '#d28bff' });
+    breakCell(i); dirtyUI = true; return true;
+  }
+  if (t === BGEM) {                                   // blue pixel: 10 of a random ball, straight into your hand
+    const k = BALL_KINDS[Math.floor(Math.random() * BALL_KINDS.length)];
+    inv[k] += 10;
+    texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.2, s: `+10 ${DEF[k].short}!`, t: 2.5, c: '#7cc8ff' });
     breakCell(i); dirtyUI = true; return true;
   }
   const h = cellHp(i);
@@ -830,10 +838,10 @@ function draw() {
   const drawCell = (x, y, i, d, ty) => {
     const [sx, sy] = toScreen(x, y);
     if (ty === FREE) { ctx.fillStyle = FREE_COLOR; ctx.fillRect(sx, sy, s + 0.6, s + 0.6); return; }
-    if (ty === GEM) {
-      const f = d <= REVEAL ? DIST_SHADE[d] : 0.22;
-      ctx.fillStyle = shade('#b45cff', Math.min(1, f * (0.75 + 0.25 * pulse)));
-      if (s > 2) { ctx.shadowColor = '#a640ff'; ctx.shadowBlur = s * 0.6 * pulse; }
+    if (ty === GEM || ty === BGEM) {
+      const f = d <= REVEAL ? DIST_SHADE[d] : 0.22, blue = ty === BGEM;
+      ctx.fillStyle = shade(blue ? '#4fb3ff' : '#b45cff', Math.min(1, f * (0.75 + 0.25 * pulse)));
+      if (s > 2) { ctx.shadowColor = blue ? '#2b8cff' : '#a640ff'; ctx.shadowBlur = s * (blue ? 0.9 : 0.6) * pulse; }
       ctx.fillRect(sx, sy, Math.max(s + 0.6, 1.5), Math.max(s + 0.6, 1.5));
       ctx.shadowBlur = 0;
       return;
@@ -1102,14 +1110,14 @@ function buildBar() {
     if (k === order.find(o => DEF[o].cat === 'swarm')) {
       const sep = document.createElement('div'); sep.className = 'sep'; sep.textContent = 'Swarms'; bar.appendChild(sep);
     }
-    c.className = 'card' + (k === selected ? ' sel' : '') + (unlocked[k] ? '' : ' locked');
+    c.className = 'card' + (k === selected ? ' sel' : '') + (unlocked[k] || inv[k] ? '' : ' locked');
     c.innerHTML = `<div class="ball" style="background:${ballBg(k)};box-shadow:0 0 8px ${d.color}">${symHtml(k)}</div>
       <div class="name">${d.short}</div>
-      <div class="hand">${unlocked[k] ? `in hand: <b>${inv[k]}</b>` : 'locked'}</div>
+      <div class="hand">${unlocked[k] || inv[k] ? `in hand: <b>${inv[k]}</b>` : 'locked'}</div>
       ${unlocked[k] ? `<button class="buy" data-k="${k}"><span class="dia s${d.purpleCost ? ' p' : ''}"></span>${d.purpleCost ? d.purpleCost : fmt(price(k))}</button>`
                     : `<button class="buy" disabled><span class="dia p s"></span>${d.unlock}</button>`}`;
     c.addEventListener('click', ev => {
-      if (!unlocked[k]) { tsel = { k, key: null }; tv.init = false; openTree(); return; }
+      if (!unlocked[k] && !inv[k]) { tsel = { k, key: null }; tv.init = false; openTree(); return; }
       if (ev.target.closest('.buy')) buy(k);
       selected = k; dirtyUI = true;
     });
