@@ -216,9 +216,9 @@ const DEF = {
             desc: 'Pulled hard toward the nearest glowing purple pixel, even ones hidden in the dark, so it digs its way to them.' },
   bluemag:{ name: 'Blue Magnet Ball', short: 'Blue Mag',    color: '#4fb3ff', dmg: 3, min: 4, max: 10, unlock: 3, ucur: 'blue', req: null, cost: 300000, gmul: 6, sym: '◆',
             desc: 'Pulled hard toward the nearest glowing blue pixel (up to 150 blocks away), digging its way there. With none in range it circles like a Gravity Ball.' },
-  graymag:{ name: 'Gray Magnet Ball', short: 'Gray Mag',    color: '#9aa0aa', dmg: 5, min: 4, max: 10, unlock: 3, ucur: 'blue', req: null, cost: 300000, gmul: 6, sym: '◆',
+  graymag:{ name: 'Gray Magnet Ball', short: 'Gray Mag',    color: '#9aa0aa', dmg: 5, min: 4, max: 10, unlock: 3, ucur: 'blue', req: null, cost: 300000, gmul: 6, sym: '◆', seekTier: 100,
             desc: 'Pulled hard toward the nearest gray block (the toughest, 100-hit blocks), up to 60 blocks away, and hammers it. With none in range it circles like a Gravity Ball.' },
-  pinkmag:{ name: 'Pink Magnet Ball', short: 'Pink Mag',    color: '#f07ab8', dmg: 4, min: 4, max: 10, unlock: 3, ucur: 'blue', req: null, cost: 300000, gmul: 6, sym: '◆',
+  pinkmag:{ name: 'Pink Magnet Ball', short: 'Pink Mag',    color: '#f07ab8', dmg: 4, min: 4, max: 10, unlock: 3, ucur: 'blue', req: null, cost: 300000, gmul: 6, sym: '◆', seekTier: 50,
             desc: 'Pulled hard toward the nearest pink block (the 50-hit blocks), up to 60 blocks away, and hammers it. With none in range it circles like a Gravity Ball.' },
   buddy:  { name: 'Buddy Ball',       short: 'Buddy',       color: '#7dffc4', dmg: 2, min: 2, max: 8, unlock: 5, req: 'chain', cost: 400000, gmul: 4, sym: '✦',
             desc: 'Attracted to every other ball at once, pulled hardest by the closest ones, so it chases the crowd.' },
@@ -231,6 +231,13 @@ const DEF = {
   builder:{ name: 'Block Builder',    short: 'Builder',     color: '#b07a45', dmg: 1, min: 2, max: 6, unlock: 5, req: 'shooter', cost: 800000, sym: '■',
             desc: 'Builds a new random block in the open space 10 blocks away from itself every 2 seconds, giving your other balls more to break.' },
 };
+// A magnet ball for every other block colour: pulled to the nearest block of that colour
+for (const [key, tierHp, short] of [['purpmag', 35, 'Purp Blk Mag'], ['rpmag', 20, 'Red-Purp Mag'], ['redmag', 10, 'Red Mag'], ['orangemag', 7, 'Orange Mag'],
+                                    ['yellowmag', 5, 'Yellow Mag'], ['greenmag', 3, 'Green Mag'], ['blueblkmag', 2, 'Blue Blk Mag'], ['whitemag', 1, 'White Mag']]) {
+  const tr = TIERS.find(t => t.hp === tierHp);
+  DEF[key] = { name: `${tr.n} Block Magnet`, short, color: tr.c, dmg: 3, min: 4, max: 10, unlock: 3, ucur: 'blue', req: null, cost: 300000, gmul: 6, sym: '◆', seekTier: tierHp,
+    desc: `Pulled hard toward the nearest ${tr.n.toLowerCase()} block (${tierHp}-hit), up to 60 blocks away, and hits it. With none in range it circles like a Gravity Ball.` };
+}
 const ORDER = Object.keys(DEF);
 const BALL_KINDS = ORDER.filter(k => DEF[k].cat !== 'swarm');   // real balls (swarms are launched as groups of them)
 
@@ -251,6 +258,9 @@ const NODES = {
   bluemag:[DMG, SPD, ['grav', 'Gravity Pull', 5]],
   graymag:[DMG, SPD, ['grav', 'Gravity Pull', 5]],
   pinkmag:[DMG, SPD, ['grav', 'Gravity Pull', 5]],
+  purpmag:[DMG, SPD, ['grav', 'Gravity Pull', 5]], rpmag: [DMG, SPD, ['grav', 'Gravity Pull', 5]], redmag: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
+  orangemag: [DMG, SPD, ['grav', 'Gravity Pull', 5]], yellowmag: [DMG, SPD, ['grav', 'Gravity Pull', 5]], greenmag: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
+  blueblkmag: [DMG, SPD, ['grav', 'Gravity Pull', 5]], whitemag: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   buddy:  [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   island: [DMG, SPD, ['grav', 'Gravity Pull', 5]],
   shooter:[DMG, SPD, ['fire', 'Fire Rate', 5]],
@@ -568,8 +578,9 @@ function findIslands() {
   return islandCache.list;
 }
 
-const isGray = k => cellType(k) === BLOCK && cellHp(k) > 50;
-const isPink = k => cellType(k) === BLOCK && tierOf(cellHp(k)).hp === 50;
+// is this a block whose colour (tier) is tierHp?
+const tierTest = {};
+const isTier = hp => tierTest[hp] || (tierTest[hp] = k => cellType(k) === BLOCK && tierOf(cellHp(k)).hp === hp);
 
 function nearestGem(x, y, want = GEM, maxR = 80) {
   // search outward ring by ring (up to maxR blocks away)
@@ -649,13 +660,9 @@ function updateBall(b, dt) {
       if (b.gem == null || T >= (b.gemT || 0) || cellType(b.gem) !== GEM) { b.gem = nearestGem(b.x, b.y); b.gemT = T + 0.5; }
       if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
     }
-    if (b.k === 'pinkmag') {
-      if (b.gem == null || T >= (b.gemT || 0) || !isPink(b.gem)) { b.gem = nearestGem(b.x, b.y, isPink, 60); b.gemT = T + 0.5; }
-      if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
-    }
-    if (b.k === 'graymag') {
-      // a gray block: still a block with more than 50 hits left (it stays gray until it drops to pink)
-      if (b.gem == null || T >= (b.gemT || 0) || !isGray(b.gem)) { b.gem = nearestGem(b.x, b.y, isGray, 60); b.gemT = T + 0.5; }
+    if (DEF[b.k].seekTier) {                         // block magnets: nearest block of their colour
+      const test = isTier(DEF[b.k].seekTier);
+      if (b.gem == null || T >= (b.gemT || 0) || !test(b.gem)) { b.gem = nearestGem(b.x, b.y, test, 60); b.gemT = T + 0.5; }
       if (b.gem >= 0) { ox = kx(b.gem) + 0.5; oy = ky(b.gem) + 0.5; }
     }
     if (b.k === 'bluemag') {
@@ -991,8 +998,8 @@ function drawSym(k, x, y, scale) {
     ctx.fillStyle = '#0b3b2a'; ctx.beginPath();
     for (let q = 0; q < 8; q++) { const a = q * Math.PI / 4 - Math.PI / 2, rr = q % 2 ? r * 0.2 : r * 0.62; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
     ctx.closePath(); ctx.fill();
-  } else if (k === 'magnet' || k === 'bluemag' || k === 'graymag' || k === 'pinkmag') {   // diamond
-    ctx.fillStyle = '#fff'; ctx.rotate(Math.PI / 4);
+  } else if (k === 'magnet' || k === 'bluemag' || DEF[k].seekTier) {   // diamond
+    ctx.fillStyle = isLight(k) ? '#222' : '#fff'; ctx.rotate(Math.PI / 4);
     ctx.fillRect(-r * 0.32, -r * 0.32, r * 0.64, r * 0.64);
   } else if (k === 'chain') {                                  // two linked chain rings
     ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.2, r * 0.16); ctx.rotate(-Math.PI / 4);
@@ -1127,7 +1134,8 @@ const fmt = v => {
   return v.toFixed(v < 100 ? 1 : 0) + u[i];
 };
 
-const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'buddy' || k === 'island' || k === 'shooter' || k === 'cloud' ? ' dark' : ''}">${DEF[k].sym}</span>` : '';
+const isLight = k => ['whitemag', 'yellowmag'].includes(k);
+const symHtml = k => DEF[k].sym ? `<span class="sym${k === 'buddy' || k === 'island' || k === 'shooter' || k === 'cloud' || isLight(k) ? ' dark' : ''}">${DEF[k].sym}</span>` : '';
 
 function buildBar() {
   const bar = $('bar'); bar.innerHTML = '';
@@ -1208,7 +1216,8 @@ function flashHint() { setHint(); const h = $('hint'); h.style.display = ''; h.a
 
 // Skill tree: the Piercing Ball is the root at the bottom; each ball grows the next one above it,
 // and its upgrades branch off to the sides.
-const TREE = [...ORDER.filter(k => DEF[k].cat === 'swarm').reverse(), 'pinkmag', 'graymag', 'bluemag', 'magnet', ...BALL_KINDS.filter(k => !['magnet', 'bluemag', 'graymag', 'pinkmag'].includes(k))];   // bottom to top: swarms, Magnet (own root), then the ball trunk
+const ROOTS = BALL_KINDS.filter(k => !DEF[k].req && k !== 'orange');   // magnets: their own roots
+const TREE = [...ORDER.filter(k => DEF[k].cat === 'swarm').reverse(), ...ROOTS.slice().reverse(), ...BALL_KINDS.filter(k => k === 'orange' || DEF[k].req)];   // bottom to top
 const TW = 640, ROW = 165, TTOP = 80, TH = TTOP + (TREE.length - 1) * ROW + 100;
 const BRANCH = [[-120, -10], [120, -10], [-215, -62], [215, -62]];
 const ballPos = n => ({ x: TW / 2, y: TTOP + (TREE.length - 1 - n) * ROW });
