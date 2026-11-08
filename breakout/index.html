@@ -106,6 +106,17 @@
     display: flex; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; }
   #nodeInfo button:disabled { background: #2a2235; color: #8a7d99; cursor: default; }
   #resetBtn.arm { background: #6b1d1d; }
+  #picker { position: fixed; inset: 0; z-index: 6; background: rgba(0, 6, 16, .82); display: grid; place-items: center; padding: 16px; }
+  #picker[hidden] { display: none; }
+  .pbox { background: #071426; border: 2px solid #2b8cff; border-radius: 16px; padding: 16px; width: min(460px, 100%); box-shadow: 0 0 30px #2b8cff55; box-sizing: border-box; }
+  .ptitle { font-weight: 800; font-size: 17px; display: flex; align-items: center; gap: 10px; color: #cfe6ff; }
+  .bdia { width: 14px; height: 14px; background: #4fb3ff; transform: rotate(45deg); box-shadow: 0 0 10px #2b8cff; flex: 0 0 auto; }
+  .pmore { font-size: 12px; color: #7fa6cc; margin: 4px 0 10px; min-height: 14px; }
+  .pgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .pgrid button { background: #0c1f38; border: 1px solid #1f4a7a; border-radius: 10px; color: #fff; font: inherit; font-size: 11px; font-weight: 700;
+    padding: 8px 2px; display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; }
+  .pgrid button:hover, .pgrid button:focus-visible { border-color: #4fb3ff; outline: none; }
+  .pgrid .ball { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
   @media (prefers-reduced-motion: reduce) { .tn.can .o { animation: none; } }
 </style>
 </head>
@@ -122,6 +133,14 @@
 </div>
 <div id="hint"></div>
 <div id="bar"></div>
+
+<div id="picker" hidden>
+  <div class="pbox">
+    <div class="ptitle"><span class="bdia"></span>Blue pixel! Pick a ball: you get 10 of it.</div>
+    <div class="pmore" id="pickMore"></div>
+    <div class="pgrid" id="pickGrid"></div>
+  </div>
+</div>
 
 <div id="tree">
   <div class="treeTop">
@@ -250,6 +269,7 @@ let fx = [], bolts = [], texts = [];
 let orb = { ang: 0, r: 1, cx: 0.5, cy: 0.5, dirty: true };
 
 let worldVer = 0;
+let bluePicks = 0;                 // blue-pixel rewards waiting to be picked
 let allGroups = new Map();
 const OFF = 2 ** 20, M = 2 ** 21;  // cells from -1,048,576 to +1,048,575 each way: effectively endless
 const key = (x, y) => (x + OFF) * M + (y + OFF);
@@ -300,6 +320,7 @@ function cellHp(k) {
 const cellDist = k => distMap.get(k) ?? REVEAL + 1;
 
 function resetMeta() {
+  bluePicks = 0;
   money = 10; purple = 0; balls = []; poison = new Map(); everLaunched = false; selected = 'orange';
   for (const k of ORDER) { inv[k] = 0; bought[k] = 0; unlocked[k] = k === 'orange' || k === 'all'; up[k] = {}; for (const n of NODES[k]) up[k][n[0]] = 0; }
 }
@@ -363,11 +384,10 @@ function damage(i, amt, mult = 1) {
     texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.2, s: '+1', t: 1.2, c: '#d28bff' });
     breakCell(i); dirtyUI = true; return true;
   }
-  if (t === BGEM) {                                   // blue pixel: 10 of a random ball, straight into your hand
-    const k = BALL_KINDS[Math.floor(Math.random() * BALL_KINDS.length)];
-    inv[k] += 10;
-    texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.2, s: `+10 ${DEF[k].short}!`, t: 2.5, c: '#7cc8ff' });
-    breakCell(i); dirtyUI = true; return true;
+  if (t === BGEM) {                                   // blue pixel: you pick a ball and get 10 of it
+    bluePicks++;
+    texts.push({ x: kx(i) + 0.5, y: ky(i) + 0.2, s: 'Pick a ball!', t: 2, c: '#7cc8ff' });
+    breakCell(i); dirtyUI = true; showPicker(); return true;
   }
   const h = cellHp(i);
   money += Math.min(amt, h) * mult;
@@ -1133,6 +1153,27 @@ function buildBar() {
   }
 }
 
+// Blue-pixel picker
+function showPicker() {
+  if (!bluePicks) { $('picker').hidden = true; return; }
+  $('pickMore').textContent = bluePicks > 1 ? `${bluePicks} picks waiting` : '';
+  const g = $('pickGrid');
+  if (!g.childElementCount) {
+    for (const k of BALL_KINDS) {
+      const b = document.createElement('button'), d = DEF[k];
+      b.innerHTML = `<div class="ball" style="background:${ballBg(k)};box-shadow:0 0 8px ${d.color}">${symHtml(k)}</div>${d.short}`;
+      b.addEventListener('click', () => {
+        if (!bluePicks) return;
+        bluePicks--; inv[k] += 10; selected = k; dirtyUI = true;
+        texts.push({ x: cam.x, y: cam.y, s: `+10 ${d.short}!`, t: 2, c: '#7cc8ff' });
+        save(); showPicker();
+      });
+      g.appendChild(b);
+    }
+  }
+  $('picker').hidden = false;
+}
+
 function buy(k) {
   if (DEF[k].purpleCost) {                            // swarms like All are bought with purple only
     if (purple < DEF[k].purpleCost) return;
@@ -1347,12 +1388,13 @@ function save() {
     const cells = [];
     for (const [k, m] of mod) cells.push(kx(k), ky(k), m[0], Math.round(m[1] * 1000) / 1000);
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      seed, cells, money, purple, inv, bought, unlocked, up, selected, everLaunched,
+      seed, cells, money, purple, inv, bought, unlocked, up, selected, everLaunched, bluePicks,
       balls: balls.filter(b => !b.oneUse).map(b => ({ k: b.k, x: b.x, y: b.y, vx: b.vx, vy: b.vy, f: b.f, cs: b.cs, grp: b.grp, allGrp: b.allGrp })),
     }));
   } catch (e) {}
 }
 function loadMeta(s) {
+  bluePicks = s.bluePicks | 0;
   money = s.money; purple = s.purple; selected = DEF[s.selected] ? s.selected : 'orange'; everLaunched = !!s.everLaunched;
   if (s.unlocked?.nuke) {                           // the Nuke Ball was removed: give back the purple spent on it (once: new saves drop it)
     purple += 5;
@@ -1397,6 +1439,7 @@ if (!load()) genWorld();
 rebuildDerived();
 resize();
 
+showPicker();
 let last = performance.now(), uiT = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
