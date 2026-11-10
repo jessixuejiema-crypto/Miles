@@ -288,6 +288,27 @@
     together and watch the structures build. The uniform <code>Field</code> applies torque but no
     net force, so it turns every ball like a compass needle without dragging it anywhere.
   </p>
+  <p class="note">
+    <b>Friction</b> sets how much grip the surfaces have, and it is the only thing connecting
+    spin to motion. At <code>none</code> the balls are perfectly slippery, so a ball spinning on
+    the floor sits there turning forever and never moves an inch. Wind it up and spin becomes
+    traction: balls roll, and a spinning one drags whatever it is touching. The <b>Spin</b> tool
+    turns a ball into a little motor that holds its rate on its own poles, and <b>Stirrer</b>
+    pins one in the middle — its sweeping field and its grip together carry the loose balls
+    around it, though if you spin a rotor too fast for its load the field just slips past and
+    nothing moves, exactly as an overloaded motor behaves.
+  </p>
+  <p class="note">
+    <b>Orbit</b> launches each ball at the speed that balances the pull measured at its own
+    radius, with drag and friction switched off — so they really do orbit, for a good handful
+    of laps. Do not expect a solar system, though. A <code>1/r⁴</code> pull has no stable closed
+    orbits the way gravity does, and it is twice as strong over the core's poles as over its
+    equator, so a truly circular orbit does not exist here at all. The paths precess, damping on
+    each turning moment bleeds orbital energy away, and chaos decides whether a given ball
+    spirals in and lands or gets slung out to the wall: run it twice and you will get two
+    different answers. For circulation that simply keeps going, use <b>Stirrer</b> — being
+    driven, it never has to be stable.
+  </p>
 </div>
 
 <script>
@@ -303,19 +324,24 @@
 
   // ---------- tuning ----------
   var K = 2.4e7;          // magnetic constant, chosen so pixel-scale forces feel right
-  var SUB = 4;            // physics substeps per frame
-  var ANG_DAMP = 7;       // rotational damping (1/s)
+  var MAX_DT = 1 / 240;   // longest physics step; substeps are added to respect it
+  var MAX_SUB = 24;       // ...but never more than this many per frame
+  var ANG_BASE = 0.4;     // rotational damping floor, so moments still settle
+  var ANG_SCALE = 5;      // ...plus a share of the air-drag slider
+  var STIR_RATE = 4;      // the Stirrer rotor's rate: slow enough that its load keeps up
   var MAXV = 2200;        // speed clamp (px/s)
   var MAXW = 60;          // spin clamp (rad/s)
   var MAXBALLS = 140;
   var PTR_K = 3.5e5;      // pointer attract/repel strength
   var PTR_SOFT = 70;      // softened falloff, so the cursor still has reach across the canvas
   var LINK_F = 1.3;       // contact factor that counts as "linked" for chain stats
+  var SPIN_RATE = 10;     // drive rate (rad/s) applied by the Spin tool
 
   var CFG = {
     strength: 1,
     gravity: 0,
     damp: 0.6,
+    friction: 0.35,
     rest: 0.42,
     ext: 0,
     extAng: 0,
@@ -359,6 +385,7 @@
       m: (r * r) / 121,
       mom: opt.mom == null ? 1 : opt.mom,
       pin: !!opt.pin,
+      drive: opt.drive || 0,
       fx: 0, fy: 0, tq: 0,
       grab: false
     };
@@ -409,7 +436,7 @@
   // ---------- integration ----------
   var ptr = { down: false, x: 0, y: 0, mode: null };
 
-  function step(dt) {
+  function computeForces() {
     var n = balls.length, i, j, b, o;
     var s = CFG.strength;
 
@@ -451,16 +478,24 @@
       }
     }
 
+    // a uniform field twists a dipole but does not push it
     var ebx = CFG.ext * Math.cos(CFG.extAng), eby = CFG.ext * Math.sin(CFG.extAng);
+    for (i = 0; i < n; i++) {
+      b = balls[i];
+      var mx = Math.cos(b.th) * b.mom * s, my = Math.sin(b.th) * b.mom * s;
+      b.tq += mx * eby - my * ebx;
+    }
+  }
+
+  function step(dt) {
+    var n = balls.length, i, b;
+    computeForces();
+
     var pull = ptr.down && (ptr.mode === 'attract' || ptr.mode === 'repel');
     var pullSign = ptr.mode === 'repel' ? -1 : 1;
 
     for (i = 0; i < n; i++) {
       b = balls[i];
-      var mx = Math.cos(b.th) * b.mom * s, my = Math.sin(b.th) * b.mom * s;
-
-      // a uniform field twists a dipole but does not push it
-      b.tq += mx * eby - my * ebx;
 
       if (pull && !b.pin && !b.grab) {
         var px = ptr.x - b.x, py = ptr.y - b.y;
@@ -471,9 +506,8 @@
         b.fy += pullSign * pf * (py / pd) * b.m;
       }
 
-      if (b.pin || b.grab) {
-        if (b.pin) { b.vx = 0; b.vy = 0; b.w = 0; }
-      } else {
+      if (b.pin) { b.vx = 0; b.vy = 0; }
+      else if (!b.grab) {
         b.vx += (b.fx / b.m) * dt;
         b.vy += (b.fy / b.m + CFG.gravity) * dt;
         var dmp = Math.exp(-CFG.damp * dt);
@@ -484,25 +518,39 @@
         b.y += b.vy * dt;
       }
 
-      if (!b.pin) {
+      // A driven ball is a motor: it holds its spin rate instead of responding
+      // to torque, so it drives neighbours through friction and its own
+      // rotating field.
+      if (b.drive) {
+        b.w = b.drive;
+        b.th += b.drive * dt;
+      } else if (!b.pin) {
         var I = 0.5 * b.m * b.r * b.r;
         b.w += (b.tq / I) * dt;
-        b.w *= Math.exp(-ANG_DAMP * dt);
+        // Spin is damped by the same air-drag slider as linear motion, over a
+        // floor that keeps dipoles from ringing instead of settling.
+        b.w *= Math.exp(-(ANG_BASE + CFG.damp * ANG_SCALE) * dt);
         if (b.w > MAXW) b.w = MAXW; else if (b.w < -MAXW) b.w = -MAXW;
         b.th += b.w * dt;
+      } else {
+        b.w = 0;
       }
 
       if (!isFinite(b.x) || !isFinite(b.y)) { b.x = W / 2; b.y = H / 2; b.vx = 0; b.vy = 0; }
       if (!isFinite(b.th)) { b.th = 0; b.w = 0; }
+      if (!isFinite(b.w)) b.w = 0;
     }
 
-    collide();
+    collide(dt);
     walls();
   }
 
-  function collide() {
+  var PASSES = 2;
+
+  function collide(dt) {
     var n = balls.length;
-    for (var pass = 0; pass < 2; pass++) {
+    var mu = CFG.friction;
+    for (var pass = 0; pass < PASSES; pass++) {
       for (var i = 0; i < n; i++) {
         var a = balls[i];
         for (var j = i + 1; j < n; j++) {
@@ -523,25 +571,81 @@
           b.x += ux * pen * (ib / it); b.y += uy * pen * (ib / it);
 
           var vn = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy;
+          var jn = 0;
           if (vn < 0) {
-            var jn = -(1 + CFG.rest) * vn / it;
+            jn = -(1 + CFG.rest) * vn / it;
             a.vx -= ux * jn * ia; a.vy -= uy * jn * ia;
             b.vx += ux * jn * ib; b.vy += uy * jn * ib;
           }
+
+          if (mu <= 0) continue;
+
+          // Magnetic attraction presses a touching pair together even when
+          // nothing is bouncing, so that pressure counts toward the friction
+          // budget -- otherwise a resting contact would have nothing to grip.
+          var relAccN = (b.fx * ib - a.fx * ia) * ux + (b.fy * ib - a.fy * ia) * uy;
+          var press = relAccN < 0 ? (-relAccN) * (dt / PASSES) / it : 0;
+
+          // A motor holds its spin rate, so friction cannot slow it: give it
+          // infinite rotational inertia and it drives whatever it touches.
+          var iIa = (a.pin || a.grab || a.drive) ? 0 : 1 / (0.5 * a.m * a.r * a.r);
+          var iIb = (b.pin || b.grab || b.drive) ? 0 : 1 / (0.5 * b.m * b.r * b.r);
+
+          var tdenom = it + a.r * a.r * iIa + b.r * b.r * iIb;
+          if (tdenom <= 0) continue;
+
+          // surface velocities, spin included
+          var tx = -uy, ty = ux;
+          var avx = a.vx - a.w * uy * a.r, avy = a.vy + a.w * ux * a.r;
+          var bvx = b.vx + b.w * uy * b.r, bvy = b.vy - b.w * ux * b.r;
+          var vt = (bvx - avx) * tx + (bvy - avy) * ty;
+
+          var jt = -vt / tdenom;
+          var lim = mu * (Math.abs(jn) + press);
+          if (jt > lim) jt = lim; else if (jt < -lim) jt = -lim;
+
+          a.vx -= tx * jt * ia; a.vy -= ty * jt * ia;
+          b.vx += tx * jt * ib; b.vy += ty * jt * ib;
+          a.w -= jt * a.r * iIa;
+          b.w -= jt * b.r * iIb;
         }
       }
     }
   }
 
+  // One wall contact. n points away from the wall, vn is the approach speed
+  // along it (negative when the ball is moving into the wall).
+  function wallHit(b, nx, ny, vn) {
+    var jn = -(1 + CFG.rest) * vn * b.m;
+    b.vx += (jn / b.m) * nx;
+    b.vy += (jn / b.m) * ny;
+
+    var mu = CFG.friction;
+    if (mu <= 0) return;
+
+    var I = 0.5 * b.m * b.r * b.r;
+    var tx = -ny, ty = nx;
+    var ox = -b.r * nx, oy = -b.r * ny;          // centre -> contact point
+    var cvx = b.vx - b.w * oy, cvy = b.vy + b.w * ox;
+    var vt = cvx * tx + cvy * ty;
+
+    var jt = -vt / (1 / b.m + (b.r * b.r) / I);
+    var lim = mu * Math.abs(jn);
+    if (jt > lim) jt = lim; else if (jt < -lim) jt = -lim;
+
+    b.vx += (jt * tx) / b.m;
+    b.vy += (jt * ty) / b.m;
+    if (!b.drive) b.w += (-b.r * jt) / I;        // a motor ignores the floor
+  }
+
   function walls() {
-    var e = CFG.rest;
     for (var i = 0; i < balls.length; i++) {
       var b = balls[i];
       if (b.pin) continue;
-      if (b.x - b.r < 0) { b.x = b.r; if (b.vx < 0) b.vx = -b.vx * e; }
-      else if (b.x + b.r > W) { b.x = W - b.r; if (b.vx > 0) b.vx = -b.vx * e; }
-      if (b.y - b.r < 0) { b.y = b.r; if (b.vy < 0) b.vy = -b.vy * e; }
-      else if (b.y + b.r > H) { b.y = H - b.r; if (b.vy > 0) b.vy = -b.vy * e; }
+      if (b.x - b.r < 0) { b.x = b.r; if (b.vx < 0) wallHit(b, 1, 0, b.vx); }
+      else if (b.x + b.r > W) { b.x = W - b.r; if (b.vx > 0) wallHit(b, -1, 0, -b.vx); }
+      if (b.y - b.r < 0) { b.y = b.r; if (b.vy < 0) wallHit(b, 0, 1, b.vy); }
+      else if (b.y + b.r > H) { b.y = H - b.r; if (b.vy > 0) wallHit(b, 0, -1, -b.vy); }
     }
   }
 
@@ -707,6 +811,18 @@
       ctx.arc(b.x, b.y, b.r + 3.5, 0, TAU);
       ctx.stroke();
     }
+
+    // a driven ball carries an open arc that turns with it, so the spin reads
+    // even when the poles blur
+    if (b.drive) {
+      ctx.strokeStyle = b.drive > 0 ? COL.north : COL.south;
+      ctx.lineWidth = 2.2;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 6, b.th, b.th + Math.PI * 1.45);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
 
   // ---------- pointer ----------
@@ -737,6 +853,9 @@
     } else if (tool === 'pin') {
       var p = ballAt(ptr.x, ptr.y);
       if (p) { p.pin = !p.pin; if (p.pin) { p.vx = 0; p.vy = 0; p.w = 0; } }
+    } else if (tool === 'spin') {
+      var sp = ballAt(ptr.x, ptr.y);
+      if (sp) sp.drive = !sp.drive ? SPIN_RATE : (sp.drive > 0 ? -SPIN_RATE : 0);
     } else if (tool === 'erase') {
       eraseAt();
     }
@@ -868,11 +987,74 @@
     }
   }
 
+  // A pinned core with free balls launched at exactly the speed that balances
+  // the inward pull at their radius.
+  function orbit(n) {
+    clear();
+    n = n || 4;
+    CFG.gravity = 0; CFG.damp = 0; CFG.friction = 0; CFG.ext = 0; CFG.strength = 1;
+    syncSliders();
+    var cx = W / 2, cy = H / 2;
+    // A heavy core against light orbiters. The pull between two orbiters goes
+    // as the square of their moment while the core's pull is only linear in
+    // it, so shrinking the orbiters buys clean orbits instead of a scrum.
+    addBall(cx, cy, { r: 18, mom: 60, th: 0, pin: true });
+    var r0 = 70, r1 = Math.min(160, Math.min(W, H) * 0.44);
+    for (var i = 0; i < n; i++) {
+      // Launch from the core's equator, where its pull is weakest, and
+      // alternate sides so neighbours sit far apart along each ray. Starting
+      // at the strongest point instead leaves a ball under-attracted
+      // everywhere else, and it simply spirals out and hits the wall.
+      var a = Math.PI / 2 + (i % 2 ? Math.PI : 0);
+      var rad = n > 1 ? r0 + (r1 - r0) * (i / (n - 1)) : r0;
+      var x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad;
+      var b = addBall(x, y, { r: 7, mom: 0.35 });
+      if (!b) break;
+      fieldAt(x, y, b);                      // settle its moment into the local field
+      b.th = Math.atan2(fby, fbx);
+    }
+    aimOrbits(cx, cy);
+  }
+
+  // Circular-orbit speed from the force the solver actually reports, rather
+  // than an idealised closed-form guess.
+  function aimOrbits(cx, cy) {
+    computeForces();
+    for (var i = 0; i < balls.length; i++) {
+      var o = balls[i];
+      if (o.pin) continue;
+      var dx = o.x - cx, dy = o.y - cy;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 1) continue;
+      var ux = dx / d, uy = dy / d;
+      var inward = -(o.fx * ux + o.fy * uy);
+      if (inward <= 0) { o.vx = 0; o.vy = 0; continue; }
+      var v = Math.sqrt((inward / o.m) * d);
+      o.vx = -uy * v; o.vy = ux * v;
+    }
+  }
+
+  // A spinning pinned magnet. Its field sweeps round, each neighbour's moment
+  // chases it with a lag, and that lag is what drags them into orbit.
+  function stirrer(n) {
+    clear();
+    n = n || 12;
+    CFG.gravity = 0; CFG.damp = 0.2; CFG.friction = 0.5; CFG.ext = 0; CFG.strength = 1;
+    syncSliders();
+    addBall(W / 2, H / 2, { r: 16, mom: 16, th: 0, pin: true, drive: STIR_RATE });
+    for (var i = 0; i < n; i++) {
+      var a = (i / n) * TAU;
+      var rad = 60 + (i % 3) * 26;
+      addBall(W / 2 + Math.cos(a) * rad, H / 2 + Math.sin(a) * rad, { r: 9 });
+    }
+  }
+
   // ---------- UI ----------
   var TOOLS = [
     { id: 'drag', label: 'Drag', hint: 'Grab a ball and fling it' },
     { id: 'add', label: 'Add', hint: 'Press and drag back to slingshot a new ball' },
     { id: 'pin', label: 'Pin', hint: 'Click a ball to lock it in place as a fixed magnet' },
+    { id: 'spin', label: 'Spin', hint: 'Click a ball to spin it on its poles; again to reverse, again to stop' },
     { id: 'erase', label: 'Erase', hint: 'Click or sweep to remove balls' },
     { id: 'attract', label: 'Attract', hint: 'Hold to pull every ball toward the cursor' },
     { id: 'repel', label: 'Repel', hint: 'Hold to push every ball away from the cursor' }
@@ -900,17 +1082,20 @@
   var SLIDERS = [
     { key: 'strength', label: 'Magnetism', min: 0, max: 2, stepv: 0.05, fmt: pct },
     { key: 'gravity', label: 'Gravity', min: 0, max: 1400, stepv: 20, fmt: function (v) { return Math.round(v / 14) + '%'; } },
-    { key: 'damp', label: 'Drag', min: 0, max: 3, stepv: 0.05, fmt: two },
+    { key: 'damp', label: 'Air drag', min: 0, max: 3, stepv: 0.05, fmt: two },
+    { key: 'friction', label: 'Friction', min: 0, max: 1, stepv: 0.01, fmt: fric },
     { key: 'rest', label: 'Bounce', min: 0, max: 0.95, stepv: 0.01, fmt: two },
     { key: 'ext', label: 'Field', min: 0, max: 2500, stepv: 25, fmt: function (v) { return Math.round(v / 25) + '%'; } },
     { key: 'extAng', label: 'Field angle', min: 0, max: 6.28, stepv: 0.02, fmt: deg },
     { key: 'speed', label: 'Sim speed', min: 0.1, max: 3, stepv: 0.1, fmt: function (v) { return v.toFixed(1) + '×'; } }
   ];
   function pct(v) { return Math.round(v * 100) + '%'; }
+  function fric(v) { return v <= 0 ? 'none' : v.toFixed(2); }
   function two(v) { return v.toFixed(2); }
   function deg(v) { return Math.round(v * 180 / Math.PI) + '°'; }
 
   var slidersEl = document.getElementById('sliders');
+  var sliderInputs = {};
   SLIDERS.forEach(function (s) {
     var row = document.createElement('div');
     row.className = 'row';
@@ -931,7 +1116,18 @@
     inp.id = 'sl-' + s.key;
     row.appendChild(lab); row.appendChild(inp); row.appendChild(val);
     slidersEl.appendChild(row);
+    sliderInputs[s.key] = { inp: inp, val: val, fmt: s.fmt };
   });
+
+  // Layouts that need particular physics (orbits need no drag at all) set CFG
+  // directly, so the controls have to be told to catch up.
+  function syncSliders() {
+    for (var k in sliderInputs) {
+      if (!sliderInputs.hasOwnProperty(k)) continue;
+      sliderInputs[k].inp.value = CFG[k];
+      sliderInputs[k].val.textContent = sliderInputs[k].fmt(CFG[k]);
+    }
+  }
 
   var presetsEl = document.getElementById('presets');
   [
@@ -941,6 +1137,8 @@
     { label: 'Ring', fn: function () { ring(18); } },
     { label: 'Grid', fn: function () { grid(8, 5); } },
     { label: 'Compass rose', fn: function () { compass(20); } },
+    { label: 'Orbit', fn: function () { orbit(4); } },
+    { label: 'Stirrer', fn: function () { stirrer(12); } },
     { label: 'Clear', fn: clear, warn: true }
   ].forEach(function (p) {
     var el = document.createElement('button');
@@ -971,7 +1169,7 @@
 
   // ---------- stats ----------
   var statsEl = document.getElementById('stats');
-  var statDefs = ['Balls', 'Pinned', 'Longest chain', 'Clusters', 'Energy', 'FPS'];
+  var statDefs = ['Balls', 'Pinned', 'Spinning', 'Longest chain', 'Clusters', 'Energy', 'FPS'];
   var statNodes = {};
   statDefs.forEach(function (name) {
     var el = document.createElement('div');
@@ -986,11 +1184,15 @@
 
   var fps = 60, statTick = 0;
   function refreshStats() {
-    var pinned = 0;
-    for (var i = 0; i < balls.length; i++) if (balls[i].pin) pinned++;
+    var pinned = 0, spinning = 0;
+    for (var i = 0; i < balls.length; i++) {
+      if (balls[i].pin) pinned++;
+      if (balls[i].drive) spinning++;
+    }
     var cl = clusters();
     statNodes['Balls'].textContent = balls.length;
     statNodes['Pinned'].textContent = pinned;
+    statNodes['Spinning'].textContent = spinning;
     statNodes['Longest chain'].textContent = balls.length ? cl.biggest : 0;
     statNodes['Clusters'].textContent = cl.groups;
     statNodes['Energy'].textContent = Math.round(energy());
@@ -1050,10 +1252,16 @@
     if (raw > 0) fps = fps * 0.9 + (1 / raw) * 0.1;
 
     if (!CFG.paused) {
-      var dt = (raw * CFG.speed) / SUB;
-      for (var i = 0; i < SUB; i++) step(dt);
+      // Run however many substeps it takes to keep each one at or under
+      // MAX_DT. Stretching the step instead would wreck the stiff 1/r^4
+      // forces, which is what used to fling orbits apart at high sim speed.
+      var total = raw * CFG.speed;
+      var sub = Math.ceil(total / MAX_DT);
+      if (sub < 1) sub = 1; else if (sub > MAX_SUB) sub = MAX_SUB;
+      var dt = total / sub;
+      for (var i = 0; i < sub; i++) step(dt);
     } else if (held) {
-      collide();
+      collide(raw);
       walls();
     }
 
@@ -1082,12 +1290,19 @@
     ring: ring,
     grid: grid,
     compass: compass,
+    orbit: orbit,
+    stirrer: stirrer,
+    aimOrbits: aimOrbits,
+    computeForces: computeForces,
+    syncSliders: function () { syncSliders(); },
+    spin: function (i, rate) { balls[i].drive = rate; },
     step: step,
     energy: energy,
     clusters: clusters,
     fieldAt: function (x, y) { fieldAt(x, y, null); return { x: fbx, y: fby }; },
     setTool: function (t) { tool = t; },
-    fps: function () { return fps; }
+    fps: function () { return fps; },
+    angDamp: function (base, scale) { ANG_BASE = base; ANG_SCALE = scale; }
   };
 })();
 </script>
