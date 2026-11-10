@@ -1349,17 +1349,12 @@ function speck(o) {
   return true;
 }
 const SWITCH_KINDS = new Set(["had", "q", "g", "W", "Z", "H"]);
-let stars = [];
-function makeStars() { stars = []; for (let i = 0; i < 120; i++) stars.push([Math.random(), Math.random(), Math.random() * 1.2 + 0.2]); }
-makeStars();
 function draw() {
   ctx.save();
   if (shake > 0) { ctx.translate(rnd(-shake, shake), rnd(-shake, shake)); shake *= 0.85; if (shake < 0.3) shake = 0; }
   const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
   g.addColorStop(0, "#0e1430"); g.addColorStop(1, "#05070f");
   ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
-  ctx.fillStyle = "rgba(255,255,255,.35)";
-  for (const s of stars) ctx.fillRect(s[0] * W, s[1] * H, s[2], s[2]);
   if (S.heat > 40) { ctx.fillStyle = "rgba(255,90,30," + ((S.heat - 40) / 60 * 0.12) + ")"; ctx.fillRect(0, 0, W, H); }
   else if (S.heat < 3) { ctx.fillStyle = "rgba(120,200,255,.05)"; ctx.fillRect(0, 0, W, H); }
   ctx.scale(cam.z, cam.z); ctx.translate(-cam.x, -cam.y);
