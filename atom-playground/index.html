@@ -1116,6 +1116,11 @@ function drawNucleus(o) {
 }
 function drawAtom(o) {
   const unstable = !!o.decay;
+  if (o.r * cam.z < 6) {   // too small to see shells and nucleons: a round mini atom
+    if (o.e > 0) { glow(o.x, o.y, o.r + 4, "rgba(124,240,255,0.35)", 0.45); circle(o.x, o.y, o.r, null, "rgba(124,240,255,0.5)", 1 / cam.z); }
+    circle(o.x, o.y, Math.max(o.rn, 1.2 / cam.z), o.Z ? "#ff6b6b" : "#c9ced6");
+    return;
+  }
   if (o.e > 0) {
     glow(o.x, o.y, o.r + 4, o.exc > 0 ? photonColor(o.excE) : "rgba(124,240,255,0.35)", o.exc > 0 ? 0.8 : 0.35);
     const sh = shellsOf(o.e);
@@ -1134,7 +1139,7 @@ function drawAtom(o) {
     circle(o.x, o.y, o.rn + 3 + p * 2, null, "rgba(198,255,110," + (0.35 + p * 0.4) + ")", 1.5);
   }
   drawNucleus(o);
-  if (S.labels && (o.A > 1 || o.e > 0)) {
+  if (LBL && (o.A > 1 || o.e > 0)) {
     let lbl;
     if (o.Z === 0) lbl = o.N + "n (unbound)";
     else {
@@ -1144,7 +1149,7 @@ function drawAtom(o) {
     }
     if (unstable) lbl += " ☢";
     text(lbl, o.x, o.y + o.r + 9, 11, unstable ? "#d8ff9a" : "#e9edff");
-  } else if (S.labels && o.A === 1 && o.e === 0) {
+  } else if (LBL && o.A === 1 && o.e === 0) {
     text(o.Z ? "p⁺" : "n", o.x, o.y + o.r + 8, 10, "#98a2cc");
   }
 }
@@ -1168,7 +1173,7 @@ function drawLep(o) {
   glow(o.x, o.y, o.r * 3, col, 0.35);
   circle(o.x, o.y, o.r, col);
   if (o.t !== "e" || o.anti) text(o.anti ? "+" : L.s, o.x, o.y + 0.5, o.t === "e" ? 7 : 7, "#0a0d1c", "800");
-  if (S.labels && o.t !== "e") text((o.anti ? L.aname : L.name), o.x, o.y + o.r + 8, 9, "#98a2cc", "500");
+  if (LBL && o.t !== "e") text((o.anti ? L.aname : L.name), o.x, o.y + o.r + 8, 9, "#98a2cc", "500");
 }
 function drawPhoton(o) {
   const col = photonColor(o.E), ang = Math.atan2(o.vy, o.vx), len = 18;
@@ -1195,7 +1200,7 @@ function drawGluon(o) {
     if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   }
   ctx.stroke();
-  if (S.labels) text("g", o.x, o.y + 14, 9, "#ffe066");
+  if (LBL) text("g", o.x, o.y + 14, 9, "#ffe066");
 }
 function drawBoson(o, col, label) {
   glow(o.x, o.y, o.r * 2.4, col, 0.55 + 0.2 * Math.sin(T * 12));
@@ -1213,7 +1218,7 @@ function drawHad(o) {
     circle(px, py, 3.2, q.anti ? "#0b0e1a" : QF[q.f].col, q.anti ? QF[q.f].col : q.cc, 1.2);
   });
   if (o.pos) { const a = T * 4; circle(o.x + Math.cos(a) * 12, o.y + Math.sin(a) * 12, 2.4, "#ff7ce0"); }
-  if (S.labels) text(o.name, o.x, o.y + o.r + 9, 10, o.anti ? "#ffb3ef" : "#ffe9a8");
+  if (LBL) text(o.name, o.x, o.y + o.r + 9, 10, o.anti ? "#ffb3ef" : "#ffe9a8");
 }
 function drawBH(o) {
   glow(o.x, o.y, o.r * 3, "rgba(255,140,40,0.6)", 0.6);
@@ -1285,14 +1290,14 @@ function farColor(o) {
   }
   return "#fff";
 }
-function drawFar() {
-  const px = 1.8 / cam.z;
-  for (const o of ents) {
-    if (!vis(o)) continue;
-    const r = Math.max(o.r, px);
-    ctx.fillStyle = farColor(o); ctx.fillRect(o.x - r, o.y - r, r * 2, r * 2);
-  }
+let LBL = true;   // labels this frame: off when zoomed out so far that text would be unreadable
+// Smaller than a pixel on screen? Draw a tiny round speck so it doesn't vanish completely.
+function speck(o) {
+  if (o.r * cam.z >= 1) return false;
+  circle(o.x, o.y, 0.9 / cam.z, farColor(o));
+  return true;
 }
+const SWITCH_KINDS = new Set(["had", "q", "g", "W", "Z", "H"]);
 let stars = [];
 function makeStars() { stars = []; for (let i = 0; i < 120; i++) stars.push([Math.random(), Math.random(), Math.random() * 1.2 + 0.2]); }
 makeStars();
@@ -1310,13 +1315,13 @@ function draw() {
   drawBox();
 
   setView();
-  if (cam.z < 0.12) drawFar(); else {
+  LBL = S.labels && cam.z >= 0.45;
   for (const o of ents) if (vis(o) && o.kind === "bh") drawBH(o);
   for (const o of ents) if (vis(o) && o.kind === "H") glow(o.x, o.y, 150, "rgba(255,209,102,0.25)", 0.5);
   drawBonds();
-  for (const o of ents) if (vis(o) && o.kind === "nuc") drawAtom(o);
+  for (const o of ents) if (vis(o) && o.kind === "nuc" && !speck(o)) drawAtom(o);
   for (const o of ents) {
-    if (!vis(o)) continue;
+    if (!vis(o) || !SWITCH_KINDS.has(o.kind) || speck(o)) continue;
     switch (o.kind) {
       case "had": drawHad(o); break;
       case "q": drawQuark(o); break;
@@ -1326,11 +1331,10 @@ function draw() {
       case "H": drawBoson(o, "#ffd166", "H"); break;
     }
   }
-  for (const o of ents) if (vis(o) && o.kind === "lep") drawLep(o);
-  for (const o of ents) if (vis(o) && o.kind === "nu") drawNu(o);
-  for (const o of ents) if (vis(o) && o.kind === "ph") drawPhoton(o);
-  }
-  if (S.labels && cam.z >= 0.12) for (const m of molLabels) {
+  for (const o of ents) if (vis(o) && o.kind === "lep" && !speck(o)) drawLep(o);
+  for (const o of ents) if (vis(o) && o.kind === "nu" && !speck(o)) drawNu(o);
+  for (const o of ents) if (vis(o) && o.kind === "ph" && !speck(o)) drawPhoton(o);
+  if (LBL) for (const m of molLabels) {
     ctx.font = "700 12px system-ui, sans-serif";
     const w = ctx.measureText(m.label).width + 12;
     ctx.fillStyle = m.known ? "rgba(20,60,40,.85)" : "rgba(20,26,50,.8)";
