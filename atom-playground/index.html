@@ -157,7 +157,7 @@
     <canvas id="cv"></canvas>
     <div id="toasts"></div>
     <div id="tip"></div>
-    <div id="hint">Pick a particle → click to drop · drag to launch · hold to spray · scroll to zoom</div>
+    <div id="hint">Pick a particle → click to drop · drag to launch · hold to spray · scroll or pinch to zoom</div>
     <div id="count"></div>
   </main>
 
@@ -190,7 +190,7 @@
     <li><b>W bosons</b> turn neutrons into protons (and back). <b>Z</b> and <b>Higgs</b> bosons decay fast — the Higgs field slows things nearby.</li>
     <li>Heavy quarks, muons and taus decay into lighter particles. <b>Neutrinos</b> are ghosts that fly through everything.</li>
   </ul>
-  <p class="muted">Controls: pick a particle, then click to drop, drag to launch, hold still to spray. ✋ Grab lets you fling things. ⚡ Zap blasts energy. 🖐 Pan moves your view and the scroll wheel zooms. 🧱 Border makes the box walls bouncy, 🌀 Wrap sends things out one side and back in the other, and with both off it's open space. Space = pause.</p>
+  <p class="muted">Controls: pick a particle, then click to drop, drag to launch, hold still to spray. ✋ Grab lets you fling things. ⚡ Zap blasts energy. 🖐 Pan moves your view; the scroll wheel or a two-finger pinch zooms. 🧱 Border makes the box walls bouncy, 🌀 Wrap sends things out one side and back in the other, and with both off it's open space. Space = pause.</p>
   <button class="btn" id="helpClose">Let's play!</button>
 </div></div>
 
@@ -1397,7 +1397,7 @@ function setTool(t) {
   cv.classList.toggle("pan", t === "pan");
   document.getElementById("desc").innerHTML = { hand: "<b>Grab</b>: drag things around and fling them. Throw atoms hard to fuse them!",
     zap: "<b>Zap</b>: a blast of energy — strips electrons, breaks molecules, splits heavy nuclei.", erase: "<b>Erase</b>: wipe things away.",
-    pan: "<b>Pan</b>: drag to move your view around. Scroll to zoom in and out. Press ⌖ Center to come back to the box." }[t];
+    pan: "<b>Pan</b>: drag to move your view around. Scroll or pinch with two fingers to zoom. Press ⌖ Center to come back to the box." }[t];
 }
 
 // ================= Side panel =================
@@ -1452,8 +1452,32 @@ function spawnSel(x, y, vx, vy) {
   if (ents.length >= MAXE) { toast("The box is full! Clear some space."); return; }
   S.sel[5](x, y, vx, vy);
 }
+// ---- two-finger pinch: zoom and pan together (works with any tool) ----
+const touchPts = new Map();
+let pinch = null;
+function pinchInfo() {
+  const [a, b] = [...touchPts.values()];
+  return { d: Math.max(10, Math.hypot(b[0] - a[0], b[1] - a[1])), mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 };
+}
+function startPinch() {
+  if (ptr.held) { ptr.held.held = false; ptr.held = null; }   // cancel whatever the first finger began
+  ptr.down = false; ptr.mode = null; ptr.spraying = false;
+  const p = pinchInfo();
+  pinch = { d0: p.d, z0: cam.z, wx: p.mx / cam.z + cam.x, wy: p.my / cam.z + cam.y };
+}
+function endTouch(e) {
+  touchPts.delete(e.pointerId);
+  if (pinch && touchPts.size < 2) pinch = null;
+}
+cv.addEventListener("pointerup", endTouch);
+cv.addEventListener("pointercancel", endTouch);
 cv.addEventListener("pointerdown", e => {
   cv.setPointerCapture(e.pointerId);
+  if (e.pointerType === "touch") {
+    touchPts.set(e.pointerId, screenPt(e));
+    if (touchPts.size === 2) { startPinch(); return; }
+    if (touchPts.size > 2 || pinch) return;
+  }
   const [x, y] = local(e);
   Object.assign(ptr, { x, y, sx: x, sy: y, down: true, hist: [[x, y, performance.now()]], spraying: false, t0: performance.now(), moved: 0 });
   if (S.tool === "spawn") ptr.mode = "spawn";
@@ -1463,6 +1487,15 @@ cv.addEventListener("pointerdown", e => {
   else if (S.tool === "pan") { ptr.mode = "pan"; ptr.panS = screenPt(e); ptr.cam0 = { x: cam.x, y: cam.y }; }
 });
 cv.addEventListener("pointermove", e => {
+  if (touchPts.has(e.pointerId)) touchPts.set(e.pointerId, screenPt(e));
+  if (pinch) {
+    if (touchPts.size >= 2) {
+      const p = pinchInfo();
+      cam.z = Math.max(0.25, Math.min(3, pinch.z0 * p.d / pinch.d0));
+      cam.x = pinch.wx - p.mx / cam.z; cam.y = pinch.wy - p.my / cam.z;
+    }
+    return;
+  }
   if (ptr.down && ptr.mode === "pan") {
     const [sx, sy] = screenPt(e);
     cam.x = ptr.cam0.x - (sx - ptr.panS[0]) / cam.z; cam.y = ptr.cam0.y - (sy - ptr.panS[1]) / cam.z;
