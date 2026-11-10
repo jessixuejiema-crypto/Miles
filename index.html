@@ -203,6 +203,7 @@
     flex: none;
   }
 
+  #viewSliders { margin-bottom: 11px; }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .btn {
     border: 1px solid var(--border);
@@ -271,6 +272,7 @@
 
   <div class="panel">
     <div class="group-title">View &amp; run</div>
+    <div class="sliders" id="viewSliders"></div>
     <div class="actions" id="viewActions"></div>
   </div>
 
@@ -346,6 +348,7 @@
     ext: 0,
     extAng: 0,
     speed: 1,
+    screen: 1,
     showField: false,
     showPoles: true,
     showLinks: true,
@@ -1095,8 +1098,10 @@
   function deg(v) { return Math.round(v * 180 / Math.PI) + '°'; }
 
   var slidersEl = document.getElementById('sliders');
+  var viewSlidersEl = document.getElementById('viewSliders');
   var sliderInputs = {};
-  SLIDERS.forEach(function (s) {
+
+  function makeSlider(s, host) {
     var row = document.createElement('div');
     row.className = 'row';
     var lab = document.createElement('label');
@@ -1111,13 +1116,18 @@
     inp.addEventListener('input', function () {
       CFG[s.key] = parseFloat(inp.value);
       val.textContent = s.fmt(CFG[s.key]);
+      if (s.onInput) s.onInput();
     });
     lab.setAttribute('for', 'sl-' + s.key);
     inp.id = 'sl-' + s.key;
     row.appendChild(lab); row.appendChild(inp); row.appendChild(val);
-    slidersEl.appendChild(row);
+    host.appendChild(row);
     sliderInputs[s.key] = { inp: inp, val: val, fmt: s.fmt };
-  });
+  }
+
+  SLIDERS.forEach(function (s) { makeSlider(s, slidersEl); });
+  makeSlider({ key: 'screen', label: 'Screen size', min: 0.5, max: 2, stepv: 0.05,
+               fmt: pct, onInput: applyScreen }, viewSlidersEl);
 
   // Layouts that need particular physics (orbits need no drag at all) set CFG
   // directly, so the controls have to be told to catch up.
@@ -1221,17 +1231,37 @@
   }
 
   // ---------- sizing ----------
+  var appEl = document.querySelector('.app');
+  var BASE_W = 820;
+
+  // The Screen size slider widens the whole column. The canvas follows it and
+  // resize() rescales the balls, so nothing is left sitting outside the box.
+  function applyScreen() {
+    appEl.style.maxWidth = Math.round(BASE_W * CFG.screen) + 'px';
+    resize();
+  }
+
   function resize() {
     var wCss = stage.clientWidth;
-    var hCss = Math.max(320, Math.min(560, Math.round(wCss * 0.66)));
+    var hCss = Math.round(wCss * 0.66);
+    var hiH = Math.round(560 * CFG.screen);
+    if (hCss > hiH) hCss = hiH;
+    if (hCss < 260) hCss = 260;
     stage.style.height = hCss + 'px';
+
+    // Measure the canvas rather than assuming it matches the height just set:
+    // the stage is border-box with a 1px border, so its content is a couple of
+    // pixels shorter, and sizing the backing store to hCss squashed the view.
+    var cw = cv.clientWidth || wCss;
+    var ch = cv.clientHeight || hCss;
+
     DPR = Math.min(2, window.devicePixelRatio || 1);
-    cv.width = Math.round(wCss * DPR);
-    cv.height = Math.round(hCss * DPR);
+    cv.width = Math.round(cw * DPR);
+    cv.height = Math.round(ch * DPR);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
     var oldW = W, oldH = H;
-    W = wCss; H = hCss;
+    W = cw; H = ch;
     if (oldW > 0 && oldH > 0 && (oldW !== W || oldH !== H)) {
       var sx = W / oldW, sy = H / oldH;
       for (var i = 0; i < balls.length; i++) {
@@ -1272,7 +1302,7 @@
 
   // ---------- boot ----------
   applyTheme();
-  resize();
+  applyScreen();
   cloud(34);
   refreshStats();
   requestAnimationFrame(frame);
@@ -1301,6 +1331,7 @@
     clusters: clusters,
     fieldAt: function (x, y) { fieldAt(x, y, null); return { x: fbx, y: fby }; },
     setTool: function (t) { tool = t; },
+    setScreen: function (v) { CFG.screen = v; syncSliders(); applyScreen(); },
     fps: function () { return fps; },
     angDamp: function (base, scale) { ANG_BASE = base; ANG_SCALE = scale; }
   };
