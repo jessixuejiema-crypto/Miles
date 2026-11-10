@@ -15,12 +15,13 @@
     --accent: #7cf0ff;
     --gold: #ffd166;
     --good: #6ee7a8;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
     font: 14px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
   button, select, input { font: inherit; color: inherit; }
-  #app { display: grid; height: 100vh; height: 100dvh;
+  #app { display: grid; height: 100%;
     grid-template-columns: 210px 1fr 280px; grid-template-rows: auto 1fr; }
 
   header { grid-column: 1 / 4; display: flex; align-items: center; gap: 6px; padding: 6px 10px;
@@ -1547,8 +1548,11 @@ document.getElementById("helpBtn").addEventListener("click", () => document.getE
 document.getElementById("helpClose").addEventListener("click", () => document.getElementById("help").classList.remove("show"));
 document.getElementById("help").addEventListener("click", e => { if (e.target.id === "help") e.target.classList.remove("show"); });
 document.getElementById("sideToggle").addEventListener("click", () => document.getElementById("side").classList.toggle("show"));
-document.getElementById("reset").addEventListener("click", () => {
-  if (!confirm("Forget all discoveries and challenges?")) return;
+let resetArmed = 0;
+document.getElementById("reset").addEventListener("click", e => {
+  const btn = e.currentTarget;
+  if (Date.now() - resetArmed > 3000) { resetArmed = Date.now(); btn.textContent = "Click again to forget everything"; setTimeout(() => btn.textContent = "Reset discoveries", 3000); return; }
+  resetArmed = 0; btn.textContent = "Reset discoveries";
   for (const k in disc) disc[k].clear(); goalDone.clear(); saveDisc(); renderSide(); renderGoals();
 });
 window.addEventListener("keydown", e => {
