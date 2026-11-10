@@ -35,6 +35,7 @@
   .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
   .ctl { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); font-size: 12px; }
   .ctl input[type=range] { width: 80px; accent-color: var(--accent); }
+  #boxLbl { min-width: 96px; color: var(--ink); font-variant-numeric: tabular-nums; }
   select.btn { padding: 5px 6px; }
 
   #palette { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 8px; }
@@ -124,11 +125,12 @@
     <div class="sep"></div>
     <button class="btn on" id="edgeBorder" title="Things bounce off the walls of the box">🧱 Border</button>
     <button class="btn" id="edgeWrap" title="Things leaving one side come back on the other side">🌀 Wrap</button>
-    <button class="btn" id="center" title="Move the view back to the box">⌖ Center</button>
+    <button class="btn" id="center" title="Zoom to fit the whole box">⌖ Center</button>
     <div class="sep"></div>
     <button class="btn" id="pause" title="Pause (Space)">⏸ Pause</button>
     <label class="ctl">Speed <input type="range" id="speed" min="0.1" max="2" step="0.1" value="1"></label>
     <label class="ctl">🌡 Heat <input type="range" id="heat" min="0" max="100" step="1" value="8"></label>
+    <label class="ctl" title="How wide the box is, measured in atoms">📏 Box <input type="range" id="boxSize" min="1" max="6" step="0.01" value="1.35"> <span id="boxLbl"></span></label>
     <div class="sep"></div>
     <select class="btn" id="recipes" title="Spawn a ready-made experiment">
       <option value="">🧪 Experiments…</option>
@@ -190,7 +192,7 @@
     <li><b>W bosons</b> turn neutrons into protons (and back). <b>Z</b> and <b>Higgs</b> bosons decay fast — the Higgs field slows things nearby.</li>
     <li>Heavy quarks, muons and taus decay into lighter particles. <b>Neutrinos</b> are ghosts that fly through everything.</li>
   </ul>
-  <p class="muted">Controls: pick a particle, then click to drop, drag to launch, hold still to spray. ✋ Grab lets you fling things. ⚡ Zap blasts energy. 🖐 Pan moves your view; the scroll wheel or a two-finger pinch zooms. 🧱 Border makes the box walls bouncy, 🌀 Wrap sends things out one side and back in the other, and with both off it's open space. Space = pause.</p>
+  <p class="muted">Controls: pick a particle, then click to drop, drag to launch, hold still to spray. ✋ Grab lets you fling things. ⚡ Zap blasts energy. 🖐 Pan moves your view; the scroll wheel or a two-finger pinch zooms. 🧱 Border makes the box walls bouncy, 🌀 Wrap sends things out one side and back in the other, and with both off it's open space. 📏 Box sets how wide the box is, from 10 atoms up to 1,000,000 atoms. Space = pause.</p>
   <button class="btn" id="helpClose">Let's play!</button>
 </div></div>
 
@@ -307,6 +309,8 @@ const chargeStr = q => q === 0 ? "" : (Math.abs(q) === 1 ? "" : sup(Math.abs(q))
 const S = { paused: false, speed: 1, heat: 8, labels: true, tool: "hand", sel: null, edge: "border" };
 const BOX = { w: 800, h: 600 };          // the box in world units
 const cam = { x: 0, y: 0, z: 1 };         // screen = (world - cam) * z
+const ATOM_W = 40;                        // world units per atom width (about a hydrogen atom)
+S.boxAtoms = null;                        // null = box matches the screen
 let ents = [], bonds = [], fx = [], T = 0, nextId = 1, frame = 0, shake = 0;
 const MAXE = 900;
 let W = 0, H = 0, DPR = 1;
@@ -317,8 +321,9 @@ function resize() {
   const r = stage.getBoundingClientRect();
   DPR = Math.min(2, window.devicePixelRatio || 1);
   W = Math.max(50, r.width); H = Math.max(50, r.height);
-  BOX.w = W / cam.z; BOX.h = H / cam.z;
-  if (cam.x === 0 && cam.y === 0 && cam.z === 1) { BOX.w = W; BOX.h = H; }
+  if (S.boxAtoms) { BOX.w = S.boxAtoms * ATOM_W; BOX.h = BOX.w * H / W; }
+  else { BOX.w = W; BOX.h = H; }
+  if (typeof updateBoxLabel === "function") updateBoxLabel();
   cv.width = W * DPR; cv.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
@@ -640,7 +645,7 @@ function integrate(k) {
       if (o.x < r) { o.x = r; o.vx = Math.abs(o.vx) * 0.8; } if (o.x > BOX.w - r) { o.x = BOX.w - r; o.vx = -Math.abs(o.vx) * 0.8; }
       if (o.y < r) { o.y = r; o.vy = Math.abs(o.vy) * 0.8; } if (o.y > BOX.h - r) { o.y = BOX.h - r; o.vy = -Math.abs(o.vy) * 0.8; }
     } else if (S.edge === "wrap") wrapPos(o);
-    else if (Math.abs(o.x - BOX.w / 2) > 5000 || Math.abs(o.y - BOX.h / 2) > 5000) { o.dead = true; if (o.bonds) breakBonds(o); }
+    else if (o.x < -5000 || o.y < -5000 || o.x > BOX.w + 5000 || o.y > BOX.h + 5000) { o.dead = true; if (o.bonds) breakBonds(o); }
     if (o.tr) { o.tr.push(o.x, o.y); if (o.tr.length > 16) o.tr.splice(0, 2); }
     if (o.rot !== undefined) o.rot += 0.01 * k;
   }
@@ -653,8 +658,8 @@ function integrate(k) {
 }
 function wrapPos(o) {
   let w = false;
-  if (o.x < 0) { o.x += BOX.w; w = true; } else if (o.x >= BOX.w) { o.x -= BOX.w; w = true; }
-  if (o.y < 0) { o.y += BOX.h; w = true; } else if (o.y >= BOX.h) { o.y -= BOX.h; w = true; }
+  if (o.x < 0 || o.x >= BOX.w) { o.x = ((o.x % BOX.w) + BOX.w) % BOX.w; w = true; }
+  if (o.y < 0 || o.y >= BOX.h) { o.y = ((o.y % BOX.h) + BOX.h) % BOX.h; w = true; }
   if (w) { if (o.tr) o.tr.length = 0; if (o.bonds && o.bonds.size) breakBonds(o); }
 }
 function bounce(a, b, d, dx, dy, e = 0.85) {
@@ -1251,8 +1256,39 @@ function drawBox() {
   ctx.restore();
   if (S.edge === "wrap") { // little portal arrows on each side
     ctx.fillStyle = "rgba(255,124,224,.55)";
-    const tri = (x, y, a) => { ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-5, -6); ctx.lineTo(-5, 6); ctx.fill(); ctx.restore(); };
-    for (const f of [0.25, 0.5, 0.75]) { tri(10, BOX.h * f, Math.PI); tri(BOX.w - 10, BOX.h * f, 0); tri(BOX.w * f, 10, -Math.PI / 2); tri(BOX.w * f, BOX.h - 10, Math.PI / 2); }
+    const tri = (x, y, a) => { ctx.save(); ctx.translate(x, y); ctx.scale(1 / cam.z, 1 / cam.z); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-5, -6); ctx.lineTo(-5, 6); ctx.fill(); ctx.restore(); };
+    const m = 10 / cam.z;
+    for (const f of [0.25, 0.5, 0.75]) { tri(m, BOX.h * f, Math.PI); tri(BOX.w - m, BOX.h * f, 0); tri(BOX.w * f, m, -Math.PI / 2); tri(BOX.w * f, BOX.h - m, Math.PI / 2); }
+  }
+  if (S.boxAtoms) {
+    ctx.save(); ctx.translate(Math.max(0, cam.x), Math.max(0, cam.y)); ctx.scale(1 / cam.z, 1 / cam.z);
+    text("📏 " + boxText(), 10, 16, 12, "rgba(233,237,255,.75)", "600", "left");
+    ctx.restore();
+  }
+}
+// ---- view helpers: skip drawing what's off screen; simple dots when zoomed far out ----
+const VIEW = { x0: 0, y0: 0, x1: 0, y1: 0 };
+function setView() { VIEW.x0 = cam.x; VIEW.y0 = cam.y; VIEW.x1 = cam.x + W / cam.z; VIEW.y1 = cam.y + H / cam.z; }
+function vis(o) { if (o.dead) return false; const m = (o.r || 5) + 40; return o.x > VIEW.x0 - m && o.x < VIEW.x1 + m && o.y > VIEW.y0 - m && o.y < VIEW.y1 + m; }
+function farColor(o) {
+  switch (o.kind) {
+    case "nuc": return o.e > 0 ? "#7cf0ff" : o.Z ? "#ff6b6b" : "#c9ced6";
+    case "q": return QF[o.f].col;
+    case "lep": return o.anti ? LEP[o.t].acol : LEP[o.t].col;
+    case "ph": return photonColor(o.E);
+    case "nu": return "#ffffff";
+    case "g": case "had": return "#ffe066";
+    case "W": return "#c77dff"; case "Z": return "#5d8bff"; case "H": return "#ffd166";
+    case "bh": return "#ff9a3c";
+  }
+  return "#fff";
+}
+function drawFar() {
+  const px = 1.8 / cam.z;
+  for (const o of ents) {
+    if (!vis(o)) continue;
+    const r = Math.max(o.r, px);
+    ctx.fillStyle = farColor(o); ctx.fillRect(o.x - r, o.y - r, r * 2, r * 2);
   }
 }
 let stars = [];
@@ -1271,12 +1307,14 @@ function draw() {
   ctx.scale(cam.z, cam.z); ctx.translate(-cam.x, -cam.y);
   drawBox();
 
-  for (const o of ents) if (!o.dead && o.kind === "bh") drawBH(o);
-  for (const o of ents) if (!o.dead && o.kind === "H") glow(o.x, o.y, 150, "rgba(255,209,102,0.25)", 0.5);
+  setView();
+  if (cam.z < 0.12) drawFar(); else {
+  for (const o of ents) if (vis(o) && o.kind === "bh") drawBH(o);
+  for (const o of ents) if (vis(o) && o.kind === "H") glow(o.x, o.y, 150, "rgba(255,209,102,0.25)", 0.5);
   drawBonds();
-  for (const o of ents) if (!o.dead && o.kind === "nuc") drawAtom(o);
+  for (const o of ents) if (vis(o) && o.kind === "nuc") drawAtom(o);
   for (const o of ents) {
-    if (o.dead) continue;
+    if (!vis(o)) continue;
     switch (o.kind) {
       case "had": drawHad(o); break;
       case "q": drawQuark(o); break;
@@ -1286,10 +1324,11 @@ function draw() {
       case "H": drawBoson(o, "#ffd166", "H"); break;
     }
   }
-  for (const o of ents) if (!o.dead && o.kind === "lep") drawLep(o);
-  for (const o of ents) if (!o.dead && o.kind === "nu") drawNu(o);
-  for (const o of ents) if (!o.dead && o.kind === "ph") drawPhoton(o);
-  if (S.labels) for (const m of molLabels) {
+  for (const o of ents) if (vis(o) && o.kind === "lep") drawLep(o);
+  for (const o of ents) if (vis(o) && o.kind === "nu") drawNu(o);
+  for (const o of ents) if (vis(o) && o.kind === "ph") drawPhoton(o);
+  }
+  if (S.labels && cam.z >= 0.12) for (const m of molLabels) {
     ctx.font = "700 12px system-ui, sans-serif";
     const w = ctx.measureText(m.label).width + 12;
     ctx.fillStyle = m.known ? "rgba(20,60,40,.85)" : "rgba(20,26,50,.8)";
@@ -1397,7 +1436,7 @@ function setTool(t) {
   cv.classList.toggle("pan", t === "pan");
   document.getElementById("desc").innerHTML = { hand: "<b>Grab</b>: drag things around and fling them. Throw atoms hard to fuse them!",
     zap: "<b>Zap</b>: a blast of energy — strips electrons, breaks molecules, splits heavy nuclei.", erase: "<b>Erase</b>: wipe things away.",
-    pan: "<b>Pan</b>: drag to move your view around. Scroll or pinch with two fingers to zoom. Press ⌖ Center to come back to the box." }[t];
+    pan: "<b>Pan</b>: drag to move your view around. Scroll or pinch with two fingers to zoom. Press ⌖ Center to fit the whole box on screen." }[t];
 }
 
 // ================= Side panel =================
@@ -1491,7 +1530,7 @@ cv.addEventListener("pointermove", e => {
   if (pinch) {
     if (touchPts.size >= 2) {
       const p = pinchInfo();
-      cam.z = Math.max(0.25, Math.min(3, pinch.z0 * p.d / pinch.d0));
+      cam.z = clampZoom(pinch.z0 * p.d / pinch.d0);
       cam.x = pinch.wx - p.mx / cam.z; cam.y = pinch.wy - p.my / cam.z;
     }
     return;
@@ -1514,7 +1553,7 @@ cv.addEventListener("pointermove", e => {
 cv.addEventListener("wheel", e => {
   e.preventDefault();
   const [sx, sy] = screenPt(e), wx = sx / cam.z + cam.x, wy = sy / cam.z + cam.y;
-  cam.z = Math.max(0.25, Math.min(3, cam.z * Math.exp(-e.deltaY * 0.0015)));
+  cam.z = clampZoom(cam.z * Math.exp(-e.deltaY * 0.0015));
   cam.x = wx - sx / cam.z; cam.y = wy - sy / cam.z;
 }, { passive: false });
 cv.addEventListener("pointerleave", () => { ptr.in = false; document.getElementById("tip").style.display = "none"; });
@@ -1600,23 +1639,25 @@ function updateTip(x, y, sx, sy) {
 }
 
 // ================= Recipes =================
-function cx() { return BOX.w / 2 + rnd(-30, 30); }
-function cy() { return BOX.h / 2 + rnd(-30, 30); }
+function vcx() { return cam.x + W / 2 / cam.z; }
+function vcy() { return cam.y + H / 2 / cam.z; }
+function cx() { return vcx() + rnd(-30, 30); }
+function cy() { return vcy() + rnd(-30, 30); }
 const RECIPES = {
   water() { const x = cx(), y = cy(); mkNuc(x, y, 8, 8, 8); mkNuc(x - 70, y + 30, 1, 0, 1, 1, -0.3); mkNuc(x + 70, y + 30, 1, 0, 1, -1, -0.3); },
   salt() { const x = cx(), y = cy(); mkNuc(x - 60, y, 11, 12, 11, 1.2, 0); mkNuc(x + 60, y, 17, 18, 17, -1.2, 0); },
   methane() { const x = cx(), y = cy(); mkNuc(x, y, 6, 6, 6); for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; mkNuc(x + Math.cos(a) * 75, y + Math.sin(a) * 75, 1, 0, 1, -Math.cos(a), -Math.sin(a)); } },
   co2() { const x = cx(), y = cy(); mkNuc(x, y, 6, 6, 6); mkNuc(x - 80, y, 8, 8, 8, 1.2, 0); mkNuc(x + 80, y, 8, 8, 8, -1.2, 0); },
   protonkit() { const x = cx(), y = cy(); mkQuark(x - 50, y, "u", false); mkQuark(x + 50, y, "u", false); mkQuark(x, y - 50, "d", false); mkGluon(x, y + 40); mkGluon(x + 20, y + 50); },
-  sun() { setHeat(75); for (let i = 0; i < 26; i++) mkNuc(BOX.w / 2 + rnd(-110, 110), BOX.h / 2 + rnd(-90, 90), 1, 0, 0, rnd(-3, 3), rnd(-3, 3)); toast("☀ Super hot! Protons are fusing like in the Sun's core."); },
+  sun() { setHeat(75); for (let i = 0; i < 26; i++) mkNuc(vcx() + rnd(-110, 110), vcy() + rnd(-90, 90), 1, 0, 0, rnd(-3, 3), rnd(-3, 3)); toast("☀ Super hot! Protons are fusing like in the Sun's core."); },
   alpha() { setHeat(55); const x = cx(), y = cy(); for (let i = 0; i < 6; i++) { const a = i * 1.047; mkNuc(x + Math.cos(a) * 40, y + Math.sin(a) * 40, 2, 2, 0, -Math.cos(a) * 2, -Math.sin(a) * 2); } toast("Helium nuclei fusing… Be-8 is unstable, so a third one must hit fast!"); },
-  fission() { const x = BOX.w / 2 + 60, y = BOX.h / 2, g = Math.min(150, (BOX.h - 40) / 3); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) mkNuc(x + i * g, y + j * g, 92, 143, 92); mkNuc(20, y + 3, 0, 1, 0, 9, 0); toast("☢ A neutron is heading for a lump of uranium-235…"); },
+  fission() { const x = vcx() + 60, y = vcy(), g = Math.min(150, (H / cam.z - 40) / 3); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) mkNuc(x + i * g, y + j * g, 92, 143, 92); mkNuc(x - 2 * g - 150, y + 3, 0, 1, 0, 9, 0); toast("☢ A neutron is heading for a lump of uranium-235…"); },
   anti() { const x = cx(), y = cy(); for (let i = 0; i < 3; i++) mkAntiNucleon(x - 140, y - 60 + i * 60, true, 2, 0); for (let i = 0; i < 3; i++) mkLep(x - 180, y - 50 + i * 50, "e", true, 1, 0); for (let i = 0; i < 4; i++) mkNuc(x + 120, y - 90 + i * 60, 1, 0, 1, -1, 0); },
   alchemy() { const x = cx(), y = cy(); mkNuc(x, y, 78, 118, 0); mkNuc(Math.max(20, x - 220), y, 1, 0, 0, 7, 0); toast("A bare platinum nucleus (78 protons) and one fast proton… 78 + 1 = 79 = gold!"); },
-  higgs() { for (let i = 0; i < 3; i++) mkHiggs(BOX.w / 2 + rnd(-120, 120), BOX.h / 2 + rnd(-80, 80)); for (let i = 0; i < 12; i++) mkLep(rnd(30, BOX.w - 30), rnd(30, BOX.h - 30), "e", false, rnd(-5, 5), rnd(-5, 5)); },
+  higgs() { for (let i = 0; i < 3; i++) mkHiggs(vcx() + rnd(-120, 120), vcy() + rnd(-80, 80)); for (let i = 0; i < 12; i++) mkLep(vcx() + rnd(-350, 350), vcy() + rnd(-250, 250), "e", false, rnd(-5, 5), rnd(-5, 5)); },
 };
 function bigBang() {
-  const x = BOX.w / 2, y = BOX.h / 2;
+  const x = vcx(), y = vcy();
   flash(x, y, "#ffffff", 200, 1); boom(x, y, "#ffd1a0", 60, 9); shake = 10;
   const qs = ["u", "u", "d", "u", "d", "d", "u", "u", "d"];
   for (let i = 0; i < 54; i++) { const a = ra(), s = rnd(1, 6); mkQuark(x, y, qs[i % qs.length], i % 13 === 0, Math.cos(a) * s, Math.sin(a) * s); }
@@ -1646,7 +1687,24 @@ function setEdge(m) {
 }
 document.getElementById("edgeBorder").addEventListener("click", () => setEdge("border"));
 document.getElementById("edgeWrap").addEventListener("click", () => setEdge("wrap"));
-document.getElementById("center").addEventListener("click", () => { cam.x = 0; cam.y = 0; cam.z = 1; BOX.w = W; BOX.h = H; });
+function fitZoom() { return Math.min(W / BOX.w, H / BOX.h); }
+function clampZoom(z) { return Math.max(Math.min(0.25, fitZoom() * 0.5), Math.min(3, z)); }
+function fitView() { cam.z = fitZoom(); cam.x = (BOX.w - W / cam.z) / 2; cam.y = (BOX.h - H / cam.z) / 2; }
+function boxAtomsNow() { return S.boxAtoms || Math.round(BOX.w / ATOM_W); }
+function boxText() {
+  const n = boxAtomsNow(), m = n * 1e-10;   // an atom is about 0.1 nanometres across
+  const sig = x => String(+x.toPrecision(2));
+  const real = m < 1e-6 ? sig(m * 1e9) + " nm" : m < 1e-3 ? sig(m * 1e6) + " µm" : sig(m * 1e3) + " mm";
+  return n.toLocaleString("en-US") + " atoms wide ≈ " + real;
+}
+function updateBoxLabel() { const l = document.getElementById("boxLbl"); l.textContent = boxAtomsNow().toLocaleString("en-US") + " atoms"; l.title = boxText(); }
+document.getElementById("boxSize").addEventListener("input", e => {
+  const v = +e.target.value;
+  S.boxAtoms = v >= 5.995 ? 1000000 : Math.round(Math.pow(10, v));
+  BOX.w = S.boxAtoms * ATOM_W; BOX.h = BOX.w * H / W;
+  updateBoxLabel(); fitView();
+});
+document.getElementById("center").addEventListener("click", fitView);
 document.getElementById("clear").addEventListener("click", () => { ents = []; bonds = []; fx = []; molLabels = []; });
 document.getElementById("labels").addEventListener("click", e => { S.labels = !S.labels; e.currentTarget.classList.toggle("on", S.labels); });
 document.getElementById("helpBtn").addEventListener("click", () => document.getElementById("help").classList.add("show"));
@@ -1682,6 +1740,8 @@ function loop(now) {
 
 buildPalette(); buildSide(); renderSide(); checkGoals(); setTool("hand");
 resize();
+document.getElementById("boxSize").value = Math.log10(Math.max(10, BOX.w / ATOM_W)).toFixed(2);
+updateBoxLabel();
 booted = true;
 try { if (!localStorage.getItem("atomPlaygroundSeen")) { document.getElementById("help").classList.add("show"); localStorage.setItem("atomPlaygroundSeen", "1"); } } catch (e) {}
 // a friendly starting scene
@@ -1690,7 +1750,7 @@ try { if (!localStorage.getItem("atomPlaygroundSeen")) { document.getElementById
   mkQuark(x - 160, y - 40, "u", false); mkQuark(x - 110, y - 70, "u", false); mkQuark(x - 120, y - 10, "d", false);
   mkNuc(x + 60, y - 20, 8, 8, 8); mkNuc(x + 150, y + 40, 1, 0, 1); mkNuc(x - 20, y + 80, 1, 0, 1);
 })();
-window.AP = { cam, BOX, S, setEdge, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
+window.AP = { cam, BOX, S, setEdge, fitView, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
 requestAnimationFrame(loop);
 </script>
 </body>
