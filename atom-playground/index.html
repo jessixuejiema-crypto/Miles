@@ -25,7 +25,7 @@
     grid-template-columns: 210px 1fr 280px; grid-template-rows: auto 1fr; }
 
   header { grid-column: 1 / 4; display: flex; align-items: center; gap: 6px; padding: 6px 10px;
-    background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; white-space: nowrap; }
+    background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; white-space: nowrap; flex-wrap: wrap; row-gap: 6px; }
   header h1 { font-size: 16px; margin: 0 8px 0 0; letter-spacing: .3px; }
   header h1 span { color: var(--accent); }
   .btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px;
@@ -59,6 +59,12 @@
   #cv.pan:active { cursor: grabbing; }
   #hint { position: absolute; left: 10px; bottom: 8px; color: var(--dim); font-size: 12px; pointer-events: none;
     background: rgba(7,10,22,.6); padding: 3px 8px; border-radius: 6px; }
+  #scatBar { position: absolute; right: 10px; bottom: 28px; z-index: 4; display: flex; align-items: center; gap: 6px;
+    background: rgba(17,23,49,.92); border: 1px solid var(--line); border-radius: 12px; padding: 5px 6px 5px 10px; max-width: calc(100% - 20px); }
+  #scatSel { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  #scatSel b { color: var(--ink); }
+  #scatterN { width: 58px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+  #scatter { background: #234a63; border-color: var(--accent); font-weight: 600; }
   #count { position: absolute; right: 10px; bottom: 8px; color: var(--dim); font-size: 12px; pointer-events: none; }
   #tip { position: absolute; pointer-events: none; background: rgba(13,18,42,.95); border: 1px solid var(--line);
     border-radius: 8px; padding: 6px 9px; font-size: 12px; max-width: 240px; display: none; z-index: 5; }
@@ -96,9 +102,28 @@
   #help li { margin: 4px 0; }
   #help code { background: var(--panel2); padding: 0 5px; border-radius: 4px; }
   #sideToggle { display: none; }
+  #elPick { position: fixed; inset: 0; background: rgba(3,5,12,.75); display: none; place-items: center; z-index: 20; padding: 16px; }
+  #elPick.show { display: grid; }
+  #elPick .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; max-width: 760px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 16px 18px; }
+  #elPick h3 { margin: 0 0 4px; }
+  .ptwrap { overflow-x: auto; margin: 10px 0; }
+  #elGrid { display: grid; grid-template-columns: repeat(18, minmax(30px, 1fr)); gap: 2px; min-width: 560px; }
+  #elGrid button { aspect-ratio: 1; border: 1px solid transparent; border-radius: 4px; cursor: pointer; padding: 0; line-height: 1.05;
+    display: grid; place-content: center; font-size: 11px; font-weight: 700; color: #0a0d1c; }
+  #elGrid button small { font-size: 7px; font-weight: 500; }
+  #elGrid button:hover, #elGrid button:focus-visible { border-color: #fff; outline: none; }
+  #elGrid .gap { aspect-ratio: 1; }
 
   @media (max-width: 820px) {
     #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+    header { flex-wrap: nowrap; }
+    #scatBar { bottom: 8px; }
+    #count { display: none; }
+    #elPick { padding: 8px; }
+    #elPick .card { padding: 12px 10px; }
+    #elGrid { grid-template-columns: repeat(18, 1fr); min-width: 0; gap: 1px; }
+    #elGrid button { font-size: 8.5px; border-radius: 3px; }
+    #elGrid button small { display: none; }
     header { grid-column: 1; }
     #stage { grid-row: 2; }
     #palette { grid-row: 3; border-right: 0; border-top: 1px solid var(--line); display: flex; gap: 10px;
@@ -151,8 +176,6 @@
       <option value="alchemy">Alchemy: platinum → gold</option>
       <option value="higgs">Higgs factory</option>
     </select>
-    <button class="btn" id="scatter" title="Spawn lots of the selected particle at random spots">🎲 Scatter</button>
-    <label class="ctl" title="How many to scatter"><input type="number" id="scatterN" min="1" max="300" step="1" value="20"></label>
     <button class="btn" id="bigbang" title="Fill the box with a hot quark soup">💥 Big Bang</button>
     <button class="btn" id="clear">🗑 Clear</button>
     <button class="btn on" id="labels">🏷 Labels</button>
@@ -168,6 +191,11 @@
     <div id="tip"></div>
     <div id="hint">Pick a particle → click to drop · drag to launch · hold to spray · scroll or pinch to zoom</div>
     <div id="count"></div>
+    <div id="scatBar">
+      <span id="scatSel">Pick a particle to scatter</span>
+      <input type="number" id="scatterN" min="1" max="300" step="1" value="20" title="How many to scatter" aria-label="How many to scatter">
+      <button class="btn" id="scatter" title="Spawn lots of the selected particle at random spots">🎲 Scatter</button>
+    </div>
   </main>
 
   <aside id="side">
@@ -183,6 +211,12 @@
   </aside>
 </div>
 
+<div id="elPick"><div class="card">
+  <h3>Pick any element</h3>
+  <p class="muted">You get a neutral atom of its most common isotope. Then click in the box, or use 🎲 Scatter.</p>
+  <div class="ptwrap"><div id="elGrid"></div></div>
+  <button class="btn" id="elClose">Close</button>
+</div></div>
 <div id="help"><div class="card">
   <h3>⚛ How the Atom Playground works</h3>
   <p class="muted">Everything in the universe is built from a few elementary particles. Drop them in and see what they make!</p>
@@ -511,6 +545,32 @@ function mkAntiNucleon(x, y, proton, vx = 0, vy = 0) {
     qs: qs.map((f, i) => ({ f, anti: true, cc: COLORCHARGE[i] })), Q: proton ? -1 : 0, decayAt: Infinity, stable: true });
 }
 
+// spawn a ready-made hadron from a quark list like [["u",0],["s",1]] (1 = antiquark)
+function hadronFrom(x, y, vx, vy, list, name) {
+  const qs = list.map(([f, a], i) => ({ f, anti: !!a, cc: a && list.length === 2 ? "#4dffff" : COLORCHARGE[i] }));
+  const baryon = qs.length === 3, anti = baryon && qs[0].anti;
+  const Q = Math.round(qs.reduce((s, q) => s + qcharge(q), 0));
+  if (!name) name = baryon ? baryonName(qs.map(q => q.f).sort().join(""), anti) : mesonName(qs[0].f, qs[1].f);
+  return mkHad(x, y, vx, vy, { baryon, anti, name, Q, qs, decayAt: T + (baryon ? rnd(2.5, 4) : rnd(1.8, 3)) });
+}
+// the most common (or longest-lived) isotope of an element, as a neutral atom
+const HEAVY_N = { 43: 55, 61: 84, 84: 125, 85: 125, 86: 136, 87: 136, 88: 138, 89: 138, 90: 142, 91: 140, 92: 146, 93: 144, 94: 150,
+  95: 148, 96: 151, 97: 150, 98: 153, 99: 153, 100: 157 };
+const LIGHT_N = { 1: 0, 2: 2, 3: 4, 4: 5, 5: 6, 6: 6, 7: 7, 8: 8, 9: 10, 10: 10, 11: 12, 12: 12, 13: 14, 14: 14, 15: 16, 16: 16, 17: 18, 18: 22, 19: 20, 20: 20 };
+// mass number of the most common isotope, scandium (21) to bismuth (83)
+const COMMON_A = [45, 48, 51, 52, 55, 56, 59, 58, 63, 64, 69, 74, 75, 80, 79, 84, 85, 88, 89, 90, 93, 98, 98, 102, 103, 106, 107, 114, 115, 120,
+  121, 130, 127, 132, 133, 138, 139, 140, 141, 142, 145, 152, 153, 158, 159, 164, 165, 166, 169, 174, 175, 180, 181, 184, 187, 192, 193, 195,
+  197, 202, 205, 208, 209];
+function commonN(Z) {
+  if (LIGHT_N[Z] !== undefined) return LIGHT_N[Z];
+  if (HEAVY_N[Z]) return HEAVY_N[Z];
+  if (Z > 100) return Math.round(Z * 1.55);
+  let n = Math.round(Z + 0.0064 * Z * Z);
+  if (Z >= 21 && Z <= 83) { n = COMMON_A[Z - 21] - Z; if (isStable(Z, n)) return n; }
+  for (let d = 0; d < 10; d++) { if (isStable(Z, n + d)) return n + d; if (isStable(Z, n - d)) return n - d; }
+  return n;
+}
+function mkElementAtom(Z, x, y, vx, vy) { return mkNuc(x, y, Z, commonN(Z), Z, vx, vy); }
 function charge(o) {
   switch (o.kind) {
     case "nuc": return o.Z - o.e;
@@ -1417,6 +1477,9 @@ const PAL = [
     ["au", "ū", "Anti-up", QF.u.col, "<b>Anti-up quark</b>. Antimatter! With a quark it makes a meson; three antiquarks make an antiproton.", (x, y, vx, vy) => mkQuark(x, y, "u", true, vx, vy), true],
     ["ad", "d̄", "Anti-down", QF.d.col, "<b>Anti-down quark</b>. ū ū d̄ = antiproton.", (x, y, vx, vy) => mkQuark(x, y, "d", true, vx, vy), true],
     ["as", "s̄", "Anti-strange", QF.s.col, "<b>Anti-strange quark</b>. u + s̄ makes a kaon.", (x, y, vx, vy) => mkQuark(x, y, "s", true, vx, vy), true],
+    ["ac", "c̄", "Anti-charm", QF.c.col, "<b>Anti-charm quark</b>. c + c̄ makes a J/ψ meson.", (x, y, vx, vy) => mkQuark(x, y, "c", true, vx, vy), true],
+    ["ab", "b̄", "Anti-bottom", QF.b.col, "<b>Anti-bottom quark</b>. b + b̄ makes an Upsilon meson.", (x, y, vx, vy) => mkQuark(x, y, "b", true, vx, vy), true],
+    ["at", "t̄", "Anti-top", QF.t.col, "<b>Anti-top quark</b>. Decays almost instantly, like the top.", (x, y, vx, vy) => mkQuark(x, y, "t", true, vx, vy), true],
   ]],
   ["Leptons", [
     ["e", "e⁻", "Electron", LEP.e.col, "<b>Electron</b> (charge −1). Orbits nuclei to make atoms. Add as many as there are protons for a neutral atom.", (x, y, vx, vy) => mkLep(x, y, "e", false, vx, vy)],
@@ -1424,6 +1487,11 @@ const PAL = [
     ["mu", "μ", "Muon", LEP.mu.col, "<b>Muon</b>: a heavy electron. Decays in a few seconds into an electron and neutrinos.", (x, y, vx, vy) => mkLep(x, y, "mu", false, vx, vy)],
     ["tau", "τ", "Tau", LEP.tau.col, "<b>Tau</b>: the heaviest lepton. Decays into a muon.", (x, y, vx, vy) => mkLep(x, y, "tau", false, vx, vy)],
     ["nu", "ν", "Neutrino", "#ffffff", "<b>Neutrino</b>: a ghost particle. It flies straight through everything!", (x, y, vx, vy) => mkNu(x, y, "e", false, Math.hypot(vx, vy) > 0.3 ? Math.atan2(vy, vx) : undefined)],
+    ["mup", "μ⁺", "Anti-muon", LEP.mu.acol, "<b>Anti-muon</b> (charge +1). Annihilates with a muon. Decays into a positron + neutrinos.", (x, y, vx, vy) => mkLep(x, y, "mu", true, vx, vy)],
+    ["taup", "τ⁺", "Anti-tau", LEP.tau.acol, "<b>Anti-tau</b> (charge +1). Decays into an anti-muon.", (x, y, vx, vy) => mkLep(x, y, "tau", true, vx, vy)],
+    ["anu", "ν̄", "Antineutrino", "#e0e6ff", "<b>Electron antineutrino</b>: what beta⁻ decay fires out. Another ghost.", (x, y, vx, vy) => mkNu(x, y, "e", true, Math.hypot(vx, vy) > 0.3 ? Math.atan2(vy, vx) : undefined)],
+    ["numu", "νμ", "Muon neutrino", "#e8ffe0", "<b>Muon neutrino</b>: the muon's ghostly partner.", (x, y, vx, vy) => mkNu(x, y, "mu", false, Math.hypot(vx, vy) > 0.3 ? Math.atan2(vy, vx) : undefined)],
+    ["nutau", "ντ", "Tau neutrino", "#fff0e0", "<b>Tau neutrino</b>: the rarest neutrino to catch.", (x, y, vx, vy) => mkNu(x, y, "tau", false, Math.hypot(vx, vy) > 0.3 ? Math.atan2(vy, vx) : undefined)],
   ]],
   ["Force carriers", [
     ["ph", "γ", "Photon", "#ffe36e", "<b>Photon</b> — a particle of light. Shine it on atoms to make them glow.", (x, y, vx, vy) => mkPhoton(x, y, Math.hypot(vx, vy) > 0.3 ? Math.atan2(vy, vx) : ra(), Math.random())],
@@ -1439,8 +1507,38 @@ const PAL = [
     ["n", "n", "Neutron", "#c9ced6", "<b>Neutron</b> (u d d). Glues nuclei together. Too many or too few → radioactive! Free neutrons decay after ~15 s.", (x, y, vx, vy) => mkNuc(x, y, 0, 1, 0, vx, vy)],
     ["alpha", "α", "Alpha", "#ff9f8a", "<b>Alpha particle</b>: a helium-4 nucleus (2p + 2n). Add 2 electrons for a helium atom.", (x, y, vx, vy) => mkNuc(x, y, 2, 2, 0, vx, vy)],
     ["pbar", "p̄", "Antiproton", "#ff7ce0", "<b>Antiproton</b>: antimatter proton. Annihilates nuclei it touches. Add a positron for antihydrogen!", (x, y, vx, vy) => mkAntiNucleon(x, y, true, vx, vy)],
+    ["nbar", "n̄", "Antineutron", "#ff7ce0", "<b>Antineutron</b> (ū d̄ d̄): neutral antimatter. Annihilates any nucleus it touches.", (x, y, vx, vy) => mkAntiNucleon(x, y, false, vx, vy), true],
+    ["deut", "²H", "Deuteron", "#ff9f8a", "<b>Deuteron</b>: 1 proton + 1 neutron, the nucleus of heavy hydrogen.", (x, y, vx, vy) => mkNuc(x, y, 1, 1, 0, vx, vy)],
+    ["trit", "³H", "Triton", "#c6ff6e", "<b>Triton</b>: 1 proton + 2 neutrons. Radioactive tritium.", (x, y, vx, vy) => mkNuc(x, y, 1, 2, 0, vx, vy)],
+    ["he3", "³He", "Helium-3", "#ff9f8a", "<b>Helium-3 nucleus</b>: 2 protons + 1 neutron. Two of them fuse into helium-4 + 2 protons.", (x, y, vx, vy) => mkNuc(x, y, 2, 1, 0, vx, vy)],
+    ["ahyd", "H̄", "Antihydrogen", "#ff7ce0", "<b>Antihydrogen</b>: an antiproton with a positron orbiting it. A whole anti-atom!", (x, y, vx, vy) => { const h = mkAntiNucleon(x, y, true, vx, vy); h.pos = 1; h.name = "Antihydrogen"; h.r = 15; return h; }, true],
+  ]],
+  ["Hadrons (made of quarks)", [
+    ["pip", "π⁺", "Pion +", "#9dd7ff", "<b>Pion π⁺</b> (u d̄): the lightest meson. Decays into an anti-muon + neutrino.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 0], ["d", 1]])],
+    ["pim", "π⁻", "Pion −", "#9dd7ff", "<b>Pion π⁻</b> (d ū). Decays into a muon + antineutrino.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["d", 0], ["u", 1]])],
+    ["pi0", "π⁰", "Pion 0", "#9dd7ff", "<b>Neutral pion π⁰</b> (u ū). Turns into two gamma rays.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 0], ["u", 1]])],
+    ["kp", "K⁺", "Kaon +", "#7ee08f", "<b>Kaon K⁺</b> (u s̄): a strange meson.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 0], ["s", 1]])],
+    ["km", "K⁻", "Anti-kaon −", "#7ee08f", "<b>Anti-kaon K⁻</b> (s ū): the antiparticle of K⁺.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["s", 0], ["u", 1]]), true],
+    ["k0", "K⁰", "Kaon 0", "#7ee08f", "<b>Neutral kaon K⁰</b> (d s̄).", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["d", 0], ["s", 1]])],
+    ["k0b", "K̄⁰", "Anti-kaon 0", "#7ee08f", "<b>Neutral anti-kaon K̄⁰</b> (s d̄).", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["s", 0], ["d", 1]]), true],
+    ["phi", "φ", "Phi meson", "#7ee08f", "<b>Phi meson φ</b> (s s̄).", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["s", 0], ["s", 1]])],
+    ["jpsi", "J/ψ", "J/psi", QF.c.col, "<b>J/ψ</b> (c c̄): the famous charm–anticharm meson.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["c", 0], ["c", 1]])],
+    ["dmes", "D⁺", "D meson", QF.c.col, "<b>D⁺ meson</b> (c d̄): a charmed meson.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["c", 0], ["d", 1]], "D⁺ meson")],
+    ["bmes", "B⁺", "B meson", QF.b.col, "<b>B⁺ meson</b> (u b̄): a bottom meson.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 0], ["b", 1]], "B⁺ meson")],
+    ["ups", "Υ", "Upsilon", QF.b.col, "<b>Upsilon Υ</b> (b b̄).", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["b", 0], ["b", 1]])],
+    ["lam", "Λ", "Lambda", "#ffcf70", "<b>Lambda Λ⁰</b> (u d s): a strange baryon. Decays into a nucleon + pion.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 0], ["d", 0], ["s", 0]])],
+    ["alam", "Λ̄", "Anti-lambda", "#ffcf70", "<b>Anti-lambda</b> (ū d̄ s̄). Decays into an antinucleon.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 1], ["d", 1], ["s", 1]]), true],
+    ["sigp", "Σ⁺", "Sigma +", "#ffcf70", "<b>Sigma Σ⁺</b> (u u s).", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 0], ["u", 0], ["s", 0]])],
+    ["sigm", "Σ⁻", "Sigma −", "#ffcf70", "<b>Sigma Σ⁻</b> (d d s).", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["d", 0], ["d", 0], ["s", 0]])],
+    ["xi0", "Ξ⁰", "Xi 0", "#ffcf70", "<b>Xi Ξ⁰</b> (u s s): doubly strange.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 0], ["s", 0], ["s", 0]])],
+    ["xim", "Ξ⁻", "Xi −", "#ffcf70", "<b>Xi Ξ⁻</b> (d s s).", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["d", 0], ["s", 0], ["s", 0]])],
+    ["omg", "Ω⁻", "Omega", "#ffcf70", "<b>Omega Ω⁻</b> (s s s): triple strange! Its discovery proved the quark model.", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["s", 0], ["s", 0], ["s", 0]])],
+    ["dpp", "Δ⁺⁺", "Delta ++", "#ffcf70", "<b>Delta Δ⁺⁺</b> (u u u): charge +2!", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 0], ["u", 0], ["u", 0]])],
+    ["dm", "Δ⁻", "Delta −", "#ffcf70", "<b>Delta Δ⁻</b> (d d d).", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["d", 0], ["d", 0], ["d", 0]])],
+    ["lamc", "Λc", "Charmed Λ", QF.c.col, "<b>Charmed lambda Λc⁺</b> (u d c).", (x, y, vx, vy) => hadronFrom(x, y, vx, vy, [["u", 0], ["d", 0], ["c", 0]], "Λc⁺ (charmed Lambda)")],
   ]],
   ["Ready-made atoms", [
+    ["anyel", "?", "Any element…", "#ffd166", "<b>Any element</b>: pick any of the 118 elements from the periodic table.", (x, y, vx, vy) => mkElementAtom(S.anyZ || 6, x, y, vx, vy)],
     ["aH", "H", "Hydrogen", "#9ad1ff", "<b>Hydrogen atom</b>: 1 proton + 1 electron.", (x, y, vx, vy) => mkNuc(x, y, 1, 0, 1, vx, vy)],
     ["aHe", "He", "Helium", "#9ad1ff", "<b>Helium atom</b>: 2p 2n 2e. A noble gas: it never bonds.", (x, y, vx, vy) => mkNuc(x, y, 2, 2, 2, vx, vy)],
     ["aC", "C", "Carbon", "#9ad1ff", "<b>Carbon-12</b>: 4 bonds. The backbone of life.", (x, y, vx, vy) => mkNuc(x, y, 6, 6, 6, vx, vy)],
@@ -1464,7 +1562,8 @@ function buildPalette() {
     for (const it of items) {
       ITEMS[it[0]] = it;
       const anti = it[6];
-      const st = anti ? "background:#0b0e1a;color:" + it[3] + ";border:2px solid " + it[3] : "background:" + it[3];
+      let st = anti ? "background:#0b0e1a;color:" + it[3] + ";border:2px solid " + it[3] : "background:" + it[3];
+      if ([...it[1]].length > 2) st += ";font-size:9px";
       html += '<button class="item" data-id="' + it[0] + '" title="' + it[2] + '"><span class="sw" style="' + st + '">' + it[1] + '</span><span class="nm">' + it[2] + "</span></button>";
     }
     html += "</div></div>";
@@ -1473,6 +1572,7 @@ function buildPalette() {
   el.innerHTML = html;
   el.addEventListener("click", e => {
     const b = e.target.closest(".item"); if (!b) return;
+    if (b.dataset.id === "anyel") { openElementPicker(); return; }
     selectItem(b.dataset.id);
   });
 }
@@ -1482,6 +1582,10 @@ function selectItem(id) {
   document.querySelectorAll("[data-tool]").forEach(x => x.classList.remove("on"));
   cv.classList.remove("pan");
   document.getElementById("desc").innerHTML = S.sel[4];
+  updateScatLabel();
+}
+function updateScatLabel() {
+  document.getElementById("scatSel").innerHTML = S.sel ? "Scatter <b>" + S.sel[2] + "</b>" : "Pick a particle to scatter";
 }
 function setTool(t) {
   S.tool = t; S.sel = null;
@@ -1491,7 +1595,50 @@ function setTool(t) {
   document.getElementById("desc").innerHTML = { hand: "<b>Grab</b>: drag things around and fling them. Throw atoms hard to fuse them!",
     zap: "<b>Zap</b>: a blast of energy — strips electrons, breaks molecules, splits heavy nuclei.", erase: "<b>Erase</b>: wipe things away.",
     pan: "<b>Pan</b>: drag to move your view around. Scroll or pinch with two fingers to zoom. Press ⌖ Center to fit the whole box on screen." }[t];
+  updateScatLabel();
 }
+
+function blockColor(Z) {
+  const p = ptPos(Z);
+  if (p.f) return "#c3a6ff";
+  if (Z === 1) return "#9ad1ff";
+  if (p.group === 18) return "#ffb3ef";
+  if (p.group <= 2) return "#ff9f8a";
+  if (p.group >= 13) return "#9dffb0";
+  return "#ffd166";
+}
+function openElementPicker() {
+  const g = document.getElementById("elGrid");
+  if (!g.childElementCount) {
+    const cells = {};
+    for (let Z = 1; Z <= 118; Z++) { const p = ptPos(Z); cells[(p.f ? (p.period === 6 ? 9 : 10) : p.period) + "," + (p.f ? 3 + p.fcol : p.group)] = Z; }
+    let html = "";
+    for (let r = 1; r <= 10; r++) for (let c = 1; c <= 18; c++) {
+      if (r === 8) { if (c === 1) html += '<div style="grid-column:1/19;height:6px"></div>'; continue; }
+      const Z = cells[r + "," + c];
+      html += Z ? '<button data-z="' + Z + '" title="' + ename(Z) + '" style="background:' + blockColor(Z) + '"><small>' + Z + "</small>" + sym(Z) + "</button>" : '<div class="gap"></div>';
+    }
+    g.innerHTML = html;
+    g.addEventListener("click", e => {
+      const b = e.target.closest("button[data-z]"); if (!b) return;
+      pickElement(+b.dataset.z);
+    });
+  }
+  document.getElementById("elPick").classList.add("show");
+}
+function pickElement(Z) {
+  S.anyZ = Z;
+  const A = Z + commonN(Z), it = ITEMS.anyel;
+  it[1] = sym(Z); it[2] = ename(Z) + "-" + A;
+  it[4] = "<b>" + ename(Z) + "-" + A + "</b>: " + Z + " protons, " + commonN(Z) + " neutrons, " + Z + " electrons." + (decayInfo(Z, commonN(Z)) ? " ☢ Radioactive!" : "") + " Click the button again to pick another element.";
+  const btn = document.querySelector('.item[data-id="anyel"]');
+  btn.querySelector(".sw").textContent = sym(Z); btn.querySelector(".sw").style.fontSize = sym(Z).length > 2 ? "9px" : "";
+  btn.querySelector(".nm").textContent = ename(Z);
+  document.getElementById("elPick").classList.remove("show");
+  selectItem("anyel");
+}
+document.getElementById("elClose").addEventListener("click", () => document.getElementById("elPick").classList.remove("show"));
+document.getElementById("elPick").addEventListener("click", e => { if (e.target.id === "elPick") e.target.classList.remove("show"); });
 
 // ================= Side panel =================
 function buildSide() {
@@ -1820,7 +1967,7 @@ window.addEventListener("keydown", e => {
 });
 
 // ================= Loop =================
-let last = performance.now();
+let last = performance.now(), countTick = 0;
 function loop(now) {
   const dtf = Math.min(3, (now - last) / 16.667); last = now;
   sprayTick();
@@ -1830,7 +1977,7 @@ function loop(now) {
     for (let i = 0; i < steps; i++) step(k / steps);
   }
   draw();
-  if (frame % 20 === 0) document.getElementById("count").textContent = ents.filter(o => !o.dead).length + " particles";
+  if ((countTick = (countTick + 1) % 20) === 0) document.getElementById("count").textContent = ents.filter(o => !o.dead).length + " particles";
   requestAnimationFrame(loop);
 }
 
@@ -1846,7 +1993,7 @@ try { if (!localStorage.getItem("atomPlaygroundSeen")) { document.getElementById
   mkQuark(x - 160, y - 40, "u", false); mkQuark(x - 110, y - 70, "u", false); mkQuark(x - 120, y - 10, "d", false);
   mkNuc(x + 60, y - 20, 8, 8, 8); mkNuc(x + 150, y + 40, 1, 0, 1); mkNuc(x - 20, y + 80, 1, 0, 1);
 })();
-window.AP = { cam, BOX, S, setEdge, fitView, setDecayMode, realHalfLife, fmtTime, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
+window.AP = { cam, BOX, S, setEdge, fitView, pickElement, ITEMS, commonN, setDecayMode, realHalfLife, fmtTime, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
 requestAnimationFrame(loop);
 </script>
 </body>
