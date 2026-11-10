@@ -151,6 +151,8 @@
       <option value="alchemy">Alchemy: platinum → gold</option>
       <option value="higgs">Higgs factory</option>
     </select>
+    <button class="btn" id="scatter" title="Spawn lots of the selected particle at random spots">🎲 Scatter</button>
+    <label class="ctl" title="How many to scatter"><input type="number" id="scatterN" min="1" max="300" step="1" value="20"></label>
     <button class="btn" id="bigbang" title="Fill the box with a hot quark soup">💥 Big Bang</button>
     <button class="btn" id="clear">🗑 Clear</button>
     <button class="btn on" id="labels">🏷 Labels</button>
@@ -197,7 +199,7 @@
     <li><b>W bosons</b> turn neutrons into protons (and back). <b>Z</b> and <b>Higgs</b> bosons decay fast — the Higgs field slows things nearby.</li>
     <li>Heavy quarks, muons and taus decay into lighter particles. <b>Neutrinos</b> are ghosts that fly through everything.</li>
   </ul>
-  <p class="muted">Controls: pick a particle, then click to drop, drag to launch, hold still to spray. ✋ Grab lets you fling things. ⚡ Zap blasts energy. 🖐 Pan moves your view; the scroll wheel or a two-finger pinch zooms. 🧱 Border makes the box walls bouncy, 🌀 Wrap sends things out one side and back in the other, and with both off it's open space. 📏 Box sets how wide the box is, from 10 atoms up to 1,000,000 atoms. Space = pause.</p>
+  <p class="muted">Controls: pick a particle, then click to drop, drag to launch, hold still to spray. ✋ Grab lets you fling things. ⚡ Zap blasts energy. 🎲 Scatter drops lots of the selected particle at random spots. 🖐 Pan moves your view; the scroll wheel or a two-finger pinch zooms. 🧱 Border makes the box walls bouncy, 🌀 Wrap sends things out one side and back in the other, and with both off it's open space. 📏 Box sets how wide the box is, from 10 atoms up to 1,000,000 atoms. Space = pause.</p>
   <button class="btn" id="helpClose">Let's play!</button>
 </div></div>
 
@@ -1731,6 +1733,26 @@ document.getElementById("speed").addEventListener("input", e => S.speed = +e.tar
 document.getElementById("heat").addEventListener("input", e => S.heat = +e.target.value);
 document.getElementById("recipes").addEventListener("change", e => { const r = RECIPES[e.target.value]; if (r) r(); e.target.value = ""; });
 document.getElementById("bigbang").addEventListener("click", bigBang);
+function scatter() {
+  if (!S.sel) { toast("🎲 Pick a particle or atom in the list first, then press Scatter."); return; }
+  const want = Math.max(1, Math.min(300, parseInt(document.getElementById("scatterN").value, 10) || 20));
+  document.getElementById("scatterN").value = want;
+  const room = MAXE - ents.filter(o => !o.dead).length;
+  const n = Math.min(want, room);
+  if (n <= 0) { toast("The box is full! Clear some space."); return; }
+  // spread over the part of the box you can see (or everywhere you can see, in open space)
+  let x0 = cam.x, y0 = cam.y, x1 = cam.x + W / cam.z, y1 = cam.y + H / cam.z;
+  if (S.edge !== "open") { x0 = Math.max(x0, 0); y0 = Math.max(y0, 0); x1 = Math.min(x1, BOX.w); y1 = Math.min(y1, BOX.h); }
+  if (x1 - x0 < 40 || y1 - y0 < 40) { x0 = 0; y0 = 0; x1 = BOX.w; y1 = BOX.h; }
+  const pad = 20;
+  for (let i = 0; i < n; i++) {
+    const a = ra(), sp = rnd(0, 1.5);
+    S.sel[5](rnd(x0 + pad, x1 - pad), rnd(y0 + pad, y1 - pad), Math.cos(a) * sp, Math.sin(a) * sp);
+  }
+  boom((x0 + x1) / 2, (y0 + y1) / 2, "#9dd7ff", 0, 0);
+  toast("🎲 Scattered " + n + " × " + S.sel[2] + (n < want ? " (the box is nearly full)" : ""));
+}
+document.getElementById("scatter").addEventListener("click", scatter);
 function setEdge(m) {
   S.edge = S.edge === m ? "open" : m;
   document.getElementById("edgeBorder").classList.toggle("on", S.edge === "border");
