@@ -35,6 +35,7 @@
   .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
   .ctl { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); font-size: 12px; }
   .ctl input[type=range] { width: 80px; accent-color: var(--accent); }
+  .ctl input[type=number] { width: 64px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
   #boxLbl { min-width: 96px; color: var(--ink); font-variant-numeric: tabular-nums; }
   select.btn { padding: 5px 6px; }
 
@@ -132,6 +133,10 @@
     <label class="ctl">🌡 Heat <input type="range" id="heat" min="0" max="100" step="1" value="8"></label>
     <label class="ctl" title="How wide the box is, measured in atoms">📏 Box <input type="range" id="boxSize" min="1" max="6" step="0.01" value="1.35"> <span id="boxLbl"></span></label>
     <div class="sep"></div>
+    <button class="btn" id="decayReal" title="Radioactive atoms decay after their real measured half-life">☢ Real decay time</button>
+    <button class="btn" id="decaySet" title="Every radioactive atom decays after the number of seconds you choose">⏱ Set decay time</button>
+    <label class="ctl" title="Seconds until each radioactive atom decays (used by Set decay time)"><input type="number" id="decaySecs" min="0" max="100000" step="0.5" value="5"> s</label>
+    <div class="sep"></div>
     <select class="btn" id="recipes" title="Spawn a ready-made experiment">
       <option value="">🧪 Experiments…</option>
       <option value="water">Water kit (2 H + O)</option>
@@ -185,7 +190,7 @@
     <li>Add <b>electrons</b> to a nucleus until it's neutral → a real <b>atom</b>.</li>
     <li>Neutral atoms with free bonds snap into <b>molecules</b>: H₂O, CO₂, NaCl, CH₄, NH₃…</li>
     <li>Atoms have electron clouds that keep them apart. <b>Throw them hard</b> (or turn up the heat) to <b>fuse</b> them into heavier elements. Bare nuclei fuse on touch.</li>
-    <li>Wrong number of neutrons? The nucleus is <b>radioactive</b> ☢ and will β⁻, β⁺ or α decay.</li>
+    <li>Wrong number of neutrons? The nucleus is <b>radioactive</b> ☢ and will β⁻, β⁺ or α decay. Normally this is sped up so you can watch it. <b>☢ Real decay time</b> uses each isotope's real half-life (uranium-235 takes 704 million years!). <b>⏱ Set decay time</b> makes every radioactive atom decay after the number of seconds you type.</li>
     <li>Fire a <b>neutron</b> at <b>Uranium-235</b> for fission and a chain reaction.</li>
     <li><b>Antimatter</b> (positrons, antiquarks, antiprotons) annihilates with matter into gamma rays.</li>
     <li><b>Photons</b> make atoms glow (fluorescence). <b>Gamma rays</b> knock electrons out or make electron–positron pairs.</li>
@@ -268,6 +273,51 @@ function decayInfo(Z, N) {
   return { mode: N > (lo + hi) / 2 ? "beta-" : "beta+", life: rnd(5, 10) };
 }
 
+// ---- decay timing modes: "game" (sped up), "real" (measured half-lives), "set" (one time for all) ----
+const YR = 31557600;
+const HALF = { // measured half-lives in seconds, key "Z-N"
+  "0-1": 611, "1-2": 12.32 * YR, "2-0": 1e-21, "2-3": 7e-22, "3-2": 3.7e-22, "4-4": 8.2e-17, "2-4": 0.807, "3-5": 0.84,
+  "4-3": 53.2 * 86400, "4-6": 1.39e6 * YR, "5-3": 0.77, "6-4": 19.3, "6-5": 20.4 * 60, "6-8": 5730 * YR, "7-6": 9.97 * 60,
+  "7-9": 7.13, "8-6": 70.6, "8-7": 122, "9-9": 109.8 * 60, "10-9": 17.2, "11-11": 2.6 * YR, "11-13": 15 * 3600,
+  "13-13": 7.17e5 * YR, "15-17": 14.3 * 86400, "16-19": 87.4 * 86400, "17-19": 3.01e5 * YR, "18-21": 269 * YR,
+  "19-21": 1.25e9 * YR, "20-21": 9.9e4 * YR, "26-29": 2.74 * YR, "26-34": 2.6e6 * YR, "27-33": 5.27 * YR, "28-28": 6.08 * 86400,
+  "28-35": 101 * YR, "36-49": 10.7 * YR, "38-52": 28.8 * YR, "43-56": 2.11e5 * YR, "53-78": 8.02 * 86400, "55-82": 30.2 * YR,
+  "61-86": 2.62 * YR, "84-126": 138.4 * 86400, "84-128": 2.99e-7, "84-134": 186, "86-136": 3.82 * 86400, "88-138": 1600 * YR,
+  "90-142": 1.405e10 * YR, "90-144": 24.1 * 86400, "91-143": 6.7 * 3600, "92-141": 1.59e5 * YR, "92-142": 2.455e5 * YR,
+  "92-143": 7.04e8 * YR, "92-144": 2.34e7 * YR, "92-146": 4.468e9 * YR, "92-147": 23.45 * 60, "93-146": 2.36 * 86400,
+  "94-144": 87.7 * YR, "94-145": 24110 * YR, "95-146": 432.2 * YR,
+};
+function realHalfLife(Z, N, mode) {
+  const known = HALF[Z + "-" + N];
+  if (known) return { t: known, measured: true };
+  // no measurement on file: estimate from how unstable it is (same isotope always gets the same estimate)
+  const h = Math.abs(Math.sin(Z * 12.9898 + N * 78.233) * 43758.5453) % 1;
+  const [lo, hi] = Z > 0 ? stableRange(Z) : [1, 1];
+  const d = Math.max(N - hi, lo - N, 1);
+  let t;
+  if (mode === "n" || mode === "p") t = 1e-21;
+  else if (Z > 118) t = 1e-3;
+  else if (mode === "alpha") t = Z > 100 ? Math.pow(10, -3 + h * 3) : Math.pow(10, h * 10);
+  else if (N >= lo && N <= hi) t = Math.pow(10, 9 + h * 5);          // technetium / promethium style
+  else t = d === 1 ? Math.pow(10, 1 + h * 4) : d === 2 ? Math.pow(10, -1 + h * 2.5) : Math.pow(10, -3 + h * 3);
+  return { t, measured: false };
+}
+function lifeFor(Z, N, d) {
+  if (S.decayMode === "real") return realHalfLife(Z, N, d.mode).t;
+  if (S.decayMode === "set") return S.decaySecs;
+  return d.life;
+}
+function fmtTime(sec) {
+  if (sec < 1e-3) return "less than a millisecond";
+  if (sec < 60) return +sec.toPrecision(2) + " s";
+  if (sec < 3600) return +(sec / 60).toPrecision(2) + " minutes";
+  if (sec < 86400) return +(sec / 3600).toPrecision(2) + " hours";
+  if (sec < YR) return +(sec / 86400).toPrecision(2) + " days";
+  const y = sec / YR;
+  if (y < 1e6) return Math.round(y).toLocaleString("en-US") + " years";
+  if (y < 1e9) return +(y / 1e6).toPrecision(3) + " million years";
+  return +(y / 1e9).toPrecision(3) + " billion years";
+}
 const QF = {
   u: { q: 2 / 3, col: "#ff5d73", name: "Up" }, d: { q: -1 / 3, col: "#4cc9f0", name: "Down" },
   s: { q: -1 / 3, col: "#7ee08f", name: "Strange" }, c: { q: 2 / 3, col: "#ffd166", name: "Charm" },
@@ -310,7 +360,8 @@ const S = { paused: false, speed: 1, heat: 8, labels: true, tool: "hand", sel: n
 const BOX = { w: 800, h: 600 };          // the box in world units
 const cam = { x: 0, y: 0, z: 1 };         // screen = (world - cam) * z
 const ATOM_W = 40;                        // world units per atom width (about a hydrogen atom)
-S.boxAtoms = null;                        // null = box matches the screen
+S.boxAtoms = null;
+S.decayMode = "game"; S.decaySecs = 5;                        // null = box matches the screen
 let ents = [], bonds = [], fx = [], T = 0, nextId = 1, frame = 0, shake = 0;
 const MAXE = 900;
 let W = 0, H = 0, DPR = 1;
@@ -415,7 +466,7 @@ function refreshNuc(o) {
   o.A = o.Z + o.N; o.m = 1 + (o.A - 1) * 0.35;
   o.rn = nucR(o.A);
   const d = decayInfo(o.Z, o.N);
-  o.decay = d ? d.mode : null; o.decayAt = d ? T + d.life : Infinity;
+  o.decay = d ? d.mode : null; o.decayAt = d ? T + lifeFor(o.Z, o.N, d) : Infinity;
   refreshCloud(o);
   if (o.Z > 0 && o.Z <= 118) {
     if (discover("el", o.Z, null)) toast("✨ New element: " + ename(o.Z) + " (" + sym(o.Z) + ")");
@@ -1617,8 +1668,10 @@ function describe(o) {
       const q = o.Z - o.e;
       let t = "<b>" + ename(o.Z) + "-" + o.A + "</b> " + (o.e === 0 ? (o.A === 1 ? "(a proton)" : o.Z === 2 && o.N === 2 ? "(alpha particle)" : "nucleus") : q === 0 ? "atom" : "ion " + chargeStr(q));
       t += "<br>" + o.Z + " protons · " + o.N + " neutrons · " + o.e + " electrons";
-      if (o.decay) t += "<br>☢ Radioactive → " + ({ "beta-": "β⁻ decay", "beta+": "β⁺ decay", alpha: "α decay", n: "spits a neutron", p: "spits a proton", "2alpha": "splits in two" }[o.decay]) + " in ~" + Math.max(0, o.decayAt - T).toFixed(1) + " s";
-      else t += "<br>✓ Stable nucleus";
+      if (o.decay) t += "<br>☢ Radioactive → " + ({ "beta-": "β⁻ decay", "beta+": "β⁺ decay", alpha: "α decay", n: "spits a neutron", p: "spits a proton", "2alpha": "splits in two" }[o.decay]) + " in " + fmtTime(Math.max(0, o.decayAt - T));
+      if (o.decay && S.decayMode === "real") { const hl = realHalfLife(o.Z, o.N, o.decay); t += "<br>Half-life: " + fmtTime(hl.t) + (hl.measured ? " (measured)" : " (estimate)"); }
+      if (o.decay && S.decayMode === "set") t += "<br>Set decay time: " + fmtTime(S.decaySecs);
+      if (!o.decay) t += "<br>✓ Stable nucleus";
       if (q > 0) t += "<br>Needs " + q + " more electron" + (q > 1 ? "s" : "") + " to be neutral.";
       else if (o.Z > 0) { const v = valence(o.Z); t += "<br>" + (v ? "Bonds: " + usedVal(o) + " / " + v : "Noble — never bonds"); }
       return t;
@@ -1711,6 +1764,26 @@ document.getElementById("boxSize").addEventListener("input", e => {
   updateBoxLabel(); fitView();
 });
 document.getElementById("center").addEventListener("click", fitView);
+function retimeDecays() {
+  for (const o of ents) if (!o.dead && o.kind === "nuc" && o.decay) { const d = decayInfo(o.Z, o.N); if (d) o.decayAt = T + lifeFor(o.Z, o.N, d); }
+}
+function setDecayMode(m) {
+  S.decayMode = S.decayMode === m ? "game" : m;
+  document.getElementById("decayReal").classList.toggle("on", S.decayMode === "real");
+  document.getElementById("decaySet").classList.toggle("on", S.decayMode === "set");
+  retimeDecays();
+  toast({ real: "☢ Real decay time: each atom waits its real half-life. Uranium-235 needs 704 million years!",
+    set: "⏱ Every radioactive atom now decays after " + fmtTime(S.decaySecs) + ".",
+    game: "▶ Back to fast game decay times." }[S.decayMode]);
+}
+document.getElementById("decayReal").addEventListener("click", () => setDecayMode("real"));
+document.getElementById("decaySet").addEventListener("click", () => setDecayMode("set"));
+document.getElementById("decaySecs").addEventListener("change", e => {
+  const v = Math.max(0, Math.min(100000, parseFloat(e.target.value) || 0));
+  e.target.value = v; S.decaySecs = v;
+  if (S.decayMode === "set") { retimeDecays(); toast("⏱ Decay time set to " + fmtTime(v) + "."); }
+  else setDecayMode("set");
+});
 document.getElementById("clear").addEventListener("click", () => { ents = []; bonds = []; fx = []; molLabels = []; });
 document.getElementById("labels").addEventListener("click", e => { S.labels = !S.labels; e.currentTarget.classList.toggle("on", S.labels); });
 document.getElementById("helpBtn").addEventListener("click", () => document.getElementById("help").classList.add("show"));
@@ -1756,7 +1829,7 @@ try { if (!localStorage.getItem("atomPlaygroundSeen")) { document.getElementById
   mkQuark(x - 160, y - 40, "u", false); mkQuark(x - 110, y - 70, "u", false); mkQuark(x - 120, y - 10, "d", false);
   mkNuc(x + 60, y - 20, 8, 8, 8); mkNuc(x + 150, y + 40, 1, 0, 1); mkNuc(x - 20, y + 80, 1, 0, 1);
 })();
-window.AP = { cam, BOX, S, setEdge, fitView, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
+window.AP = { cam, BOX, S, setEdge, fitView, setDecayMode, realHalfLife, fmtTime, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
 requestAnimationFrame(loop);
 </script>
 </body>
