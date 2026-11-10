@@ -156,6 +156,7 @@
     <button class="btn" id="pause" title="Pause (Space)">⏸ Pause</button>
     <label class="ctl">Speed <input type="range" id="speed" min="0.1" max="2" step="0.1" value="1"></label>
     <label class="ctl">🌡 Heat <input type="range" id="heat" min="0" max="100" step="1" value="8"></label>
+    <label class="ctl" title="How strongly everything pulls on everything else. 0 = no gravity">🪐 Gravity <input type="range" id="grav" min="0" max="100" step="1" value="0"></label>
     <label class="ctl" title="How wide the box is, measured in atoms">📏 Box <input type="range" id="boxSize" min="1" max="6" step="0.01" value="1.35"> <span id="boxLbl"></span></label>
     <div class="sep"></div>
     <button class="btn" id="decayReal" title="Radioactive atoms decay after their real measured half-life">☢ Real decay time</button>
@@ -175,6 +176,8 @@
       <option value="anti">Antimatter vs matter</option>
       <option value="alchemy">Alchemy: platinum → gold</option>
       <option value="higgs">Higgs factory</option>
+      <option value="planets">Planet maker (gravity)</option>
+      <option value="star">Star maker (gravity)</option>
     </select>
     <button class="btn" id="bigbang" title="Fill the box with a hot quark soup">💥 Big Bang</button>
     <button class="btn" id="clear">🗑 Clear</button>
@@ -193,7 +196,7 @@
     <div id="count"></div>
     <div id="scatBar">
       <span id="scatSel">Pick a particle to scatter</span>
-      <input type="number" id="scatterN" min="1" max="300" step="1" value="20" title="How many to scatter" aria-label="How many to scatter">
+      <input type="number" id="scatterN" min="1" max="5000" step="1" value="20" title="How many to scatter" aria-label="How many to scatter">
       <button class="btn" id="scatter" title="Spawn lots of the selected particle at random spots">🎲 Scatter</button>
     </div>
   </main>
@@ -230,6 +233,7 @@
     <li>Fire a <b>neutron</b> at <b>Uranium-235</b> for fission and a chain reaction.</li>
     <li><b>Antimatter</b> (positrons, antiquarks, antiprotons) annihilates with matter into gamma rays.</li>
     <li><b>Photons</b> make atoms glow (fluorescence). <b>Gamma rays</b> knock electrons out or make electron–positron pairs.</li>
+    <li>Turn up <b>🪐 Gravity</b> and atoms pull on each other and clump into asteroids, planets and even stars. Try the Planet maker and Star maker experiments.</li>
     <li><b>W bosons</b> turn neutrons into protons (and back). <b>Z</b> and <b>Higgs</b> bosons decay fast — the Higgs field slows things nearby.</li>
     <li>Heavy quarks, muons and taus decay into lighter particles. <b>Neutrinos</b> are ghosts that fly through everything.</li>
   </ul>
@@ -397,9 +401,8 @@ const BOX = { w: 800, h: 600 };          // the box in world units
 const cam = { x: 0, y: 0, z: 1 };         // screen = (world - cam) * z
 const ATOM_W = 40;                        // world units per atom width (about a hydrogen atom)
 S.boxAtoms = null;
-S.decayMode = "game"; S.decaySecs = 5;                        // null = box matches the screen
+S.decayMode = "game"; S.decaySecs = 5; S.grav = 0;                        // null = box matches the screen
 let ents = [], bonds = [], fx = [], T = 0, nextId = 1, frame = 0, shake = 0;
-const MAXE = 900;
 let W = 0, H = 0, DPR = 1;
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
 const stage = document.getElementById("stage");
@@ -469,6 +472,8 @@ const GOALS = [
   ["Alchemy: make gold (Au)", () => disc.el.has(79)],
   ["Discover 20 elements", () => disc.el.size >= 20],
   ["Feed a black hole", () => disc.ev.has("Black hole snack")],
+  ["Use gravity to form a planet", () => disc.ev.has("Planet formed")],
+  ["Make a star from a hydrogen cloud", () => disc.ev.has("Star formed")],
 ];
 const goalDone = new Set();
 function checkGoals() {
@@ -481,7 +486,6 @@ let booted = false;
 
 // ================= Entities =================
 function add(o) {
-  if (ents.length >= MAXE && o.kind !== "nuc") { o.dead = true; return o; }
   o.id = nextId++; o.vx = o.vx || 0; o.vy = o.vy || 0; o.born = T;
   if (o.m === undefined) o.m = 1;
   ents.push(o); return o;
@@ -601,15 +605,12 @@ function usedVal(o) { let s = 0; for (const [, b] of o.bonds) s += b.order; retu
 function freeVal(o) { return valence(o.Z) - usedVal(o); }
 function isAtom(o) { return o.kind === "nuc" && o.Z > 0 && o.e === o.Z; }
 function bondPass() {
-  const atoms = ents.filter(o => !o.dead && isAtom(o) && freeVal(o) > 0);
-  for (let i = 0; i < atoms.length; i++) {
-    const a = atoms[i];
-    for (let j = i + 1; j < atoms.length; j++) {
-      const b = atoms[j];
-      if (freeVal(a) <= 0) break;
-      if (freeVal(b) <= 0) continue;
+  forPairs(reachTouch, (a, b) => {
+    if (a.kind !== "nuc" || b.kind !== "nuc" || !isAtom(a) || !isAtom(b)) return;
+    if (freeVal(a) <= 0 || freeVal(b) <= 0) return;
+    {
       const d = Math.hypot(b.x - a.x, b.y - a.y);
-      if (d > (a.r + b.r) * 0.95) continue;
+      if (d > (a.r + b.r) * 0.95) return;
       const bd = a.bonds.get(b.id);
       if (bd) { if (bd.order < 3 && T - bd.t > 0.35) { bd.order++; bd.t = T; } }
       else {
@@ -618,7 +619,7 @@ function bondPass() {
         flash((a.x + b.x) / 2, (a.y + b.y) / 2, "#9dffb0", 14, 0.3);
       }
     }
-  }
+  });
 }
 function bondForces(k) {
   for (const b of bonds) {
@@ -675,6 +676,144 @@ function moleculePass() {
 }
 
 // ================= Physics =================
+const GRID = new Map(), GCS = 40;    // cell size in world units
+let MAXR = 10;                          // biggest radius in play this frame
+function gkey(cx, cy) { return cx * 4194304 + cy; }
+function buildGrid() {
+  GRID.clear(); MAXR = 10;
+  for (let i = 0; i < ents.length; i++) {
+    const o = ents[i]; o._i = i;
+    if (o.dead || o.inert || o.kind === "bh") continue;
+    if (!o.ghost && o.r > MAXR) MAXR = o.r;
+    const k = gkey(Math.floor(o.x / GCS), Math.floor(o.y / GCS));
+    let c = GRID.get(k); if (!c) GRID.set(k, c = []); c.push(o);
+  }
+}
+// Call fn(a, b) once for every pair that might be close enough to matter.
+// reach(o) says how far o can affect things; each pair is handled by whichever of the two reaches further.
+function forPairs(reach, fn) {
+  const n = ents.length;
+  for (let i = 0; i < n; i++) { const o = ents[i]; if (o._i === i && !o.dead && !o.inert && o.kind !== "bh") o._rg = Math.ceil(reach(o) / GCS); }
+  for (let i = 0; i < n; i++) {
+    const a = ents[i];
+    if (a.dead || a.inert || a.kind === "bh" || a._i !== i) continue;
+    const ra = a._rg, cx = Math.floor(a.x / GCS), cy = Math.floor(a.y / GCS);
+    for (let gx = cx - ra; gx <= cx + ra && !a.dead; gx++) for (let gy = cy - ra; gy <= cy + ra; gy++) {
+      const c = GRID.get(gkey(gx, gy)); if (!c) continue;
+      for (let j = 0; j < c.length; j++) {
+        const b = c[j];
+        if (b === a || b.dead) continue;
+        const rb = b._rg;
+        if (ra > rb || (ra === rb && b._i > i)) { fn(a, b); if (a.dead) break; }
+      }
+      if (a.dead) break;
+    }
+  }
+}
+// how far each thing's short-range pushes and pulls reach; full, neutral atoms only need to feel things they touch
+function reachForce(o) {
+  if (o.ghost) return 0;
+  if (o.kind === "q" || o.kind === "g") return 170;
+  if (charge(o) !== 0) return 240;
+  if (o.kind === "nuc") {
+    if (o.Z === 0) return o.rn + MAXR + 10;                    // neutrons feel the strong force up close
+    if (isAtom(o) && freeVal(o) > 0) return (o.r + MAXR) * 1.7; // atoms looking for a bond partner
+  }
+  return 0;
+}
+const reachTouch = o => o.r + MAXR + 2;
+
+// ---------- gravity (Barnes–Hut tree: far-away groups pull like one lump) ----------
+function gNode(x, y, s) { return { x, y, s, m: 0, mx: 0, my: 0, b: null, k: null, cnt: 0 }; }
+function gInsert(n, b, depth) {
+  n.m += b.m; n.mx += b.x * b.m; n.my += b.y * b.m; n.cnt++;
+  if (n.k) { gChild(n, b, depth); return; }
+  if (!n.b) { n.b = b; return; }
+  if (depth > 30) return;                 // many bodies at one spot: keep them as one lump
+  n.k = [null, null, null, null];
+  const old = n.b; n.b = null;
+  gChild(n, old, depth); gChild(n, b, depth);
+}
+function gChild(n, b, depth) {
+  const h = n.s / 2, i = (b.x >= n.x + h ? 1 : 0) + (b.y >= n.y + h ? 2 : 0);
+  if (!n.k[i]) n.k[i] = gNode(n.x + (i & 1 ? h : 0), n.y + (i & 2 ? h : 0), h);
+  gInsert(n.k[i], b, depth + 1);
+}
+function gravity(k) {
+  const G = 60 * Math.pow(S.grav / 100, 2);
+  if (G <= 0) return;
+  const bodies = []; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const o of ents) {
+    if (o.dead || o.ghost || o.kind === "bh") continue;
+    bodies.push(o);
+    if (o.x < x0) x0 = o.x; if (o.y < y0) y0 = o.y; if (o.x > x1) x1 = o.x; if (o.y > y1) y1 = o.y;
+  }
+  if (bodies.length < 2) return;
+  const root = gNode(x0, y0, Math.max(x1 - x0, y1 - y0) + 1);
+  for (const b of bodies) gInsert(root, b, 0);
+  const TH2 = 0.5, EPS2 = 400, stack = [];
+  for (const p of bodies) {
+    if (p.held) continue;
+    let ax = 0, ay = 0; stack.length = 0; stack.push(root);
+    while (stack.length) {
+      const n = stack.pop();
+      if (!n.k && n.b === p && n.cnt === 1) continue;
+      const dx = n.mx / n.m - p.x, dy = n.my / n.m - p.y, d2 = dx * dx + dy * dy;
+      if (!n.k || n.s * n.s < TH2 * d2) {
+        const m = !n.k && n.b === p ? n.m - p.m : n.m;
+        if (m <= 0) continue;
+        const r2 = d2 + EPS2, f = G * m / (r2 * Math.sqrt(r2));
+        ax += dx * f; ay += dy * f;
+      } else for (const c of n.k) if (c) stack.push(c);
+    }
+    p.vx += ax * k; p.vy += ay * k;
+  }
+}
+
+// ---------- clumps: asteroids, planets and stars ----------
+let clumps = [];
+function clumpPass() {
+  clumps = [];
+  for (const o of ents) o.inPlanet = false;
+  if (S.grav <= 0) return;
+  const parent = new Map();
+  const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+  const hh = [];
+  forPairs(o => (o.r + MAXR) * 1.15, (a, b) => {
+    if (a.kind !== "nuc" || b.kind !== "nuc") return;
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    if (d > (a.r + b.r) * 1.15) return;
+    if (!parent.has(a)) parent.set(a, a); if (!parent.has(b)) parent.set(b, b);
+    const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb);
+    if (a.Z === 1 && b.Z === 1 && d < (a.r + b.r) * 0.9) hh.push([a, b]);
+  });
+  const groups = new Map();
+  for (const o of parent.keys()) { const r = find(o); let g = groups.get(r); if (!g) groups.set(r, g = []); g.push(o); }
+  for (const g of groups.values()) {
+    if (g.length < 12) continue;
+    let cx = 0, cy = 0; const cnt = {};
+    for (const o of g) { cx += o.x; cy += o.y; cnt[o.Z] = (cnt[o.Z] || 0) + 1; o.inPlanet = true; }
+    cx /= g.length; cy /= g.length;
+    let R = 0; for (const o of g) R = Math.max(R, Math.hypot(o.x - cx, o.y - cy) + o.r);
+    const top = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+    const light = ((cnt[1] || 0) + (cnt[2] || 0)) / g.length;
+    let kind, label;
+    if (g.length >= 150 && light >= 0.6) { kind = "star"; label = "⭐ Star · " + g.length + " atoms"; }
+    else if (g.length >= 40) { kind = "planet"; label = (light >= 0.6 ? "🪐 Gas giant · " : "🪐 Planet · ") + g.length + " atoms · mostly " + (+top ? ename(+top) : "neutrons"); }
+    else { kind = "asteroid"; label = "☄ Asteroid · " + g.length + " atoms"; }
+    clumps.push({ x: cx, y: cy, R, label, kind });
+    if (kind === "star") {
+      event("Star formed", "⭐ A star is born! Gravity squeezed hydrogen into a ball hot enough to glow.");
+      // the star's core slowly fuses hydrogen into helium
+      const mine = hh.filter(([a]) => a.inPlanet && Math.hypot(a.x - cx, a.y - cy) < R);
+      for (let i = 0; i < Math.min(3, g.length / 100) && mine.length; i++) {
+        const [a, b] = mine[Math.floor(Math.random() * mine.length)];
+        if (!a.dead && !b.dead && Math.random() < 0.5) { fuse(a, b); event("Star fusion", "🔥 The star is fusing hydrogen into helium!"); }
+      }
+    } else if (kind === "planet") event("Planet formed", "🪐 Gravity pulled the atoms together into a planet!");
+    else event("Asteroid formed", "☄ Gravity made a little asteroid.");
+  }
+}
 function pairF(a, b, d) {
   const ka = a.kind, kb = b.kind;
   if (ka === "q" && kb === "q") return d > 11 && d < 170 ? 0.05 : d <= 11 ? -0.03 : 0;
@@ -696,18 +835,15 @@ function pairF(a, b, d) {
   return f;
 }
 function forces(k) {
-  const n = ents.length;
-  for (let i = 0; i < n; i++) {
-    const a = ents[i]; if (a.dead || a.ghost || a.kind === "bh") continue;
-    for (let j = i + 1; j < n; j++) {
-      const b = ents[j]; if (b.dead || b.ghost || b.kind === "bh") continue;
-      const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
-      if (d2 > 57600) continue;
-      const d = Math.sqrt(d2) || 0.01;
-      const f = pairF(a, b, d);
-      if (f) { const nx = dx / d * f * k, ny = dy / d * f * k; a.vx += nx / a.m; a.vy += ny / a.m; b.vx -= nx / b.m; b.vy -= ny / b.m; }
-    }
-  }
+  forPairs(reachForce, (a, b) => {
+    if (a.ghost || b.ghost) return;
+    const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+    if (d2 > 57600) return;
+    const d = Math.sqrt(d2) || 0.01;
+    const f = pairF(a, b, d);
+    if (f) { const nx = dx / d * f * k, ny = dy / d * f * k; a.vx += nx / a.m; a.vy += ny / a.m; b.vx -= nx / b.m; b.vy -= ny / b.m; }
+  });
+  gravity(k);
   // Higgs field drag & black holes
   for (const h of ents) {
     if (h.dead) continue;
@@ -781,30 +917,29 @@ function bounce(a, b, d, dx, dy, e = 0.85) {
   const nx = dx / d, ny = dy / d, ma = a.held ? 1e6 : a.m, mb = b.held ? 1e6 : b.m;
   const ov = a.r + b.r - d;
   if (ov > 0) { const t = ma + mb; a.x -= nx * ov * mb / t; a.y -= ny * ov * mb / t; b.x += nx * ov * ma / t; b.y += ny * ov * ma / t; }
+  if (S.grav > 0) e = Math.min(e, 0.1);      // with gravity, things thud together instead of bouncing apart
   const rv = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
   if (rv < 0) { const j = -(1 + e) * rv / (1 / ma + 1 / mb); a.vx -= j * nx / ma; a.vy -= j * ny / ma; b.vx += j * nx / mb; b.vy += j * ny / mb; }
+  if (S.grav > 0) {                         // friction, so clumps settle instead of sliding around
+    const tx = -ny, ty = nx, rt = (b.vx - a.vx) * tx + (b.vy - a.vy) * ty, jt = rt * 0.3 / (1 / ma + 1 / mb);
+    a.vx += jt * tx / ma; a.vy += jt * ty / ma; b.vx -= jt * tx / mb; b.vy -= jt * ty / mb;
+  }
 }
 
 // ================= Reactions =================
 const ORDER = { nuc: 0, lep: 1, had: 2, ph: 3, q: 4, g: 5, W: 6, Z: 7, H: 8 };
 function reactions() {
-  const n = ents.length;
-  for (let i = 0; i < n; i++) {
-    let a = ents[i]; if (a.dead || a.inert || a.kind === "bh") continue;
-    for (let j = i + 1; j < n; j++) {
-      if (a.dead) break;
-      let b = ents[j]; if (b.dead || b.inert || b.kind === "bh") continue;
-      if (a.ghost && b.ghost) continue;
-      const R = a.r + b.r + 2;
-      let dx = b.x - a.x, dy = b.y - a.y;
-      if (dx > R || dx < -R || dy > R || dy < -R) continue;
-      const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      if (d > R) continue;
-      let A = a, B = b;
-      if (ORDER[A.kind] > ORDER[B.kind]) { A = b; B = a; dx = -dx; dy = -dy; }
-      contact(A, B, d, dx, dy);
-    }
-  }
+  forPairs(reachTouch, (a, b) => {
+    if (a.ghost && b.ghost) return;
+    const R = a.r + b.r + 2;
+    let dx = b.x - a.x, dy = b.y - a.y;
+    if (dx > R || dx < -R || dy > R || dy < -R) return;
+    const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+    if (d > R) return;
+    let A = a, B = b;
+    if (ORDER[A.kind] > ORDER[B.kind]) { A = b; B = a; dx = -dx; dy = -dy; }
+    contact(A, B, d, dx, dy);
+  });
 }
 const relSpeed = (a, b) => Math.hypot(a.vx - b.vx, a.vy - b.vy);
 function contact(a, b, d, dx, dy) {
@@ -1004,8 +1139,9 @@ function hadronize() {
   const qs = ents.filter(o => o.kind === "q" && !o.dead);
   for (const a of qs) {
     if (a.dead) continue;
-    const same = [], opp = [];
-    for (const b of qs) {
+    const same = [], opp = [], cx = Math.floor(a.x / GCS), cy = Math.floor(a.y / GCS), near = [];
+    for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) { const c = GRID.get(gkey(gx, gy)); if (c) for (const o of c) if (o.kind === "q") near.push(o); }
+    for (const b of near) {
       if (b === a || b.dead) continue;
       const d = Math.hypot(b.x - a.x, b.y - a.y);
       if (d < 22) (b.anti === a.anti ? same : opp).push([d, b]);
@@ -1179,14 +1315,17 @@ function nucDecay(o) {
 // ================= Step =================
 function step(k) {
   T += k / 60; frame++;
+  buildGrid();
   forces(k);
   bondForces(k);
   integrate(k);
+  buildGrid();
   hadronize();
   reactions();
   decays();
   if (frame % 3 === 0) bondPass();
   if (frame % 15 === 0) moleculePass();
+  if (frame % 30 === 0) clumpPass();
   if (frame % 60 === 0) ents = ents.filter(o => !o.dead);
 }
 
@@ -1229,13 +1368,13 @@ function drawNucleus(o) {
 }
 function drawAtom(o) {
   const unstable = !!o.decay;
-  if (o.r * cam.z < 6) {   // too small to see shells and nucleons: a round mini atom
+  if (o.r * cam.z < 6 || LITE) {   // too small (or too crowded) for shells and nucleons: a round mini atom
     if (o.e > 0) { glow(o.x, o.y, o.r + 4, "rgba(124,240,255,0.35)", 0.45); circle(o.x, o.y, o.r, null, "rgba(124,240,255,0.5)", 1 / cam.z); }
     circle(o.x, o.y, Math.max(o.rn, 1.2 / cam.z), o.Z ? "#ff6b6b" : "#c9ced6");
     return;
   }
   if (o.e > 0) {
-    glow(o.x, o.y, o.r + 4, o.exc > 0 ? photonColor(o.excE) : "rgba(124,240,255,0.35)", o.exc > 0 ? 0.8 : 0.35);
+    if (!LITE || o.exc > 0) glow(o.x, o.y, o.r + 4, o.exc > 0 ? photonColor(o.excE) : "rgba(124,240,255,0.35)", o.exc > 0 ? 0.8 : 0.35);
     const sh = shellsOf(o.e);
     sh.forEach((cnt, k) => {
       const r = o.rn + 6 + 7 * (k + 1);
@@ -1252,7 +1391,7 @@ function drawAtom(o) {
     circle(o.x, o.y, o.rn + 3 + p * 2, null, "rgba(198,255,110," + (0.35 + p * 0.4) + ")", 1.5);
   }
   drawNucleus(o);
-  if (LBL && (o.A > 1 || o.e > 0)) {
+  if (LBL && !o.inPlanet && (o.A > 1 || o.e > 0)) {
     let lbl;
     if (o.Z === 0) lbl = o.N + "n (unbound)";
     else {
@@ -1283,7 +1422,7 @@ function drawTrail(o, col, w) {
 function drawLep(o) {
   const L = LEP[o.t], col = o.anti ? L.acol : L.col;
   drawTrail(o, col, 1.5);
-  glow(o.x, o.y, o.r * 3, col, 0.35);
+  if (!LITE) glow(o.x, o.y, o.r * 3, col, 0.35);
   circle(o.x, o.y, o.r, col);
   if (o.t !== "e" || o.anti) text(o.anti ? "+" : L.s, o.x, o.y + 0.5, o.t === "e" ? 7 : 7, "#0a0d1c", "800");
   if (LBL && o.t !== "e") text((o.anti ? L.aname : L.name), o.x, o.y + o.r + 8, 9, "#98a2cc", "500");
@@ -1403,7 +1542,7 @@ function farColor(o) {
   }
   return "#fff";
 }
-let LBL = true;   // labels this frame: off when zoomed out so far that text would be unreadable
+let LBL = true, LITE = false;   // LITE: skip soft glows when the box is crowded, to stay fast   // labels this frame: off when zoomed out so far that text would be unreadable
 // Smaller than a pixel on screen? Draw a tiny round speck so it doesn't vanish completely.
 function speck(o) {
   if (o.r * cam.z >= 1) return false;
@@ -1423,7 +1562,10 @@ function draw() {
   drawBox();
 
   setView();
-  LBL = S.labels && cam.z >= 0.45;
+  let onScreen = 0; for (const o of ents) if (vis(o)) onScreen++;
+  LITE = onScreen > 600;                       // crowded view: simpler drawing so it stays smooth
+  LBL = S.labels && cam.z >= 0.45 && !LITE;
+  for (const c of clumps) if (c.kind === "star") glow(c.x, c.y, c.R * 1.6, "rgba(255,190,70,0.9)", 0.55 + 0.1 * Math.sin(T * 3));
   for (const o of ents) if (vis(o) && o.kind === "bh") drawBH(o);
   for (const o of ents) if (vis(o) && o.kind === "H") glow(o.x, o.y, 150, "rgba(255,209,102,0.25)", 0.5);
   drawBonds();
@@ -1442,7 +1584,17 @@ function draw() {
   for (const o of ents) if (vis(o) && o.kind === "lep" && !speck(o)) drawLep(o);
   for (const o of ents) if (vis(o) && o.kind === "nu" && !speck(o)) drawNu(o);
   for (const o of ents) if (vis(o) && o.kind === "ph" && !speck(o)) drawPhoton(o);
+  if (S.labels) for (const c of clumps) {
+    ctx.save(); ctx.translate(c.x, c.y - c.R - 4 / cam.z); ctx.scale(1 / cam.z, 1 / cam.z);
+    ctx.font = "700 13px system-ui, sans-serif";
+    const w = ctx.measureText(c.label).width + 16;
+    ctx.fillStyle = c.kind === "star" ? "rgba(90,60,10,.9)" : c.kind === "planet" ? "rgba(20,50,70,.9)" : "rgba(40,40,50,.9)";
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-w / 2, -22, w, 20, 10) : ctx.rect(-w / 2, -22, w, 20); ctx.fill();
+    text(c.label, 0, -12, 13, c.kind === "star" ? "#ffd166" : "#bfe9ff", "700");
+    ctx.restore();
+  }
   if (LBL) for (const m of molLabels) {
+    if (clumps.some(c => Math.hypot(m.x - c.x, m.y - c.y) < c.R)) continue;
     ctx.font = "700 12px system-ui, sans-serif";
     const w = ctx.measureText(m.label).width + 12;
     ctx.fillStyle = m.known ? "rgba(20,60,40,.85)" : "rgba(20,26,50,.8)";
@@ -1689,7 +1841,6 @@ function pick(x, y) {
 }
 function spawnSel(x, y, vx, vy) {
   if (!S.sel) return;
-  if (ents.length >= MAXE) { toast("The box is full! Clear some space."); return; }
   S.sel[5](x, y, vx, vy);
 }
 // ---- two-finger pinch: zoom and pan together (works with any tool) ----
@@ -1857,6 +2008,23 @@ const RECIPES = {
   fission() { const x = vcx() + 60, y = vcy(), g = Math.min(150, (H / cam.z - 40) / 3); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) mkNuc(x + i * g, y + j * g, 92, 143, 92); mkNuc(x - 2 * g - 150, y + 3, 0, 1, 0, 9, 0); toast("☢ A neutron is heading for a lump of uranium-235…"); },
   anti() { const x = cx(), y = cy(); for (let i = 0; i < 3; i++) mkAntiNucleon(x - 140, y - 60 + i * 60, true, 2, 0); for (let i = 0; i < 3; i++) mkLep(x - 180, y - 50 + i * 50, "e", true, 1, 0); for (let i = 0; i < 4; i++) mkNuc(x + 120, y - 90 + i * 60, 1, 0, 1, -1, 0); },
   alchemy() { const x = cx(), y = cy(); mkNuc(x, y, 78, 118, 0); mkNuc(Math.max(20, x - 220), y, 1, 0, 0, 7, 0); toast("A bare platinum nucleus (78 protons) and one fast proton… 78 + 1 = 79 = gold!"); },
+  planets() {
+    setGrav(60); setHeat(2);
+    const mix = [[8, 8, 30], [26, 30, 20], [14, 14, 20], [12, 12, 15], [6, 6, 10], [1, 0, 5]], tot = 100;
+    const x = vcx(), y = vcy(), R = Math.min(W, H) / cam.z * 0.45;
+    for (let i = 0; i < 350; i++) {
+      let r = Math.random() * tot, pick = mix[0]; for (const m of mix) { if ((r -= m[2]) < 0) { pick = m; break; } }
+      const a = ra(), d = Math.sqrt(Math.random()) * R, px = x + Math.cos(a) * d, py = y + Math.sin(a) * d;
+      mkNuc(px, py, pick[0], pick[1], pick[0], -Math.sin(a) * d * 0.004, Math.cos(a) * d * 0.004);   // a gentle swirl
+    }
+    toast("🪐 A swirling cloud of rock-forming atoms. Watch gravity clump it into planets!");
+  },
+  star() {
+    setGrav(75); setHeat(2);
+    const x = vcx(), y = vcy(), R = Math.min(W, H) / cam.z * 0.45;
+    for (let i = 0; i < 420; i++) { const a = ra(), d = Math.sqrt(Math.random()) * R; mkNuc(x + Math.cos(a) * d, y + Math.sin(a) * d, i % 12 ? 1 : 2, i % 12 ? 0 : 2, i % 12 ? 1 : 2); }
+    toast("⭐ A huge cloud of hydrogen. With enough gravity it collapses into a star!");
+  },
   higgs() { for (let i = 0; i < 3; i++) mkHiggs(vcx() + rnd(-120, 120), vcy() + rnd(-80, 80)); for (let i = 0; i < 12; i++) mkLep(vcx() + rnd(-350, 350), vcy() + rnd(-250, 250), "e", false, rnd(-5, 5), rnd(-5, 5)); },
 };
 function bigBang() {
@@ -1878,15 +2046,14 @@ document.getElementById("pause").addEventListener("click", togglePause);
 function togglePause() { S.paused = !S.paused; const b = document.getElementById("pause"); b.textContent = S.paused ? "▶ Play" : "⏸ Pause"; b.classList.toggle("on", S.paused); }
 document.getElementById("speed").addEventListener("input", e => S.speed = +e.target.value);
 document.getElementById("heat").addEventListener("input", e => S.heat = +e.target.value);
+document.getElementById("grav").addEventListener("input", e => S.grav = +e.target.value);
+function setGrav(v) { S.grav = v; document.getElementById("grav").value = v; }
 document.getElementById("recipes").addEventListener("change", e => { const r = RECIPES[e.target.value]; if (r) r(); e.target.value = ""; });
 document.getElementById("bigbang").addEventListener("click", bigBang);
 function scatter() {
   if (!S.sel) { toast("🎲 Pick a particle or atom in the list first, then press Scatter."); return; }
-  const want = Math.max(1, Math.min(300, parseInt(document.getElementById("scatterN").value, 10) || 20));
-  document.getElementById("scatterN").value = want;
-  const room = MAXE - ents.filter(o => !o.dead).length;
-  const n = Math.min(want, room);
-  if (n <= 0) { toast("The box is full! Clear some space."); return; }
+  const n = Math.max(1, Math.min(5000, parseInt(document.getElementById("scatterN").value, 10) || 20));
+  document.getElementById("scatterN").value = n;
   // spread over the part of the box you can see (or everywhere you can see, in open space)
   let x0 = cam.x, y0 = cam.y, x1 = cam.x + W / cam.z, y1 = cam.y + H / cam.z;
   if (S.edge !== "open") { x0 = Math.max(x0, 0); y0 = Math.max(y0, 0); x1 = Math.min(x1, BOX.w); y1 = Math.min(y1, BOX.h); }
@@ -1897,7 +2064,7 @@ function scatter() {
     S.sel[5](rnd(x0 + pad, x1 - pad), rnd(y0 + pad, y1 - pad), Math.cos(a) * sp, Math.sin(a) * sp);
   }
   boom((x0 + x1) / 2, (y0 + y1) / 2, "#9dd7ff", 0, 0);
-  toast("🎲 Scattered " + n + " × " + S.sel[2] + (n < want ? " (the box is nearly full)" : ""));
+  toast("🎲 Scattered " + n + " × " + S.sel[2]);
 }
 document.getElementById("scatter").addEventListener("click", scatter);
 function setEdge(m) {
@@ -1948,7 +2115,7 @@ document.getElementById("decaySecs").addEventListener("change", e => {
   if (S.decayMode === "set") { retimeDecays(); toast("⏱ Decay time set to " + fmtTime(v) + "."); }
   else setDecayMode("set");
 });
-document.getElementById("clear").addEventListener("click", () => { ents = []; bonds = []; fx = []; molLabels = []; });
+document.getElementById("clear").addEventListener("click", () => { ents = []; bonds = []; fx = []; molLabels = []; clumps = []; });
 document.getElementById("labels").addEventListener("click", e => { S.labels = !S.labels; e.currentTarget.classList.toggle("on", S.labels); });
 document.getElementById("helpBtn").addEventListener("click", () => document.getElementById("help").classList.add("show"));
 document.getElementById("helpClose").addEventListener("click", () => document.getElementById("help").classList.remove("show"));
@@ -1974,7 +2141,8 @@ function loop(now) {
   if (!S.paused) {
     let k = dtf * S.speed;
     const steps = Math.ceil(k / 1.2);
-    for (let i = 0; i < steps; i++) step(k / steps);
+    const t0 = performance.now();
+    for (let i = 0; i < steps; i++) { step(k / steps); if (performance.now() - t0 > 30) break; }  // slow down rather than freeze
   }
   draw();
   if ((countTick = (countTick + 1) % 20) === 0) document.getElementById("count").textContent = ents.filter(o => !o.dead).length + " particles";
@@ -1993,7 +2161,7 @@ try { if (!localStorage.getItem("atomPlaygroundSeen")) { document.getElementById
   mkQuark(x - 160, y - 40, "u", false); mkQuark(x - 110, y - 70, "u", false); mkQuark(x - 120, y - 10, "d", false);
   mkNuc(x + 60, y - 20, 8, 8, 8); mkNuc(x + 150, y + 40, 1, 0, 1); mkNuc(x - 20, y + 80, 1, 0, 1);
 })();
-window.AP = { cam, BOX, S, setEdge, fitView, pickElement, ITEMS, commonN, setDecayMode, realHalfLife, fmtTime, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
+window.AP = { setGrav, clumps: () => clumps, cam, BOX, S, setEdge, fitView, pickElement, ITEMS, commonN, setDecayMode, realHalfLife, fmtTime, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
 requestAnimationFrame(loop);
 </script>
 </body>
