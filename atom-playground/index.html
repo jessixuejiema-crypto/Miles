@@ -165,6 +165,7 @@
     <label class="ctl">Speed <input type="range" id="speed" min="0.1" max="2" step="0.1" value="1"></label>
     <label class="ctl">🌡 Heat <input type="range" id="heat" min="0" max="100" step="0.5" value="31"> <span id="tempLbl"></span></label>
     <label class="ctl" title="Everything falls to the floor of the box, like on Earth"><input type="checkbox" id="ground"> ⬇ Ground gravity</label>
+    <label class="ctl" title="Gravity uses each particle's true mass: iron pulls 56× harder than hydrogen, electrons barely at all"><input type="checkbox" id="realMass"> ⚖ Real mass gravity</label>
     <label class="ctl" title="How strongly everything pulls on everything else. 0 = no gravity">🪐 Gravity <input type="range" id="grav" min="0" max="100" step="1" value="0"></label>
     <label class="ctl" title="How wide the box is, measured in atoms">📏 Box <input type="range" id="boxSize" min="1" max="6" step="0.01" value="1.35"> <span id="boxLbl"></span></label>
     <div class="sep"></div>
@@ -189,7 +190,7 @@
       <option value="waterbox">Water: ice, liquid, steam</option>
       <option value="hspec">Hydrogen spectrum (light)</option>
       <option value="neonsign">Neon sign glow</option>
-      <option value="star">Star maker (gravity)</option>
+      <option value="star">Star maker (gravity, 1,200 atoms)</option>
     </select>
     <button class="btn" id="bigbang" title="Fill the box with a hot quark soup">💥 Big Bang</button>
     <button class="btn" id="clear">🗑 Clear</button>
@@ -270,7 +271,7 @@
     <li>Fire a <b>neutron</b> at <b>Uranium-235</b> for fission and a chain reaction.</li>
     <li><b>Antimatter</b> (positrons, antiquarks, antiprotons) annihilates with matter into gamma rays.</li>
     <li><b>Photons</b> make atoms glow (fluorescence). <b>Gamma rays</b> knock electrons out or make electron–positron pairs.</li>
-    <li>Turn up <b>🪐 Gravity</b> and atoms pull on each other and clump into asteroids, planets and even stars. Try the Planet maker and Star maker experiments.</li>
+    <li>Turn up <b>🪐 Gravity</b> and atoms pull on each other and clump into asteroids, planets, brown dwarfs and (with 1,000+ hydrogen atoms) stars. Tick <b>⚖ Real mass gravity</b> to make each particle pull by its true mass. Try the Planet maker and Star maker experiments.</li>
     <li>The <b>🌡 Heat</b> slider is a real temperature. Each element and molecule is <b>solid, liquid or gas</b> depending on its real melting and boiling points. Tick <b>⬇ Ground gravity</b> to make things fall to the floor.</li>
     <li><b>Light has exact wavelengths.</b> Pick a photon's wavelength with the λ slider. Atoms only absorb their own exact wavelengths, so you'll see the electron jump up and fall back, giving out the element's fingerprint colours (hydrogen's red line is 656.3 nm). The 🌈 Spectrometer records them.</li>
     <li><b>W bosons</b> turn neutrons into protons (and back). <b>Z</b> and <b>Higgs</b> bosons decay fast — the Higgs field slows things nearby.</li>
@@ -428,6 +429,9 @@ const MOLPH = { H2: [14, 20], O2: [54, 90], N2: [63, 77], F2: [53, 85], Cl2: [17
   CH4N2O: [406, 600], C2H4O2: [290, 391], CH2O2: [281, 374], H4N2: [275, 387], CS2: [162, 319], C2H6O2: [260, 470],
   C3H8O3: [291, 563], C2H4O: [150, 293], C3H6O: [178, 329], CH5N: [180, 267] };
 const phaseAt = ([mp, bp], K) => K < mp ? "solid" : K < bp ? "liquid" : "gas";
+// How hard something clings to its neighbours when solid or liquid. A high boiling point means strong pull:
+// helium (4 K) barely holds together, water (373 K) moderately, iron (3134 K) very strongly.
+const cohesion = ([mp, bp]) => Math.max(0.04, Math.min(1.6, Math.sqrt(bp / 1000)));
 const PHASE_ICON = { solid: "🧊 solid", liquid: "💧 liquid", gas: "☁ gas" };
 
 // ---- light: wavelength (nm) ⇄ the game's energy scale (visible 0-1, UV 1-2, X/gamma 2+) ----
@@ -767,7 +771,7 @@ function moleculePass() {
   const K = tempK();
   for (const o of ents) {           // lone atoms take their element's state; ions and bare nuclei have none
     if (o.kind !== "nuc" || o.dead) continue;
-    if (isAtom(o) && !o.bonds.size) { const mb = elemMPBP(o.Z); o.phase = phaseAt(mb, K); o.phaseOf = [ename(o.Z), mb, false]; o.mol = null; }
+    if (isAtom(o) && !o.bonds.size) { const mb = elemMPBP(o.Z); o.phase = phaseAt(mb, K); o.phaseOf = [ename(o.Z), mb, false]; o.mol = null; o.coh = cohesion(mb); }
     else if (!isAtom(o)) { o.phase = null; o.phaseOf = null; o.mol = null; }
   }
   const seen = new Set();
@@ -789,7 +793,7 @@ function moleculePass() {
     if (!mb) { est = true; mb = [0, 0]; comp.forEach(a => { const e = elemMPBP(a.Z); mb[0] += e[0] / comp.length; mb[1] += e[1] / comp.length; }); }
     const phase = phaseAt(mb, K);
     const mol = { mass: comp.reduce((t, a) => t + a.m, 0) };
-    comp.forEach(a => { a.phase = phase; a.phaseOf = [known ? known[0] : "this molecule", mb, est]; a.mol = mol; });
+    comp.forEach(a => { a.coh = cohesion(mb); a.phase = phase; a.phaseOf = [known ? known[0] : "this molecule", mb, est]; a.mol = mol; });
     let label = known ? known[0] + " " + known[1] : order.map(k => k + (cnt[k] > 1 ? sub(cnt[k]) : "")).join("");
     if (known || complete) label += " · " + phase;
     if (!complete && !known) label += " (unfinished)";
@@ -845,14 +849,27 @@ function reachForce(o) {
     if (isAtom(o) && freeVal(o) > 0) return (o.r + MAXR) * 1.7; // atoms looking for a bond partner
     if (o.phase && o.phase !== "gas") return (o.r + MAXR) * 1.25;  // solids and liquids feel their neighbours
   }
+  if (o.kind === "nuc" && o.e > 0) return o.r + MAXR + 2;        // clouds push back when they overlap
   return 0;
 }
 const reachTouch = o => o.r + MAXR + 2;
 
 // ---------- gravity (Barnes–Hut tree: far-away groups pull like one lump) ----------
+// how strongly something pulls with gravity: the game's softened mass, or (with ⚖ Real mass) its true mass in proton masses
+function gMass(o) {
+  if (!S.realMass) return o.m;
+  switch (o.kind) {
+    case "nuc": return o.A + o.e / 1836;
+    case "lep": return o.t === "e" ? 1 / 1836 : o.t === "mu" ? 0.113 : 1.89;
+    case "q": return { u: 0.0023, d: 0.005, s: 0.1, c: 1.36, b: 4.5, t: 184 }[o.f];
+    case "had": return o.baryon ? 1.2 : 0.4;
+    case "W": return 86; case "Z": return 97; case "H": return 133;
+  }
+  return 0;
+}
 function gNode(x, y, s) { return { x, y, s, m: 0, mx: 0, my: 0, b: null, k: null, cnt: 0 }; }
 function gInsert(n, b, depth) {
-  n.m += b.m; n.mx += b.x * b.m; n.my += b.y * b.m; n.cnt++;
+  n.m += b.gm; n.mx += b.x * b.gm; n.my += b.y * b.gm; n.cnt++;
   if (n.k) { gChild(n, b, depth); return; }
   if (!n.b) { n.b = b; return; }
   if (depth > 30) return;                 // many bodies at one spot: keep them as one lump
@@ -871,6 +888,7 @@ function gravity(k) {
   const bodies = []; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const o of ents) {
     if (o.dead || o.ghost || o.kind === "bh") continue;
+    o.gm = gMass(o); if (o.gm <= 0) continue;
     bodies.push(o);
     if (o.x < x0) x0 = o.x; if (o.y < y0) y0 = o.y; if (o.x > x1) x1 = o.x; if (o.y > y1) y1 = o.y;
   }
@@ -886,7 +904,7 @@ function gravity(k) {
       if (!n.k && n.b === p && n.cnt === 1) continue;
       const dx = n.mx / n.m - p.x, dy = n.my / n.m - p.y, d2 = dx * dx + dy * dy;
       if (!n.k || n.s * n.s < TH2 * d2) {
-        const m = !n.k && n.b === p ? n.m - p.m : n.m;
+        const m = !n.k && n.b === p ? n.m - p.gm : n.m;
         if (m <= 0) continue;
         const r2 = d2 + EPS2, f = G * m / (r2 * Math.sqrt(r2));
         ax += dx * f; ay += dy * f;
@@ -924,7 +942,8 @@ function clumpPass() {
     const top = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
     const light = ((cnt[1] || 0) + (cnt[2] || 0)) / g.length;
     let kind, label;
-    if (g.length >= 150 && light >= 0.6) { kind = "star"; label = "⭐ Star · " + g.length + " atoms"; }
+    if (g.length >= 1000 && light >= 0.6) { kind = "star"; label = "⭐ Star · " + g.length + " atoms"; }
+    else if (g.length >= 400 && light >= 0.6) { kind = "planet"; label = "🟤 Brown dwarf (almost a star) · " + g.length + " atoms"; }
     else if (g.length >= 40) { kind = "planet"; label = (light >= 0.6 ? "🪐 Gas giant · " : "🪐 Planet · ") + g.length + " atoms · mostly " + (+top ? ename(+top) : "neutrons"); }
     else { kind = "asteroid"; label = "☄ Asteroid · " + g.length + " atoms"; }
     clumps.push({ x: cx, y: cy, R, label, kind });
@@ -959,7 +978,10 @@ function pairF(a, b, d) {
     if (isAtom(a) && isAtom(b) && !a.bonds.has(b.id) && d < (a.r + b.r) * 1.7 && freeVal(a) > 0 && freeVal(b) > 0) f += 0.03;
     // solids and liquids hold together; gases don't
     if (a.phase && b.phase && a.phase !== "gas" && b.phase !== "gas" && !a.bonds.has(b.id) && d < (a.r + b.r) * 1.25)
-      f += a.phase === "solid" && b.phase === "solid" ? 0.08 : 0.03;
+      f += (a.phase === "solid" && b.phase === "solid" ? 0.08 : 0.03) * Math.min(a.coh || 1, b.coh || 1);
+    // electron clouds don't pass through each other: overlapping atoms push apart (unless they're about to bond)
+    if (a.e > 0 && b.e > 0 && d < a.r + b.r && !a.bonds.has(b.id) && !(isAtom(a) && isAtom(b) && freeVal(a) > 0 && freeVal(b) > 0))
+      f -= Math.min(1.5, 0.12 * (a.r + b.r - d));
   }
   return f;
 }
@@ -1038,7 +1060,7 @@ function integrate(k) {
     // falls toward the floor; fast-moving gas particles barely notice gravity at this tiny scale
     if (S.ground && !o.held) o.vy += (gas ? 0.008 : 0.1) * k;
     const dk = Math.pow(1 - (o.phase === "solid" ? Math.max(drag, 0.012) : drag), k); o.vx *= dk; o.vy *= dk;
-    const sp = Math.hypot(o.vx, o.vy); if (sp > 22) { o.vx *= 22 / sp; o.vy *= 22 / sp; }
+    const sp = Math.hypot(o.vx, o.vy); if (sp > 17) { o.vx *= 17 / sp; o.vy *= 17 / sp; }   // slow enough that atoms can't skip through each other
     o.x += o.vx * k; o.y += o.vy * k;
     if (S.edge === "border") {
       const r = o.r, ew = o.phase === "solid" ? 0.05 : o.phase === "liquid" ? 0.1 : o.phase === "gas" ? 0.97 : 0.8;
@@ -2245,7 +2267,7 @@ const RECIPES = {
   protonkit() { const x = cx(), y = cy(); mkQuark(x - 50, y, "u", false); mkQuark(x + 50, y, "u", false); mkQuark(x, y - 50, "d", false); mkGluon(x, y + 40); mkGluon(x + 20, y + 50); },
   sun() { setHeat(76); for (let i = 0; i < 26; i++) mkNuc(vcx() + rnd(-110, 110), vcy() + rnd(-90, 90), 1, 0, 0, rnd(-3, 3), rnd(-3, 3)); toast("☀ Super hot! Protons are fusing like in the Sun's core."); },
   alpha() { setHeat(62); const x = cx(), y = cy(); for (let i = 0; i < 6; i++) { const a = i * 1.047; mkNuc(x + Math.cos(a) * 40, y + Math.sin(a) * 40, 2, 2, 0, -Math.cos(a) * 2, -Math.sin(a) * 2); } toast("Helium nuclei fusing… Be-8 is unstable, so a third one must hit fast!"); },
-  fission() { const x = vcx() + 60, y = vcy(), g = Math.min(150, (H / cam.z - 40) / 3); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) mkNuc(x + i * g, y + j * g, 92, 143, 92); mkNuc(x - 2 * g - 150, y + 3, 0, 1, 0, 9, 0); toast("☢ A neutron is heading for a lump of uranium-235…"); },
+  fission() { const x = vcx() + 60, y = vcy(), g = Math.min(150, (H / cam.z - 40) / 3); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) mkNuc(x + i * g, y + j * g, 92, 143, 92); mkNuc(x - 2 * g - 150, y + 3, 0, 1, 0, 9, 0); mkNuc(x + 3, y - 2 * g - 150, 0, 1, 0, 0, 9); toast("☢ Two neutrons are heading for a lump of uranium-235…"); },
   anti() { const x = cx(), y = cy(); for (let i = 0; i < 3; i++) mkAntiNucleon(x - 140, y - 60 + i * 60, true, 2, 0); for (let i = 0; i < 3; i++) mkLep(x - 180, y - 50 + i * 50, "e", true, 1, 0); for (let i = 0; i < 4; i++) mkNuc(x + 120, y - 90 + i * 60, 1, 0, 1, -1, 0); },
   alchemy() { const x = cx(), y = cy(); mkNuc(x, y, 78, 118, 0); mkNuc(Math.max(20, x - 220), y, 1, 0, 0, 7, 0); toast("A bare platinum nucleus (78 protons) and one fast proton… 78 + 1 = 79 = gold!"); },
   waterbox() {
@@ -2284,9 +2306,12 @@ const RECIPES = {
   },
   star() {
     setGrav(75); setHeat(2);
-    const x = vcx(), y = vcy(), R = Math.min(W, H) / cam.z * 0.45;
-    for (let i = 0; i < 420; i++) { const a = ra(), d = Math.sqrt(Math.random()) * R; mkNuc(x + Math.cos(a) * d, y + Math.sin(a) * d, i % 12 ? 1 : 2, i % 12 ? 0 : 2, i % 12 ? 1 : 2); }
-    toast("⭐ A huge cloud of hydrogen. With enough gravity it collapses into a star!");
+    // a star needs a big cloud: widen the box if needed and spread 1,200 atoms through it
+    if (BOX.w < 150 * ATOM_W) { S.boxAtoms = 150; BOX.w = 150 * ATOM_W; BOX.h = BOX.w * H / W; document.getElementById("boxSize").value = Math.log10(150); updateBoxLabel(); }
+    fitView();
+    const x = BOX.w / 2, y = BOX.h / 2, R = Math.min(BOX.w, BOX.h) * 0.45;
+    for (let i = 0; i < 1200; i++) { const a = ra(), d = Math.sqrt(Math.random()) * R; mkNuc(x + Math.cos(a) * d, y + Math.sin(a) * d, i % 12 ? 1 : 2, i % 12 ? 0 : 2, i % 12 ? 1 : 2); }
+    toast("⭐ 1,200 atoms of hydrogen and helium. A star needs at least 1,000 squeezed together. Give it time to collapse!");
   },
   higgs() { for (let i = 0; i < 3; i++) mkHiggs(vcx() + rnd(-120, 120), vcy() + rnd(-80, 80)); for (let i = 0; i < 12; i++) mkLep(vcx() + rnd(-350, 350), vcy() + rnd(-250, 250), "e", false, rnd(-5, 5), rnd(-5, 5)); },
 };
@@ -2313,6 +2338,11 @@ function updateTemp() {
   document.getElementById("tempLbl").textContent = (K < 10 ? K.toFixed(1) : Math.round(K)) + " K · " + Math.round(K - 273.15) + " °C";
 }
 document.getElementById("heat").addEventListener("input", e => { S.heat = +e.target.value; updateTemp(); });
+document.getElementById("realMass").addEventListener("change", e => {
+  S.realMass = e.target.checked;
+  toast(S.realMass ? "⚖ Real mass gravity: heavy atoms pull much harder (iron 56×, gold 197× hydrogen); electrons barely pull at all."
+                   : "Gravity uses the game's gentler masses again.");
+});
 document.getElementById("ground").addEventListener("change", e => {
   S.ground = e.target.checked;
   toast(S.ground ? "⬇ Ground gravity on: everything falls to the floor." : "Ground gravity off.");
