@@ -333,7 +333,7 @@ function decayInfo(Z, N) {
   if (Z === 0) return N === 1 ? { mode: "beta-", life: 14 } : { mode: "n", life: 0.05 };
   if (Z > 118) return { mode: "alpha", life: rnd(0.3, 0.8) };
   if (isStable(Z, N)) return null;
-  if (Z === 4 && N === 4) return { mode: "2alpha", life: 1.8 };
+  if (Z === 4 && N === 4) return { mode: "2alpha", life: 3.5 };
   if (Z === 2 && N === 3) return { mode: "n", life: 0.3 };
   if (Z === 3 && N === 2) return { mode: "p", life: 0.3 };
   if (Z === 6 && N === 8) return { mode: "beta-", life: 25 };
@@ -959,6 +959,11 @@ function clumpPass() {
     else event("Asteroid formed", "☄ Gravity made a little asteroid.");
   }
 }
+// Pieces thrown out by a decay can't re-merge with the nucleus they came from for a few seconds.
+// (Otherwise they'd fuse straight back, decay again, and loop forever in a storm of flashes and photons.)
+const SEP_TIME = 3;
+function separated(a, b) { return (a.sepUntil > T && a.parentId === b.id) || (b.sepUntil > T && b.parentId === a.id); }
+function markChild(child, parent) { child.parentId = parent.id; child.sepUntil = T + SEP_TIME; return child; }
 function pairF(a, b, d) {
   const ka = a.kind, kb = b.kind;
   if (ka === "q" && kb === "q") return d > 11 && d < 170 ? 0.05 : d <= 11 ? -0.03 : 0;
@@ -974,14 +979,14 @@ function pairF(a, b, d) {
   }
   if (ka === "nuc" && kb === "nuc") {
     const bareish = (a.e === 0 || a.Z === 0) && (b.e === 0 || b.Z === 0);
-    if (bareish && d < a.rn + b.rn + 10) f += 0.35;
+    if (bareish && d < a.rn + b.rn + 10 && !separated(a, b)) f += 0.35;
     if (isAtom(a) && isAtom(b) && !a.bonds.has(b.id) && d < (a.r + b.r) * 1.7 && freeVal(a) > 0 && freeVal(b) > 0) f += 0.03;
     // solids and liquids hold together; gases don't
     if (a.phase && b.phase && a.phase !== "gas" && b.phase !== "gas" && !a.bonds.has(b.id) && d < (a.r + b.r) * 1.25)
       f += (a.phase === "solid" && b.phase === "solid" ? 0.08 : 0.03) * Math.min(a.coh || 1, b.coh || 1);
     // electron clouds don't pass through each other: overlapping atoms push apart (unless they're about to bond)
     if (a.e > 0 && b.e > 0 && d < a.r + b.r && !a.bonds.has(b.id) && !(isAtom(a) && isAtom(b) && freeVal(a) > 0 && freeVal(b) > 0))
-      f -= Math.min(1.5, 0.12 * (a.r + b.r - d));
+      f -= Math.min(0.4, 0.06 * (a.r + b.r - d));
   }
   return f;
 }
@@ -1128,14 +1133,17 @@ function contact(a, b, d, dx, dy) {
         // Brand-new fission neutrons are fast: for a moment only uranium-like nuclei (or a direct hit) catch them.
         const fast = nn.fastUntil > T && heavy.Z < 90;
         if (d > (heavy.Z > 0 && !fast ? Math.max(heavy.r, heavy.rn + nn.rn + 2) : a.rn + b.rn + 2)) return;
+        if (separated(a, b)) return;
         if (heavy.Z >= 90 && heavy.Z > 0 && nn.A === 1 && Math.random() < 0.85) { fission(heavy, nn); return; }
         fuse(a, b); return;
       }
       if (a.bonds.has(b.id)) return;
       const bare = a.e === 0 && b.e === 0;
-      // very heavy pairs repel too hard to fuse (Coulomb barrier)
-      // atoms wrapped in electrons only fuse in a really hard crash (a throw), never from ordinary heat
-      if ((bare || relSpeed(a, b) > 13) && a.Z * b.Z <= 1500) { fuse(a, b); return; }
+      // speed at which they're coming together (negative = already flying apart)
+      const closing = -((b.vx - a.vx) * dx + (b.vy - a.vy) * dy) / d;
+      // very heavy pairs repel too hard to fuse (Coulomb barrier);
+      // atoms wrapped in electrons only fuse in a really hard head-on crash (a throw), never from ordinary heat
+      if ((bare || closing > 13) && a.Z * b.Z <= 1500 && !separated(a, b)) { fuse(a, b); return; }
       if (isAtom(a) && isAtom(b) && freeVal(a) > 0 && freeVal(b) > 0 && relSpeed(a, b) < 6) return; // about to bond
       bounce(a, b, d, dx, dy);
       return;
@@ -1536,18 +1544,18 @@ function nucDecay(o) {
     floatText(x, y - o.r - 8, "β⁺", "#ff7ce0");
   } else if (m === "alpha") {
     o.Z -= 2; o.N -= 2;
-    mkNuc(x + Math.cos(a) * (o.rn + 8), y + Math.sin(a) * (o.rn + 8), 2, 2, 0, Math.cos(a) * 7, Math.sin(a) * 7);
+    markChild(mkNuc(x + Math.cos(a) * (o.rn + 8), y + Math.sin(a) * (o.rn + 8), 2, 2, 0, Math.cos(a) * 7, Math.sin(a) * 7), o);
     kick(o, a + Math.PI, 0.6);
     event("Alpha decay", "☢ Alpha decay! The nucleus shot out a helium nucleus.");
     floatText(x, y - o.r - 8, "α", "#ffcf70");
   } else if (m === "n") {
     // the spat-out neutron is fast, so its own atom doesn't instantly catch it again
-    o.N--; mkNuc(x + Math.cos(a) * (o.rn + 12), y + Math.sin(a) * (o.rn + 12), 0, 1, 0, Math.cos(a) * 7, Math.sin(a) * 7).fastUntil = T + 1.5;
+    o.N--; markChild(mkNuc(x + Math.cos(a) * (o.rn + 12), y + Math.sin(a) * (o.rn + 12), 0, 1, 0, Math.cos(a) * 7, Math.sin(a) * 7), o).fastUntil = T + 1.5;
   } else if (m === "p") {
-    o.Z--; mkNuc(x + Math.cos(a) * (o.rn + 6), y + Math.sin(a) * (o.rn + 6), 1, 0, 0, Math.cos(a) * 6, Math.sin(a) * 6);
+    o.Z--; markChild(mkNuc(x + Math.cos(a) * (o.rn + 6), y + Math.sin(a) * (o.rn + 6), 1, 0, 0, Math.cos(a) * 6, Math.sin(a) * 6), o);
   } else if (m === "2alpha") {
     o.Z = 2; o.N = 2; const e2 = Math.floor(o.e / 2); const e1 = o.e - e2; o.e = e1;
-    mkNuc(x + Math.cos(a) * 12, y + Math.sin(a) * 12, 2, 2, e2, Math.cos(a) * 3, Math.sin(a) * 3);
+    markChild(mkNuc(x + Math.cos(a) * 12, y + Math.sin(a) * 12, 2, 2, e2, Math.cos(a) * 3, Math.sin(a) * 3), o);
     kick(o, a + Math.PI, 3);
     floatText(x, y - o.r - 8, "Be-8 split!", "#ffcf70");
   }
