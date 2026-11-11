@@ -100,6 +100,10 @@
   #goals li .ck { flex: none; width: 14px; }
   .muted { color: var(--dim); font-size: 12px; }
   #reset { font-size: 11px; padding: 2px 6px; }
+  .more { font-size: 11px; padding: 2px 8px; margin-top: 6px; }
+  button.chip { cursor: pointer; color: inherit; font: inherit; font-size: 11px; }
+  button.chip:hover, button.chip:focus-visible { border-color: var(--accent); outline: none; }
+  button.chip.on { border-color: var(--accent); background: #1d3550; }
 
   #help { position: fixed; inset: 0; background: rgba(3,5,12,.75); display: none; place-items: center; z-index: 20; padding: 16px; }
   #help.show { display: grid; }
@@ -246,7 +250,7 @@
     <h2>🌈 Spectrometer <button class="btn" id="specClear" style="font-size:11px;padding:2px 6px">Clear</button></h2>
     <canvas id="spectro" width="520" height="112"></canvas>
     <div class="chips" id="specList"></div>
-    <h2>Molecules</h2>
+    <h2>Molecules <span class="muted" style="text-transform:none;letter-spacing:0">tap one to build it</span></h2>
     <div class="chips" id="mols"><span class="muted">None yet. Make neutral atoms touch!</span></div>
     <h2>Particles &amp; events</h2>
     <div class="chips" id="evs"><span class="muted">Nothing yet.</span></div>
@@ -500,6 +504,8 @@ const LEP = { e: { col: "#7cf0ff", r: 3.2, m: 0.15, name: "Electron", aname: "Po
   mu: { col: "#9dff7c", r: 4.2, m: 0.6, name: "Muon", aname: "Anti-muon", acol: "#d7ff7c", s: "μ" },
   tau: { col: "#ffb37c", r: 5.2, m: 1.2, name: "Tau", aname: "Anti-tau", acol: "#ffd47c", s: "τ" } };
 
+// real molecules that don't fit the simple "use up every bond" rule (radicals and odd ones)
+const ODD_OK = new Set(["HO", "CH3", "CO", "NO", "NO2"]);
 const MOL = {
   H2: ["Hydrogen gas", "H₂"], O2: ["Oxygen gas", "O₂"], N2: ["Nitrogen gas", "N₂"], F2: ["Fluorine gas", "F₂"], Cl2: ["Chlorine gas", "Cl₂"],
   H2O: ["Water", "H₂O"], H2O2: ["Hydrogen peroxide", "H₂O₂"], CO2: ["Carbon dioxide", "CO₂"], CO: ["Carbon monoxide", "CO"],
@@ -512,7 +518,7 @@ const MOL = {
   AlCl3: ["Aluminium chloride", "AlCl₃"], BF3: ["Boron trifluoride", "BF₃"], BH3: ["Borane", "BH₃"], H3P: ["Phosphine", "PH₃"], H4Si: ["Silane", "SiH₄"],
   CCl4: ["Carbon tetrachloride", "CCl₄"], CHCl3: ["Chloroform", "CHCl₃"], HLi: ["Lithium hydride", "LiH"], HNa: ["Sodium hydride", "NaH"],
   HNaO: ["Lye (sodium hydroxide)", "NaOH"], HKO: ["Potassium hydroxide", "KOH"], Li2O: ["Lithium oxide", "Li₂O"], Na2O: ["Sodium oxide", "Na₂O"],
-  FeO: ["Iron oxide (rust)", "FeO"], Cu2O: ["Copper oxide", "Cu₂O"], ClAu: ["Gold chloride", "AuCl"], CH4N2O: ["Urea", "CO(NH₂)₂"],
+  FeO: ["Iron oxide (rust)", "FeO"], Cu2O: ["Copper oxide", "Cu₂O"], AuCl: ["Gold chloride", "AuCl"], CH4N2O: ["Urea", "CO(NH₂)₂"],
   C2H4O2: ["Vinegar (acetic acid)", "CH₃COOH"], CH2O2: ["Formic acid (ant venom)", "HCOOH"], HO: ["Hydroxyl radical", "OH"], CH3: ["Methyl radical", "CH₃"],
   H4N2: ["Hydrazine (rocket fuel)", "N₂H₄"], ClF: ["Chlorine monofluoride", "ClF"], ClNaO: ["Bleach (hypochlorite)", "NaOCl"], CS2: ["Carbon disulfide", "CS₂"],
   CH2O3: ["Carbonic acid (fizzy water)", "H₂CO₃"], C2H6O2: ["Antifreeze (ethylene glycol)", "C₂H₆O₂"], C3H8O3: ["Glycerol", "C₃H₈O₃"],
@@ -681,6 +687,86 @@ function mkAntiNucleon(x, y, proton, vx = 0, vy = 0) {
 }
 
 // spawn a ready-made hadron from a quark list like [["u",0],["s",1]] (1 = antiquark)
+// ---- build a whole molecule from its formula key (e.g. "C2H6O") with its bonds already in place ----
+function parseFormula(key) {
+  const atoms = []; let m; const re = /([A-Z][a-z]?)(\d*)/g;
+  while ((m = re.exec(key))) { const Z = SYM.indexOf(m[1]) + 1; if (Z > 0) for (let i = 0; i < (+m[2] || 1); i++) atoms.push(Z); }
+  return atoms;
+}
+// Work out which atoms bond to which so every atom's valence is used up. The first try is a tidy rule
+// (heavy-atom skeleton, then hydrogens); if that leaves bonds unpaired, it keeps trying random arrangements,
+// using spare bonds as double/triple bonds or to close rings (like benzene's), until one works.
+function planMolecule(Zs, radical) {
+  let bestPlan = null, bestLeft = Infinity;
+  const pick = (list, random) => random ? list[Math.floor(Math.random() * list.length)] : list.reduce((m, a) => a.free > m.free ? a : m);
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const random = attempt > 0;
+    const at = Zs.map(Z => ({ Z, free: valence(Z), links: [] }));
+    const link = (A, B, order) => { const L = { a: at.indexOf(A), b: at.indexOf(B), order }; A.links.push(L); B.links.push(L); A.free -= order; B.free -= order; };
+    let ok = true;
+    for (let i = 1; i < at.length; i++) {
+      const cands = at.slice(0, i).filter(A => A.free > 0 && (at[i].Z === 1 ? A.Z !== 1 || i === 1 : true));
+      if (!cands.length || at[i].free <= 0) { ok = false; break; }
+      link(pick(cands, random), at[i], 1);
+    }
+    if (!ok) continue;
+    // spend leftover bonds: raise bond orders, or close a ring between two atoms that aren't bonded yet
+    for (let guard = 0; guard < 50; guard++) {
+      const open = at.filter(A => A.free > 0 && A.Z !== 1);
+      if (open.length < 2) break;
+      const A = random ? open[Math.floor(Math.random() * open.length)] : open[0];
+      const bonded = A.links.map(L => at[L.a] === A ? at[L.b] : at[L.a]).filter(B => B.free > 0 && B !== A);
+      const up = A.links.find(L => { const B = at[L.a] === A ? at[L.b] : at[L.a]; return B.free > 0 && L.order < 3; });
+      if (up && (bonded.length && (!random || Math.random() < 0.6))) { const B = at[up.a] === A ? at[up.b] : at[up.a]; up.order++; A.free--; B.free--; continue; }
+      const far = open.filter(B => B !== A && !A.links.some(L => at[L.a] === B || at[L.b] === B));
+      if (far.length) { link(A, random ? far[Math.floor(Math.random() * far.length)] : far[0], 1); continue; }
+      if (up) { const B = at[up.a] === A ? at[up.b] : at[up.a]; up.order++; A.free--; B.free--; continue; }
+      break;
+    }
+    const left = at.reduce((t, A) => t + A.free, 0);
+    if (left < bestLeft) { bestLeft = left; bestPlan = at; }
+    if (left === 0 || radical) break;
+  }
+  return bestPlan;
+}
+function buildMolecule(key, x, y, vx = 0, vy = 0) {
+  const Zs = parseFormula(key).sort((a, b) => (a === 1) - (b === 1) || valence(b) - valence(a));
+  if (!Zs.length) return null;
+  const at = planMolecule(Zs, ODD_OK.has(key));
+  // place atoms: each one next to the atom it hangs off, fanned out around it
+  const made = [], ang = [];
+  at.forEach((A, i) => {
+    let px = x, py = y, a0 = Math.random() * 6.283;
+    const parentLink = A.links.find(L => L.b === i && L.a < i);
+    if (parentLink) {
+      const P = made[parentLink.a], n = at[parentLink.a].links.length, k = at[parentLink.a].links.indexOf(parentLink);
+      a0 = ang[parentLink.a] + Math.PI + (k + 1) * 6.283 / (n + 1);
+      const L = 0.6 * (P.r + nucR(A.Z + commonN(A.Z)) + 6 + 7 * shellCount(A.Z));
+      px = P.x + Math.cos(a0) * L; py = P.y + Math.sin(a0) * L;
+    }
+    made.push(mkNuc(px, py, A.Z, commonN(A.Z), A.Z, vx, vy)); ang.push(a0);
+  });
+  // add the bonds
+  for (const A of at) for (const L of A.links) {
+    if (at[L.a] !== A) continue;
+    const a = made[L.a], b = made[L.b];
+    if (a.bonds.has(b.id)) continue;
+    const nb = { a, b, order: L.order, t: T, L: (a.r + b.r) * 0.6 };
+    bonds.push(nb); a.bonds.set(b.id, nb); b.bonds.set(a.id, nb);
+  }
+  flash(x, y, "#9dffb0", 30, 0.4);
+  return made[0];
+}
+function selectMolecule(key) {
+  const name = MOL[key] ? MOL[key][0] + " " + MOL[key][1] : key;
+  ITEMS["mol:" + key] = ["mol:" + key, "⚗", name, "#9dffb0", "<b>" + name + "</b>: tap (or click) the box to build one, already bonded. Drag to launch it, hold to spray, or use 🎲 Scatter.",
+    (x, y, vx, vy) => buildMolecule(key, x, y, vx, vy)];
+  selectItem("mol:" + key);
+  renderSide();
+  document.getElementById("side").classList.remove("show");     // on phones, get the panel out of the way so you can tap the box
+  toast("⚗ Tap the box to build " + name + ".");
+}
+document.getElementById("mols").addEventListener("click", e => { const b = e.target.closest("[data-mol]"); if (b) selectMolecule(b.dataset.mol); });
 function hadronFrom(x, y, vx, vy, list, name) {
   const qs = list.map(([f, a], i) => ({ f, anti: !!a, cc: a && list.length === 2 ? "#4dffff" : COLORCHARGE[i] }));
   const baryon = qs.length === 3, anti = baryon && qs[0].anti;
@@ -824,7 +910,7 @@ function moleculePass() {
     if (known || complete) label += " · " + phase;
     if (!complete && !known) label += " (unfinished)";
     molLabels.push({ x: cx, y: top - 8, label, known: !!known });
-    if (known && (complete || hill === "HO" || hill === "CH3")) {
+    if (known && (complete || ODD_OK.has(hill))) {
       if (discover("mol", hill, null)) toast("🧪 You made " + known[0] + " (" + known[1] + ")!");
     }
   }
@@ -1351,6 +1437,17 @@ function relaxAtom(o) {
   event("Fluorescence", "✨ The atom absorbed light and glowed it back out.");
   if (lam >= 380 && lam <= 750 && !ex.gen) event("Atomic spectrum", "🌈 " + ename(o.Z) + " gave out exactly " + fmtLam(lam) + " light — one of its own fingerprint colours!");
 }
+// ---- "Show more" toggles for the long lists in the side panel ----
+const sideMore = { spec: false, ev: false };
+function moreButton(key, total, limit, what) {
+  if (total <= limit) return "";
+  return '<div style="width:100%"><button class="btn more" data-more="' + key + '">' + (sideMore[key] ? "Show less" : "Show all " + total + " " + what) + "</button></div>";
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-more]"); if (!b) return;
+  sideMore[b.dataset.more] = !sideMore[b.dataset.more];
+  if (b.dataset.more === "spec") { spectroDirty = true; drawSpectro(); } else renderSide();
+});
 // ---- spectrometer: tally of every wavelength atoms have given out ----
 const LINES = new Map();
 let spectroDirty = true;
@@ -1372,9 +1469,11 @@ function drawSpectro() {
   }
   g.globalAlpha = 1; g.fillStyle = "#98a2cc"; g.font = "9px system-ui"; g.textAlign = "center";
   for (const t of [400, 500, 600, 700]) g.fillText(t, (t - 380) / 370 * w, h - 2);
-  const list = [...LINES.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 10)
-    .map(([lam, l]) => '<span class="chip" style="border-color:' + lamColor(lam) + '">' + sym(l.Z) + " " + fmtLam(lam) + (lam < 380 ? " UV" : lam > 750 ? " IR" : "") + " ×" + l.n + "</span>");
-  document.getElementById("specList").innerHTML = list.length ? list.join("") : '<span class="muted">Shine light on atoms (try 102.6 nm on hydrogen) to see their colours here.</span>';
+  const sorted = [...LINES.entries()].sort((a, b) => b[1].n - a[1].n);
+  const shown = sideMore.spec ? sorted : sorted.slice(0, 10);
+  const list = shown.map(([lam, l]) => '<span class="chip" style="border-color:' + lamColor(lam) + '" title="' + lamName(lam) + ", " + fmtEV(HC / lam) + '">' + sym(l.Z) + " " + fmtLam(lam) + (lam < 380 ? " UV" : lam > 750 ? " IR" : "") + " ×" + l.n + "</span>");
+  document.getElementById("specList").innerHTML = (list.length ? list.join("") : '<span class="muted">Shine light on atoms (try 102.6 nm on hydrogen) to see their colours here.</span>')
+    + moreButton("spec", sorted.length, 10, "colours");
 }
 function annihFlash(x, y, E) {
   // electron + positron → two 511 keV gamma rays (2.43 pm); heavier pairs give harder gammas
@@ -2071,6 +2170,7 @@ function selectItem(id) {
   updateScatLabel();
 }
 function updateScatLabel() {
+  if (!(S.sel && S.sel[0].startsWith("mol:"))) document.querySelectorAll("#mols .chip.on").forEach(c => c.classList.remove("on"));
   document.getElementById("scatSel").innerHTML = S.sel ? "Scatter <b>" + S.sel[2] + "</b>" : "Pick a particle to scatter";
   document.getElementById("lamCtl").hidden = !(S.sel && S.sel[0] === "ph");
 }
@@ -2157,11 +2257,13 @@ function renderSide() {
   for (let Z = 1; Z <= 118; Z++) { const c = document.getElementById("pt" + Z); if (c) c.classList.toggle("got", disc.el.has(Z)); }
   document.getElementById("elCount").textContent = disc.el.size + " / 118";
   const mols = document.getElementById("mols");
-  mols.innerHTML = disc.mol.size ? [...disc.mol].map(k => '<span class="chip" title="' + (MOL[k] ? MOL[k][0] : k) + '">' + (MOL[k] ? MOL[k][0] + " " + MOL[k][1] : k) + "</span>").join("")
+  const selMol = S.sel && S.sel[0].startsWith("mol:") ? S.sel[0].slice(4) : null;
+  mols.innerHTML = disc.mol.size ? [...disc.mol].map(k => '<button class="chip' + (k === selMol ? " on" : "") + '" data-mol="' + k + '" title="Tap, then tap the box to build ' + (MOL[k] ? MOL[k][0] : k) + '">' + (MOL[k] ? MOL[k][0] + " " + MOL[k][1] : k) + "</button>").join("")
     : '<span class="muted">None yet. Make neutral atoms touch!</span>';
   const evs = document.getElementById("evs");
   const all = [...disc.part].map(p => "🔬 " + p).concat([...disc.ev].filter(e => !e.startsWith("Fused ")).map(e => e));
-  evs.innerHTML = all.length ? all.map(e => '<span class="chip">' + e + "</span>").join("") : '<span class="muted">Nothing yet.</span>';
+  const shownEv = sideMore.ev ? all : all.slice(0, 12);
+  evs.innerHTML = (all.length ? shownEv.map(e => '<span class="chip">' + e + "</span>").join("") : '<span class="muted">Nothing yet.</span>') + moreButton("ev", all.length, 12, "particles & events");
 }
 function renderGoals() {
   const ul = document.getElementById("goals");
@@ -2583,7 +2685,7 @@ try { if (!localStorage.getItem("atomPlaygroundSeen")) { document.getElementById
   mkQuark(x - 160, y - 40, "u", false); mkQuark(x - 110, y - 70, "u", false); mkQuark(x - 120, y - 10, "d", false);
   mkNuc(x + 60, y - 20, 8, 8, 8); mkNuc(x + 150, y + 40, 1, 0, 1); mkNuc(x - 20, y + 80, 1, 0, 1);
 })();
-window.AP = { setRealMode, maxExtra, setLam, setHeat, tempK, LINES, SPEC, setGround: v => { S.ground = v; document.getElementById("ground").checked = v; }, setGrav, clumps: () => clumps, cam, BOX, S, setEdge, fitView, pickElement, ITEMS, commonN, setDecayMode, realHalfLife, fmtTime, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
+window.AP = { recordLine, buildMolecule, selectMolecule, setRealMode, maxExtra, setLam, setHeat, tempK, LINES, SPEC, setGround: v => { S.ground = v; document.getElementById("ground").checked = v; }, setGrav, clumps: () => clumps, cam, BOX, S, setEdge, fitView, pickElement, ITEMS, commonN, setDecayMode, realHalfLife, fmtTime, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
 requestAnimationFrame(loop);
 </script>
 </body>
