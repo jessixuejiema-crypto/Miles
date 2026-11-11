@@ -1124,7 +1124,10 @@ function contact(a, b, d, dx, dy) {
     case "nuc-nuc": {
       if (a.Z === 0 || b.Z === 0) {
         const heavy = a.Z === 0 ? b : a, nn = a.Z === 0 ? a : b;
-        if (d > a.rn + b.rn + (heavy.Z >= 90 ? 14 : 2)) return;
+        // A neutron that touches an atom (anywhere in its electron cloud) is captured by the nucleus.
+        // Brand-new fission neutrons are fast: for a moment only uranium-like nuclei (or a direct hit) catch them.
+        const fast = nn.fastUntil > T && heavy.Z < 90;
+        if (d > (heavy.Z > 0 && !fast ? Math.max(heavy.r, heavy.rn + nn.rn + 2) : a.rn + b.rn + 2)) return;
         if (heavy.Z >= 90 && heavy.Z > 0 && nn.A === 1 && Math.random() < 0.85) { fission(heavy, nn); return; }
         fuse(a, b); return;
       }
@@ -1195,7 +1198,7 @@ function contact(a, b, d, dx, dy) {
         b.src = a.id; return;
       }
       if (b.E >= 3 && a.N > 0 && a.A > 2 && d < a.rn + 3 && Math.random() < 0.3) {
-        b.dead = true; a.N--; refreshNuc(a); kick(mkNuc(a.x, a.y, 0, 1), Math.atan2(b.vy, b.vx), 4);
+        b.dead = true; a.N--; refreshNuc(a); { const ang = Math.atan2(b.vy, b.vx); kick(mkNuc(a.x + Math.cos(ang) * (a.rn + 12), a.y + Math.sin(ang) * (a.rn + 12), 0, 1), ang, 5).fastUntil = T + 1.5; }
         event("Photodisintegration", "✨ Photodisintegration! A gamma ray knocked a neutron out.");
       }
       b.src = a.id;
@@ -1337,7 +1340,7 @@ function fission(heavy, n) {
   heavy.dead = true;
   mkNuc(x + Math.cos(ang) * 10, y + Math.sin(ang) * 10, Z1, N1, 0, Math.cos(ang) * 6, Math.sin(ang) * 6);
   mkNuc(x - Math.cos(ang) * 10, y - Math.sin(ang) * 10, Z2, N2, 0, -Math.cos(ang) * 6, -Math.sin(ang) * 6);
-  for (let i = 0; i < free; i++) { const a2 = ra(); mkNuc(x, y, 0, 1, 0, Math.cos(a2) * 9, Math.sin(a2) * 9); }
+  for (let i = 0; i < free; i++) { const a2 = ra(); mkNuc(x, y, 0, 1, 0, Math.cos(a2) * 9, Math.sin(a2) * 9).fastUntil = T + 1.5; }
   for (let i = 0; i < Math.min(heavy.e, 8); i++) mkLep(x, y, "e", false, rnd(-4, 4), rnd(-4, 4));
   for (let i = 0; i < 3; i++) mkPhoton(x, y, ra(), 3.4);
   flash(x, y, "#fff3b0", 90, 0.7); boom(x, y, "#ffb347", 30, 6); shake = 8;
@@ -1538,7 +1541,8 @@ function nucDecay(o) {
     event("Alpha decay", "☢ Alpha decay! The nucleus shot out a helium nucleus.");
     floatText(x, y - o.r - 8, "α", "#ffcf70");
   } else if (m === "n") {
-    o.N--; mkNuc(x + Math.cos(a) * (o.rn + 6), y + Math.sin(a) * (o.rn + 6), 0, 1, 0, Math.cos(a) * 6, Math.sin(a) * 6);
+    // the spat-out neutron is fast, so its own atom doesn't instantly catch it again
+    o.N--; mkNuc(x + Math.cos(a) * (o.rn + 12), y + Math.sin(a) * (o.rn + 12), 0, 1, 0, Math.cos(a) * 7, Math.sin(a) * 7).fastUntil = T + 1.5;
   } else if (m === "p") {
     o.Z--; mkNuc(x + Math.cos(a) * (o.rn + 6), y + Math.sin(a) * (o.rn + 6), 1, 0, 0, Math.cos(a) * 6, Math.sin(a) * 6);
   } else if (m === "2alpha") {
