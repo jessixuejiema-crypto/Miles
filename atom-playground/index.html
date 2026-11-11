@@ -36,6 +36,8 @@
   .ctl { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); font-size: 12px; }
   .ctl input[type=range] { width: 80px; accent-color: var(--accent); }
   .ctl input[type=number] { width: 64px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+  #tempLbl { min-width: 104px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .ctl input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
   #boxLbl { min-width: 96px; color: var(--ink); font-variant-numeric: tabular-nums; }
   select.btn { padding: 5px 6px; }
 
@@ -59,11 +61,17 @@
   #cv.pan:active { cursor: grabbing; }
   #hint { position: absolute; left: 10px; bottom: 8px; color: var(--dim); font-size: 12px; pointer-events: none;
     background: rgba(7,10,22,.6); padding: 3px 8px; border-radius: 6px; }
-  #scatBar { position: absolute; right: 10px; bottom: 28px; z-index: 4; display: flex; align-items: center; gap: 6px;
+  #scatBar { position: absolute; right: 10px; bottom: 28px; z-index: 4; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px;
     background: rgba(17,23,49,.92); border: 1px solid var(--line); border-radius: 12px; padding: 5px 6px 5px 10px; max-width: calc(100% - 20px); }
   #scatSel { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   #scatSel b { color: var(--ink); }
   #scatterN { width: 58px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+  #lamCtl { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  #lamCtl[hidden] { display: none; }
+  #lamV { font-size: 12px; min-width: 64px; font-variant-numeric: tabular-nums; }
+  #lamP { padding: 3px 4px; font-size: 12px; max-width: 150px; }
+  #spectro { width: 100%; height: 56px; border-radius: 6px; display: block; }
+  #specList { margin-top: 6px; }
   #scatter { background: #234a63; border-color: var(--accent); font-weight: 600; }
   #count { position: absolute; right: 10px; bottom: 8px; color: var(--dim); font-size: 12px; pointer-events: none; }
   #tip { position: absolute; pointer-events: none; background: rgba(13,18,42,.95); border: 1px solid var(--line);
@@ -155,7 +163,8 @@
     <div class="sep"></div>
     <button class="btn" id="pause" title="Pause (Space)">⏸ Pause</button>
     <label class="ctl">Speed <input type="range" id="speed" min="0.1" max="2" step="0.1" value="1"></label>
-    <label class="ctl">🌡 Heat <input type="range" id="heat" min="0" max="100" step="1" value="8"></label>
+    <label class="ctl">🌡 Heat <input type="range" id="heat" min="0" max="100" step="0.5" value="31"> <span id="tempLbl"></span></label>
+    <label class="ctl" title="Everything falls to the floor of the box, like on Earth"><input type="checkbox" id="ground"> ⬇ Ground gravity</label>
     <label class="ctl" title="How strongly everything pulls on everything else. 0 = no gravity">🪐 Gravity <input type="range" id="grav" min="0" max="100" step="1" value="0"></label>
     <label class="ctl" title="How wide the box is, measured in atoms">📏 Box <input type="range" id="boxSize" min="1" max="6" step="0.01" value="1.35"> <span id="boxLbl"></span></label>
     <div class="sep"></div>
@@ -177,6 +186,9 @@
       <option value="alchemy">Alchemy: platinum → gold</option>
       <option value="higgs">Higgs factory</option>
       <option value="planets">Planet maker (gravity)</option>
+      <option value="waterbox">Water: ice, liquid, steam</option>
+      <option value="hspec">Hydrogen spectrum (light)</option>
+      <option value="neonsign">Neon sign glow</option>
       <option value="star">Star maker (gravity)</option>
     </select>
     <button class="btn" id="bigbang" title="Fill the box with a hot quark soup">💥 Big Bang</button>
@@ -198,6 +210,28 @@
       <span id="scatSel">Pick a particle to scatter</span>
       <input type="number" id="scatterN" min="1" max="5000" step="1" value="20" title="How many to scatter" aria-label="How many to scatter">
       <button class="btn" id="scatter" title="Spawn lots of the selected particle at random spots">🎲 Scatter</button>
+      <span id="lamCtl" hidden>
+        <label class="ctl" title="Wavelength of the light">λ <input type="range" id="lamR" min="50" max="800" step="0.1" value="102.6"></label>
+        <b id="lamV"></b>
+        <select class="btn" id="lamP" title="Wavelengths that atoms absorb">
+          <option value="">Presets…</option>
+          <option value="121.6">H Lyman α 121.6 nm (UV)</option>
+          <option value="102.6">H Lyman β 102.6 nm → red line</option>
+          <option value="97.3">H Lyman γ 97.3 nm → more lines</option>
+          <option value="95">H Lyman δ 95.0 nm</option>
+          <option value="656.3">Hα red 656.3 nm (passes H)</option>
+          <option value="58.4">Helium 58.4 nm</option>
+          <option value="53.7">Helium 53.7 nm</option>
+          <option value="670.8">Lithium red 670.8 nm</option>
+          <option value="589.3">Sodium yellow 589.3 nm</option>
+          <option value="330.3">Sodium UV 330.3 nm</option>
+          <option value="766.7">Potassium 766.7 nm</option>
+          <option value="422.7">Calcium violet 422.7 nm</option>
+          <option value="74.4">Neon 74.4 nm</option>
+          <option value="253.7">Mercury UV 253.7 nm</option>
+          <option value="185">Mercury UV 185 nm</option>
+        </select>
+      </span>
     </div>
   </main>
 
@@ -206,6 +240,9 @@
     <ul id="goals"></ul>
     <h2>Elements <span id="elCount"></span></h2>
     <div id="ptable"></div>
+    <h2>🌈 Spectrometer <button class="btn" id="specClear" style="font-size:11px;padding:2px 6px">Clear</button></h2>
+    <canvas id="spectro" width="520" height="112"></canvas>
+    <div class="chips" id="specList"></div>
     <h2>Molecules</h2>
     <div class="chips" id="mols"><span class="muted">None yet. Make neutral atoms touch!</span></div>
     <h2>Particles &amp; events</h2>
@@ -234,6 +271,8 @@
     <li><b>Antimatter</b> (positrons, antiquarks, antiprotons) annihilates with matter into gamma rays.</li>
     <li><b>Photons</b> make atoms glow (fluorescence). <b>Gamma rays</b> knock electrons out or make electron–positron pairs.</li>
     <li>Turn up <b>🪐 Gravity</b> and atoms pull on each other and clump into asteroids, planets and even stars. Try the Planet maker and Star maker experiments.</li>
+    <li>The <b>🌡 Heat</b> slider is a real temperature. Each element and molecule is <b>solid, liquid or gas</b> depending on its real melting and boiling points. Tick <b>⬇ Ground gravity</b> to make things fall to the floor.</li>
+    <li><b>Light has exact wavelengths.</b> Pick a photon's wavelength with the λ slider. Atoms only absorb their own exact wavelengths, so you'll see the electron jump up and fall back, giving out the element's fingerprint colours (hydrogen's red line is 656.3 nm). The 🌈 Spectrometer records them.</li>
     <li><b>W bosons</b> turn neutrons into protons (and back). <b>Z</b> and <b>Higgs</b> bosons decay fast — the Higgs field slows things nearby.</li>
     <li>Heavy quarks, muons and taus decay into lighter particles. <b>Neutrinos</b> are ghosts that fly through everything.</li>
   </ul>
@@ -358,6 +397,77 @@ function fmtTime(sec) {
   if (y < 1e9) return +(y / 1e6).toPrecision(3) + " million years";
   return +(y / 1e9).toPrecision(3) + " billion years";
 }
+// ---- temperature: the Heat slider (0-100) maps to kelvin; 31 is about room temperature ----
+const heatToK = h => 10000 * Math.pow(h / 100, 3);
+const tempK = () => heatToK(S.heat);
+const thermal = () => Math.max(0, (S.heat - 23) / 77);     // 0 at room temperature and below, 1 at the top
+
+// ---- melting / boiling points in kelvin (Z → [mp, bp]); equal values mean it sublimes ----
+const MPBP = { 1: [14, 20], 2: [0.95, 4.2], 3: [454, 1615], 4: [1560, 2742], 5: [2349, 4200], 6: [3800, 4300], 7: [63, 77], 8: [54, 90],
+  9: [53, 85], 10: [25, 27], 11: [371, 1156], 12: [923, 1363], 13: [933, 2792], 14: [1687, 3538], 15: [317, 554], 16: [388, 718],
+  17: [172, 239], 18: [84, 87], 19: [337, 1032], 20: [1115, 1757], 21: [1814, 3109], 22: [1941, 3560], 23: [2183, 3680], 24: [2180, 2944],
+  25: [1519, 2334], 26: [1811, 3134], 27: [1768, 3200], 28: [1728, 3186], 29: [1358, 2835], 30: [693, 1180], 31: [303, 2477], 32: [1211, 3106],
+  33: [887, 887], 34: [494, 958], 35: [266, 332], 36: [116, 120], 37: [312, 961], 38: [1050, 1655], 39: [1799, 3609], 40: [2128, 4682],
+  41: [2750, 5017], 42: [2896, 4912], 43: [2430, 4538], 44: [2607, 4423], 45: [2237, 3968], 46: [1828, 3236], 47: [1235, 2435], 48: [594, 1040],
+  49: [430, 2345], 50: [505, 2875], 51: [904, 1860], 52: [723, 1261], 53: [387, 457], 54: [161, 165], 55: [302, 944], 56: [1000, 2118],
+  57: [1193, 3737], 58: [1068, 3716], 59: [1208, 3793], 60: [1297, 3347], 61: [1315, 3273], 62: [1345, 2067], 63: [1099, 1802], 64: [1585, 3546],
+  65: [1629, 3503], 66: [1680, 2840], 67: [1734, 2993], 68: [1802, 3141], 69: [1818, 2223], 70: [1097, 1469], 71: [1925, 3675], 72: [2506, 4876],
+  73: [3290, 5731], 74: [3695, 5828], 75: [3459, 5869], 76: [3306, 5285], 77: [2719, 4701], 78: [2041, 4098], 79: [1337, 3129], 80: [234, 630],
+  81: [577, 1746], 82: [601, 2022], 83: [544, 1837], 84: [527, 1235], 85: [575, 610], 86: [202, 211], 87: [300, 950], 88: [973, 2010],
+  89: [1323, 3471], 90: [2023, 5061], 91: [1841, 4300], 92: [1405, 4404], 93: [917, 4273], 94: [913, 3501], 95: [1449, 2880], 96: [1613, 3383],
+  97: [1259, 2900], 98: [1173, 1743], 99: [1133, 1269] };
+const elemMPBP = Z => MPBP[Z] || [1300, 3000];
+// molecules, keyed by the same formula keys as MOL
+const MOLPH = { H2: [14, 20], O2: [54, 90], N2: [63, 77], F2: [53, 85], Cl2: [172, 239], H2O: [273, 373], H2O2: [272, 423], CO2: [195, 195],
+  CO: [68, 82], CH4: [91, 112], H3N: [195, 240], ClNa: [1074, 1686], ClH: [159, 188], FH: [190, 293], O3: [81, 161], CHN: [260, 299],
+  NO: [109, 121], NO2: [262, 294], N2O: [182, 185], O2Si: [1986, 2503], MgO: [3098, 3870], CaO: [2886, 3123], ClK: [1044, 1693],
+  FLi: [1118, 1949], H2S: [191, 213], O2S: [201, 263], CH2O: [181, 254], CH4O: [175, 338], C2H6O: [159, 351], C2H6: [90, 184],
+  C2H4: [104, 169], C2H2: [192, 192], C3H8: [85, 231], C4H10: [135, 273], C6H6: [279, 353], C6H12O6: [419, 900], CaCl2: [1045, 2208],
+  Cl2Mg: [987, 1685], AlCl3: [453, 453], BF3: [146, 173], H3P: [140, 185], H4Si: [88, 161], CCl4: [250, 350], CHCl3: [210, 334],
+  HNaO: [591, 1661], HKO: [679, 1600], Li2O: [1711, 2873], Na2O: [1405, 2223], FeO: [1650, 3687], Cu2O: [1505, 2073],
+  CH4N2O: [406, 600], C2H4O2: [290, 391], CH2O2: [281, 374], H4N2: [275, 387], CS2: [162, 319], C2H6O2: [260, 470],
+  C3H8O3: [291, 563], C2H4O: [150, 293], C3H6O: [178, 329], CH5N: [180, 267] };
+const phaseAt = ([mp, bp], K) => K < mp ? "solid" : K < bp ? "liquid" : "gas";
+const PHASE_ICON = { solid: "🧊 solid", liquid: "💧 liquid", gas: "☁ gas" };
+
+// ---- light: wavelength (nm) ⇄ the game's energy scale (visible 0-1, UV 1-2, X/gamma 2+) ----
+const HC = 1239.84;   // photon energy (eV) × wavelength (nm)
+function lamToE(l) { if (l >= 380) return (750 - l) / 370; if (l >= 10) return 1 + (380 - l) / 370; return 2 + Math.log10(10 / l) / 3; }
+function eToLam(E) { if (E < 1) return 750 - 370 * E; if (E < 2) return 380 - 370 * (E - 1); return 10 / Math.pow(10, (E - 2) * 3); }
+function lamColor(l) {
+  if (l < 10) return "#ffffff";
+  if (l < 380) return "#b9a4ff";
+  if (l > 750) return "#8a3434";
+  let r = 0, g = 0, b = 0;
+  if (l < 440) { r = (440 - l) / 60; b = 1; } else if (l < 490) { g = (l - 440) / 50; b = 1; } else if (l < 510) { g = 1; b = (510 - l) / 20; }
+  else if (l < 580) { r = (l - 510) / 70; g = 1; } else if (l < 645) { r = 1; g = (645 - l) / 65; } else r = 1;
+  const f = l < 420 ? 0.4 + 0.6 * (l - 380) / 40 : l > 700 ? 0.4 + 0.6 * (750 - l) / 50 : 1;
+  const c = v => Math.round(255 * Math.pow(Math.max(0.12, v * f), 0.8));
+  return "rgb(" + c(r) + "," + c(g) + "," + c(b) + ")";
+}
+function lamName(l) {
+  if (l < 0.01) return "gamma ray"; if (l < 10) return "X-ray"; if (l < 380) return "ultraviolet (invisible)";
+  if (l < 450) return "violet light"; if (l < 485) return "blue light"; if (l < 500) return "cyan light"; if (l < 565) return "green light";
+  if (l < 590) return "yellow light"; if (l < 625) return "orange light"; if (l <= 750) return "red light"; return "infrared (invisible)";
+}
+function fmtLam(l) { return l >= 1 ? (+l.toFixed(1)) + " nm" : l >= 0.001 ? +(l * 1000).toPrecision(3) + " pm" : +(l * 1e6).toPrecision(3) + " fm"; }
+function fmtEV(eV) { return eV < 1000 ? +eV.toPrecision(3) + " eV" : eV < 1e6 ? +(eV / 1000).toPrecision(3) + " keV" : +(eV / 1e6).toPrecision(3) + " MeV"; }
+
+// ---- atomic energy levels (eV above the ground state). abs = levels the ground state can jump to. ----
+const SPEC = {
+  1: { lv: [0, 10.199, 12.088, 12.749, 13.055, 13.221, 13.320], abs: [1, 2, 3, 4, 5, 6], ion: 13.598, n: i => "n=" + (i + 1) },
+  2: { lv: [0, 19.820, 20.616, 20.964, 21.218, 23.074, 23.087, 23.736], abs: [4, 6], ion: 24.587 },
+  3: { lv: [0, 1.848, 3.373, 3.834, 3.879], abs: [1, 3], ion: 5.392 },
+  10: { lv: [0, 16.619, 16.671, 16.715, 16.848, 18.382, 18.555, 18.637, 18.966], abs: [2, 4], ion: 21.565 },
+  11: { lv: [0, 2.104, 3.191, 3.617, 3.753], abs: [1, 4], ion: 5.139 },
+  19: { lv: [0, 1.610, 1.617, 2.607, 2.670, 3.062], abs: [1, 2, 5], ion: 4.341 },
+  20: { lv: [0, 1.886, 2.933], abs: [1, 2], ion: 6.113 },
+  80: { lv: [0, 4.667, 4.886, 5.461, 6.704, 7.730], abs: [2, 4], ion: 10.438 },
+};
+const H_LINES = { "2-1": "Lyman α", "3-1": "Lyman β", "4-1": "Lyman γ", "5-1": "Lyman δ", "3-2": "Balmer Hα", "4-2": "Balmer Hβ", "5-2": "Balmer Hγ",
+  "6-2": "Balmer Hδ", "7-2": "Balmer Hε", "4-3": "Paschen α", "5-3": "Paschen β" };
+function levelName(Z, i) { const sp = SPEC[Z]; return sp && sp.n ? sp.n(i) : "level " + i; }
+function absLines(Z) { const sp = SPEC[Z]; return sp ? sp.abs.map(i => HC / sp.lv[i]) : []; }
 const QF = {
   u: { q: 2 / 3, col: "#ff5d73", name: "Up" }, d: { q: -1 / 3, col: "#4cc9f0", name: "Down" },
   s: { q: -1 / 3, col: "#7ee08f", name: "Strange" }, c: { q: 2 / 3, col: "#ffd166", name: "Charm" },
@@ -396,7 +506,7 @@ const sup = n => String(n).split("").map(c => SUPS[+c]).join("");
 const chargeStr = q => q === 0 ? "" : (Math.abs(q) === 1 ? "" : sup(Math.abs(q))) + (q > 0 ? "⁺" : "⁻");
 
 // ================= State =================
-const S = { paused: false, speed: 1, heat: 8, labels: true, tool: "hand", sel: null, edge: "border" };
+const S = { paused: false, speed: 1, heat: 31, labels: true, tool: "hand", sel: null, edge: "border", ground: false, lam: 102.6 };
 const BOX = { w: 800, h: 600 };          // the box in world units
 const cam = { x: 0, y: 0, z: 1 };         // screen = (world - cam) * z
 const ATOM_W = 40;                        // world units per atom width (about a hydrogen atom)
@@ -473,6 +583,7 @@ const GOALS = [
   ["Discover 20 elements", () => disc.el.size >= 20],
   ["Feed a black hole", () => disc.ev.has("Black hole snack")],
   ["Use gravity to form a planet", () => disc.ev.has("Planet formed")],
+  ["See an atom's exact colour (atomic spectrum)", () => disc.ev.has("Atomic spectrum")],
   ["Make a star from a hydrogen cloud", () => disc.ev.has("Star formed")],
 ];
 const goalDone = new Set();
@@ -503,6 +614,7 @@ function mkNuc(x, y, Z, N, e = 0, vx = 0, vy = 0) {
   refreshNuc(o); return o;
 }
 function refreshNuc(o) {
+  o.ex = null;                       // a new nucleus means a different atom: forget any excited electron
   o.A = o.Z + o.N; o.m = 1 + (o.A - 1) * 0.35;
   o.rn = nucR(o.A);
   const d = decayInfo(o.Z, o.N);
@@ -532,8 +644,9 @@ function mkNu(x, y, fl, anti, ang) {
   return add({ kind: "nu", fl, anti, x, y, vx: Math.cos(ang) * 8.5, vy: Math.sin(ang) * 8.5, r: 2, ghost: true, inert: true, tr: [], die: T + 8 });
 }
 const C = 7;
-function mkPhoton(x, y, ang, E, src) {
-  return add({ kind: "ph", x, y, vx: Math.cos(ang) * C, vy: Math.sin(ang) * C, E, r: 4, ghost: true, src: src || 0, die: T + 9, ph: Math.random() * 6 });
+function mkPhoton(x, y, ang, E, src, info) { return mkPhotonL(x, y, ang, eToLam(E), src, info); }
+function mkPhotonL(x, y, ang, lam, src, info) {
+  return add({ kind: "ph", x, y, vx: Math.cos(ang) * C, vy: Math.sin(ang) * C, lam, E: lamToE(lam), r: 4, ghost: true, src: src || 0, die: T + 9, ph: Math.random() * 6, info: info || "" });
 }
 function mkGluon(x, y, vx, vy) { return add({ kind: "g", x, y, vx, vy, r: 5, m: 0.3, decayAt: T + rnd(5, 8), spin: Math.random() * 6 }); }
 function mkW(x, y, s, vx, vy) { return add({ kind: "W", s, x, y, vx, vy, r: 9, m: 3, decayAt: T + rnd(0.9, 1.4) }); }
@@ -628,7 +741,7 @@ function bondForces(k) {
     if (A.dead || B.dead || !isAtom(A) || !isAtom(B)) { b.dead = true; A.bonds && A.bonds.delete(B.id); B.bonds && B.bonds.delete(A.id); continue; }
     const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 0.01;
     const L = b.L * (1 - 0.06 * (b.order - 1));
-    if (d > L * 3.2 || Math.random() < (S.heat / 100) ** 3 * 0.01 * k / b.order) {
+    if (d > L * 3.2 || Math.random() < thermal() ** 3 * 0.01 * k / b.order) {
       b.dead = true; A.bonds.delete(B.id); B.bonds.delete(A.id); continue;
     }
     const nx = dx / d, ny = dy / d;
@@ -651,6 +764,12 @@ function bondForces(k) {
 let molLabels = [];
 function moleculePass() {
   molLabels = [];
+  const K = tempK();
+  for (const o of ents) {           // lone atoms take their element's state; ions and bare nuclei have none
+    if (o.kind !== "nuc" || o.dead) continue;
+    if (isAtom(o) && !o.bonds.size) { const mb = elemMPBP(o.Z); o.phase = phaseAt(mb, K); o.phaseOf = [ename(o.Z), mb, false]; o.mol = null; }
+    else if (!isAtom(o)) { o.phase = null; o.phaseOf = null; o.mol = null; }
+  }
   const seen = new Set();
   for (const o of ents) {
     if (o.dead || o.kind !== "nuc" || !o.bonds || !o.bonds.size || seen.has(o.id)) continue;
@@ -666,7 +785,13 @@ function moleculePass() {
     const cx = comp.reduce((s, a) => s + a.x, 0) / comp.length, cy = comp.reduce((s, a) => s + a.y, 0) / comp.length;
     const top = Math.min(...comp.map(a => a.y - a.r));
     const known = MOL[hill];
+    let mb = MOLPH[hill], est = false;
+    if (!mb) { est = true; mb = [0, 0]; comp.forEach(a => { const e = elemMPBP(a.Z); mb[0] += e[0] / comp.length; mb[1] += e[1] / comp.length; }); }
+    const phase = phaseAt(mb, K);
+    const mol = { mass: comp.reduce((t, a) => t + a.m, 0) };
+    comp.forEach(a => { a.phase = phase; a.phaseOf = [known ? known[0] : "this molecule", mb, est]; a.mol = mol; });
     let label = known ? known[0] + " " + known[1] : order.map(k => k + (cnt[k] > 1 ? sub(cnt[k]) : "")).join("");
+    if (known || complete) label += " · " + phase;
     if (!complete && !known) label += " (unfinished)";
     molLabels.push({ x: cx, y: top - 8, label, known: !!known });
     if (known && (complete || hill === "HO" || hill === "CH3")) {
@@ -718,6 +843,7 @@ function reachForce(o) {
   if (o.kind === "nuc") {
     if (o.Z === 0) return o.rn + MAXR + 10;                    // neutrons feel the strong force up close
     if (isAtom(o) && freeVal(o) > 0) return (o.r + MAXR) * 1.7; // atoms looking for a bond partner
+    if (o.phase && o.phase !== "gas") return (o.r + MAXR) * 1.25;  // solids and liquids feel their neighbours
   }
   return 0;
 }
@@ -831,6 +957,9 @@ function pairF(a, b, d) {
     const bareish = (a.e === 0 || a.Z === 0) && (b.e === 0 || b.Z === 0);
     if (bareish && d < a.rn + b.rn + 10) f += 0.35;
     if (isAtom(a) && isAtom(b) && !a.bonds.has(b.id) && d < (a.r + b.r) * 1.7 && freeVal(a) > 0 && freeVal(b) > 0) f += 0.03;
+    // solids and liquids hold together; gases don't
+    if (a.phase && b.phase && a.phase !== "gas" && b.phase !== "gas" && !a.bonds.has(b.id) && d < (a.r + b.r) * 1.25)
+      f += a.phase === "solid" && b.phase === "solid" ? 0.08 : 0.03;
   }
   return f;
 }
@@ -870,8 +999,9 @@ function swallow(h, o) {
   if (o.kind !== "ph" && o.kind !== "nu") event("Black hole snack", "🕳 Nom! The black hole ate something.");
 }
 function integrate(k) {
-  const heat = S.heat / 100, jig = Math.pow(heat, 1.5) * 0.9;
+  const jig = Math.pow(thermal(), 1.5) * 0.9, K = tempK();
   const drag = S.heat < 3 ? 0.03 : 0.004;
+
   for (const o of ents) {
     if (o.dead) continue;
     if (o.kind === "bh") continue;
@@ -887,22 +1017,42 @@ function integrate(k) {
       continue;
     }
     if (o.held) continue;
+    const gas = o.phase === "gas";
+    // gases buzz around with heat, but heat alone never makes them fast enough to fuse (that needs a hard throw)
     if (jig > 0) { const s = jig / Math.sqrt(o.m) * k; o.vx += (Math.random() - 0.5) * s; o.vy += (Math.random() - 0.5) * s; }
-    const dk = Math.pow(1 - drag, k); o.vx *= dk; o.vy *= dk;
+    if (gas) {
+      // Gas particles keep flying at a speed set by temperature (heavier ones slower), wandering in direction.
+      // A molecule is steered as one piece. Heat alone never makes them fast enough to fuse; that needs a hard throw.
+      const g = o.mol || o;
+      if (g.kf !== frame) {
+        g.kf = frame;
+        const vt = Math.max(1.2, Math.min(5, 2.6 * Math.sqrt(K / 300) * Math.sqrt(8 / (g.mass || o.m))));
+        const sp = Math.hypot(o.vx, o.vy);
+        let ux, uy; if (sp > 0.05) { ux = o.vx / sp; uy = o.vy / sp; } else { const a = ra(); ux = Math.cos(a); uy = Math.sin(a); }
+        const w = (Math.random() - 0.5) * 0.5, c = Math.cos(w), sn = Math.sin(w);
+        const ns = sp + (vt - sp) * Math.min(1, 0.06 * k);
+        g.kx = (ux * c - uy * sn) * ns - o.vx; g.ky = (ux * sn + uy * c) * ns - o.vy;
+      }
+      o.vx += g.kx; o.vy += g.ky;
+    }
+    // falls toward the floor; fast-moving gas particles barely notice gravity at this tiny scale
+    if (S.ground && !o.held) o.vy += (gas ? 0.008 : 0.1) * k;
+    const dk = Math.pow(1 - (o.phase === "solid" ? Math.max(drag, 0.012) : drag), k); o.vx *= dk; o.vy *= dk;
     const sp = Math.hypot(o.vx, o.vy); if (sp > 22) { o.vx *= 22 / sp; o.vy *= 22 / sp; }
     o.x += o.vx * k; o.y += o.vy * k;
     if (S.edge === "border") {
-      const r = o.r;
-      if (o.x < r) { o.x = r; o.vx = Math.abs(o.vx) * 0.8; } if (o.x > BOX.w - r) { o.x = BOX.w - r; o.vx = -Math.abs(o.vx) * 0.8; }
-      if (o.y < r) { o.y = r; o.vy = Math.abs(o.vy) * 0.8; } if (o.y > BOX.h - r) { o.y = BOX.h - r; o.vy = -Math.abs(o.vy) * 0.8; }
+      const r = o.r, ew = o.phase === "solid" ? 0.05 : o.phase === "liquid" ? 0.1 : o.phase === "gas" ? 0.97 : 0.8;
+      if (o.x < r) { o.x = r; o.vx = Math.abs(o.vx) * ew; } if (o.x > BOX.w - r) { o.x = BOX.w - r; o.vx = -Math.abs(o.vx) * ew; }
+      if (o.y < r) { o.y = r; o.vy = Math.abs(o.vy) * ew; }
+      if (o.y > BOX.h - r) { o.y = BOX.h - r; o.vy = -Math.abs(o.vy) * ew; if (S.ground && ew < 0.5) o.vx *= 0.92; }
     } else if (S.edge === "wrap") wrapPos(o);
     else if (o.x < -5000 || o.y < -5000 || o.x > BOX.w + 5000 || o.y > BOX.h + 5000) { o.dead = true; if (o.bonds) breakBonds(o); }
     if (o.tr) { o.tr.push(o.x, o.y); if (o.tr.length > 16) o.tr.splice(0, 2); }
     if (o.rot !== undefined) o.rot += 0.01 * k;
   }
   // hot plasma strips electrons
-  if (S.heat > 60) for (const o of ents) {
-    if (o.kind === "nuc" && !o.dead && o.e > 0 && Math.random() < (S.heat - 60) / 40 * 0.004 * k) {
+  if (S.heat > 78) for (const o of ents) {         // above ~4,700 K atoms start losing electrons: plasma
+    if (o.kind === "nuc" && !o.dead && o.e > 0 && Math.random() < (S.heat - 78) / 22 * 0.004 * k) {
       o.e--; refreshCloud(o); kick(mkLep(o.x, o.y, "e", false, o.vx, o.vy), ra(), 3);
     }
   }
@@ -917,11 +1067,15 @@ function bounce(a, b, d, dx, dy, e = 0.85) {
   const nx = dx / d, ny = dy / d, ma = a.held ? 1e6 : a.m, mb = b.held ? 1e6 : b.m;
   const ov = a.r + b.r - d;
   if (ov > 0) { const t = ma + mb; a.x -= nx * ov * mb / t; a.y -= ny * ov * mb / t; b.x += nx * ov * ma / t; b.y += ny * ov * ma / t; }
-  if (S.grav > 0) e = Math.min(e, 0.1);      // with gravity, things thud together instead of bouncing apart
+  let fr = 0;
+  const cond = a.phase && b.phase && a.phase !== "gas" && b.phase !== "gas";
+  if (cond && a.phase === "solid" && b.phase === "solid") { e = 0; fr = 0.5; }      // solids: rigid, grippy
+  else if (cond) { e = Math.min(e, 0.05); fr = 0.03; }                              // liquids: soft, slippery
+  if (S.grav > 0) { e = Math.min(e, 0.1); fr = Math.max(fr, 0.3); }               // gravity clumps settle
   const rv = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
   if (rv < 0) { const j = -(1 + e) * rv / (1 / ma + 1 / mb); a.vx -= j * nx / ma; a.vy -= j * ny / ma; b.vx += j * nx / mb; b.vy += j * ny / mb; }
-  if (S.grav > 0) {                         // friction, so clumps settle instead of sliding around
-    const tx = -ny, ty = nx, rt = (b.vx - a.vx) * tx + (b.vy - a.vy) * ty, jt = rt * 0.3 / (1 / ma + 1 / mb);
+  if (fr > 0) {
+    const tx = -ny, ty = nx, rt = (b.vx - a.vx) * tx + (b.vy - a.vy) * ty, jt = rt * fr / (1 / ma + 1 / mb);
     a.vx += jt * tx / ma; a.vy += jt * ty / ma; b.vx -= jt * tx / mb; b.vy -= jt * ty / mb;
   }
 }
@@ -955,7 +1109,8 @@ function contact(a, b, d, dx, dy) {
       if (a.bonds.has(b.id)) return;
       const bare = a.e === 0 && b.e === 0;
       // very heavy pairs repel too hard to fuse (Coulomb barrier)
-      if ((bare || relSpeed(a, b) > 8.5) && a.Z * b.Z <= 1500) { fuse(a, b); return; }
+      // atoms wrapped in electrons only fuse in a really hard crash (a throw), never from ordinary heat
+      if ((bare || relSpeed(a, b) > 13) && a.Z * b.Z <= 1500) { fuse(a, b); return; }
       if (isAtom(a) && isAtom(b) && freeVal(a) > 0 && freeVal(b) > 0 && relSpeed(a, b) < 6) return; // about to bond
       bounce(a, b, d, dx, dy);
       return;
@@ -964,7 +1119,9 @@ function contact(a, b, d, dx, dy) {
       const q = charge(a);
       if (b.t === "e" && !b.anti && q > 0 && a.Z > 0) {
         a.e++; refreshCloud(a); b.dead = true;
-        if (Math.random() < 0.6) mkPhoton(a.x, a.y, ra(), Math.random(), a.id);
+        const sp = SPEC[a.Z];
+        if (sp && a.e === a.Z && !a.ex) exciteAtom(a, sp.lv.length - 1 - Math.floor(Math.random() * 2), "#7cf0ff");   // lands high, then falls
+        else if (Math.random() < 0.6) mkPhoton(a.x, a.y, ra(), Math.random(), a.id);
         flash(a.x, a.y, "#7cf0ff", a.r + 6, 0.35);
         return;
       }
@@ -983,22 +1140,35 @@ function contact(a, b, d, dx, dy) {
     case "nuc-ph": {
       if (b.src === a.id || d > a.r) return;
       if (a.e > 0) {
-        if (b.E >= 3 && Math.random() < 0.4) {
+        const eV = HC / b.lam, sp = SPEC[a.Z];
+        if (b.lam < 0.00121 && Math.random() < 0.4) {   // above 1.022 MeV a gamma ray can turn into matter
           b.dead = true; const ang = Math.atan2(b.vy, b.vx);
           mkLep(a.x, a.y, "e", false, Math.cos(ang - 0.4) * 5, Math.sin(ang - 0.4) * 5);
           mkLep(a.x, a.y, "e", true, Math.cos(ang + 0.4) * 5, Math.sin(ang + 0.4) * 5);
           flash(a.x, a.y, "#fff", 30, 0.4); event("Pair production", "✨ Pair production! A gamma ray became an electron and a positron.");
           return;
         }
-        if (b.E >= 2) {
-          b.dead = true; a.e--; refreshCloud(a);
+        if (eV >= (sp ? sp.ion : 10) && (b.E >= 1 || sp)) {   // enough energy to rip an electron right out
+          b.dead = true; a.e--; refreshCloud(a); a.ex = null;
           mkLep(a.x, a.y, "e", false, b.vx * 0.8 + rnd(-1, 1), b.vy * 0.8 + rnd(-1, 1));
           event("Photoelectric effect", "✨ Photoelectric effect! Light knocked out an electron.");
           return;
         }
-        if (a.exc <= 0) {
-          b.dead = true; a.exc = 1; a.excE = b.E; a.reemit = T + rnd(0.2, 0.9);
-          return;
+        if (!a.ex && a.e === a.Z) {
+          if (sp) {   // only an exact wavelength can lift an electron to a higher level
+            for (const i of sp.abs) {
+              const line = HC / sp.lv[i];
+              if (Math.abs(b.lam - line) <= Math.max(0.5, line * 0.004)) {
+                b.dead = true; exciteAtom(a, i, lamColor(b.lam));
+                floatText(a.x, a.y - a.r - 10, "absorbed " + fmtLam(line), lamColor(line));
+                return;
+              }
+            }
+            if (!a.passNote || T - a.passNote > 4) { a.passNote = T; floatText(a.x, a.y - a.r - 10, "wrong colour: passes through", "#98a2cc"); }
+          } else if (b.lam >= 100 && b.lam <= 900) {   // no spectrum on file: glow back the same colour
+            b.dead = true; a.ex = { i: 1, gen: b.lam, col: lamColor(b.lam), anim: { from: 0, to: 1, t0: T }, next: T + rnd(0.4, 0.9) };
+            return;
+          }
         }
         b.src = a.id; return;
       }
@@ -1056,8 +1226,61 @@ function contact(a, b, d, dx, dy) {
     }
   }
 }
+// ---- electrons jumping between energy levels ----
+function exciteAtom(a, i, col) {
+  a.ex = { i, col, anim: { from: 0, to: i, t0: T }, next: T + rnd(0.6, 1.1) };
+}
+function relaxAtom(o) {
+  const ex = o.ex;
+  if (o.e !== o.Z || o.dead || (!ex.gen && !SPEC[o.Z])) { o.ex = null; return; }
+  if (ex.i === 0) { if (T - ex.anim.t0 > 0.35) o.ex = null; return; }
+  if (T < ex.next) return;
+  let lam, j, info;
+  if (ex.gen) { j = 0; lam = ex.gen; info = ename(o.Z) + " atom glowing back the light it absorbed"; }
+  else {
+    const sp = SPEC[o.Z];
+    j = Math.floor(Math.random() * ex.i);                  // fall to any lower level
+    lam = HC / (sp.lv[ex.i] - sp.lv[j]);
+    const nm = o.Z === 1 ? H_LINES[(ex.i + 1) + "-" + (j + 1)] : "";
+    info = ename(o.Z) + " electron fell " + levelName(o.Z, ex.i) + " → " + levelName(o.Z, j) + (nm ? " (" + nm + ")" : "");
+  }
+  mkPhotonL(o.x, o.y, ra(), lam, o.id, info);
+  recordLine(lam, o.Z);
+  floatText(o.x + rnd(-10, 10), o.y - o.r - 10, fmtLam(lam), lam >= 380 && lam <= 750 ? lamColor(lam) : "#c9c2ff");
+  flash(o.x, o.y, lamColor(lam), o.r + 8, 0.35);
+  ex.anim = { from: ex.i, to: j, t0: T }; ex.i = j; ex.col = lamColor(lam); ex.next = T + rnd(0.45, 0.9);
+  event("Fluorescence", "✨ The atom absorbed light and glowed it back out.");
+  if (lam >= 380 && lam <= 750 && !ex.gen) event("Atomic spectrum", "🌈 " + ename(o.Z) + " gave out exactly " + fmtLam(lam) + " light — one of its own fingerprint colours!");
+}
+// ---- spectrometer: tally of every wavelength atoms have given out ----
+const LINES = new Map();
+let spectroDirty = true;
+function recordLine(lam, Z) {
+  const k = Math.round(lam * 10) / 10;
+  const l = LINES.get(k) || { n: 0, Z };
+  l.n++; LINES.set(k, l); spectroDirty = true;
+}
+function drawSpectro() {
+  if (!spectroDirty) return; spectroDirty = false;
+  const c = document.getElementById("spectro"); if (!c) return;
+  const g = c.getContext("2d"), w = c.width, h = c.height;
+  g.fillStyle = "#05070f"; g.fillRect(0, 0, w, h);
+  for (let x = 0; x < w; x++) { g.fillStyle = lamColor(380 + 370 * x / w); g.globalAlpha = 0.12; g.fillRect(x, 0, 1, h - 12); }
+  g.globalAlpha = 1;
+  for (const [lam, l] of LINES) if (lam >= 380 && lam <= 750) {
+    const x = (lam - 380) / 370 * w;
+    g.fillStyle = lamColor(lam); g.globalAlpha = Math.min(1, 0.35 + l.n * 0.2); g.fillRect(x - 1, 0, 2.5, h - 12);
+  }
+  g.globalAlpha = 1; g.fillStyle = "#98a2cc"; g.font = "9px system-ui"; g.textAlign = "center";
+  for (const t of [400, 500, 600, 700]) g.fillText(t, (t - 380) / 370 * w, h - 2);
+  const list = [...LINES.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 10)
+    .map(([lam, l]) => '<span class="chip" style="border-color:' + lamColor(lam) + '">' + sym(l.Z) + " " + fmtLam(lam) + (lam < 380 ? " UV" : lam > 750 ? " IR" : "") + " ×" + l.n + "</span>");
+  document.getElementById("specList").innerHTML = list.length ? list.join("") : '<span class="muted">Shine light on atoms (try 102.6 nm on hydrogen) to see their colours here.</span>';
+}
 function annihFlash(x, y, E) {
-  const ang = ra(); mkPhoton(x, y, ang, E); mkPhoton(x, y, ang + Math.PI, E);
+  // electron + positron → two 511 keV gamma rays (2.43 pm); heavier pairs give harder gammas
+  const lam = E < 3 ? 0.002426 : 0.0000118, ang = ra(), info = E < 3 ? "electron–positron annihilation (511 keV each)" : "annihilation";
+  mkPhotonL(x, y, ang, lam, 0, info); mkPhotonL(x, y, ang + Math.PI, lam, 0, info);
   flash(x, y, "#ffffff", 36, 0.5); boom(x, y, "#ffd1f5", 10, 2.5);
   event("Annihilation", "💥 Annihilation! Matter + antimatter → pure light.");
 }
@@ -1190,10 +1413,7 @@ function decays() {
     switch (o.kind) {
       case "nuc":
         if (T >= o.decayAt) nucDecay(o);
-        if (o.exc > 0 && T >= o.reemit) {
-          o.exc = 0; mkPhoton(o.x, o.y, ra(), o.excE, o.id);
-          event("Fluorescence", "✨ Fluorescence! The atom absorbed light and glowed it back out.");
-        }
+        if (o.ex) relaxAtom(o);
         break;
       case "q":
         if (T >= o.decayAt) {
@@ -1330,12 +1550,7 @@ function step(k) {
 }
 
 // ================= Drawing =================
-function photonColor(E) {
-  if (E < 1) return "hsl(" + Math.round((1 - E) * 0 + E * 275) + ",100%,62%)";
-  if (E < 2) return "#b9a4ff";
-  if (E < 3) return "#e9e1ff";
-  return "#ffffff";
-}
+function photonColor(E) { return lamColor(eToLam(E)); }
 function glow(x, y, r, col, a = 0.5) {
   const g = ctx.createRadialGradient(x, y, 0, x, y, r);
   g.addColorStop(0, col); g.addColorStop(1, "rgba(0,0,0,0)");
@@ -1374,8 +1589,18 @@ function drawAtom(o) {
     return;
   }
   if (o.e > 0) {
-    if (!LITE || o.exc > 0) glow(o.x, o.y, o.r + 4, o.exc > 0 ? photonColor(o.excE) : "rgba(124,240,255,0.35)", o.exc > 0 ? 0.8 : 0.35);
+    if (!LITE || o.ex) glow(o.x, o.y, o.r + 4, o.ex ? o.ex.col : "rgba(124,240,255,0.35)", o.ex ? 0.7 : 0.35);
     const sh = shellsOf(o.e);
+    if (o.ex) sh[sh.length - 1]--;            // that electron is drawn on its own, up in a higher orbit
+    if (o.ex) {
+      const ex = o.ex, rOut = o.rn + 6 + 7 * sh.length, rad = i => rOut + 9 * Math.min(i, 7);
+      const p = Math.min(1, (T - ex.anim.t0) / 0.3), e = p * p * (3 - 2 * p);
+      const rr = rad(ex.anim.from) + (rad(ex.anim.to) - rad(ex.anim.from)) * e, ang = T * 2.2 + o.id;
+      ctx.setLineDash([3, 4]); circle(o.x, o.y, rad(ex.i), null, ex.col, 1); ctx.setLineDash([]);
+      glow(o.x + Math.cos(ang) * rr, o.y + Math.sin(ang) * rr, 9, ex.col, 0.9);
+      circle(o.x + Math.cos(ang) * rr, o.y + Math.sin(ang) * rr, 3, "#ffffff");
+      if (LBL && SPEC[o.Z]) text(levelName(o.Z, ex.i), o.x + Math.cos(ang) * (rr + 12), o.y + Math.sin(ang) * (rr + 12), 9, "#ffffff", "700");
+    }
     sh.forEach((cnt, k) => {
       const r = o.rn + 6 + 7 * (k + 1);
       circle(o.x, o.y, r, null, "rgba(124,240,255,0.13)", 1);
@@ -1397,7 +1622,7 @@ function drawAtom(o) {
     else {
       const q = o.Z - o.e;
       lbl = sym(o.Z) + chargeStr(q);
-      if (!(o.bonds && o.bonds.size)) lbl = ename(o.Z) + "-" + o.A + chargeStr(q);
+      if (!(o.bonds && o.bonds.size)) lbl = ename(o.Z) + "-" + o.A + chargeStr(q) + (o.phase && q === 0 ? " · " + o.phase : "");
     }
     if (unstable) lbl += " ☢";
     text(lbl, o.x, o.y + o.r + 9, 11, unstable ? "#d8ff9a" : "#e9edff");
@@ -1428,7 +1653,7 @@ function drawLep(o) {
   if (LBL && o.t !== "e") text((o.anti ? L.aname : L.name), o.x, o.y + o.r + 8, 9, "#98a2cc", "500");
 }
 function drawPhoton(o) {
-  const col = photonColor(o.E), ang = Math.atan2(o.vy, o.vx), len = 18;
+  const col = lamColor(o.lam), ang = Math.atan2(o.vy, o.vx), len = 18;
   const c = Math.cos(ang), s = Math.sin(ang);
   ctx.strokeStyle = col; ctx.lineWidth = o.E >= 2 ? 2 : 1.6; ctx.beginPath();
   const wav = o.E >= 2 ? 1.6 : 3, freq = 0.6 + Math.min(o.E, 3) * 0.35;
@@ -1534,7 +1759,7 @@ function farColor(o) {
     case "nuc": return o.e > 0 ? "#7cf0ff" : o.Z ? "#ff6b6b" : "#c9ced6";
     case "q": return QF[o.f].col;
     case "lep": return o.anti ? LEP[o.t].acol : LEP[o.t].col;
-    case "ph": return photonColor(o.E);
+    case "ph": return lamColor(o.lam);
     case "nu": return "#ffffff";
     case "g": case "had": return "#ffe066";
     case "W": return "#c77dff"; case "Z": return "#5d8bff"; case "H": return "#ffd166";
@@ -1646,7 +1871,7 @@ const PAL = [
     ["nutau", "ντ", "Tau neutrino", "#fff0e0", "<b>Tau neutrino</b>: the rarest neutrino to catch.", (x, y, vx, vy) => mkNu(x, y, "tau", false, Math.hypot(vx, vy) > 0.3 ? Math.atan2(vy, vx) : undefined)],
   ]],
   ["Force carriers", [
-    ["ph", "γ", "Photon", "#ffe36e", "<b>Photon</b> — a particle of light. Shine it on atoms to make them glow.", (x, y, vx, vy) => mkPhoton(x, y, Math.hypot(vx, vy) > 0.3 ? Math.atan2(vy, vx) : ra(), Math.random())],
+    ["ph", "γ", "Photon", "#ffe36e", "<b>Photon</b>: light with an exact wavelength. Choose it with the λ slider. Each atom only absorbs its own exact wavelengths; then you can watch its electron jump up and fall back, giving out its fingerprint colours. Try 102.6 nm on hydrogen!", (x, y, vx, vy) => mkPhotonL(x, y, Math.hypot(vx, vy) > 0.3 ? Math.atan2(vy, vx) : ra(), S.lam)],
     ["gam", "γ★", "Gamma ray", "#ffffff", "<b>Gamma ray</b>: super-energetic light. Knocks electrons out of atoms or turns into an electron + positron pair.", (x, y, vx, vy) => mkPhoton(x, y, Math.hypot(vx, vy) > 0.3 ? Math.atan2(vy, vx) : ra(), 3.6)],
     ["g", "g", "Gluon", "#ffe066", "<b>Gluon</b>: carries the strong force that glues quarks together. Two gluons make a glueball; alone it splits into a quark pair.", (x, y, vx, vy) => mkGluon(x, y, vx, vy)],
     ["wp", "W⁺", "W⁺ boson", "#c77dff", "<b>W⁺ boson</b> (weak force). Hit a neutron with it to turn it into a proton!", (x, y, vx, vy) => mkW(x, y, 1, vx, vy)],
@@ -1738,7 +1963,17 @@ function selectItem(id) {
 }
 function updateScatLabel() {
   document.getElementById("scatSel").innerHTML = S.sel ? "Scatter <b>" + S.sel[2] + "</b>" : "Pick a particle to scatter";
+  document.getElementById("lamCtl").hidden = !(S.sel && S.sel[0] === "ph");
 }
+function setLam(l) {
+  S.lam = Math.max(50, Math.min(800, l));
+  document.getElementById("lamR").value = S.lam;
+  const v = document.getElementById("lamV");
+  v.textContent = fmtLam(S.lam); v.style.color = lamColor(S.lam); v.title = lamName(S.lam) + " · " + fmtEV(HC / S.lam);
+}
+document.getElementById("lamR").addEventListener("input", e => setLam(+e.target.value));
+document.getElementById("lamP").addEventListener("change", e => { if (e.target.value) setLam(+e.target.value); e.target.value = ""; });
+document.getElementById("specClear").addEventListener("click", () => { LINES.clear(); spectroDirty = true; });
 function setTool(t) {
   S.tool = t; S.sel = null;
   document.querySelectorAll(".item").forEach(x => x.classList.remove("on"));
@@ -1967,6 +2202,11 @@ function describe(o) {
       if (o.decay && S.decayMode === "real") { const hl = realHalfLife(o.Z, o.N, o.decay); t += "<br>Half-life: " + fmtTime(hl.t) + (hl.measured ? " (measured)" : " (estimate)"); }
       if (o.decay && S.decayMode === "set") t += "<br>Set decay time: " + fmtTime(S.decaySecs);
       if (!o.decay) t += "<br>✓ Stable nucleus";
+      if (o.phase && o.phaseOf) {
+        const [nm, mb, est] = o.phaseOf;
+        t += "<br>" + PHASE_ICON[o.phase] + " at " + Math.round(tempK()) + " K" + (mb[0] === mb[1] ? " (" + nm + " turns to gas at " + Math.round(mb[1]) + " K)" : " (" + nm + " melts at " + Math.round(mb[0]) + " K, boils at " + Math.round(mb[1]) + " K)") + (est ? ", estimated" : "");
+      }
+      if (SPEC[o.Z] && o.e === o.Z) t += "<br>🌈 Absorbs only: " + absLines(o.Z).map(fmtLam).join(", ") + (o.ex ? "<br>Electron excited to " + levelName(o.Z, o.ex.i) : "");
       if (q > 0) t += "<br>Needs " + q + " more electron" + (q > 1 ? "s" : "") + " to be neutral.";
       else if (o.Z > 0) { const v = valence(o.Z); t += "<br>" + (v ? "Bonds: " + usedVal(o) + " / " + v : "Noble — never bonds"); }
       return t;
@@ -1974,7 +2214,7 @@ function describe(o) {
     case "q": return "<b>" + (o.anti ? "Anti-" : "") + QF[o.f].name + " quark</b><br>Charge " + (qcharge(o) > 0 ? "+" : "−") + (Math.abs(qcharge(o)) > 0.5 ? "⅔" : "⅓") + (QLIFE[o.f] < 1e9 ? "<br>Heavy — will decay soon" : "");
     case "lep": return "<b>" + (o.anti ? LEP[o.t].aname : LEP[o.t].name) + "</b><br>Charge " + (o.anti ? "+1" : "−1");
     case "had": return "<b>" + o.name + "</b><br>" + (o.baryon ? "Baryon" : "Meson") + " made of " + o.qs.map(q => q.f + (q.anti ? "̄" : "")).join(" ") + (o.stable ? "" : "<br>Short-lived — decays soon");
-    case "ph": return "<b>" + (o.E >= 2 ? "Gamma ray" : o.E >= 1 ? "Ultraviolet photon" : "Light photon") + "</b>";
+    case "ph": return "<b>Photon · " + fmtLam(o.lam) + "</b><br><span style=\"color:" + lamColor(o.lam) + "\">■</span> " + lamName(o.lam) + " · " + fmtEV(HC / o.lam) + (o.info ? "<br>From: " + o.info : "");
     case "nu": return "<b>Neutrino</b><br>Passes through everything.";
     case "g": return "<b>Gluon</b><br>Strong-force carrier";
     case "W": return "<b>W" + (o.s > 0 ? "⁺" : "⁻") + " boson</b><br>Weak force — changes particle types";
@@ -2003,11 +2243,34 @@ const RECIPES = {
   methane() { const x = cx(), y = cy(); mkNuc(x, y, 6, 6, 6); for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; mkNuc(x + Math.cos(a) * 75, y + Math.sin(a) * 75, 1, 0, 1, -Math.cos(a), -Math.sin(a)); } },
   co2() { const x = cx(), y = cy(); mkNuc(x, y, 6, 6, 6); mkNuc(x - 80, y, 8, 8, 8, 1.2, 0); mkNuc(x + 80, y, 8, 8, 8, -1.2, 0); },
   protonkit() { const x = cx(), y = cy(); mkQuark(x - 50, y, "u", false); mkQuark(x + 50, y, "u", false); mkQuark(x, y - 50, "d", false); mkGluon(x, y + 40); mkGluon(x + 20, y + 50); },
-  sun() { setHeat(75); for (let i = 0; i < 26; i++) mkNuc(vcx() + rnd(-110, 110), vcy() + rnd(-90, 90), 1, 0, 0, rnd(-3, 3), rnd(-3, 3)); toast("☀ Super hot! Protons are fusing like in the Sun's core."); },
-  alpha() { setHeat(55); const x = cx(), y = cy(); for (let i = 0; i < 6; i++) { const a = i * 1.047; mkNuc(x + Math.cos(a) * 40, y + Math.sin(a) * 40, 2, 2, 0, -Math.cos(a) * 2, -Math.sin(a) * 2); } toast("Helium nuclei fusing… Be-8 is unstable, so a third one must hit fast!"); },
+  sun() { setHeat(76); for (let i = 0; i < 26; i++) mkNuc(vcx() + rnd(-110, 110), vcy() + rnd(-90, 90), 1, 0, 0, rnd(-3, 3), rnd(-3, 3)); toast("☀ Super hot! Protons are fusing like in the Sun's core."); },
+  alpha() { setHeat(62); const x = cx(), y = cy(); for (let i = 0; i < 6; i++) { const a = i * 1.047; mkNuc(x + Math.cos(a) * 40, y + Math.sin(a) * 40, 2, 2, 0, -Math.cos(a) * 2, -Math.sin(a) * 2); } toast("Helium nuclei fusing… Be-8 is unstable, so a third one must hit fast!"); },
   fission() { const x = vcx() + 60, y = vcy(), g = Math.min(150, (H / cam.z - 40) / 3); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) mkNuc(x + i * g, y + j * g, 92, 143, 92); mkNuc(x - 2 * g - 150, y + 3, 0, 1, 0, 9, 0); toast("☢ A neutron is heading for a lump of uranium-235…"); },
   anti() { const x = cx(), y = cy(); for (let i = 0; i < 3; i++) mkAntiNucleon(x - 140, y - 60 + i * 60, true, 2, 0); for (let i = 0; i < 3; i++) mkLep(x - 180, y - 50 + i * 50, "e", true, 1, 0); for (let i = 0; i < 4; i++) mkNuc(x + 120, y - 90 + i * 60, 1, 0, 1, -1, 0); },
   alchemy() { const x = cx(), y = cy(); mkNuc(x, y, 78, 118, 0); mkNuc(Math.max(20, x - 220), y, 1, 0, 0, 7, 0); toast("A bare platinum nucleus (78 protons) and one fast proton… 78 + 1 = 79 = gold!"); },
+  waterbox() {
+    setHeat(31); S.ground = true; document.getElementById("ground").checked = true;
+    const x0 = vcx() - 220, y0 = vcy() - 160;
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 8; c++) {
+      const x = x0 + c * 62, y = y0 + r * 62;
+      mkNuc(x, y, 8, 8, 8); mkNuc(x - 26, y + 14, 1, 0, 1); mkNuc(x + 26, y + 14, 1, 0, 1);
+    }
+    toast("💧 Water at room temperature is liquid. Heat past 373 K (100 °C) to boil it; cool below 273 K (0 °C) to freeze it.");
+  },
+  hspec() {
+    const x = vcx(), y = vcy();
+    for (let i = 0; i < 6; i++) mkNuc(x - 60 + (i % 3) * 70, y - 40 + Math.floor(i / 3) * 80, 1, 0, 1);
+    setLam(102.6); selectItem("ph");
+    for (let i = 0; i < 6; i++) mkPhotonL(x - 320, y - 40 + Math.floor(i / 3) * 80 + rnd(-3, 3), 0, i % 2 ? 97.3 : 102.6);
+    toast("🌈 Ultraviolet light at hydrogen's exact wavelengths. Watch the electrons jump up, then fall back giving out red, cyan and violet light!");
+  },
+  neonsign() {
+    const x = vcx(), y = vcy();
+    for (let i = 0; i < 8; i++) mkNuc(x - 210 + i * 60, y, 10, 10, 10);
+    for (let i = 0; i < 8; i++) mkLep(x - 210 + i * 60 + rnd(-40, 40), y - 120, "e", false, rnd(-1, 1), 3);
+    for (const a of ents) if (a.kind === "nuc" && a.Z === 10) { a.e = 9; refreshCloud(a); }
+    toast("Neon atoms missing an electron each. When they catch one, it tumbles down the levels giving neon's famous orange-red glow.");
+  },
   planets() {
     setGrav(60); setHeat(2);
     const mix = [[8, 8, 30], [26, 30, 20], [14, 14, 20], [12, 12, 15], [6, 6, 10], [1, 0, 5]], tot = 100;
@@ -2038,14 +2301,22 @@ function bigBang() {
   for (let i = 0; i < 6; i++) mkNu(x, y, "e", i % 2 === 0);
   event("Big Bang", "💥 BANG! A hot soup of quarks, gluons and electrons. Watch it cool into atoms…");
 }
-function setHeat(v) { S.heat = v; document.getElementById("heat").value = v; }
+function setHeat(v) { S.heat = v; document.getElementById("heat").value = v; updateTemp(); }
 
 // ================= UI wiring =================
 document.querySelectorAll("[data-tool]").forEach(b => b.addEventListener("click", () => setTool(b.dataset.tool)));
 document.getElementById("pause").addEventListener("click", togglePause);
 function togglePause() { S.paused = !S.paused; const b = document.getElementById("pause"); b.textContent = S.paused ? "▶ Play" : "⏸ Pause"; b.classList.toggle("on", S.paused); }
 document.getElementById("speed").addEventListener("input", e => S.speed = +e.target.value);
-document.getElementById("heat").addEventListener("input", e => S.heat = +e.target.value);
+function updateTemp() {
+  const K = tempK();
+  document.getElementById("tempLbl").textContent = (K < 10 ? K.toFixed(1) : Math.round(K)) + " K · " + Math.round(K - 273.15) + " °C";
+}
+document.getElementById("heat").addEventListener("input", e => { S.heat = +e.target.value; updateTemp(); });
+document.getElementById("ground").addEventListener("change", e => {
+  S.ground = e.target.checked;
+  toast(S.ground ? "⬇ Ground gravity on: everything falls to the floor." : "Ground gravity off.");
+});
 document.getElementById("grav").addEventListener("input", e => S.grav = +e.target.value);
 function setGrav(v) { S.grav = v; document.getElementById("grav").value = v; }
 document.getElementById("recipes").addEventListener("change", e => { const r = RECIPES[e.target.value]; if (r) r(); e.target.value = ""; });
@@ -2145,11 +2416,12 @@ function loop(now) {
     for (let i = 0; i < steps; i++) { step(k / steps); if (performance.now() - t0 > 30) break; }  // slow down rather than freeze
   }
   draw();
+  drawSpectro();
   if ((countTick = (countTick + 1) % 20) === 0) document.getElementById("count").textContent = ents.filter(o => !o.dead).length + " particles";
   requestAnimationFrame(loop);
 }
 
-buildPalette(); buildSide(); renderSide(); checkGoals(); setTool("hand");
+buildPalette(); buildSide(); renderSide(); checkGoals(); setTool("hand"); updateTemp(); setLam(S.lam);
 resize();
 document.getElementById("boxSize").value = Math.log10(Math.max(10, BOX.w / ATOM_W)).toFixed(2);
 updateBoxLabel();
@@ -2161,7 +2433,7 @@ try { if (!localStorage.getItem("atomPlaygroundSeen")) { document.getElementById
   mkQuark(x - 160, y - 40, "u", false); mkQuark(x - 110, y - 70, "u", false); mkQuark(x - 120, y - 10, "d", false);
   mkNuc(x + 60, y - 20, 8, 8, 8); mkNuc(x + 150, y + 40, 1, 0, 1); mkNuc(x - 20, y + 80, 1, 0, 1);
 })();
-window.AP = { setGrav, clumps: () => clumps, cam, BOX, S, setEdge, fitView, pickElement, ITEMS, commonN, setDecayMode, realHalfLife, fmtTime, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
+window.AP = { setLam, setHeat, tempK, LINES, SPEC, setGround: v => { S.ground = v; document.getElementById("ground").checked = v; }, setGrav, clumps: () => clumps, cam, BOX, S, setEdge, fitView, pickElement, ITEMS, commonN, setDecayMode, realHalfLife, fmtTime, ents: () => ents, step, mkNuc, mkQuark, mkLep, mkPhoton, mkAntiNucleon, mkGluon, mkW, mkHiggs, mkBH, RECIPES, bigBang, disc, zap, selectItem, setTool, get T() { return T; } };
 requestAnimationFrame(loop);
 </script>
 </body>
