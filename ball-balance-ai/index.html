@@ -14,12 +14,15 @@
     --accent: #4fd1a5;
     --accent2: #f5b942;
     --danger: #ff6b6b;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    padding: 16px;
+    padding-block: 16px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
   }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .sub { color: var(--muted); margin: 0 0 12px; font-size: 13px; }
@@ -62,7 +65,7 @@
           <option value="4">Speed 4×</option>
           <option value="8">Speed 8×</option>
         </select>
-        <button id="skipBtn">Skip to next gen</button>
+        <button id="skipBtn">Next generation now</button>
         <button id="train10Btn">Train 10 gens fast</button>
         <button id="resetBtn">Reset</button>
         <label class="chk"><input type="checkbox" id="ghostChk" checked> Show all 100 AIs (ghosts)</label>
@@ -324,7 +327,7 @@
 
   function finishReplay() {
     phase = 'fell';
-    phaseTimer = 1.4;
+    phaseTimer = 0.9;
   }
 
   function nextGeneration() {
