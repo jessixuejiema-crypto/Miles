@@ -171,12 +171,13 @@
     <section>
       <h2>Presets</h2>
       <select id="presetSel">
+        <option value="micro">Microscopic branching</option>
         <option value="network">Classic network</option>
         <option value="foodmaze">Food maze</option>
         <option value="cities">City map (oat cities)</option>
         <option value="cells">Cellular</option>
         <option value="waves">Pulsing waves</option>
-        <option value="fine">Fine veins</option>
+        <option value="fine">Fine mesh</option>
       </select>
     </section>
     <section>
@@ -198,7 +199,8 @@
 <script>
 (() => {
   // ---- Grid & state -------------------------------------------------------
-  const W = 480, H = 320, N = W * H;
+  // S scales the 480x320 design coordinates (layouts, spawn points) up to the real grid
+  const S = 2, W = 480 * S, H = 320 * S, N = W * H;
   const canvas = document.getElementById('view');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
@@ -210,21 +212,21 @@
   const food = new Float32Array(N);   // attractant source strength
   const wall = new Uint8Array(N);     // 1 = blocked
 
-  const MAX_AGENTS = 120000;
+  const MAX_AGENTS = 300000;
   const ax = new Float32Array(MAX_AGENTS);
   const ay = new Float32Array(MAX_AGENTS);
   const ah = new Float32Array(MAX_AGENTS);
   let agentCount = 0;
 
   const params = {
-    agents: 50000,
+    agents: 140000,
     sensorAngle: 22.5,   // degrees
-    sensorDist: 9,
-    turnAngle: 45,       // degrees
+    sensorDist: 5,
+    turnAngle: 22.5,     // degrees
     speed: 1,
-    deposit: 5,
-    decay: 0.1,
-    diffuse: 0.5,
+    deposit: 1,
+    decay: 0.3,
+    diffuse: 0,
     foodStrength: 6,
     stepsPerFrame: 1,
   };
@@ -243,12 +245,13 @@
   ];
 
   const presets = {
+    micro:    { sensorAngle: 22.5, sensorDist: 5,  turnAngle: 22.5, speed: 1, deposit: 1,  decay: 0.3,  diffuse: 0,   agents: 140000, spawn: 'center' },
     network:  { sensorAngle: 22.5, sensorDist: 9,  turnAngle: 45, speed: 1,   deposit: 5,  decay: 0.1,  diffuse: 0.5, agents: 50000, spawn: 'center' },
     foodmaze: { sensorAngle: 30,   sensorDist: 12, turnAngle: 40, speed: 1.2, deposit: 4,  decay: 0.12, diffuse: 0.6, agents: 30000, spawn: 'corner', layout: 'maze' },
     cities:   { sensorAngle: 25,   sensorDist: 14, turnAngle: 35, speed: 1,   deposit: 3,  decay: 0.15, diffuse: 0.5, agents: 40000, spawn: 'random', layout: 'cities' },
     cells:    { sensorAngle: 45,   sensorDist: 20, turnAngle: 20, speed: 1.4, deposit: 6,  decay: 0.08, diffuse: 0.7, agents: 70000, spawn: 'random' },
     waves:    { sensorAngle: 60,   sensorDist: 30, turnAngle: 75, speed: 2,   deposit: 8,  decay: 0.05, diffuse: 0.3, agents: 80000, spawn: 'ring' },
-    fine:     { sensorAngle: 12,   sensorDist: 6,  turnAngle: 25, speed: 0.8, deposit: 3,  decay: 0.2,  diffuse: 0.2, agents: 90000, spawn: 'spots' },
+    fine:     { sensorAngle: 45,   sensorDist: 3,  turnAngle: 30, speed: 1,   deposit: 1,  decay: 0.25, diffuse: 0.05, agents: 140000, spawn: 'random' },
   };
 
   // ---- Agents -------------------------------------------------------------
@@ -264,8 +267,8 @@
       } else if (mode === 'random') {
         x = rand() * W; y = rand() * H; h = rand() * TAU;
       } else { // blob around (cx, cy)
-        const a = rand() * TAU, r = Math.sqrt(rand()) * (mode === 'brush' ? 6 : 18);
-        x = cx + Math.cos(a) * r; y = cy + Math.sin(a) * r; h = a;
+        const a = rand() * TAU, r = Math.sqrt(rand()) * (mode === 'brush' ? 6 : 18) * S;
+        x = cx + Math.cos(a) * r; y = cy + Math.sin(a) * r; h = rand() * TAU;
       }
       x = Math.min(W - 0.01, Math.max(0, x));
       y = Math.min(H - 0.01, Math.max(0, y));
@@ -280,7 +283,7 @@
     if (mode === 'spots') for (let k = 0; k < 5; k++) spots.push([W * (0.15 + rand() * 0.7), H * (0.15 + rand() * 0.7)]);
     for (let i = 0; i < agentCount; i++) {
       if (mode === 'spots') { const s = spots[i % spots.length]; placeAgent(i, 'blob', s[0], s[1]); }
-      else if (mode === 'corner') placeAgent(i, 'blob', 50, 50);
+      else if (mode === 'corner') placeAgent(i, 'blob', 50 * S, 50 * S);
       else placeAgent(i, mode, W / 2, H / 2);
     }
   }
@@ -298,11 +301,14 @@
 
   // ---- Simulation step ----------------------------------------------------
   function sense(x, y, h) {
-    let sx = (x + Math.cos(h) * params.sensorDist) | 0;
-    let sy = (y + Math.sin(h) * params.sensorDist) | 0;
-    if (sx < 0 || sx >= W || sy < 0 || sy >= H) return -1;
-    const k = sy * W + sx;
-    return wall[k] ? -1 : trail[k];
+    // Bilinear sample so sensing has no preferred grid direction
+    const fx = x + Math.cos(h) * params.sensorDist - 0.5;
+    const fy = y + Math.sin(h) * params.sensorDist - 0.5;
+    if (fx < 0 || fx >= W - 1 || fy < 0 || fy >= H - 1) return -1;
+    const x0 = fx | 0, y0 = fy | 0, u = fx - x0, v = fy - y0, k = y0 * W + x0;
+    if (wall[k] || wall[k + 1] || wall[k + W] || wall[k + W + 1]) return -1;
+    return (trail[k] * (1 - u) + trail[k + 1] * u) * (1 - v) +
+           (trail[k + W] * (1 - u) + trail[k + W + 1] * u) * v;
   }
 
   function step() {
@@ -323,11 +329,11 @@
       if (f > l && f > r) {
         // keep heading
       } else if (f < l && f < r) {
-        h += (rand() < 0.5 ? -1 : 1) * ta;
+        h += (rand() < 0.5 ? -1 : 1) * ta * rand();
       } else if (l > r) {
-        h -= ta;
+        h -= ta * rand();
       } else if (r > l) {
-        h += ta;
+        h += ta * rand();
       }
       h += (rand() - 0.5) * 0.1; // a little jitter
 
@@ -386,12 +392,14 @@
   const FOOD_PX = (255 << 24) | (150 << 16) | (215 << 8) | 245; // oat beige
 
   function render() {
+    // Scale brightness to the deposit rate so faint, fine veins stay visible
+    const exposure = 2 + params.deposit * 2.5;
     for (let k = 0; k < N; k++) {
       if (wall[k]) { px[k] = WALL_PX; continue; }
       if (food[k]) { px[k] = FOOD_PX; continue; }
       // Soft tone-mapping so dense veins don't saturate instantly
       const v = trail[k];
-      const t = v / (v + 12);
+      const t = v / (v + exposure);
       px[k] = lut[(t * 255) | 0];
     }
     ctx.putImageData(img, 0, 0);
@@ -407,15 +415,20 @@
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) arr[y * W + x] = val;
   }
 
+  const dotRaw = dot, rectRaw = rect;
+
   function applyLayout(name) {
     food.fill(0); wall.fill(0);
     if (name === 'maze') {
       const t = 6;
-      rect(wall, 0, 0, W, t, 1); rect(wall, 0, H - t, W, H, 1);
-      rect(wall, 0, 0, t, H, 1); rect(wall, W - t, 0, W, H, 1);
+      const rect = (arr, x0, y0, x1, y1, v) => rectRaw(arr, x0 * S, y0 * S, x1 * S, y1 * S, v);
+      const dot = (arr, x, y, rr, v) => dotRaw(arr, x * S, y * S, rr * S, v);
+      const w = W / S, h = H / S;
+      rect(wall, 0, 0, w, t, 1); rect(wall, 0, h - t, w, h, 1);
+      rect(wall, 0, 0, t, h, 1); rect(wall, w - t, 0, w, h, 1);
       // Serpentine corridors: the mold must snake down, up, down to reach the far oat
       rect(wall, 120, 0, 120 + t, 240, 1);
-      rect(wall, 240, 80, 240 + t, H, 1);
+      rect(wall, 240, 80, 240 + t, h, 1);
       rect(wall, 360, 0, 360 + t, 240, 1);
       dot(food, 50, 50, 5, 1);
       dot(food, 180, 280, 4, 1);
@@ -425,7 +438,7 @@
       // Rough "metro" of food sources with a dense core and a ring of suburbs
       const pts = [[240, 160], [180, 120], [300, 120], [170, 210], [310, 215], [240, 70], [240, 260],
                    [90, 80], [400, 70], [70, 250], [420, 250], [120, 165], [370, 160]];
-      pts.forEach(([x, y], i) => dot(food, x, y, i === 0 ? 7 : 4, 1));
+      pts.forEach(([x, y], i) => dotRaw(food, x * S, y * S, (i === 0 ? 7 : 4) * S, 1));
     }
   }
 
@@ -539,7 +552,7 @@
   }
 
   buildLut('physarum');
-  loadPreset('network');
+  loadPreset('micro');
   requestAnimationFrame(loop);
 })();
 </script>
