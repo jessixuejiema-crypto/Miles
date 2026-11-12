@@ -156,7 +156,7 @@
     </section>
     <section>
       <h2>Sharing food locations</h2>
-      <p class="hint">An agent that touches food remembers where it is and tells the agents it passes. They pass the news on, a little staler each time. Agents that have been told head for the food, and become messengers once they get there.</p>
+      <p class="hint">An agent that touches food remembers where it is and tells the agents it passes. They pass the news on, a little staler each time. Agents that have been told head for the food. Once they eat they are full for a while: they wander off to explore and spread the news, but don't follow news themselves. Explorers never follow news, so the colony keeps searching for new food.</p>
       <label class="check"><input type="checkbox" id="showMsg" checked> Highlight agents that know where food is</label>
       <p class="hint legend"><span class="sw finder"></span>found it themselves <span class="sw told"></span>were told</p>
     </section>
@@ -237,6 +237,7 @@
   const ky = new Float32Array(MAX_AGENTS);
   const kexp = new Float32Array(MAX_AGENTS);
   const kmode = new Uint8Array(MAX_AGENTS);
+  const fullUntil = new Float32Array(MAX_AGENTS); // step until which an agent that ate ignores news
   // A coarse "chatter" board: agents passing through a cell leave their news
   // there and pick up any fresher news left by others.
   const CELL = 4 * S, BW = Math.ceil(W / CELL), BH = Math.ceil(H / CELL);
@@ -245,7 +246,8 @@
   const bexp = new Float32Array(BW * BH);
   const MEMORY = 1500;  // steps a finder remembers food
   const HOP = 30;       // freshness lost each time news is passed on
-  let tick = 0, informed = 0;
+  const FULL = 600;     // steps an agent stays full (exploring) after eating
+  let tick = 0, headingCount = 0, exploringCount = 0;
 
   const params = {
     agents: 140000,
@@ -258,6 +260,7 @@
     diffuse: 0,
     foodStrength: 6,
     share: 0.5,
+    explore: 0.3,
     stepsPerFrame: 1,
   };
 
@@ -272,6 +275,7 @@
     ['diffuse', 'Diffusion', 0, 1, 0.05, v => v.toFixed(2)],
     ['foodStrength', 'Food scent', 0, 20, 0.5, v => v.toFixed(1)],
     ['share', 'Follow shared news', 0, 1, 0.05, v => v === 0 ? 'off' : v.toFixed(2)],
+    ['explore', 'Explorers (ignore news)', 0, 1, 0.05, v => Math.round(v * 100) + '%'],
     ['stepsPerFrame', 'Steps / frame', 1, 4, 1, v => v.toFixed(0)],
   ];
 
@@ -307,7 +311,7 @@
       if (!wall[(y | 0) * W + (x | 0)]) break;
     }
     ax[i] = x; ay[i] = y; ah[i] = h;
-    kexp[i] = 0; kmode[i] = 0;
+    kexp[i] = 0; kmode[i] = 0; fullUntil[i] = 0;
   }
 
   function spawnAll(mode) {
@@ -327,7 +331,7 @@
       if (agentCount > 0) {
         const j = (rand() * agentCount) | 0;
         ax[i] = ax[j]; ay[i] = ay[j]; ah[i] = rand() * TAU;
-        kexp[i] = 0; kmode[i] = 0;
+        kexp[i] = 0; kmode[i] = 0; fullUntil[i] = 0;
       } else placeAgent(i, 'blob', W / 2, H / 2);
     }
     agentCount = n;
@@ -350,8 +354,9 @@
     const ta = params.turnAngle * Math.PI / 180;
     const sp = params.speed, dep = params.deposit;
     const share = params.share, arrive2 = (3 * S) ** 2;
+    const explorerCut = Math.round(params.explore * 100);
     tick++;
-    let know = 0;
+    let heading = 0, exploring = 0;
 
     // Food continuously emits attractant
     const fs = params.foodStrength;
@@ -377,16 +382,19 @@
         // Learn: touching food makes this agent a finder; otherwise it may
         // pick up fresher news that someone left in this board cell.
         const c = ((y / CELL) | 0) * BW + ((x / CELL) | 0);
+        // Explorers (a fixed share of agents) and agents that just ate don't listen
+        const listens = i % 100 >= explorerCut && fullUntil[i] <= tick;
         if (food[(y | 0) * W + (x | 0)]) {
-          kx[i] = x; ky[i] = y; kexp[i] = tick + MEMORY; kmode[i] = 1;
-        } else if (bexp[c] - HOP > kexp[i]) {
+          kx[i] = x; ky[i] = y; kexp[i] = tick + MEMORY; kmode[i] = 1; fullUntil[i] = tick + FULL;
+        } else if (listens && bexp[c] - HOP > kexp[i]) {
           kx[i] = bx[c]; ky[i] = by[c]; kexp[i] = bexp[c] - HOP; kmode[i] = 2;
         }
+        if (!listens) { exploring++; h += (rand() - 0.5) * 0.4; } // explorers wander more
         if (kexp[i] > tick) {
-          know++;
           // Tell: leave the news here if it is fresher than what's posted
           if (kexp[i] > bexp[c]) { bx[c] = kx[i]; by[c] = ky[i]; bexp[c] = kexp[i]; }
-          if (kmode[i] === 2) {
+          if (kmode[i] === 2 && listens) {
+            heading++;
             const dx = kx[i] - x, dy = ky[i] - y;
             if (dx * dx + dy * dy < arrive2 && !food[(ky[i] | 0) * W + (kx[i] | 0)]) {
               kexp[i] = 0; kmode[i] = 0; // arrived and the food is gone
@@ -403,8 +411,13 @@
 
       let nx = x + Math.cos(h) * sp;
       let ny = y + Math.sin(h) * sp;
-      if (nx < 0 || nx >= W || ny < 0 || ny >= H || wall[(ny | 0) * W + (nx | 0)]) {
-        // Bounce: pick a new random heading and stay put this step.
+      if (nx < 0 || nx >= W || ny < 0 || ny >= H) {
+        // Dish edge: reflect like a ball so agents don't pile up along the rim
+        if (nx < 0 || nx >= W) h = Math.PI - h;
+        if (ny < 0 || ny >= H) h = -h;
+        nx = x; ny = y;
+      } else if (wall[(ny | 0) * W + (nx | 0)]) {
+        // Wall: pick a new random heading and stay put this step
         h = rand() * TAU;
         nx = x; ny = y;
       } else {
@@ -430,7 +443,7 @@
       }
     }
     const t = trail; trail = scratch; scratch = t;
-    informed = know;
+    headingCount = heading; exploringCount = exploring;
   }
 
   // After food is erased, drop any news that points at food that no longer exists
@@ -568,7 +581,7 @@
   const presetSel = document.getElementById('presetSel');
   function loadPreset(name) {
     const p = presets[name];
-    Object.assign(params, { foodStrength: 6, share: 0.5 }); // presets may override these
+    Object.assign(params, { foodStrength: 6, share: 0.5, explore: 0.3 }); // presets may override these
     for (const k in p) if (k in params) params[k] = p[k];
     spawnSel.value = p.spawn;
     applyLayout(p.layout);
@@ -639,7 +652,7 @@
     }
     fpsN++;
     if (now - fpsT > 500) { fps = fpsN * 1000 / (now - fpsT); fpsN = 0; fpsT = now; }
-    hud.textContent = `${agentCount.toLocaleString()} agents · ${informed.toLocaleString()} know where food is · step ${frame} · ${fps.toFixed(0)} fps`;
+    hud.textContent = `${agentCount.toLocaleString()} agents · ${params.share > 0 ? `${headingCount.toLocaleString()} heading to food · ${exploringCount.toLocaleString()} exploring · ` : ''}step ${frame} · ${fps.toFixed(0)} fps`;
     requestAnimationFrame(loop);
   }
 
