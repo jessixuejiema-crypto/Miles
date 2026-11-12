@@ -52,7 +52,7 @@
 <body>
 <div class="wrap">
   <h1>Ball Balance AI — Neuroevolution</h1>
-  <p class="sub">A circle robot holds a tilting platform. A frictionless ball bounces on it. 100 neural-network brains try each generation; the best one is replayed, then the best minds are mixed to make the next generation.</p>
+  <p class="sub">A circle robot holds a tilting platform. A frictionless ball bounces on it without ever losing speed. 100 neural-network brains try each generation; the best one is replayed, then the best minds are mixed to make the next generation.</p>
 
   <div class="main">
     <div>
@@ -100,7 +100,7 @@
 
   <div class="panel help" style="margin-top:12px">
     <b>How it works.</b> Each AI is a small neural network (9 inputs → 10 hidden → 2 outputs). It sees where the ball is on the platform, how fast it moves, the platform's tilt and its own position on the track. It outputs <b>how hard to roll left/right</b> and <b>how fast to tilt the platform</b>.
-    The ball has no friction, so it slides whenever the platform tilts, and it bounces when it lands. Every AI is tested on 3 drops; fitness = seconds the ball stayed up, plus a bonus for keeping it near the centre.
+    The ball has no friction, so it slides whenever the platform tilts, and every bounce is perfectly elastic: the ball never loses speed. Every AI is tested on 3 drops; fitness = seconds the ball stayed up, plus a bonus for keeping it near the centre.
     The top AIs survive unchanged, and the rest of the next generation is made by <b>mixing the weights of two good parents</b> and adding small random mutations.
   </div>
 </div>
@@ -116,7 +116,7 @@
   const PIVOT_Y = BODY_Y - R - POLE;  // platform pivot height
   const BEAM_L = 220, BEAM_H = 4;
   const BALL_R = 12;
-  const G = 900, RESTITUTION = 0.82;
+  const G = 900, RESTITUTION = 1.0;   // perfectly bouncy: no speed lost on a bounce
   const MAX_TILT = 0.55, MAX_OMEGA = 2.6, MAX_ACC = 1500, MAX_V = 450;
   const DT = 1 / 120, MAX_T = 30;
   const POP = 100, ELITE = 4, PARENT_POOL = 20, TRIALS = 3;
@@ -228,9 +228,10 @@
       const pvx = s.vx - s.om * ry, pvy = s.om * rx;
       const vn = (s.bvx - pvx) * nx + (s.bvy - pvy) * ny;
       if (vn < 0) {
-        const e = vn > -45 ? 0 : RESTITUTION;   // tiny impacts just slide
-        s.bvx -= (1 + e) * vn * nx;          // only the normal part changes:
-        s.bvy -= (1 + e) * vn * ny;          // frictionless contact
+        // elastic bounce: the ball keeps all its speed (relative to the platform);
+        // only the normal part flips, the sliding part is untouched (no friction)
+        s.bvx -= (1 + RESTITUTION) * vn * nx;
+        s.bvy -= (1 + RESTITUTION) * vn * ny;
       }
     }
 
