@@ -52,7 +52,7 @@
 <body>
 <div class="wrap">
   <h1>Ball Balance AI — Neuroevolution</h1>
-  <p class="sub">A circle robot holds a tilting platform. A frictionless ball bounces on it without ever losing speed, while wind gusts push it around. 100 neural-network brains try each generation; the best one is replayed, then the best minds are mixed to make the next generation.</p>
+  <p class="sub">A circle robot holds a tilting platform. A frictionless ball bounces on it without ever losing speed, while wind gusts push it around. Each generation, 100 neural-network brains play at the same time with no time limit. When every ball has fallen, the best minds are mixed to make the next generation.</p>
 
   <div class="main">
     <div>
@@ -65,10 +65,9 @@
           <option value="4">Speed 4×</option>
           <option value="8">Speed 8×</option>
         </select>
-        <button id="skipBtn">Next generation now</button>
         <button id="train10Btn">Train 10 gens fast</button>
         <button id="resetBtn">Reset</button>
-        <label class="chk"><input type="checkbox" id="ghostChk" checked> Show all 100 AIs (ghosts)</label>
+        <label class="chk"><input type="checkbox" id="ghostChk" checked> Show the other AIs (ghosts)</label>
       </div>
     </div>
 
@@ -77,12 +76,12 @@
         <h2>Status</h2>
         <div class="stats">
           <span>Generation</span><span id="sGen">1</span>
-          <span>Showing</span><span id="sShow">—</span>
-          <span>Ball time (this run)</span><span id="sTime">0.0 s</span>
-          <span>Ghost AIs still balancing</span><span id="sAlive">—</span>
-          <span>Best fitness this gen</span><span id="sFit">—</span>
-          <span>Avg fitness this gen</span><span id="sAvg">—</span>
-          <span>Record survival</span><span id="sRec">—</span>
+          <span>AIs still balancing</span><span id="sAlive">100 / 100</span>
+          <span>Time this generation</span><span id="sTime">0.0 s</span>
+          <span>Leader</span><span id="sShow">—</span>
+          <span>Best fitness (last gen)</span><span id="sFit">—</span>
+          <span>Avg fitness (last gen)</span><span id="sAvg">—</span>
+          <span>Longest ever</span><span id="sRec">—</span>
         </div>
       </div>
       <div class="panel">
@@ -91,7 +90,7 @@
         <div class="legend"><span><i style="background:var(--accent)"></i>Best</span><span><i style="background:var(--accent2)"></i>Average</span></div>
       </div>
       <div class="panel">
-        <h2>Best AI's brain</h2>
+        <h2>Leader's brain</h2>
         <canvas id="brain" width="512" height="300"></canvas>
         <div class="legend"><span><i style="background:#4fd1a5"></i>+ weight</span><span><i style="background:#ff6b6b"></i>− weight</span></div>
       </div>
@@ -100,8 +99,7 @@
 
   <div class="panel help" style="margin-top:12px">
     <b>How it works.</b> Each AI is a small neural network (9 inputs → 10 hidden → 2 outputs). It sees where the ball is on the platform, how fast it moves, the platform's tilt and its own position on the track. It outputs <b>how hard to roll left/right</b> and <b>how fast to tilt the platform</b>.
-    The ball has no friction, so it slides whenever the platform tilts, and every bounce is perfectly elastic: the ball never loses speed. Every AI is tested on 4 new random drops each generation (up to 45 s each). <b>Wind gusts</b> shove the ball sideways every second or two, and they get stronger the longer the ball stays up; fitness = seconds the ball stayed up, plus a bonus for keeping it near the centre. The replay of the best AI has no time limit: the next generation starts only when its ball falls.
-    The top AIs survive unchanged, and the rest of the next generation is made by <b>mixing the weights of two good parents</b> and adding small random mutations.
+    The ball has no friction, so it slides whenever the platform tilts, and every bounce is perfectly elastic: the ball never loses speed. All 100 AIs play live on the same new random drop each generation, with no time limit. <b>Wind gusts</b> shove the ball sideways every second or two, and they get stronger the longer the ball stays up. The highlighted robot is the leader among those still balancing. When the last ball falls the generation is over; fitness = seconds the ball stayed up, plus a bonus for keeping it near the centre. The top AIs survive unchanged, and the rest of the next generation is made by <b>mixing the weights of two good parents</b> and adding small random mutations.
   </div>
 </div>
 
@@ -118,8 +116,8 @@
   const BALL_R = 12;
   const G = 900, RESTITUTION = 1.0;   // perfectly bouncy: no speed lost on a bounce
   const MAX_TILT = 0.55, MAX_OMEGA = 1.8, MAX_ACC = 1000, MAX_V = 350;  // slower tilting and rolling
-  const DT = 1 / 120, MAX_T = 45;   // test length per drop while scoring (the replay has no limit)
-  const POP = 100, ELITE = 4, PARENT_POOL = 20, TRIALS = 4;
+  const DT = 1 / 120;
+  const POP = 100, ELITE = 4, PARENT_POOL = 20;
   const NI = 9, NH = 10, NO = 2;
   const NW = NI * NH + NH + NH * NO + NO;
 
@@ -176,7 +174,7 @@
     };
   }
   const inp = new Float32Array(NI);
-  function step(s, w, cap) {
+  function step(s, w) {
     // --- sense (ball relative to platform frame) ---
     let c = Math.cos(s.th), sn = Math.sin(s.th);
     let dx = s.bx - s.x, dy = s.by - PIVOT_Y;
@@ -247,29 +245,27 @@
     // --- fell off? ---
     if (s.by > PIVOT_Y + 70 || s.bx < -40 || s.bx > W + 40) { s.alive = false; return; }
     s.score += DT * (1 + 0.5 * (1 - Math.min(1, Math.abs(u) / (BEAM_L / 2))));
-    if (s.t >= cap) s.alive = false;
+    if (s.t > 900) s.alive = false;   // safety net only: the growing gusts end every run long before this
   }
 
   // ---------- Evolution ----------
-  function makeTrials(gen) {
+  function makeDrop(gen) {
+    // a new random drop every generation, the same one for all 100 AIs
     const r = mulberry32(gen * 7919 + 17);
-    // every drop is new and random each generation, so an AI can't just memorise one drop
-    return Array.from({ length: TRIALS }, () => ({
-      u: (r() * 2 - 1) * 45, h: 100 + r() * 170, vx: (r() * 2 - 1) * 130, seed: (r() * 1e9) | 0
-    }));
+    return { u: (r() * 2 - 1) * 45, h: 100 + r() * 170, vx: (r() * 2 - 1) * 130, seed: (r() * 1e9) | 0 };
   }
-  function evaluate(pop, trials) {
-    for (const ind of pop) {
-      let fit = 0, t0 = 0;
-      for (let k = 0; k < TRIALS; k++) {
-        const s = makeSim(trials[k]);
-        while (s.alive) step(s, ind.w, MAX_T);
-        fit += s.score;
-        if (k === 0) t0 = s.t;
-      }
-      ind.fit = fit / TRIALS;
-      ind.t0 = t0;
+  // fitness = how long the ball stayed up in this generation's run (+ a bonus for keeping it centred)
+  function scoreGeneration(sims) {
+    let bi = 0, sum = 0, longest = 0;
+    for (let i = 0; i < POP; i++) {
+      pop[i].fit = sims[i].score; sum += sims[i].score;
+      if (sims[i].score > sims[bi].score) bi = i;
+      longest = Math.max(longest, sims[i].t);
     }
+    bestIdx = bi;
+    history.push({ best: pop[bi].fit, avg: sum / POP });
+    record = Math.max(record, longest);
+    drawChart(); drawBrain(pop[bi].w); updateStats();
   }
   function pickParent(sorted) {
     // biased towards the very best of the top pool
@@ -299,44 +295,31 @@
   }
 
   // ---------- State ----------
-  let pop, gen, history, record, bestIdx, trials, replay, phase, phaseTimer, paused = false, training = false;
-  let trail = [];
+  let pop, gen, history, record, bestIdx, replay, phase, phaseTimer, paused = false, training = false;
+  let trail = [], runTime = 0, aliveCount = POP;
 
   function reset() {
     rand = mulberry32((Math.random() * 1e9) | 0);
     pop = Array.from({ length: POP }, (_, i) => ({ w: randomBrain(), fit: 0, id: i }));
     gen = 1; history = []; record = 0;
+    drawChart();
     beginGeneration();
   }
 
+  // all 100 AIs play live on the same drop; the generation ends only when every ball has fallen
   function beginGeneration() {
-    phase = 'evaluating';
-    draw();
-    setTimeout(() => {
-      trials = makeTrials(gen);
-      evaluate(pop, trials);
-      let bi = 0, sum = 0;
-      for (let i = 0; i < POP; i++) { sum += pop[i].fit; if (pop[i].fit > pop[bi].fit) bi = i; }
-      bestIdx = bi;
-      history.push({ best: pop[bi].fit, avg: sum / POP });
-      updateStats();
-      drawChart();
-      drawBrain(pop[bi].w);
-      startReplay();
-    }, 30);
-  }
-
-  function startReplay() {
-    replay = pop.map(() => makeSim(trials[0]));
-    trail = [];
+    const drop = makeDrop(gen);
+    replay = pop.map(() => makeSim(drop));
+    bestIdx = 0; trail = []; runTime = 0; aliveCount = POP;
+    drawBrain(pop[0].w);
     phase = 'replay';
+    updateStats();
   }
 
   function finishReplay() {
+    scoreGeneration(replay);
     phase = 'fell';
-    phaseTimer = 0.9;
-    record = Math.max(record, replay[bestIdx].t);
-    updateStats();
+    phaseTimer = 1.6;
   }
 
   function nextGeneration() {
@@ -348,19 +331,17 @@
   function trainFast(n) {
     if (training) return;
     training = true;
-    let left = n;
     phase = 'training';
+    let left = n;
     const tick = () => {
-      trials = makeTrials(gen);
-      evaluate(pop, trials);
-      let bi = 0, sum = 0;
-      for (let i = 0; i < POP; i++) { sum += pop[i].fit; if (pop[i].fit > pop[bi].fit) bi = i; }
-      history.push({ best: pop[bi].fit, avg: sum / POP });
-      bestIdx = bi;
-      drawChart(); drawBrain(pop[bi].w); updateStats();
+      const drop = makeDrop(gen);
+      const sims = pop.map(() => makeSim(drop));
+      for (let i = 0; i < POP; i++) while (sims[i].alive) step(sims[i], pop[i].w);
+      scoreGeneration(sims);
+      pop = breed(pop); gen++;
       left--;
-      if (left > 0) { pop = breed(pop); gen++; draw(); setTimeout(tick, 10); }
-      else { training = false; pop = breed(pop); gen++; beginGeneration(); }
+      if (left > 0) { draw(); setTimeout(tick, 10); }
+      else { training = false; beginGeneration(); }
     };
     draw();
     setTimeout(tick, 30);
@@ -373,8 +354,7 @@
   const brainC = $('brain'), bctx = brainC.getContext('2d');
 
   $('pauseBtn').onclick = () => { paused = !paused; $('pauseBtn').textContent = paused ? 'Play' : 'Pause'; };
-  $('skipBtn').onclick = () => { if (phase === 'replay' || phase === 'fell') nextGeneration(); };
-  $('train10Btn').onclick = () => { if (phase === 'replay' || phase === 'fell') trainFast(10); };
+  $('train10Btn').onclick = () => { if (phase === 'replay' || phase === 'fell') trainFast(10); };  // runs each generation to the end, just without drawing
   $('resetBtn').onclick = () => { if (!training) reset(); };
 
   function updateStats() {
@@ -484,9 +464,9 @@
       ctx.fillStyle = '#e6ebf5'; ctx.font = '600 20px system-ui, sans-serif';
       ctx.fillText(`Generation ${gen}`, 20, 34);
       ctx.font = '14px system-ui, sans-serif'; ctx.fillStyle = '#8b97ad';
-      ctx.fillText(`Best of 100: AI #${pop[bestIdx].id + 1}${pop[bestIdx].elite ? ' (kept from last gen)' : ''}`, 20, 56);
+      ctx.fillText(phase === 'fell' ? `Winner: AI #${pop[bestIdx].id + 1}` : `${aliveCount} of 100 AIs still balancing · leader: AI #${pop[bestIdx].id + 1}${pop[bestIdx].elite ? ' (kept from last gen)' : ''}`, 20, 56);
       ctx.fillStyle = '#4fd1a5'; ctx.font = '600 28px system-ui, sans-serif';
-      const tt = best.t.toFixed(1) + ' s';
+      const tt = runTime.toFixed(1) + ' s';
       ctx.fillText(tt, W - 20 - ctx.measureText(tt).width, 40);
 
       // action meters
@@ -504,14 +484,14 @@
         ctx.textAlign = 'center';
         ctx.fillStyle = '#ff6b6b';
         ctx.font = '700 34px system-ui, sans-serif';
-        ctx.fillText('The ball fell!', W / 2, H / 2 - 20);
+        ctx.fillText('All 100 balls fell!', W / 2, H / 2 - 20);
         ctx.fillStyle = '#e6ebf5'; ctx.font = '18px system-ui, sans-serif';
-        ctx.fillText(`Generation ${gen} lasted ${best.t.toFixed(1)} s — mixing the best minds for generation ${gen + 1}…`, W / 2, H / 2 + 16);
+        ctx.fillText(`Generation ${gen} lasted ${runTime.toFixed(1)} s. Mixing the best minds for generation ${gen + 1}…`, W / 2, H / 2 + 16);
         ctx.textAlign = 'left';
       }
     } else {
       ctx.fillStyle = '#e6ebf5'; ctx.font = '600 22px system-ui, sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText(phase === 'training' ? `Training fast… generation ${gen}` : `Testing 100 AIs of generation ${gen}…`, W / 2, H / 2);
+      ctx.fillText(`Training fast… generation ${gen}`, W / 2, H / 2);
       ctx.textAlign = 'left';
     }
   }
@@ -577,17 +557,22 @@
       if (phase === 'replay') {
         const speed = +$('speedSel').value;
         const steps = Math.round(dtReal / DT * speed);
-        const ghosts = $('ghostChk').checked;
-        const best = replay[bestIdx];
-        for (let n = 0; n < steps && best.alive; n++) {
-          for (let i = 0; i < replay.length; i++) {
-            if ((ghosts || i === bestIdx) && replay[i].alive) step(replay[i], pop[i].w, Infinity);
+        for (let n = 0; n < steps && aliveCount > 0; n++) {
+          aliveCount = 0;
+          for (let i = 0; i < POP; i++) {
+            if (replay[i].alive) { step(replay[i], pop[i].w); runTime = Math.max(runTime, replay[i].t); }
+            if (replay[i].alive) aliveCount++;
           }
-          if (n % 2 === 0) { trail.push([best.bx, best.by]); if (trail.length > 90) trail.shift(); }
+          // the highlighted AI is the leader: the best score among those still balancing
+          let lead = -1;
+          for (let i = 0; i < POP; i++) if (replay[i].alive && (lead < 0 || replay[i].score > replay[lead].score)) lead = i;
+          if (lead >= 0 && lead !== bestIdx) { bestIdx = lead; trail = []; drawBrain(pop[lead].w); updateStats(); }
+          const b = replay[bestIdx];
+          if (n % 2 === 0) { trail.push([b.bx, b.by]); if (trail.length > 90) trail.shift(); }
         }
-        $('sTime').textContent = best.t.toFixed(1) + ' s';
-        $('sAlive').textContent = ghosts ? replay.filter(s => s.alive).length + ' / 100' : '—';
-        if (!best.alive) finishReplay();
+        $('sTime').textContent = runTime.toFixed(1) + ' s';
+        $('sAlive').textContent = aliveCount + ' / 100';
+        if (aliveCount === 0) finishReplay();
       } else if (phase === 'fell') {
         phaseTimer -= dtReal;
         if (phaseTimer <= 0) nextGeneration();
