@@ -124,6 +124,12 @@
   label.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
   .sliders { display: flex; flex-direction: column; gap: 8px; }
   .hint { font-size: 12px; color: var(--muted); margin: 0; }
+  label.check { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
+  label.check input { accent-color: var(--accent); }
+  .legend { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  .sw.finder { background: #ffffff; box-shadow: 0 0 0 1px var(--border); }
+  .sw.told { background: #3fd0ff; margin-left: 8px; }
 </style>
 </head>
 <body>
@@ -149,6 +155,12 @@
       </div>
     </section>
     <section>
+      <h2>Sharing food locations</h2>
+      <p class="hint">An agent that touches food remembers where it is and tells the agents it passes. They pass the news on, a little staler each time. Agents that have been told head for the food, and become messengers once they get there.</p>
+      <label class="check"><input type="checkbox" id="showMsg" checked> Highlight agents that know where food is</label>
+      <p class="hint legend"><span class="sw finder"></span>found it themselves <span class="sw told"></span>were told</p>
+    </section>
+    <section>
       <h2>Start shape</h2>
       <select id="spawnSel">
         <option value="center">Central blob</option>
@@ -172,6 +184,7 @@
       <h2>Presets</h2>
       <select id="presetSel">
         <option value="micro">Microscopic branching</option>
+        <option value="news">Spreading the news</option>
         <option value="network">Classic network</option>
         <option value="foodmaze">Food maze</option>
         <option value="cities">City map (oat cities)</option>
@@ -218,6 +231,22 @@
   const ah = new Float32Array(MAX_AGENTS);
   let agentCount = 0;
 
+  // What each agent knows: a food location (kx, ky), the step at which that
+  // knowledge expires (kexp), and how it learned it (1 = found it, 2 = was told).
+  const kx = new Float32Array(MAX_AGENTS);
+  const ky = new Float32Array(MAX_AGENTS);
+  const kexp = new Float32Array(MAX_AGENTS);
+  const kmode = new Uint8Array(MAX_AGENTS);
+  // A coarse "chatter" board: agents passing through a cell leave their news
+  // there and pick up any fresher news left by others.
+  const CELL = 4 * S, BW = Math.ceil(W / CELL), BH = Math.ceil(H / CELL);
+  const bx = new Float32Array(BW * BH);
+  const by = new Float32Array(BW * BH);
+  const bexp = new Float32Array(BW * BH);
+  const MEMORY = 1500;  // steps a finder remembers food
+  const HOP = 30;       // freshness lost each time news is passed on
+  let tick = 0, informed = 0;
+
   const params = {
     agents: 140000,
     sensorAngle: 22.5,   // degrees
@@ -228,6 +257,7 @@
     decay: 0.3,
     diffuse: 0,
     foodStrength: 6,
+    share: 0.5,
     stepsPerFrame: 1,
   };
 
@@ -241,10 +271,12 @@
     ['decay', 'Trail decay', 0.01, 0.4, 0.01, v => v.toFixed(2)],
     ['diffuse', 'Diffusion', 0, 1, 0.05, v => v.toFixed(2)],
     ['foodStrength', 'Food scent', 0, 20, 0.5, v => v.toFixed(1)],
+    ['share', 'Follow shared news', 0, 1, 0.05, v => v === 0 ? 'off' : v.toFixed(2)],
     ['stepsPerFrame', 'Steps / frame', 1, 4, 1, v => v.toFixed(0)],
   ];
 
   const presets = {
+    news:     { sensorAngle: 22.5, sensorDist: 5,  turnAngle: 22.5, speed: 1, deposit: 1,  decay: 0.3,  diffuse: 0,   agents: 120000, foodStrength: 0, share: 0.6, spawn: 'center', layout: 'ring' },
     micro:    { sensorAngle: 22.5, sensorDist: 5,  turnAngle: 22.5, speed: 1, deposit: 1,  decay: 0.3,  diffuse: 0,   agents: 140000, spawn: 'center' },
     network:  { sensorAngle: 22.5, sensorDist: 9,  turnAngle: 45, speed: 1,   deposit: 5,  decay: 0.1,  diffuse: 0.5, agents: 50000, spawn: 'center' },
     foodmaze: { sensorAngle: 30,   sensorDist: 12, turnAngle: 40, speed: 1.2, deposit: 4,  decay: 0.12, diffuse: 0.6, agents: 30000, spawn: 'corner', layout: 'maze' },
@@ -275,6 +307,7 @@
       if (!wall[(y | 0) * W + (x | 0)]) break;
     }
     ax[i] = x; ay[i] = y; ah[i] = h;
+    kexp[i] = 0; kmode[i] = 0;
   }
 
   function spawnAll(mode) {
@@ -294,6 +327,7 @@
       if (agentCount > 0) {
         const j = (rand() * agentCount) | 0;
         ax[i] = ax[j]; ay[i] = ay[j]; ah[i] = rand() * TAU;
+        kexp[i] = 0; kmode[i] = 0;
       } else placeAgent(i, 'blob', W / 2, H / 2);
     }
     agentCount = n;
@@ -315,6 +349,9 @@
     const sa = params.sensorAngle * Math.PI / 180;
     const ta = params.turnAngle * Math.PI / 180;
     const sp = params.speed, dep = params.deposit;
+    const share = params.share, arrive2 = (3 * S) ** 2;
+    tick++;
+    let know = 0;
 
     // Food continuously emits attractant
     const fs = params.foodStrength;
@@ -334,6 +371,33 @@
         h -= ta * rand();
       } else if (r > l) {
         h += ta * rand();
+      }
+
+      if (share > 0) {
+        // Learn: touching food makes this agent a finder; otherwise it may
+        // pick up fresher news that someone left in this board cell.
+        const c = ((y / CELL) | 0) * BW + ((x / CELL) | 0);
+        if (food[(y | 0) * W + (x | 0)]) {
+          kx[i] = x; ky[i] = y; kexp[i] = tick + MEMORY; kmode[i] = 1;
+        } else if (bexp[c] - HOP > kexp[i]) {
+          kx[i] = bx[c]; ky[i] = by[c]; kexp[i] = bexp[c] - HOP; kmode[i] = 2;
+        }
+        if (kexp[i] > tick) {
+          know++;
+          // Tell: leave the news here if it is fresher than what's posted
+          if (kexp[i] > bexp[c]) { bx[c] = kx[i]; by[c] = ky[i]; bexp[c] = kexp[i]; }
+          if (kmode[i] === 2) {
+            const dx = kx[i] - x, dy = ky[i] - y;
+            if (dx * dx + dy * dy < arrive2 && !food[(ky[i] | 0) * W + (kx[i] | 0)]) {
+              kexp[i] = 0; kmode[i] = 0; // arrived and the food is gone
+            } else {
+              // Steer toward the food it was told about
+              let d = Math.atan2(dy, dx) - h;
+              d -= TAU * Math.round(d / TAU);
+              h += (d > ta ? ta : d < -ta ? -ta : d) * share;
+            }
+          }
+        } else kmode[i] = 0;
       }
       h += (rand() - 0.5) * 0.1; // a little jitter
 
@@ -366,6 +430,15 @@
       }
     }
     const t = trail; trail = scratch; scratch = t;
+    informed = know;
+  }
+
+  // After food is erased, drop any news that points at food that no longer exists
+  function forgetMissingFood() {
+    for (let i = 0; i < agentCount; i++)
+      if (kexp[i] > tick && !food[(ky[i] | 0) * W + (kx[i] | 0)]) { kexp[i] = 0; kmode[i] = 0; }
+    for (let c = 0; c < bexp.length; c++)
+      if (bexp[c] > tick && !food[(by[c] | 0) * W + (bx[c] | 0)]) bexp[c] = 0;
   }
 
   // ---- Rendering ----------------------------------------------------------
@@ -390,6 +463,9 @@
   }
   const WALL_PX = (255 << 24) | (70 << 16) | (62 << 8) | 58;   // grey-blue
   const FOOD_PX = (255 << 24) | (150 << 16) | (215 << 8) | 245; // oat beige
+  const FINDER_PX = (255 << 24) | (255 << 16) | (255 << 8) | 255; // white
+  const TOLD_PX = (255 << 24) | (255 << 16) | (208 << 8) | 63;    // sky blue
+  const showMsg = document.getElementById('showMsg');
 
   function render() {
     // Scale brightness to the deposit rate so faint, fine veins stay visible
@@ -401,6 +477,12 @@
       const v = trail[k];
       const t = v / (v + exposure);
       px[k] = lut[(t * 255) | 0];
+    }
+    if (showMsg.checked && params.share > 0) {
+      for (let i = 0; i < agentCount; i++) {
+        if (kexp[i] <= tick) continue;
+        px[(ay[i] | 0) * W + (ax[i] | 0)] = kmode[i] === 1 ? FINDER_PX : TOLD_PX;
+      }
     }
     ctx.putImageData(img, 0, 0);
   }
@@ -434,6 +516,12 @@
       dot(food, 180, 280, 4, 1);
       dot(food, 300, 40, 4, 1);
       dot(food, 430, 280, 5, 1);
+    } else if (name === 'ring') {
+      // Oats in a ring around the starting blob, far enough that finding them takes a while
+      for (let k = 0; k < 6; k++) {
+        const a = k / 6 * TAU + 0.3;
+        dotRaw(food, (240 + Math.cos(a) * 190) * S, (160 + Math.sin(a) * 125) * S, 5 * S, 1);
+      }
     } else if (name === 'cities') {
       // Rough "metro" of food sources with a dense core and a ring of suburbs
       const pts = [[240, 160], [180, 120], [300, 120], [170, 210], [310, 215], [240, 70], [240, 260],
@@ -472,14 +560,15 @@
   document.getElementById('stepBtn').onclick = () => { step(); render(); };
 
   const spawnSel = document.getElementById('spawnSel');
-  function reset() { trail.fill(0); scratch.fill(0); spawnAll(spawnSel.value); frame = 0; }
+  function reset() { trail.fill(0); scratch.fill(0); bexp.fill(0); tick = 0; spawnAll(spawnSel.value); frame = 0; }
   document.getElementById('resetBtn').onclick = reset;
   spawnSel.onchange = reset;
-  document.getElementById('clearBtn').onclick = () => { food.fill(0); wall.fill(0); };
+  document.getElementById('clearBtn').onclick = () => { food.fill(0); wall.fill(0); forgetMissingFood(); };
 
   const presetSel = document.getElementById('presetSel');
   function loadPreset(name) {
     const p = presets[name];
+    Object.assign(params, { foodStrength: 6, share: 0.5 }); // presets may override these
     for (const k in p) if (k in params) params[k] = p[k];
     spawnSel.value = p.spawn;
     applyLayout(p.layout);
@@ -533,7 +622,10 @@
     strokeTo(toGrid(e));
     if (!running) render();
   });
-  const endPaint = () => { painting = false; last = null; };
+  const endPaint = () => {
+    if (painting && (tool === 'erase' || tool === 'wall')) forgetMissingFood();
+    painting = false; last = null;
+  };
   canvas.addEventListener('pointerup', endPaint);
   canvas.addEventListener('pointercancel', endPaint);
 
@@ -547,7 +639,7 @@
     }
     fpsN++;
     if (now - fpsT > 500) { fps = fpsN * 1000 / (now - fpsT); fpsN = 0; fpsT = now; }
-    hud.textContent = `${agentCount.toLocaleString()} agents · step ${frame} · ${fps.toFixed(0)} fps`;
+    hud.textContent = `${agentCount.toLocaleString()} agents · ${informed.toLocaleString()} know where food is · step ${frame} · ${fps.toFixed(0)} fps`;
     requestAnimationFrame(loop);
   }
 
