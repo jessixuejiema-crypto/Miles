@@ -52,7 +52,7 @@
 <body>
 <div class="wrap">
   <h1>Ball Balance AI — Neuroevolution</h1>
-  <p class="sub">A circle robot holds a tilting platform. A frictionless ball bounces on it without ever losing speed. 100 neural-network brains try each generation; the best one is replayed, then the best minds are mixed to make the next generation.</p>
+  <p class="sub">A circle robot holds a tilting platform. A frictionless ball bounces on it without ever losing speed, while wind gusts push it around. 100 neural-network brains try each generation; the best one is replayed, then the best minds are mixed to make the next generation.</p>
 
   <div class="main">
     <div>
@@ -100,7 +100,7 @@
 
   <div class="panel help" style="margin-top:12px">
     <b>How it works.</b> Each AI is a small neural network (9 inputs → 10 hidden → 2 outputs). It sees where the ball is on the platform, how fast it moves, the platform's tilt and its own position on the track. It outputs <b>how hard to roll left/right</b> and <b>how fast to tilt the platform</b>.
-    The ball has no friction, so it slides whenever the platform tilts, and every bounce is perfectly elastic: the ball never loses speed. Every AI is tested on 3 drops; fitness = seconds the ball stayed up, plus a bonus for keeping it near the centre.
+    The ball has no friction, so it slides whenever the platform tilts, and every bounce is perfectly elastic: the ball never loses speed. Every AI is tested on 4 new random drops each generation (up to 45 s each). <b>Wind gusts</b> shove the ball sideways every second or two, and they get stronger the longer the ball stays up; fitness = seconds the ball stayed up, plus a bonus for keeping it near the centre. The replay of the best AI has no time limit: the next generation starts only when its ball falls.
     The top AIs survive unchanged, and the rest of the next generation is made by <b>mixing the weights of two good parents</b> and adding small random mutations.
   </div>
 </div>
@@ -114,12 +114,12 @@
   const BODY_Y = TRACK_Y - R;
   const POLE = 55;
   const PIVOT_Y = BODY_Y - R - POLE;  // platform pivot height
-  const BEAM_L = 220, BEAM_H = 4;
+  const BEAM_L = 115, BEAM_H = 4;   // short platform = harder
   const BALL_R = 12;
   const G = 900, RESTITUTION = 1.0;   // perfectly bouncy: no speed lost on a bounce
-  const MAX_TILT = 0.55, MAX_OMEGA = 2.6, MAX_ACC = 1500, MAX_V = 450;
-  const DT = 1 / 120, MAX_T = 30;
-  const POP = 100, ELITE = 4, PARENT_POOL = 20, TRIALS = 3;
+  const MAX_TILT = 0.55, MAX_OMEGA = 1.8, MAX_ACC = 1000, MAX_V = 350;  // slower tilting and rolling
+  const DT = 1 / 120, MAX_T = 45;   // test length per drop while scoring (the replay has no limit)
+  const POP = 100, ELITE = 4, PARENT_POOL = 20, TRIALS = 4;
   const NI = 9, NH = 10, NO = 2;
   const NW = NI * NH + NH + NH * NO + NO;
 
@@ -171,11 +171,12 @@
     return {
       x, vx: 0, th: 0, om: 0, roll: 0,
       bx: x + trial.u, by: PIVOT_Y - trial.h, bvx: trial.vx, bvy: 0,
-      t: 0, alive: true, score: 0, act: [0, 0]
+      t: 0, alive: true, score: 0, act: [0, 0],
+      rng: mulberry32(trial.seed), nextGust: 1.5, gust: 0, gustT: -9
     };
   }
   const inp = new Float32Array(NI);
-  function step(s, w) {
+  function step(s, w, cap) {
     // --- sense (ball relative to platform frame) ---
     let c = Math.cos(s.th), sn = Math.sin(s.th);
     let dx = s.bx - s.x, dy = s.by - PIVOT_Y;
@@ -209,6 +210,13 @@
 
     // --- ball: gravity only, no friction, no air drag ---
     s.bvy += G * DT;
+    // wind gusts: random sideways shoves that grow stronger the longer the ball stays up
+    if (s.t >= s.nextGust) {
+      const dir = s.rng() < 0.5 ? -1 : 1;
+      s.gust = dir * (70 + 14 * s.t) * (0.6 + 0.4 * s.rng());
+      s.bvx += s.gust; s.gustT = s.t;
+      s.nextGust = s.t + 0.9 + s.rng() * 1.8;
+    }
     s.bx += s.bvx * DT;
     s.by += s.bvy * DT;
 
@@ -239,24 +247,23 @@
     // --- fell off? ---
     if (s.by > PIVOT_Y + 70 || s.bx < -40 || s.bx > W + 40) { s.alive = false; return; }
     s.score += DT * (1 + 0.5 * (1 - Math.min(1, Math.abs(u) / (BEAM_L / 2))));
-    if (s.t >= MAX_T) s.alive = false;
+    if (s.t >= cap) s.alive = false;
   }
 
   // ---------- Evolution ----------
   function makeTrials(gen) {
     const r = mulberry32(gen * 7919 + 17);
-    return [
-      { u: (r() * 2 - 1) * 70, h: 110 + r() * 80, vx: (r() * 2 - 1) * 70 },  // new random drop each gen (this one is replayed)
-      { u: -55, h: 150, vx: 45 },
-      { u: 65, h: 120, vx: -60 },
-    ];
+    // every drop is new and random each generation, so an AI can't just memorise one drop
+    return Array.from({ length: TRIALS }, () => ({
+      u: (r() * 2 - 1) * 45, h: 100 + r() * 170, vx: (r() * 2 - 1) * 130, seed: (r() * 1e9) | 0
+    }));
   }
   function evaluate(pop, trials) {
     for (const ind of pop) {
       let fit = 0, t0 = 0;
       for (let k = 0; k < TRIALS; k++) {
         const s = makeSim(trials[k]);
-        while (s.alive) step(s, ind.w);
+        while (s.alive) step(s, ind.w, MAX_T);
         fit += s.score;
         if (k === 0) t0 = s.t;
       }
@@ -312,7 +319,6 @@
       for (let i = 0; i < POP; i++) { sum += pop[i].fit; if (pop[i].fit > pop[bi].fit) bi = i; }
       bestIdx = bi;
       history.push({ best: pop[bi].fit, avg: sum / POP });
-      record = Math.max(record, pop[bi].t0);
       updateStats();
       drawChart();
       drawBrain(pop[bi].w);
@@ -329,6 +335,8 @@
   function finishReplay() {
     phase = 'fell';
     phaseTimer = 0.9;
+    record = Math.max(record, replay[bestIdx].t);
+    updateStats();
   }
 
   function nextGeneration() {
@@ -348,7 +356,6 @@
       let bi = 0, sum = 0;
       for (let i = 0; i < POP; i++) { sum += pop[i].fit; if (pop[i].fit > pop[bi].fit) bi = i; }
       history.push({ best: pop[bi].fit, avg: sum / POP });
-      record = Math.max(record, pop[bi].t0);
       bestIdx = bi;
       drawChart(); drawBrain(pop[bi].w); updateStats();
       left--;
@@ -376,7 +383,7 @@
     const h = history[history.length - 1];
     $('sFit').textContent = h ? h.best.toFixed(1) : '—';
     $('sAvg').textContent = h ? h.avg.toFixed(1) : '—';
-    $('sRec').textContent = record ? (record >= MAX_T - 0.01 ? `${MAX_T}.0 s (max!)` : record.toFixed(1) + ' s') : '—';
+    $('sRec').textContent = record ? record.toFixed(1) + ' s' : '—';
   }
 
   // ---------- Drawing ----------
@@ -460,6 +467,18 @@
       trail.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
       ctx.stroke();
       drawRobot(best, 1, true);
+      if (best.t - best.gustT < 0.45) {
+        const a = 1 - (best.t - best.gustT) / 0.45, d = Math.sign(best.gust);
+        const len = Math.min(110, 30 + Math.abs(best.gust) * 0.25);
+        const x0 = best.bx - d * (len + 26), y0 = best.by - 4;
+        ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = '#9fd8ff'; ctx.fillStyle = '#9fd8ff'; ctx.lineWidth = 3;
+        for (const off of [-10, 0, 10]) {
+          ctx.beginPath(); ctx.moveTo(x0, y0 + off); ctx.lineTo(x0 + d * len, y0 + off); ctx.stroke();
+        }
+        ctx.beginPath(); ctx.moveTo(x0 + d * (len + 12), y0); ctx.lineTo(x0 + d * len, y0 - 8); ctx.lineTo(x0 + d * len, y0 + 8); ctx.fill();
+        ctx.font = '600 13px system-ui, sans-serif'; ctx.fillText('gust!', x0 + (d < 0 ? len - 34 : 0), y0 - 16);
+        ctx.restore();
+      }
 
       // HUD
       ctx.fillStyle = '#e6ebf5'; ctx.font = '600 20px system-ui, sans-serif';
@@ -483,9 +502,9 @@
       if (phase === 'fell') {
         ctx.fillStyle = 'rgba(10,14,23,0.6)'; ctx.fillRect(0, 0, W, H);
         ctx.textAlign = 'center';
-        ctx.fillStyle = best.t >= MAX_T - 0.01 ? '#4fd1a5' : '#ff6b6b';
+        ctx.fillStyle = '#ff6b6b';
         ctx.font = '700 34px system-ui, sans-serif';
-        ctx.fillText(best.t >= MAX_T - 0.01 ? 'Balanced the whole time!' : 'The ball fell!', W / 2, H / 2 - 20);
+        ctx.fillText('The ball fell!', W / 2, H / 2 - 20);
         ctx.fillStyle = '#e6ebf5'; ctx.font = '18px system-ui, sans-serif';
         ctx.fillText(`Generation ${gen} lasted ${best.t.toFixed(1)} s — mixing the best minds for generation ${gen + 1}…`, W / 2, H / 2 + 16);
         ctx.textAlign = 'left';
@@ -562,7 +581,7 @@
         const best = replay[bestIdx];
         for (let n = 0; n < steps && best.alive; n++) {
           for (let i = 0; i < replay.length; i++) {
-            if ((ghosts || i === bestIdx) && replay[i].alive) step(replay[i], pop[i].w);
+            if ((ghosts || i === bestIdx) && replay[i].alive) step(replay[i], pop[i].w, Infinity);
           }
           if (n % 2 === 0) { trail.push([best.bx, best.by]); if (trail.length > 90) trail.shift(); }
         }
