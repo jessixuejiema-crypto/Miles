@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ball Balance AI</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #171e2e;
+    --border: #2a3448;
+    --text: #e6ebf5;
+    --muted: #8b97ad;
+    --accent: #4fd1a5;
+    --accent2: #f5b942;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 16px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 12px; font-size: 13px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  .main { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; }
+  @media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
+  canvas { display: block; width: 100%; border-radius: 10px; background: #0b0f18; border: 1px solid var(--border); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+  .stats { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-variant-numeric: tabular-nums; }
+  .stats span:nth-child(odd) { color: var(--muted); }
+  .stats span:nth-child(even) { text-align: right; font-weight: 600; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  button, select {
+    background: #222b3f; color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #062a1e; border-color: var(--accent); font-weight: 600; }
+  label.chk { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); padding: 7px 4px; }
+  .legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 3px; vertical-align: middle; margin-right: 4px; }
+  .help { color: var(--muted); font-size: 12.5px; }
+  .help b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ball Balance AI — Neuroevolution</h1>
+  <p class="sub">A circle robot holds a tilting platform. A frictionless ball bounces on it. 100 neural-network brains try each generation; the best one is replayed, then the best minds are mixed to make the next generation.</p>
+
+  <div class="main">
+    <div>
+      <canvas id="world" width="900" height="520"></canvas>
+      <div class="controls">
+        <button id="pauseBtn" class="primary">Pause</button>
+        <select id="speedSel" aria-label="Replay speed">
+          <option value="1">Speed 1×</option>
+          <option value="2" selected>Speed 2×</option>
+          <option value="4">Speed 4×</option>
+          <option value="8">Speed 8×</option>
+        </select>
+        <button id="skipBtn">Skip to next gen</button>
+        <button id="train10Btn">Train 10 gens fast</button>
+        <button id="resetBtn">Reset</button>
+        <label class="chk"><input type="checkbox" id="ghostChk" checked> Show all 100 AIs (ghosts)</label>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Status</h2>
+        <div class="stats">
+          <span>Generation</span><span id="sGen">1</span>
+          <span>Showing</span><span id="sShow">—</span>
+          <span>Ball time (this run)</span><span id="sTime">0.0 s</span>
+          <span>Ghost AIs still balancing</span><span id="sAlive">—</span>
+          <span>Best fitness this gen</span><span id="sFit">—</span>
+          <span>Avg fitness this gen</span><span id="sAvg">—</span>
+          <span>Record survival</span><span id="sRec">—</span>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Fitness per generation</h2>
+        <canvas id="chart" width="512" height="220"></canvas>
+        <div class="legend"><span><i style="background:var(--accent)"></i>Best</span><span><i style="background:var(--accent2)"></i>Average</span></div>
+      </div>
+      <div class="panel">
+        <h2>Best AI's brain</h2>
+        <canvas id="brain" width="512" height="300"></canvas>
+        <div class="legend"><span><i style="background:#4fd1a5"></i>+ weight</span><span><i style="background:#ff6b6b"></i>− weight</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel help" style="margin-top:12px">
+    <b>How it works.</b> Each AI is a small neural network (9 inputs → 10 hidden → 2 outputs). It sees where the ball is on the platform, how fast it moves, the platform's tilt and its own position on the track. It outputs <b>how hard to roll left/right</b> and <b>how fast to tilt the platform</b>.
+    The ball has no friction, so it slides whenever the platform tilts, and it bounces when it lands. Every AI is tested on 3 drops; fitness = seconds the ball stayed up, plus a bonus for keeping it near the centre.
+    The top AIs survive unchanged, and the rest of the next generation is made by <b>mixing the weights of two good parents</b> and adding small random mutations.
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- World constants ----------
+  const W = 900, H = 520;
+  const TRACK_L = 90, TRACK_R = 810, TRACK_Y = 445;
+  const R = 38;                       // robot body radius
+  const BODY_Y = TRACK_Y - R;
+  const POLE = 55;
+  const PIVOT_Y = BODY_Y - R - POLE;  // platform pivot height
+  const BEAM_L = 220, BEAM_H = 4;
+  const BALL_R = 12;
+  const G = 900, RESTITUTION = 0.82;
+  const MAX_TILT = 0.55, MAX_OMEGA = 2.6, MAX_ACC = 1500, MAX_V = 450;
+  const DT = 1 / 120, MAX_T = 30;
+  const POP = 100, ELITE = 4, PARENT_POOL = 20, TRIALS = 3;
+  const NI = 9, NH = 10, NO = 2;
+  const NW = NI * NH + NH + NH * NO + NO;
+
+  // ---------- RNG ----------
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  let rand = Math.random;
+  function gauss() {
+    let u = 0, v = 0;
+    while (u === 0) u = rand();
+    while (v === 0) v = rand();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+  // ---------- Neural network ----------
+  function randomBrain() {
+    const w = new Float32Array(NW);
+    for (let i = 0; i < NW; i++) w[i] = gauss() * 0.8;
+    return w;
+  }
+  const hid = new Float32Array(NH), outBuf = new Float32Array(NO);
+  function forward(w, inp) {
+    let k = 0;
+    for (let h = 0; h < NH; h++) {
+      let s = 0;
+      for (let i = 0; i < NI; i++) s += w[k++] * inp[i];
+      s += w[k++];
+      hid[h] = Math.tanh(s);
+    }
+    for (let o = 0; o < NO; o++) {
+      let s = 0;
+      for (let h = 0; h < NH; h++) s += w[k++] * hid[h];
+      s += w[k++];
+      outBuf[o] = Math.tanh(s);
+    }
+    return outBuf;
+  }
+
+  // ---------- Simulation ----------
+  function makeSim(trial) {
+    const x = (TRACK_L + TRACK_R) / 2;
+    return {
+      x, vx: 0, th: 0, om: 0, roll: 0,
+      bx: x + trial.u, by: PIVOT_Y - trial.h, bvx: trial.vx, bvy: 0,
+      t: 0, alive: true, score: 0, act: [0, 0]
+    };
+  }
+  const inp = new Float32Array(NI);
+  function step(s, w) {
+    // --- sense (ball relative to platform frame) ---
+    let c = Math.cos(s.th), sn = Math.sin(s.th);
+    let dx = s.bx - s.x, dy = s.by - PIVOT_Y;
+    const u = dx * c + dy * sn;          // along the platform
+    const nd = dx * sn - dy * c;         // height above platform
+    const rvx = s.bvx - s.vx, rvy = s.bvy;
+    inp[0] = u / (BEAM_L / 2);
+    inp[1] = nd / 150;
+    inp[2] = (rvx * c + rvy * sn) / 300;
+    inp[3] = (rvx * sn - rvy * c) / 300;
+    inp[4] = s.th / MAX_TILT;
+    inp[5] = s.om / MAX_OMEGA;
+    inp[6] = (s.x - (TRACK_L + TRACK_R) / 2) / ((TRACK_R - TRACK_L) / 2);
+    inp[7] = s.vx / MAX_V;
+    inp[8] = dx / 200;
+    const out = forward(w, inp);
+    s.act[0] = out[0]; s.act[1] = out[1];
+
+    // --- act: tilt the platform ---
+    s.om = out[1] * MAX_OMEGA;
+    s.th += s.om * DT;
+    if (s.th > MAX_TILT) { s.th = MAX_TILT; s.om = 0; }
+    if (s.th < -MAX_TILT) { s.th = -MAX_TILT; s.om = 0; }
+
+    // --- act: roll along the track ---
+    s.vx = clamp(s.vx + out[0] * MAX_ACC * DT, -MAX_V, MAX_V);
+    s.x += s.vx * DT;
+    if (s.x < TRACK_L + R) { s.x = TRACK_L + R; s.vx = 0; }
+    if (s.x > TRACK_R - R) { s.x = TRACK_R - R; s.vx = 0; }
+    s.roll += s.vx * DT / R;
+
+    // --- ball: gravity only, no friction, no air drag ---
+    s.bvy += G * DT;
+    s.bx += s.bvx * DT;
+    s.by += s.bvy * DT;
+
+    // --- collision with platform (segment with rounded ends) ---
+    c = Math.cos(s.th); sn = Math.sin(s.th);
+    dx = s.bx - s.x; dy = s.by - PIVOT_Y;
+    const uc = clamp(dx * c + dy * sn, -BEAM_L / 2, BEAM_L / 2);
+    const qx = s.x + uc * c, qy = PIVOT_Y + uc * sn;
+    const ex = s.bx - qx, ey = s.by - qy;
+    const dist = Math.hypot(ex, ey), minD = BALL_R + BEAM_H;
+    if (dist < minD) {
+      let nx, ny;
+      if (dist > 1e-6) { nx = ex / dist; ny = ey / dist; } else { nx = sn; ny = -c; }
+      s.bx = qx + nx * minD; s.by = qy + ny * minD;
+      // velocity of the platform at the contact point
+      const rx = uc * c, ry = uc * sn;
+      const pvx = s.vx - s.om * ry, pvy = s.om * rx;
+      const vn = (s.bvx - pvx) * nx + (s.bvy - pvy) * ny;
+      if (vn < 0) {
+        const e = vn > -45 ? 0 : RESTITUTION;   // tiny impacts just slide
+        s.bvx -= (1 + e) * vn * nx;          // only the normal part changes:
+        s.bvy -= (1 + e) * vn * ny;          // frictionless contact
+      }
+    }
+
+    s.t += DT;
+    // --- fell off? ---
+    if (s.by > PIVOT_Y + 70 || s.bx < -40 || s.bx > W + 40) { s.alive = false; return; }
+    s.score += DT * (1 + 0.5 * (1 - Math.min(1, Math.abs(u) / (BEAM_L / 2))));
+    if (s.t >= MAX_T) s.alive = false;
+  }
+
+  // ---------- Evolution ----------
+  function makeTrials(gen) {
+    const r = mulberry32(gen * 7919 + 17);
+    return [
+      { u: (r() * 2 - 1) * 70, h: 110 + r() * 80, vx: (r() * 2 - 1) * 70 },  // new random drop each gen (this one is replayed)
+      { u: -55, h: 150, vx: 45 },
+      { u: 65, h: 120, vx: -60 },
+    ];
+  }
+  function evaluate(pop, trials) {
+    for (const ind of pop) {
+      let fit = 0, t0 = 0;
+      for (let k = 0; k < TRIALS; k++) {
+        const s = makeSim(trials[k]);
+        while (s.alive) step(s, ind.w);
+        fit += s.score;
+        if (k === 0) t0 = s.t;
+      }
+      ind.fit = fit / TRIALS;
+      ind.t0 = t0;
+    }
+  }
+  function pickParent(sorted) {
+    // biased towards the very best of the top pool
+    const i = Math.floor(Math.pow(rand(), 1.6) * PARENT_POOL);
+    return sorted[i];
+  }
+  function breed(pop) {
+    const sorted = [...pop].sort((a, b) => b.fit - a.fit);
+    const next = [];
+    for (let i = 0; i < ELITE; i++) next.push({ w: sorted[i].w.slice(), fit: 0, id: next.length, elite: true });
+    while (next.length < POP) {
+      const a = pickParent(sorted), b = pickParent(sorted);
+      const w = new Float32Array(NW);
+      // mix the two minds: each neuron's incoming weights come from one parent
+      let k = 0;
+      const block = (len) => { const src = rand() < 0.5 ? a.w : b.w; for (let j = 0; j < len; j++, k++) w[k] = src[k]; };
+      for (let h = 0; h < NH; h++) block(NI + 1);
+      for (let o = 0; o < NO; o++) block(NH + 1);
+      // mutate
+      for (let j = 0; j < NW; j++) {
+        if (rand() < 0.12) w[j] += gauss() * 0.35;
+        if (rand() < 0.005) w[j] = gauss();
+      }
+      next.push({ w, fit: 0, id: next.length, elite: false });
+    }
+    return next;
+  }
+
+  // ---------- State ----------
+  let pop, gen, history, record, bestIdx, trials, replay, phase, phaseTimer, paused = false, training = false;
+  let trail = [];
+
+  function reset() {
+    rand = mulberry32((Math.random() * 1e9) | 0);
+    pop = Array.from({ length: POP }, (_, i) => ({ w: randomBrain(), fit: 0, id: i }));
+    gen = 1; history = []; record = 0;
+    beginGeneration();
+  }
+
+  function beginGeneration() {
+    phase = 'evaluating';
+    draw();
+    setTimeout(() => {
+      trials = makeTrials(gen);
+      evaluate(pop, trials);
+      let bi = 0, sum = 0;
+      for (let i = 0; i < POP; i++) { sum += pop[i].fit; if (pop[i].fit > pop[bi].fit) bi = i; }
+      bestIdx = bi;
+      history.push({ best: pop[bi].fit, avg: sum / POP });
+      record = Math.max(record, pop[bi].t0);
+      updateStats();
+      drawChart();
+      drawBrain(pop[bi].w);
+      startReplay();
+    }, 30);
+  }
+
+  function startReplay() {
+    replay = pop.map(() => makeSim(trials[0]));
+    trail = [];
+    phase = 'replay';
+  }
+
+  function finishReplay() {
+    phase = 'fell';
+    phaseTimer = 1.4;
+  }
+
+  function nextGeneration() {
+    pop = breed(pop);
+    gen++;
+    beginGeneration();
+  }
+
+  function trainFast(n) {
+    if (training) return;
+    training = true;
+    let left = n;
+    phase = 'training';
+    const tick = () => {
+      trials = makeTrials(gen);
+      evaluate(pop, trials);
+      let bi = 0, sum = 0;
+      for (let i = 0; i < POP; i++) { sum += pop[i].fit; if (pop[i].fit > pop[bi].fit) bi = i; }
+      history.push({ best: pop[bi].fit, avg: sum / POP });
+      record = Math.max(record, pop[bi].t0);
+      bestIdx = bi;
+      drawChart(); drawBrain(pop[bi].w); updateStats();
+      left--;
+      if (left > 0) { pop = breed(pop); gen++; draw(); setTimeout(tick, 10); }
+      else { training = false; pop = breed(pop); gen++; beginGeneration(); }
+    };
+    draw();
+    setTimeout(tick, 30);
+  }
+
+  // ---------- UI ----------
+  const $ = (id) => document.getElementById(id);
+  const world = $('world'), ctx = world.getContext('2d');
+  const chart = $('chart'), cctx = chart.getContext('2d');
+  const brainC = $('brain'), bctx = brainC.getContext('2d');
+
+  $('pauseBtn').onclick = () => { paused = !paused; $('pauseBtn').textContent = paused ? 'Play' : 'Pause'; };
+  $('skipBtn').onclick = () => { if (phase === 'replay' || phase === 'fell') nextGeneration(); };
+  $('train10Btn').onclick = () => { if (phase === 'replay' || phase === 'fell') trainFast(10); };
+  $('resetBtn').onclick = () => { if (!training) reset(); };
+
+  function updateStats() {
+    $('sGen').textContent = gen;
+    $('sShow').textContent = bestIdx != null && pop[bestIdx] ? `AI #${pop[bestIdx].id + 1}` : '—';
+    const h = history[history.length - 1];
+    $('sFit').textContent = h ? h.best.toFixed(1) : '—';
+    $('sAvg').textContent = h ? h.avg.toFixed(1) : '—';
+    $('sRec').textContent = record ? (record >= MAX_T - 0.01 ? `${MAX_T}.0 s (max!)` : record.toFixed(1) + ' s') : '—';
+  }
+
+  // ---------- Drawing ----------
+  function drawRobot(s, alpha, best) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // pole
+    ctx.strokeStyle = best ? '#9aa7c0' : '#6b7894';
+    ctx.lineWidth = best ? 6 : 3;
+    ctx.beginPath(); ctx.moveTo(s.x, BODY_Y - R + 4); ctx.lineTo(s.x, PIVOT_Y); ctx.stroke();
+    // platform
+    const c = Math.cos(s.th), sn = Math.sin(s.th);
+    ctx.strokeStyle = best ? '#f5b942' : '#c0a060';
+    ctx.lineWidth = BEAM_H * 2; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s.x - c * BEAM_L / 2, PIVOT_Y - sn * BEAM_L / 2);
+    ctx.lineTo(s.x + c * BEAM_L / 2, PIVOT_Y + sn * BEAM_L / 2);
+    ctx.stroke();
+    // body
+    ctx.fillStyle = best ? '#2f9e7c' : '#3b6b8f';
+    ctx.beginPath(); ctx.arc(s.x, BODY_Y, R, 0, Math.PI * 2); ctx.fill();
+    if (best) {
+      ctx.strokeStyle = '#4fd1a5'; ctx.lineWidth = 3; ctx.stroke();
+      // rolling spokes
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2;
+      for (let k = 0; k < 3; k++) {
+        const a = s.roll + k * Math.PI / 3;
+        ctx.beginPath();
+        ctx.moveTo(s.x - Math.cos(a) * (R - 6), BODY_Y - Math.sin(a) * (R - 6));
+        ctx.lineTo(s.x + Math.cos(a) * (R - 6), BODY_Y + Math.sin(a) * (R - 6));
+        ctx.stroke();
+      }
+      // eyes that look at the ball
+      const lx = clamp((s.bx - s.x) / 60, -1, 1) * 3, ly = clamp((s.by - BODY_Y) / 60, -1, 1) * 3;
+      for (const ex of [-11, 11]) {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(s.x + ex, BODY_Y - 8, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.arc(s.x + ex + lx, BODY_Y - 8 + ly, 3.2, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = '#0d3b2c'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (s.alive || phase === 'replay') ctx.arc(s.x, BODY_Y + 8, 9, 0.15 * Math.PI, 0.85 * Math.PI);
+      else ctx.arc(s.x, BODY_Y + 18, 9, 1.15 * Math.PI, 1.85 * Math.PI);
+      ctx.stroke();
+    }
+    // ball
+    ctx.fillStyle = best ? '#ff7a59' : '#d08a7a';
+    ctx.beginPath(); ctx.arc(s.bx, s.by, BALL_R, 0, Math.PI * 2); ctx.fill();
+    if (best) { ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(s.bx - 4, s.by - 4, 3.5, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+
+  function draw() {
+    // sky
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#121a2c'); g.addColorStop(1, '#0a0e17');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // track the robot rolls on
+    ctx.fillStyle = '#2a3448';
+    ctx.fillRect(TRACK_L - 10, TRACK_Y, TRACK_R - TRACK_L + 20, 14);
+    ctx.fillStyle = '#3a4762';
+    ctx.fillRect(TRACK_L - 10, TRACK_Y, TRACK_R - TRACK_L + 20, 3);
+    ctx.fillStyle = '#4a5878';
+    ctx.fillRect(TRACK_L - 14, TRACK_Y - 26, 6, 40);
+    ctx.fillRect(TRACK_R + 8, TRACK_Y - 26, 6, 40);
+    ctx.fillStyle = '#1b2334';
+    ctx.fillRect(0, TRACK_Y + 14, W, H - TRACK_Y - 14);
+
+    if (replay && (phase === 'replay' || phase === 'fell')) {
+      const best = replay[bestIdx];
+      if ($('ghostChk').checked) {
+        for (let i = 0; i < replay.length; i++) {
+          if (i === bestIdx || !replay[i].alive) continue;
+          drawRobot(replay[i], 0.09, false);
+        }
+      }
+      // ball trail
+      ctx.strokeStyle = 'rgba(255,122,89,0.25)'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      trail.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+      ctx.stroke();
+      drawRobot(best, 1, true);
+
+      // HUD
+      ctx.fillStyle = '#e6ebf5'; ctx.font = '600 20px system-ui, sans-serif';
+      ctx.fillText(`Generation ${gen}`, 20, 34);
+      ctx.font = '14px system-ui, sans-serif'; ctx.fillStyle = '#8b97ad';
+      ctx.fillText(`Best of 100: AI #${pop[bestIdx].id + 1}${pop[bestIdx].elite ? ' (kept from last gen)' : ''}`, 20, 56);
+      ctx.fillStyle = '#4fd1a5'; ctx.font = '600 28px system-ui, sans-serif';
+      const tt = best.t.toFixed(1) + ' s';
+      ctx.fillText(tt, W - 20 - ctx.measureText(tt).width, 40);
+
+      // action meters
+      ctx.font = '12px system-ui, sans-serif'; ctx.fillStyle = '#8b97ad';
+      ctx.fillText('move', W - 200, 66); ctx.fillText('tilt', W - 200, 84);
+      for (const [k, y] of [[0, 58], [1, 76]]) {
+        ctx.fillStyle = '#222b3f'; ctx.fillRect(W - 160, y, 140, 9);
+        ctx.fillStyle = k ? '#f5b942' : '#4fd1a5';
+        const v = best.act[k] * 70;
+        ctx.fillRect(W - 90 + Math.min(0, v), y, Math.abs(v), 9);
+      }
+
+      if (phase === 'fell') {
+        ctx.fillStyle = 'rgba(10,14,23,0.6)'; ctx.fillRect(0, 0, W, H);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = best.t >= MAX_T - 0.01 ? '#4fd1a5' : '#ff6b6b';
+        ctx.font = '700 34px system-ui, sans-serif';
+        ctx.fillText(best.t >= MAX_T - 0.01 ? 'Balanced the whole time!' : 'The ball fell!', W / 2, H / 2 - 20);
+        ctx.fillStyle = '#e6ebf5'; ctx.font = '18px system-ui, sans-serif';
+        ctx.fillText(`Generation ${gen} lasted ${best.t.toFixed(1)} s — mixing the best minds for generation ${gen + 1}…`, W / 2, H / 2 + 16);
+        ctx.textAlign = 'left';
+      }
+    } else {
+      ctx.fillStyle = '#e6ebf5'; ctx.font = '600 22px system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(phase === 'training' ? `Training fast… generation ${gen}` : `Testing 100 AIs of generation ${gen}…`, W / 2, H / 2);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  function drawChart() {
+    const w = chart.width, h = chart.height, p = 28;
+    cctx.clearRect(0, 0, w, h);
+    cctx.fillStyle = '#0b0f18'; cctx.fillRect(0, 0, w, h);
+    if (!history.length) return;
+    const maxY = Math.max(5, ...history.map(d => d.best)) * 1.1;
+    const n = Math.max(2, history.length);
+    const X = (i) => p + (i / (n - 1)) * (w - p - 10);
+    const Y = (v) => h - p + 6 - (v / maxY) * (h - p - 10);
+    cctx.strokeStyle = '#222b3f'; cctx.lineWidth = 1;
+    cctx.fillStyle = '#8b97ad'; cctx.font = '18px system-ui, sans-serif';
+    for (let k = 0; k <= 4; k++) {
+      const v = maxY * k / 4;
+      cctx.beginPath(); cctx.moveTo(p, Y(v)); cctx.lineTo(w - 10, Y(v)); cctx.stroke();
+    }
+    cctx.fillText(maxY.toFixed(0), 2, Y(maxY) + 14);
+    cctx.fillText('0', 8, Y(0));
+    cctx.fillText(`gen ${history.length}`, w - 90, h - 4);
+    for (const [key, col] of [['avg', '#f5b942'], ['best', '#4fd1a5']]) {
+      cctx.strokeStyle = col; cctx.lineWidth = 3; cctx.beginPath();
+      history.forEach((d, i) => i ? cctx.lineTo(X(i), Y(d[key])) : cctx.moveTo(X(i), Y(d[key])));
+      if (history.length === 1) cctx.lineTo(X(1) * 0 + X(0) + 2, Y(history[0][key]));
+      cctx.stroke();
+    }
+  }
+
+  function drawBrain(wts) {
+    const w = brainC.width, h = brainC.height;
+    bctx.clearRect(0, 0, w, h);
+    bctx.fillStyle = '#0b0f18'; bctx.fillRect(0, 0, w, h);
+    const names = ['ball pos', 'ball height', 'ball speed →', 'ball speed ↑', 'tilt', 'tilt speed', 'my position', 'my speed', 'ball vs me'];
+    const outs = ['move', 'tilt'];
+    const col = (n, x) => Array.from({ length: n }, (_, i) => [x, 20 + (i + 0.5) * (h - 40) / n]);
+    const L0 = col(NI, 120), L1 = col(NH, 300), L2 = col(NO, 430);
+    let k = 0;
+    const line = (a, b, v) => {
+      bctx.strokeStyle = v > 0 ? `rgba(79,209,165,${Math.min(0.9, Math.abs(v) / 3)})` : `rgba(255,107,107,${Math.min(0.9, Math.abs(v) / 3)})`;
+      bctx.lineWidth = Math.min(4, Math.abs(v) * 1.2);
+      bctx.beginPath(); bctx.moveTo(a[0], a[1]); bctx.lineTo(b[0], b[1]); bctx.stroke();
+    };
+    for (let j = 0; j < NH; j++) { for (let i = 0; i < NI; i++) line(L0[i], L1[j], wts[k++]); k++; }
+    for (let o = 0; o < NO; o++) { for (let j = 0; j < NH; j++) line(L1[j], L2[o], wts[k++]); k++; }
+    bctx.font = '15px system-ui, sans-serif';
+    for (const [layer, color] of [[L0, '#9aa7c0'], [L1, '#6b7894'], [L2, '#f5b942']]) {
+      for (const [x, y] of layer) { bctx.fillStyle = color; bctx.beginPath(); bctx.arc(x, y, 7, 0, Math.PI * 2); bctx.fill(); }
+    }
+    bctx.fillStyle = '#8b97ad'; bctx.textAlign = 'right';
+    L0.forEach(([x, y], i) => bctx.fillText(names[i], x - 12, y + 5));
+    bctx.textAlign = 'left';
+    L2.forEach(([x, y], i) => bctx.fillText(outs[i], x + 12, y + 5));
+  }
+
+  // ---------- Main loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dtReal = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (!paused) {
+      if (phase === 'replay') {
+        const speed = +$('speedSel').value;
+        const steps = Math.round(dtReal / DT * speed);
+        const ghosts = $('ghostChk').checked;
+        const best = replay[bestIdx];
+        for (let n = 0; n < steps && best.alive; n++) {
+          for (let i = 0; i < replay.length; i++) {
+            if ((ghosts || i === bestIdx) && replay[i].alive) step(replay[i], pop[i].w);
+          }
+          if (n % 2 === 0) { trail.push([best.bx, best.by]); if (trail.length > 90) trail.shift(); }
+        }
+        $('sTime').textContent = best.t.toFixed(1) + ' s';
+        $('sAlive').textContent = ghosts ? replay.filter(s => s.alive).length + ' / 100' : '—';
+        if (!best.alive) finishReplay();
+      } else if (phase === 'fell') {
+        phaseTimer -= dtReal;
+        if (phaseTimer <= 0) nextGeneration();
+      }
+    }
+    if (phase === 'replay' || phase === 'fell') draw();
+    requestAnimationFrame(frame);
+  }
+
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
