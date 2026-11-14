@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Bounce Tycoon</title>
+<style>
+  :root { --bg:#000; --red:#d7302b; --ui:#140606; --text:#ffd9d6; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; overflow:hidden; }
+  #wrap { display:flex; flex-direction:column; height:100%; }
+  #top { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 12px;
+    background:var(--ui); border-bottom:2px solid var(--red); }
+  #money { font-size:22px; font-weight:800; color:#fff; margin-right:auto; }
+  #rate { font-size:13px; opacity:.8; margin-left:6px; font-weight:400; }
+  button { background:#2a0b0a; color:var(--text); border:2px solid var(--red); border-radius:8px;
+    padding:6px 10px; font-size:14px; font-weight:600; cursor:pointer; }
+  button:hover:not(:disabled) { background:#4a1210; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.on { background:var(--red); color:#fff; }
+  #stage { flex:1; position:relative; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; }
+  #hint { position:absolute; left:50%; bottom:8px; transform:translateX(-50%); font-size:12px;
+    opacity:.7; pointer-events:none; text-align:center; width:90%; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="top">
+    <div id="money">$0<span id="rate"></span></div>
+    <button id="buyBall">Buy Ball</button>
+    <button id="merge">Merge ×2</button>
+    <button id="autoMerge">Auto-merge: off</button>
+    <button id="draw">Draw String</button>
+    <button id="erase">Erase String</button>
+    <button id="reset">Reset</button>
+  </div>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="hint"></div>
+  </div>
+</div>
+<script>
+(() => {
+  // ---------- World (measured in blocks) ----------
+  const W = 14, H = 18;              // arena size in blocks
+  const GRAVITY = 6;                 // blocks / s²
+  const MIN_BOUNCE = 2, MAX_BOUNCE = 10; // string bounce speed range (blocks/s)
+  const SPAWN = { x: W / 2, y: 2 };
+  const BASE_PAYOUT = 1;
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const hint = document.getElementById('hint');
+  let scale = 30, offX = 0, offY = 0, dpr = 1;
+
+  const defaultStrings = () => [
+    // shaped after the sketch: a V of long strings plus small deflectors
+    { x1: 3.5, y1: 4.5, x2: 6.3, y2: 16.5 },
+    { x1: 7.7, y1: 16.5, x2: 10.5, y2: 5 },
+    { x1: 4.5, y1: 3, x2: 8.5, y2: 4.8 },
+    { x1: 9, y1: 3.5, x2: 12.5, y2: 1.2 },
+    { x1: 1.2, y1: 12.5, x2: 4.5, y2: 15.5 },
+    { x1: 9.5, y1: 14, x2: 12.6, y2: 10 },
+  ];
+
+  let state = load() || {
+    money: 0,
+    ballsBought: 0,
+    stringsBought: 0,
+    balls: [newBall(0)],
+    strings: defaultStrings(),
+    autoMerge: false,
+  };
+  state.balls.forEach(b => { b.cool = {}; });
+
+  let mode = null;           // 'draw' | 'erase' | null
+  let dragStart = null, dragEnd = null;
+  const pops = [];           // floating "+$" texts
+  const earnLog = [];        // for $/s
+
+  function newBall(tier) {
+    const a = Math.random() * Math.PI * 2;
+    return { x: SPAWN.x + (Math.random() - .5), y: SPAWN.y, vx: Math.cos(a) * 1.5, vy: Math.abs(Math.sin(a)) * 1.5,
+             tier, cool: {} };
+  }
+  const payout = tier => { let p = BASE_PAYOUT; for (let i = 0; i < tier; i++) p = 2 * p + p / 2; return p; };
+  const radius = tier => 0.28 + Math.min(tier, 12) * 0.03;
+  const tierColor = tier => `hsl(${(tier * 47) % 360} 85% ${tier === 0 ? 55 : 58}%)`;
+  const ballCost = () => Math.floor(10 * Math.pow(1.35, state.ballsBought));
+  const stringCost = () => Math.floor(25 * Math.pow(1.6, state.stringsBought));
+
+  // ---------- Formatting ----------
+  const SUFFIX = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
+  function fmt(n) {
+    if (n < 1000) return (Math.round(n * 10) / 10).toString();
+    let i = 0; while (n >= 1000 && i < SUFFIX.length - 1) { n /= 1000; i++; }
+    return n.toFixed(2) + SUFFIX[i];
+  }
+
+  // ---------- Layout ----------
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+    scale = Math.min(r.width / (W + 1), r.height / (H + 1.5));
+    offX = (r.width - W * scale) / 2;
+    offY = (r.height - (H + 1) * scale) / 2;
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- Physics ----------
+  function step(dt) {
+    for (const b of state.balls) {
+      const r = radius(b.tier);
+      for (const k in b.cool) { b.cool[k] -= dt; if (b.cool[k] <= 0) delete b.cool[k]; }
+
+      b.vy += GRAVITY * dt;          // no friction / drag at all
+      b.x += b.vx * dt; b.y += b.vy * dt;
+
+      // side walls (perfectly elastic, no payout)
+      if (b.x - r < 0) { b.x = r; b.vx = Math.abs(b.vx); }
+      if (b.x + r > W) { b.x = W - r; b.vx = -Math.abs(b.vx); }
+
+      // strings
+      state.strings.forEach((s, i) => {
+        const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+        const len2 = dx * dx + dy * dy || 1e-9;
+        let t = ((b.x - s.x1) * dx + (b.y - s.y1) * dy) / len2;
+        t = Math.max(0, Math.min(1, t));
+        const cx = s.x1 + dx * t, cy = s.y1 + dy * t;
+        let nx = b.x - cx, ny = b.y - cy;
+        const d = Math.hypot(nx, ny);
+        if (d >= r || d === 0) return;
+        nx /= d; ny /= d;
+        const vn = b.vx * nx + b.vy * ny;
+        b.x = cx + nx * r; b.y = cy + ny * r;   // push out
+        if (vn >= 0) return;                      // already moving away
+        // reflect
+        b.vx -= 2 * vn * nx; b.vy -= 2 * vn * ny;
+        // new speed depends on ball speed, ± random error of 0–1, kept in 2–10 blocks/s
+        const speed = Math.hypot(b.vx, b.vy) || 1;
+        const err = Math.random() * (Math.random() < .5 ? -1 : 1);
+        const target = Math.max(MIN_BOUNCE, Math.min(MAX_BOUNCE, speed + err));
+        b.vx = b.vx / speed * target; b.vy = b.vy / speed * target;
+        if (!b.cool[i]) {
+          b.cool[i] = 0.08;
+          earn(payout(b.tier), b.x, b.y);
+        }
+      });
+
+      // out of bounds: past the laser at the bottom or beyond the screen → respawn
+      const topLimit = -offY / scale - 1;
+      if (b.y - r > H || b.y < topLimit || b.x < -1 || b.x > W + 1) {
+        Object.assign(b, newBall(b.tier));
+        pops.push({ x: SPAWN.x, y: SPAWN.y, text: 'respawn', life: .6, color: '#888' });
+      }
+    }
+  }
+
+  function earn(amount, x, y) {
+    state.money += amount;
+    earnLog.push({ t: performance.now(), a: amount });
+    if (pops.length < 120) pops.push({ x, y, text: '+$' + fmt(amount), life: 1, color: '#7dff8a' });
+  }
+
+  // ---------- Merging (2 balls of payout n → 1 ball paying 2n + n/2) ----------
+  function findPair() {
+    const byTier = {};
+    for (const b of state.balls) {
+      (byTier[b.tier] = byTier[b.tier] || []).push(b);
+    }
+    const tiers = Object.keys(byTier).map(Number).sort((a, b) => a - b);
+    for (const t of tiers) if (byTier[t].length >= 2) return byTier[t].slice(0, 2);
+    return null;
+  }
+  function mergeOnce() {
+    const pair = findPair();
+    if (!pair) return false;
+    const [a, b] = pair;
+    state.balls = state.balls.filter(x => x !== a && x !== b);
+    const nb = newBall(a.tier + 1);
+    nb.x = (a.x + b.x) / 2; nb.y = (a.y + b.y) / 2;
+    state.balls.push(nb);
+    pops.push({ x: nb.x, y: nb.y, text: 'MERGE! $' + fmt(payout(nb.tier)) + '/hit', life: 1.4, color: '#ffd84a' });
+    return true;
+  }
+
+  // ---------- UI ----------
+  const $ = id => document.getElementById(id);
+  $('buyBall').onclick = () => {
+    const c = ballCost();
+    if (state.money < c) return;
+    state.money -= c; state.ballsBought++;
+    state.balls.push(newBall(0));
+  };
+  $('merge').onclick = () => mergeOnce();
+  $('autoMerge').onclick = () => { state.autoMerge = !state.autoMerge; };
+  $('draw').onclick = () => setMode(mode === 'draw' ? null : 'draw');
+  $('erase').onclick = () => setMode(mode === 'erase' ? null : 'erase');
+  $('reset').onclick = () => {
+    if (!confirm('Reset all progress?')) return;
+    localStorage.removeItem('bounceTycoon');
+    state = { money: 0, ballsBought: 0, stringsBought: 0, balls: [newBall(0)], strings: defaultStrings(), autoMerge: false };
+  };
+  function setMode(m) { mode = m; dragStart = dragEnd = null; }
+
+  function toWorld(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left - offX) / scale, y: (e.clientY - r.top - offY) / scale };
+  }
+  const clampW = p => ({ x: Math.max(0, Math.min(W, p.x)), y: Math.max(0, Math.min(H, p.y)) });
+
+  canvas.addEventListener('pointerdown', e => {
+    const p = toWorld(e);
+    if (mode === 'draw') { dragStart = clampW(p); dragEnd = dragStart; canvas.setPointerCapture(e.pointerId); }
+    else if (mode === 'erase') {
+      let best = -1, bd = 0.5;
+      state.strings.forEach((s, i) => {
+        const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+        let t = ((p.x - s.x1) * dx + (p.y - s.y1) * dy) / (dx * dx + dy * dy || 1);
+        t = Math.max(0, Math.min(1, t));
+        const d = Math.hypot(p.x - (s.x1 + dx * t), p.y - (s.y1 + dy * t));
+        if (d < bd) { bd = d; best = i; }
+      });
+      if (best >= 0) {
+        state.strings.splice(best, 1);
+        state.stringsBought = Math.max(0, state.stringsBought - 1); // refund slot pricing
+        state.balls.forEach(b => b.cool = {});
+      }
+    }
+  });
+  canvas.addEventListener('pointermove', e => { if (dragStart) dragEnd = clampW(toWorld(e)); });
+  canvas.addEventListener('pointerup', () => {
+    if (!dragStart) return;
+    const len = Math.hypot(dragEnd.x - dragStart.x, dragEnd.y - dragStart.y);
+    const c = stringCost();
+    if (len >= 0.8 && state.money >= c) {
+      state.money -= c; state.stringsBought++;
+      state.strings.push({ x1: dragStart.x, y1: dragStart.y, x2: dragEnd.x, y2: dragEnd.y });
+    }
+    dragStart = dragEnd = null;
+  });
+
+  function updateUI() {
+    const now = performance.now();
+    while (earnLog.length && now - earnLog[0].t > 5000) earnLog.shift();
+    const rate = earnLog.reduce((s, e) => s + e.a, 0) / 5;
+    $('money').firstChild.nodeValue = '$' + fmt(state.money);
+    $('rate').textContent = ` ($${fmt(rate)}/s)`;
+    const bc = ballCost();
+    $('buyBall').textContent = `Buy Ball ($${fmt(bc)})`;
+    $('buyBall').disabled = state.money < bc;
+    $('merge').disabled = !findPair();
+    $('autoMerge').textContent = 'Auto-merge: ' + (state.autoMerge ? 'on' : 'off');
+    $('autoMerge').classList.toggle('on', state.autoMerge);
+    $('draw').textContent = `Draw String ($${fmt(stringCost())})`;
+    $('draw').classList.toggle('on', mode === 'draw');
+    $('erase').classList.toggle('on', mode === 'erase');
+    hint.textContent = mode === 'draw' ? 'Drag inside the box to place a string'
+      : mode === 'erase' ? 'Tap a string to remove it'
+      : `${state.balls.length} ball(s) · each string bounce pays the ball's payout · merge 2 same balls: n → 2n + n/2`;
+  }
+
+  // ---------- Render ----------
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const cw = canvas.width / dpr, ch = canvas.height / dpr;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cw, ch);
+    ctx.save();
+    ctx.translate(offX, offY); ctx.scale(scale, scale);
+
+    // faint block grid
+    ctx.strokeStyle = 'rgba(215,48,43,.07)'; ctx.lineWidth = 1 / scale;
+    for (let x = 0; x <= W; x++) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y++) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    // walls
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#d7302b'; ctx.lineWidth = 0.18;
+    ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(0, H); ctx.moveTo(W, -5); ctx.lineTo(W, H); ctx.stroke();
+
+    // laser
+    const flicker = 0.6 + 0.4 * Math.sin(performance.now() / 70);
+    ctx.shadowColor = '#ff2a2a'; ctx.shadowBlur = 18;
+    ctx.strokeStyle = `rgba(255,40,40,${flicker})`; ctx.lineWidth = 0.14;
+    ctx.beginPath(); ctx.moveTo(-0.3, H + 0.05); ctx.lineTo(W + 0.3, H + 0.05); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#d7302b'; ctx.font = `bold 0.6px system-ui`; ctx.textAlign = 'center';
+    ctx.fillText('LASER', W / 2, H + 0.85);
+
+    // strings
+    ctx.strokeStyle = '#e8463f'; ctx.lineWidth = 0.1;
+    for (const s of state.strings) {
+      ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+    }
+    if (dragStart) {
+      const ok = state.money >= stringCost();
+      ctx.setLineDash([0.3, 0.2]);
+      ctx.strokeStyle = ok ? '#ffaaaa' : '#666';
+      ctx.beginPath(); ctx.moveTo(dragStart.x, dragStart.y); ctx.lineTo(dragEnd.x, dragEnd.y); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // spawn marker
+    ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 0.05;
+    ctx.beginPath(); ctx.arc(SPAWN.x, SPAWN.y, 0.5, 0, Math.PI * 2); ctx.stroke();
+
+    // balls
+    for (const b of state.balls) {
+      const r = radius(b.tier);
+      ctx.fillStyle = tierColor(b.tier);
+      ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      if (b.tier > 0) {
+        ctx.fillStyle = '#000'; ctx.font = `bold ${r * 1.1}px system-ui`;
+        ctx.textBaseline = 'middle';
+        ctx.fillText(b.tier + 1, b.x, b.y + 0.02);
+        ctx.textBaseline = 'alphabetic';
+      }
+    }
+
+    // pops
+    ctx.font = 'bold 0.45px system-ui';
+    for (const p of pops) {
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, p.x, p.y - (1 - p.life) * 1.2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // ---------- Save ----------
+  function save() {
+    try {
+      localStorage.setItem('bounceTycoon', JSON.stringify({
+        ...state, balls: state.balls.map(({ cool, ...b }) => b),
+      }));
+    } catch (e) {}
+  }
+  function load() {
+    try { const s = JSON.parse(localStorage.getItem('bounceTycoon')); return s && s.balls ? s : null; }
+    catch (e) { return null; }
+  }
+  setInterval(save, 3000);
+  window.addEventListener('beforeunload', save);
+
+  // ---------- Loop ----------
+  let last = performance.now(), mergeTimer = 0;
+  function frame(now) {
+    let dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const SUB = 8;
+    for (let i = 0; i < SUB; i++) step(dt / SUB);
+    for (const p of pops) p.life -= dt;
+    for (let i = pops.length - 1; i >= 0; i--) if (pops[i].life <= 0) pops.splice(i, 1);
+    if (state.autoMerge && (mergeTimer += dt) > 0.5) { mergeTimer = 0; mergeOnce(); }
+    draw(); updateUI();
+    requestAnimationFrame(frame);
+  }
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
