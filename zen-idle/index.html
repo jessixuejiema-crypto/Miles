@@ -191,7 +191,8 @@ label.chk { display: flex; gap: 8px; align-items: center; font-size: 13px; color
         <ul>
           <li>Each generator's ring fills around its edge. When the ring closes, a ball drops into the marble run. The mini generator beside it drops a smaller ball a bit faster.</li>
           <li>Balls only pay <b>c</b> when they touch a coloured hazard. Red pays ×1, orange ×2, yellow ×4, green ×8 and so on; each colour is twice as rare as the one before. Deeper mazes allow rarer colours.</li>
-          <li>Each maze is a closed room. Walls split the path in two, shelves and pits send balls different ways, and many routes tip balls into the <b>recycle chute</b> on one side, where a fan blows them back to the top. The only way out is a pit in the bottom floor.</li>
+          <li>Each maze is a labyrinth of corridors seen from the side. Floors tilt toward drop shafts; where a floor peaks between two shafts the path forks. Shafts hold spinners, bouncers, moving gates and pegs. Some corridors are dead ends that tip balls into the <b>recycle chute</b>, where a fan or ladder carries them back to the top.</li>
+          <li>The only way out is a shuttered pit near the high end of the bottom floor. Balls that miss it roll over a shuttered hazard pit on their way back to the chute.</li>
           <li>When a ball breaks into an unexplored maze, the next one appears beside it or below it, forever. Sizes are shown in ub (1 ub = one ball width).</li>
           <li>A ball that hasn't moved for 10 to 40 seconds is cleared.</li>
           <li>Drag in any direction to look around and pinch with two fingers to zoom (trackpad pinch or the − / + buttons on a computer). Earn c to level up and spend skill points in the Skill Tree.</li>
@@ -336,7 +337,7 @@ function globalMult() {
   return (rk('root') ? 1.1 : 1) * (1 + 0.25 * rk('gold')) * (1 + 0.05 * rk('reson') * ownedCount()) * (rk('zen') ? 2 : 1);
 }
 const hazMult = t => Math.pow(2, t) * (1 + 0.25 * rk('prism'));
-const ballCap = () => 200 + 100 * rk('over');
+const ballCap = () => 150 + 100 * rk('over');
 const gravity = () => G * (1 + 0.1 * rk('moment'));
 
 // level: lifetime earnings thresholds 50 * 4^L
@@ -496,224 +497,78 @@ function generateMaze(k) {
   const peg = (x, y, r = 4.5, haz = -1) => { add({ t: 'circ', x: WX(x), y: oy + y, r, haz }); if (haz >= 0) maze.haz++; };
   const bump = (x, y, r) => add({ t: 'circ', x: WX(x), y: oy + y, r, haz: -1, bump: true, pulse: 0 });
   const zone = (xa, xb, y, h, up, side, cap = 230) => { const a = WX(xa), b = WX(xb); add({ t: 'fan', x: Math.min(a, b), y: oy + y, w: Math.abs(b - a), h, up, side: mir ? -side : side, cap }); };
-  const ladder = (xa, xb, y, h, dir) => { const a = WX(xa), b = WX(xb); add({ t: 'ladder', x: Math.min(a, b), y: oy + y, w: Math.abs(b - a), h, dir: mir ? -dir : dir }); };
+  const ladder = (xa, xb, y, h, dir, sp = 9) => { const a = WX(xa), b = WX(xb); add({ t: 'ladder', x: Math.min(a, b), y: oy + y, w: Math.abs(b - a), h, dir: mir ? -dir : dir, sp }); };
   const drains = [];
-  const maxDrains = 1 + Math.floor(k / 4);
+  const maxDrains = 2 + Math.floor(k / 3);
   let drainCount = 0;
-  const canDrain = () => y > 26 * UB && drainCount < maxDrains;
+  const canDrain = () => drainCount < maxDrains;
 
-  // band-level flip inside the content area (never used by bands that drain into the chute)
-  let flip = false;
-  const cx = u => CW + (flip ? WC - u : u);
-  const fs = () => flip ? -1 : 1;
-
-  let y = 9 * UB, scatterNext = false;
-  const floorHole = (uHigh, uLow, yHigh, yLow, holeAt, holeW, endGap) => {
-    // a sloped floor from uHigh down to uLow (stopping endGap short), with a hole centred at fraction holeAt
-    const L = uLow - uHigh, dir = Math.sign(L);
-    const yAt = u => yHigh + (yLow - yHigh) * (u - uHigh) / L;
-    const hc = uHigh + L * holeAt, h0 = hc - dir * holeW / 2, h1 = hc + dir * holeW / 2, uEnd = uLow - dir * endGap;
-    seg(cx(uHigh), yHigh, cx(h0), yAt(h0));
-    seg(cx(h1), yAt(h1), cx(uEnd), yAt(uEnd));
-    return { u: hc, y: yAt(hc) };
-  };
-
-  const M = {
-    scatter() {
-      const rs = 2.6 * UB, hs = 3.1 * UB, mids = [];
-      for (let r = 0; r < 3; r++) {
-        const off = r % 2 ? hs / 2 : 0;
-        for (let u = 1.6 * UB + off; u < WC - 1.8 * UB; u += hs) r === 1 ? mids.push(u) : peg(cx(u), y + r * rs);
+  /* --- corridor labyrinth, seen from the side ---
+     The room is a grid of corridor cells. Each row is split into corridor runs by walls. A run's floor tilts
+     toward its drop shafts; between two shafts the floor forms a ridge that forks the flow. Some runs next to the
+     chute have no shaft at all: dead ends that tip balls into the chute, back to the top of the room. */
+  const NC = 7, cwid = WC / NC, RH = 5.5 * UB, SL = 0.12;
+  const nr = Math.round((75 + rng() * 85) / 5.5);
+  const top0 = 9 * UB;
+  const hazP = Math.min(0.12, 0.06 + 0.004 * k) * (1 + 0.2 * rk('bloom'));
+  const deadP = Math.min(0.75, 0.55 + 0.02 * k);
+  const cellX = c => CW + c * cwid;
+  // track roughly how balls spread through the grid, so dead ends never swallow more than half the flow
+  let inflow = new Array(NC).fill(1 / NC), recycled = 0, killed = 0;
+  const killTarget = Math.min(0.45, 0.2 + 0.02 * k) * (1 + 0.15 * rk('bloom'));
+  for (let r = 0; r < nr; r++) {
+    const next = new Array(NC).fill(0);
+    const yt = top0 + r * RH, yb = yt + RH;
+    const runs = [];
+    let start = 0;
+    for (let c = 1; c <= NC; c++) if (c === NC || c - start >= 4 || rng() < 0.42) { runs.push([start, c - 1]); start = c; }
+    for (const [c0, c1] of runs) {
+      const n = c1 - c0 + 1;
+      let runIn = 0; for (let c = c0; c <= c1; c++) runIn += inflow[c];
+      const dead = c0 === 0 && r > nr * 0.3 && r < nr - 1 && rng() < deadP && canDrain() && runIn > 0.03 && runIn <= 0.35 && recycled + runIn <= 0.6;
+      const drops = [];
+      if (!dead) {
+        for (let c = c0; c <= c1; c++) if (rng() < 0.36) drops.push(c);
+        if (!drops.length) drops.push(c0 + Math.floor(rng() * n));
+        if (drops.length === n && n > 1) drops.splice(Math.floor(rng() * n), 1);
       }
-      const hi = 1 + Math.floor(rng() * (mids.length - 2));
-      mids.forEach((u, i) => i === hi ? peg(cx(u), y + rs, 0.45 * UB, pickTier()) : peg(cx(u), y + rs));
-      return 2 * rs + UB;
-    },
-    pegs(rowsOverride) {
-      const rows = rowsOverride || 4 + Math.floor(rng() * 4), rs = 2.6 * UB, hs = 3.1 * UB;
-      const list = [];
-      for (let r = 0; r < rows; r++) {
-        const off = r % 2 ? hs / 2 : 0;
-        for (let u = 1.6 * UB + off; u < WC - 1.8 * UB; u += hs) list.push([u, y + r * rs]);
+      const tg = dead ? [[CW - 1, CW]] : drops.map(c => [cellX(c), cellX(c + 1)]);
+      const dist = x => Math.min(...tg.map(([p, q]) => x < p ? p - x : x > q ? x - q : 0));
+      const xs = new Set();
+      for (let c = c0; c <= c1 + 1; c++) xs.add(cellX(c));
+      for (let i = 0; i + 1 < tg.length; i++) xs.add((tg[i][1] + tg[i + 1][0]) / 2);
+      const pts = [...xs].sort((p, q) => p - q);
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const p = pts[i], q = pts[i + 1], m = (p + q) / 2;
+        if (drops.some(c => m > cellX(c) && m < cellX(c + 1))) continue;
+        seg(p, yb - SL * dist(p), q, yb - SL * dist(q), -1, 6);
       }
-      const hz = new Set();
-      if (!rowsOverride && roll()) {
-        const nh = 1 + Math.floor(rng() * (1 + 2 * diff));
-        for (let i = 0; i < nh; i++) hz.add(Math.floor(rng() * list.length));
+      if (dead) { drains.push([yb - 1.9 * UB, yb + 0.05 * UB]); drainCount++; recycled += runIn; }
+      else for (let c = c0; c <= c1; c++) {
+        if (drops.includes(c)) { next[c] += inflow[c]; continue; }
+        let best = Infinity, ds = [];
+        for (const d of drops) { const e = Math.abs(d - c); if (e < best) { best = e; ds = [d]; } else if (e === best) ds.push(d); }
+        for (const d of ds) next[d] += inflow[c] / ds.length;
       }
-      list.forEach(([u, py], i) => hz.has(i) ? peg(cx(u), py, 0.45 * UB, pickTier()) : peg(cx(u), py));
-      return (rows - 1) * rs + UB;
-    },
-    plinko() {
-      const h0 = M.pegs(3);
-      const yb = y + h0 + 1.5 * UB, nb = 10, bw = WC / nb, dh = 3 * UB;
-      for (let i = 1; i < nb; i++) seg(cx(i * bw), yb, cx(i * bw), yb + dh, -1, 4);
-      if (roll()) {
-        const nh = 1 + Math.floor(rng() * (1 + 2 * diff)), used = new Set();
-        for (let i = 0; i < nh; i++) {
-          const b = Math.floor(rng() * nb); if (used.has(b)) continue; used.add(b);
-          seg(cx(b * bw + 3), yb + dh, cx((b + 1) * bw - 3), yb + dh, pickTier());
-        }
+      if (c1 < NC - 1) seg(cellX(c1 + 1), yt, cellX(c1 + 1), yb, -1, 6);
+      // something in each drop shaft
+      for (const c of drops) {
+        if (r === nr - 1) continue;
+        const mx = (cellX(c) + cellX(c + 1)) / 2, q = rng();
+        const f = next[c];
+        if (f > 0.005 && f <= 0.15 && killed + f <= killTarget && rng() < 0.5) { killed += f; peg(mx + (rng() < 0.5 ? -1 : 1) * cwid * (0.3 + rng() * 0.1), yb + 0.4 * UB, 0.45 * UB, pickTier()); }
+        else if (q < 0.07 + 0.05 * diff) {
+          add({ t: 'spin', cx: WX(mx), cy: oy + yb - RH * 0.15, len: cwid * 0.6, w: (1.5 + rng() * 1.5) * (rng() < 0.5 ? -1 : 1), ang: rng() * Math.PI, th: 6, haz: -1 });
+        } else if (q < 0.13 + 0.05 * diff) {
+          add({ t: 'mov', bx: WX(mx), by: oy + yb, len: cwid * 0.5, amp: cwid * 0.2, per: 1.6 + rng() * 1.6, ph: rng() * 6.28, tilt: rng() < 0.5 ? 0.25 : -0.25, th: 5, haz: -1 });
+        } else if (q < 0.19) { const sd = rng() < 0.5; bump(sd ? cellX(c) + 0.75 * UB : cellX(c + 1) - 0.75 * UB, yt + RH * 0.45, 0.7 * UB); }
+        else if (q < 0.33) peg(mx + (rng() - 0.5) * cwid * 0.3, yb + 0.2 * UB);
       }
-      return h0 + 1.5 * UB + dh + UB;
-    },
-    bumpers() {
-      seg(cx(0), y, cx(WC / 2 - 2.4 * UB), y + 5 * UB);
-      seg(cx(WC), y, cx(WC / 2 + 2.4 * UB), y + 5 * UB);
-      const pts = [], n = 4 + Math.floor(rng() * 3);
-      let tries = 0;
-      while (pts.length < n && tries++ < 200) {
-        const pu = 2.6 * UB + rng() * (WC - 5.2 * UB), py = y + 8 * UB + rng() * 11 * UB;
-        if (pts.every(([a, b]) => Math.hypot(a - pu, b - py) > 4.6 * UB)) pts.push([pu, py]);
-      }
-      pts.forEach(([pu, py]) => bump(cx(pu), py, 1.2 * UB));
-      if (roll()) {
-        tries = 0;
-        while (tries++ < 200) {
-          const pu = 2.5 * UB + rng() * (WC - 5 * UB), py = y + 8 * UB + rng() * 11 * UB;
-          if (pts.every(([a, b]) => Math.hypot(a - pu, b - py) > 3.8 * UB)) { peg(cx(pu), py, 0.8 * UB, pickTier()); break; }
-        }
-      }
-      return 20.5 * UB;
-    },
-    spinners() {
-      const n = 2 + Math.floor(rng() * 2), cy = y + 4 * UB;
-      const hk = roll() ? Math.floor(rng() * n) : -1;
-      for (let i = 0; i < n; i++) {
-        const len = (WC / n) * (i === hk ? 0.32 : 0.58);
-        const w = (1.3 + rng() * 1.6) * (1 + diff * 0.6) * (rng() < 0.5 ? -1 : 1);
-        add({ t: 'spin', cx: WX(cx(WC * (i + 0.5) / n)), cy: oy + cy, len, w, ang: rng() * Math.PI, th: 6, haz: i === hk ? pickTier() : -1 });
-        if (i === hk) maze.haz++;
-      }
-      for (let u = 2 * UB; u < WC - 1.8 * UB; u += 3.4 * UB) peg(cx(u), cy + 5.5 * UB);
-      return 11 * UB;
-    },
-    movers() {
-      for (let r = 0; r < 2; r++) {
-        const by = y + 2 * UB + r * 7 * UB, len = 8 * UB, amp = WC / 2 - len / 2 - 2.2 * UB;
-        add({ t: 'mov', bx: WX(cx(WC / 2)), by: oy + by, len, amp, per: 3.2 + rng() * 2.5 - diff, ph: rng() * 6.28, tilt: (rng() < 0.5 ? -1 : 1) * 0.16, th: 6, haz: -1 });
-      }
-      let h = 14 * UB;
-      if (roll()) {
-        const len = 2.6 * UB;
-        add({ t: 'mov', bx: WX(cx(WC / 2)), by: oy + y + h + 1.5 * UB, len, amp: WC / 2 - len / 2 - 1.5 * UB, per: 2 + rng() * 1.5, ph: rng() * 6.28, tilt: 0, th: 6, haz: pickTier() });
-        maze.haz++;
-        h += 3 * UB;
-      }
-      return h + UB;
-    },
-    zigzag() {
-      const n = 3 + Math.floor(rng() * 3), sp = 6 * UB, drop = 3 * UB, gap = 3.3 * UB;
-      for (let i = 0; i < n; i++) {
-        const yy = y + i * sp;
-        if (i % 2 === 0) seg(cx(0), yy, cx(WC - gap), yy + drop); else seg(cx(WC), yy, cx(gap), yy + drop);
-      }
-      if (roll()) scatterNext = true;
-      return n * sp + drop;
-    },
-    lift(kind) {
-      const d = 10 * UB, wallU = 0.5 * WC, tipU = 0.35 * WC;
-      seg(cx(WC), y, cx(tipU), y + d);
-      const ytip = y + d;
-      const yw = kind === 'fan' ? ytip + 4.5 * UB : y + d * 0.77 + 4.2 * UB;
-      const yb = yw + 9 * UB;
-      seg(cx(wallU), yw, cx(wallU), yb);
-      if (kind === 'fan') {
-        seg(cx(0), yb, cx(wallU), yb);
-        zone(cx(0), cx(wallU), ytip + 2 * UB, yb - ytip - 2 * UB, 1.9, 0.6 * fs());
-      } else {
-        seg(cx(0), yb - 2.5 * UB, cx(wallU), yb);
-        ladder(cx(wallU - 2.4 * UB), cx(wallU - 0.18 * UB), yw - 1.6 * UB, yb - yw + 1.6 * UB, fs());
-      }
-      if (roll()) peg(cx(wallU + 1.3 * UB + rng() * 2.5 * UB), yb - 1.5 * UB, 0.5 * UB, pickTier());
-      return yb - y + UB;
-    },
-    labyrinth() {
-      // shelves with gaps; shelves touching the chute wall may tip balls into the chute (back to the top)
-      const rows = 4 + Math.floor(rng() * 3), rs = 5.5 * UB, gw = 2.6 * UB;
-      let drained = false;
-      for (let r = 0; r < rows; r++) {
-        const yy = y + r * rs, ng = rng() < 0.5 ? 1 : 2, gs = [];
-        let tries = 0;
-        while (gs.length < ng && tries++ < 50) {
-          const g = 3 * UB + rng() * (WC - 3 * UB - gw / 2);
-          if (gs.every(o => Math.abs(o - g) > 8 * UB)) gs.push(g);
-        }
-        gs.sort((a, b) => a - b);
-        let a = 0;
-        const ivs = [];
-        gs.forEach(g => { ivs.push([a, g - gw / 2]); a = g + gw / 2; });
-        ivs.push([a, WC]);
-        for (const [p, q] of ivs) {
-          const len = q - p; if (len < 1.5 * UB) continue;
-          const drop = Math.max(1.2 * UB, Math.min(2.6 * UB, len * 0.16));
-          let lowRight;
-          if (p <= 0.01) lowRight = !drained && len > 8 * UB && canDrain() && rng() < drainP ? false : true;
-          else if (q >= WC - 0.01) lowRight = false;
-          else lowRight = rng() < 0.5;
-          if (p <= 0.01 && !lowRight) floorHole(q, p, yy, yy + drop, 1 - (2.6 * UB + rng() * 2 * UB) / len, 2.9 * UB, 0);
-          else if (lowRight) seg(cx(p), yy, cx(q), yy + drop); else seg(cx(p), yy + drop, cx(q), yy);
-          if (p <= 0.01 && !lowRight) { drains.push([yy + drop - 1.8 * UB, yy + drop + 0.3 * UB]); drained = true; drainCount++; }
-        }
-      }
-      if (roll()) scatterNext = true;
-      return (rows - 1) * rs + 3 * UB;
-    },
-    split() {
-      // a wall splits the flow in two; each side gets its own path, often with a pit
-      const mid = WC / 2, fy = y + 6 * UB, bh = 13 * UB;
-      seg(cx(mid), y, cx(mid), y + bh);
-      seg(cx(mid), y, cx(mid - 1.6 * UB), y + 1.4 * UB);
-      seg(cx(mid), y, cx(mid + 1.6 * UB), y + 1.4 * UB);
-      const pickW = list => { const s = list.reduce((a, b) => a + b[1], 0); let r = rng() * s; for (const [n, w] of list) { r -= w; if (r <= 0) return n; } return list[0][0]; };
-      const kA = canDrain() ? pickW([['pitDrain', 4 + 2 * diff], ['pegs', 2], ['pitHaz', 1.5]]) : pickW([['pegs', 2], ['pitHaz', 1.5]]);
-      if (kA === 'pitDrain') drainCount++;
-      const kB = pickW([['pegs', 2], ['pitHaz', 2.5], ['bumps', 1.5]]);
-      const channel = (a, b, kind) => {
-        const w = b - a;
-        if (kind === 'pegs') {
-          for (let r = 0; r < 3; r++) for (let u = a + 1.6 * UB + (r % 2) * 1.55 * UB; u < b - 1.6 * UB; u += 3.1 * UB) peg(cx(u), y + 3.5 * UB + r * 2.6 * UB);
-        } else if (kind === 'bumps') {
-          bump(cx(a + w * 0.3), y + 5 * UB, 1.1 * UB); bump(cx(a + w * 0.72), y + 8 * UB, 1.1 * UB);
-        } else if (kind === 'drain') {
-          seg(cx(b), fy, cx(a), fy + 2 * UB);
-          drains.push([fy + 2 * UB - 1.8 * UB, fy + 2 * UB + 0.3 * UB]);
-        } else if (kind === 'pitDrain') {
-          floorHole(b, a, fy, fy + 2 * UB, 0.62 + rng() * 0.18, 2.9 * UB, 0);
-          drains.push([fy + 2 * UB - 1.8 * UB, fy + 2 * UB + 0.3 * UB]);
-        } else if (kind === 'pitHaz') {
-          const toB = rng() < 0.5;
-          const hole = toB ? floorHole(a, b, fy, fy + 2 * UB, 0.45 + rng() * 0.2, 2.4 * UB, 1.9 * UB)
-                           : floorHole(b, a, fy, fy + 2 * UB, 0.45 + rng() * 0.2, 2.4 * UB, 1.9 * UB);
-          if (roll()) seg(cx(hole.u - 1.4 * UB), hole.y + 3 * UB, cx(hole.u + 1.4 * UB), hole.y + 3 * UB, pickTier());
-        }
-      };
-      channel(0, mid, kA);
-      channel(mid, WC, kB);
-      return bh;
-    },
-  };
-
-  const table = [
-    ['split', 4 + 2 * diff], ['labyrinth', 3 + 2 * diff], ['pegs', 2.5], ['plinko', 2], ['zigzag', 2], ['bumpers', 2],
-    ['spinners', 2 + 2 * diff], ['movers', 1.5 + 2 * diff], ['fan', 1.5 + diff], ['ladder', 1.5 + diff],
-  ];
-  const noFlip = new Set(['split', 'labyrinth']);
-  const tsum = table.reduce((a, b) => a + b[1], 0);
-  const target = 9 * UB + (75 + rng() * 85) * UB;
-  let last = '';
-  while (y < target) {
-    let r = rng() * tsum, pick = table[0][0];
-    for (const [n, w] of table) { r -= w; if (r <= 0) { pick = n; break; } }
-    if (pick === last) continue;
-    last = pick;
-    flip = noFlip.has(pick) ? false : rng() < 0.5;
-    const h = pick === 'fan' || pick === 'ladder' ? M.lift(pick) : M[pick]();
-    y += h + 2.2 * UB;
-    if (scatterNext) { scatterNext = false; flip = false; y += M.scatter() + 2.2 * UB; }
+    }
+    inflow = next;
   }
-  flip = false;
-  const H = y + 14 * UB;
+  const H = top0 + nr * RH + 14 * UB;
+  maze.recycle = recycled; maze.killShare = killed;
   maze.H = H;
   maze.rect = { x: ox, y: oy, w: RW, h: H };
 
@@ -725,8 +580,8 @@ function generateMaze(k) {
   const pitW = Math.max(2.1, 2.7 - 0.03 * k) * UB;
   const holes = [[xe, pitW]];
   const hz = [];
-  for (let t = 0; t < 60 && hz.length < 2; t++) {
-    const c = CW + 3 * UB + rng() * (WC - 6 * UB);
+  for (let t = 0; t < 60 && hz.length < 1; t++) {
+    const c = CW + 2.5 * UB + rng() * 5 * UB;   // near the low end, so every ball that misses the exit rolls over it
     if (Math.abs(c - xe) > 5 * UB && hz.every(h => Math.abs(h - c) > 5 * UB)) { hz.push(c); holes.push([c, 2.4 * UB]); }
   }
   holes.sort((a, b) => b[0] - a[0]);
@@ -735,14 +590,19 @@ function generateMaze(k) {
   seg(fx, gyAt(fx), CW, gy1);
   // a sliding shutter covers the exit pit most of the time; deeper mazes keep it shut longer
   {
-    const sl = pitW + 2 * UB, open = Math.max(0.07, 0.17 - 0.01 * k);
-    const amp = (sl - pitW) / 2 / Math.cos(Math.PI / 2 * open);
+    const sl = pitW + UB, open = Math.max(0.08, 0.2 - 0.01 * k);
+    const amp = shutterAmp(open);
     const tilt = (gy1 - gy0) / (RW - CW) * (mir ? 1 : -1);
     add({ t: 'mov', bx: WX(xe), by: oy + gyAt(xe), len: sl, amp, per: 2.6 + rng() * 1.5, ph: rng() * 6.28, tilt, th: 5, haz: -1, shutter: true });
   }
+  for (const xh of hz) {   // the hazard pit has its own shutter, so it only catches some of the balls rolling over it
+    const sl = 3.4 * UB, open = Math.min(0.45, 0.26 + 0.01 * k);
+    const tilt = (gy1 - gy0) / (RW - CW) * (mir ? 1 : -1);
+    add({ t: 'mov', bx: WX(xh), by: oy + gyAt(xh), len: sl, amp: shutterAmp(open), per: 2 + rng() * 1.5, ph: rng() * 6.28, tilt, th: 5, haz: -1 });
+  }
   for (const xh of hz) seg(xh - 1.4 * UB, gyAt(xh) + 2.6 * UB, xh + 1.4 * UB, gyAt(xh) + 2.6 * UB, pickTier());
   seg(CW, gy1, CW, sideExit ? H - 6 * UB : H);       // chute wall below the drain
-  seg(0, H - 6 * UB, CW, H - 6 * UB);                // chute floor
+  seg(0, H - 5.6 * UB, CW, H - 6.4 * UB);            // chute floor, tilted toward the lift
   if (sideExit) {
     seg(RW, H - 4.4 * UB, 0, H - 0.9 * UB);          // lower run toward the side exit
     seg(0, H, RW, H);
@@ -769,11 +629,17 @@ function generateMaze(k) {
   let wy = 8 * UB;
   for (const [a, b] of drains) { if (a > wy) seg(CW, wy, CW, a); wy = Math.max(wy, b); }
   seg(0, 6.8 * UB, 5.2 * UB, 4.6 * UB);              // deflector that turns rising balls into the room
+  seg(CW + 0.6 * UB, 7.3 * UB, RW * 0.55, 8.7 * UB);    // ramp carries recycled balls away from the chute
   zone(0, CW, 5 * UB, 3.5 * UB, 1.8, 1.1);
-  zone(0, CW, 8.5 * UB, H - 6 * UB - 8.5 * UB, 2.6, -0.12, 330);
+  if (rng() < 0.25) ladder(0.2 * UB, CW - 1.3 * UB, 8.5 * UB, H - 6 * UB - 8.5 * UB, -0.4, 17);   // this room recycles with a ladder
+  else zone(0, CW - 1.3 * UB, 8.5 * UB, H - 6 * UB - 8.5 * UB, 2.6, -0.12, 330);
   maze.chute = { x: Math.min(WX(0), WX(CW)), y: oy + 5 * UB, w: CW, h: H - 11 * UB };
   return maze;
 }
+
+// a shutter overlaps the pit by 0.5 ub on each side; a ball needs about a 1.4 ub gap to drop through.
+// Returns the swing that leaves that gap open for the given share of the time.
+function shutterAmp(open) { return 1.9 * UB / Math.cos(Math.PI / 2 * open); }
 
 function ensureMazes(n) { while (mazes.length < n) mazes.push(generateMaze(mazes.length)); }
 function rebuildWorld() {
@@ -943,7 +809,7 @@ function stepBall(b, h, gy) {
         }
       } else {
         const cx = Math.max(z.x, Math.min(b.x, z.x + z.w)), cy = Math.max(z.y, Math.min(b.y, z.y + z.h));
-        if ((b.x - cx) ** 2 + (b.y - cy) ** 2 < b.r * b.r) { b.vy = -9 * UB; b.vx = z.dir * 5 * UB; }
+        if ((b.x - cx) ** 2 + (b.y - cy) ** 2 < b.r * b.r) { b.vy = -(z.sp || 9) * UB; b.vx = z.dir * 5 * UB; }
       }
     }
   }
