@@ -78,6 +78,7 @@ kbd { font: 11px var(--body); opacity: 0.6; margin-left: 4px; }
     <div class="brand"><h1>Shrink Run</h1><span id="sizeLbl">Size 1 of 7 · ×1.00</span></div>
     <div class="legend" id="legend"></div>
     <div class="btns">
+      <button id="bAuto" aria-pressed="false" title="Let the AI play and keep shrinking">AI play<kbd>I</kbd></button>
       <button id="bRestart" title="Go back to the start at the same size">Restart<kbd>R</kbd></button>
       <button id="bCenter" aria-pressed="false" title="Zoom in and follow your player">Recenter<kbd>C</kbd></button>
       <button id="bFit" aria-pressed="true" title="Show the whole level">Full view<kbd>F</kbd></button>
@@ -97,8 +98,8 @@ kbd { font: 11px var(--body); opacity: 0.6; margin-left: 4px; }
       <p>Reach the flag. Each time you finish, you shrink by 1.5×: smaller body, slower run, lower jump.</p>
       <p>Watch out for spinning bars: touching one sends you back to the start. Striped platforms are one-way, so you can jump up through them. Some blocks have tunnels inside.</p>
       <p>Before every new size the level tests itself. If the smaller you can't finish, it adds stairs and ledges or cuts into blocks until every size you've been can still make it.</p>
-      <div class="keys">Move: ← → or A D · Jump: ↑ W or Space · Restart: R<br>Drag to look around, pinch or scroll to zoom, Recenter (C) to follow your player.</div>
-      <div class="row"><button class="go" id="bStart" disabled>Building level…</button></div>
+      <div class="keys">Move: ← → or A D · Jump: ↑ W or Space · Restart: R<br>Drag to look around, pinch or scroll to zoom, Recenter (C) to follow your player.<br>AI play (I) lets the computer play and keep shrinking. After all 7 sizes, a harder level starts, forever.</div>
+      <div class="row"><button class="go" id="bStart" disabled>Building level…</button><button id="bStartAI">Watch the AI play</button></div>
     </div>
   </div>
 </div>
@@ -368,13 +369,13 @@ function genLevel() {
   }
   // spinning bars: in some gaps, and maybe one above a block
   for (const gp of shuffle(gaps.slice())) {
-    if (spinners.length >= 2) break;
+    if (spinners.length >= 2 + Math.min(2, G.levelNum - 1)) break;
     const gw = gp.x1 - gp.x0, L = Math.min(R(38, 60), gw / 2 - 6);
-    if (L < 30 || rng() < 0.3) continue;
-    spinners.push({ x: (gp.x0 + gp.x1) / 2, y: GY - L - R(46, 64), L, w: (rng() < 0.5 ? -1 : 1) * R(0.025, 0.045), a0: R(0, 6.28) });
+    if (L < 30 || rng() < 0.3 - 0.1 * Math.min(3, G.levelNum - 1)) continue;
+    spinners.push({ x: (gp.x0 + gp.x1) / 2, y: GY - L - R(46, 64), L, w: (rng() < 0.5 ? -1 : 1) * R(0.025, 0.045) * (1 + 0.15 * (G.levelNum - 1)), a0: R(0, 6.28) });
     gp.used = true;
   }
-  if (clusters.length && rng() < 0.7) {
+  if (clusters.length && rng() < 0.7 + 0.1 * G.levelNum) {
     const c = clusters[1 + Math.floor(rng() * (clusters.length - 1))] || clusters[0], L = R(34, 52);
     spinners.push({ x: (c.x0 + c.x1) / 2, y: c.top - L - R(48, 62), L, w: (rng() < 0.5 ? -1 : 1) * R(0.025, 0.04), a0: R(0, 6.28) });
   }
@@ -461,9 +462,18 @@ function spanOf(level, r, floorY) {
   return Math.min(end, r.x + 260) - r.x;
 }
 function mkTunnel(level, r, fr, p) {
-  const floorY = fr.y + p.h, th = p.h * 1.6;
-  const c = carve(level, { x: r.x - 0.5, y: floorY - th, w: Math.max(spanOf(level, r, floorY), p.w * 3) + 1, h: th });
-  return { level: c.level, added: [], erased: c.erased, modX: r.x, label: "Cut a tunnel into a block" };
+  const floorY = fr.y + p.h, th = p.h * 2.8, len = Math.max(spanOf(level, r, floorY), p.w * 3);
+  const c = carve(level, { x: r.x - 0.5, y: floorY - th, w: len + 1, h: th });
+  // Long tunnels get obstacles inside, sized for this size: bumps to jump and low ceilings to squeeze under.
+  const added = [];
+  let x = r.x + p.w * R(3, 5), low = false;
+  while (x < r.x + len - p.w * 4) {
+    if (!low && rng() < 0.35) { const w = p.w * R(2.5, 4); added.push({ x, y: floorY - th, w, h: p.h * R(0.9, 1.3) }); x += w; low = true; }
+    else { const w = p.w * R(1.2, 2); added.push({ x, y: floorY - p.h * R(0.7, 1.15), w, h: p.h * R(0.7, 1.15) }); added[added.length - 1].y = floorY - added[added.length - 1].h; x += w; low = false; }
+    x += p.w * R(4, 7);
+  }
+  return { level: withRects(c.level, c.level.rects.concat(added)), added, erased: c.erased, modX: r.x,
+           label: added.length ? `Cut a tunnel with ${added.length} obstacle${added.length > 1 ? "s" : ""} inside` : "Cut a tunnel into a block" };
 }
 function mkCut(level, r, fr, p) {
   const floorY = fr.y + p.h, cutY = Math.max(r.y, floorY - 0.5 * p.jh);
@@ -486,7 +496,7 @@ const mkSpinRemove = (level, sp) => spinnerSwap(level, sp, null, "Erased a spinn
 const G = {
   level: { rects: [], spinners: [] }, world: null, round: 0, sizes: [1], trails: [], player: null, phase: "intro",
   proof: null, showProof: true, fx: [], log: [], busy: false, time: 0, frame: 0, deaths: 0, flash: 0,
-  keys: { l: 0, r: 0, j: 0 }, face: 1, walk: 0,
+  keys: { l: 0, r: 0, j: 0 }, face: 1, walk: 0, levelNum: 1, auto: false, plan: null,
   cam: { mode: "fit", k: 1, cx: W / 2, cy: VIEW_Y0 + VIEW_H / 2, init: false },
 };
 const $ = id => document.getElementById(id);
@@ -584,7 +594,7 @@ async function ensureSolvable(sizes) {
 }
 
 function resetPlayer(clearTrail = true) {
-  const p = P(G.sizes[G.round]);
+  const p = P(G.sizes[G.round]); G.plan = null;
   G.player = startState(p); G.time = 0; G.face = 1;
   if (clearTrail || !G.trails[G.round]) G.trails[G.round] = { s: p.s, color: COLORS[G.round % COLORS.length], pts: [] };
 }
@@ -594,9 +604,10 @@ function setButtonsBusy(b) { $("bRegen").disabled = b; $("bNew").disabled = b; }
 async function newLevel(keepProgress = false) {
   if (G.busy) return;
   G.busy = true; setButtonsBusy(true); G.phase = "check"; G.log = []; G.fx = []; G.proof = null; G.deaths = 0;
-  if (!keepProgress) { G.round = 0; G.sizes = [1]; }
+  if (!keepProgress) { G.round = 0; G.sizes = [1]; if (!G.nextLevel) G.levelNum = 1; }
+  G.nextLevel = false;
   G.trails = [];
-  rng = mulberry32(window.__seed ?? ((Date.now() ^ (Math.random() * 1e9)) & 0xffffffff));
+  rng = mulberry32(window.__seed ?? ((Date.now() ^ (Math.random() * 1e9)) & 0xffffffff)); window.__seed = undefined;
   setLevel(genLevel());
   resetPlayer();
   updateHud();
@@ -610,7 +621,12 @@ async function newLevel(keepProgress = false) {
 async function finishRound() {
   G.phase = "check"; G.busy = true; setButtonsBusy(true); G.log = [];
   const s = G.sizes[G.round];
-  if (G.round >= ROUNDS - 1) { G.busy = false; setButtonsBusy(false); showWin(); return; }
+  if (G.round >= ROUNDS - 1) {                     // endless: a new, harder level starts at full size
+    G.busy = false; setButtonsBusy(false);
+    G.levelNum++; G.nextLevel = true;
+    newLevel(false).then(() => log(`<span class="ok">All ${ROUNDS} sizes done. Level ${G.levelNum} starts at ${fmt(1)}</span>`));
+    return;
+  }
   const ns = sizeOf(G.round + 1);
   log(`Finished at ${fmt(s)} in ${(G.time / 60).toFixed(1)}s. Shrinking 1.5× to ${fmt(ns)}`);
   G.sizes.push(ns);
@@ -626,20 +642,10 @@ function die() {
   resetPlayer(); updateHud();
 }
 
-function showWin() {
-  G.phase = "won";
-  $("card").innerHTML = `<h2>Every size made it</h2>
-    <p>You finished at all ${ROUNDS} sizes, down to ${fmt(sizeOf(ROUNDS - 1))}. The trails show each run, from the thick red one to the thin teal one.</p>
-    <div class="row"><button class="go" id="bAgain">Play a new level</button><button id="bLook">Look at my trails</button></div>`;
-  $("overlay").hidden = false;
-  $("bAgain").onclick = () => { $("overlay").hidden = true; newLevel(false); };
-  $("bLook").onclick = () => { $("overlay").hidden = true; };
-}
-
 // ---------- HUD ----------
 function updateHud() {
   const s = G.sizes[G.round];
-  $("sizeLbl").textContent = `Size ${G.round + 1} of ${ROUNDS} · ${fmt(s)}` + (G.deaths ? ` · ${G.deaths} hit${G.deaths > 1 ? "s" : ""}` : "");
+  $("sizeLbl").textContent = `Level ${G.levelNum} · Size ${G.round + 1} of ${ROUNDS} · ${fmt(s)}` + (G.deaths ? ` · ${G.deaths} hit${G.deaths > 1 ? "s" : ""}` : "");
   let h = "";
   for (let i = 0; i < ROUNDS; i++) {
     const cls = i === G.round ? "chip now" : i < G.round ? "chip done" : "chip";
@@ -658,10 +664,11 @@ function setCamMode(m) {
 const keyMap = { ArrowLeft: "l", KeyA: "l", ArrowRight: "r", KeyD: "r", ArrowUp: "j", KeyW: "j", Space: "j" };
 addEventListener("keydown", e => {
   const k = keyMap[e.code];
-  if (k) { G.keys[k] = 1; e.preventDefault(); if (G.phase === "intro" && !$("bStart").disabled) start(); return; }
+  if (k) { G.keys[k] = 1; e.preventDefault(); if (G.auto) setAuto(false); if (G.phase === "intro" && !$("bStart").disabled) start(); return; }
   if (e.repeat) return;
   if (e.code === "KeyR") restart();
   else if (e.code === "KeyC") setCamMode("follow");
+  else if (e.code === "KeyI") setAuto(!G.auto);
   else if (e.code === "KeyF") setCamMode("fit");
   else if (e.code === "KeyP") toggleProof();
   else if (e.code === "KeyG") { $("overlay").hidden = true; newLevel(true); }
@@ -672,33 +679,56 @@ addEventListener("keyup", e => { const k = keyMap[e.code]; if (k) G.keys[k] = 0;
 addEventListener("blur", () => { G.keys.l = G.keys.r = G.keys.j = 0; });
 function bindTouch(id, k) {
   const el = $(id);
-  const on = e => { e.preventDefault(); G.keys[k] = 1; el.classList.add("on"); el.setPointerCapture?.(e.pointerId); };
+  const on = e => { e.preventDefault(); G.keys[k] = 1; if (G.auto) setAuto(false); el.classList.add("on"); el.setPointerCapture?.(e.pointerId); };
   const off = () => { G.keys[k] = 0; el.classList.remove("on"); };
   el.addEventListener("pointerdown", on); el.addEventListener("pointerup", off); el.addEventListener("pointercancel", off); el.addEventListener("lostpointercapture", off);
 }
 bindTouch("tL", "l"); bindTouch("tR", "r"); bindTouch("tJ", "j");
 if ("ontouchstart" in window || matchMedia("(pointer: coarse)").matches) $("touch").hidden = false;
 
+function setAuto(on) {
+  G.auto = on; G.plan = null;
+  $("bAuto").setAttribute("aria-pressed", on);
+  if (on && G.phase === "intro" && !$("bStart").disabled) start();
+}
 function restart() { if (G.phase === "play") resetPlayer(); }
 function toggleProof() { G.showProof = !G.showProof; $("bProof").setAttribute("aria-pressed", G.showProof); }
 function start() { $("overlay").hidden = true; if (!G.busy) G.phase = "play"; }
 const btn = (id, fn) => { $(id).onclick = e => { fn(); e.currentTarget.blur(); }; };
 btn("bRestart", restart);
+btn("bAuto", () => setAuto(!G.auto));
 btn("bCenter", () => setCamMode("follow"));
 btn("bFit", () => setCamMode("fit"));
 btn("bProof", toggleProof);
 btn("bRegen", () => { $("overlay").hidden = true; newLevel(true); });
 btn("bNew", () => { $("overlay").hidden = true; newLevel(false); });
 $("bStart").onclick = start;
+$("bStartAI").onclick = () => { $("overlay").hidden = true; setAuto(true); if (!G.busy) G.phase = "play"; };
 
 // ---------- update ----------
+// AI player: plans with the same solver that checks the level, then presses the buttons frame by frame.
+function autoInput(p) {
+  const st = G.player, s = G.sizes[G.round];
+  if (!G.plan) {
+    if (!st.g) return { d: 0, j: false };
+    let res = solve(G.level, s, { start: st });
+    if (!res.ok) { resetPlayer(); res = solve(G.level, s); if (!res.ok) return { d: 0, j: false }; }
+    G.plan = { acts: res.actions, i: 0, f: 0 };
+  }
+  const pl = G.plan;
+  if (pl.i >= pl.acts.length) { G.plan = null; return { d: 0, j: false }; }
+  const a = ACTS[pl.acts[pl.i]], out = { d: a.d, j: !!a.j && pl.f === 0 };
+  if (++pl.f >= M) { pl.f = 0; pl.i++; }
+  return out;
+}
 function update() {
   G.frame++;
   if (G.phase !== "play") return;
   const p = P(G.sizes[G.round]), st = G.player;
-  const dir = G.keys.r - G.keys.l;
+  let dir = G.keys.r - G.keys.l, jump = !!G.keys.j;
+  if (G.auto) { const a = autoInput(p); dir = a.d; jump = a.j; }
   if (dir) G.face = dir;
-  physStep(st, dir, !!G.keys.j, p, G.world);
+  physStep(st, dir, jump, p, G.world);
   G.time++;
   if (dir && st.g) G.walk += p.sp / p.w * 0.5;
   for (const sp of G.level.spinners) if (hitsSpinner(st, p, sp, G.frame)) { die(); return; }
@@ -828,12 +858,21 @@ function drawOneWay(r, k) {
   ctx.stroke(); ctx.restore();
   ctx.strokeStyle = "#0d0d0f"; ctx.lineWidth = Math.max(0.5, 1 / k); ctx.strokeRect(r.x, r.y, r.w, r.h);
 }
-function polyline(pts) {
+function polyline(pts, c = ctx) {
   if (pts.length < 2) return;
-  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-  ctx.stroke();
+  c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+  c.stroke();
 }
+// All solid blocks as one path: filled in a single pass there are no hairline seams between the pieces.
+function blockPath(c, grow, withOneWay) {
+  c.beginPath();
+  for (const r of G.level.rects) {
+    if (r.fixed) c.roundRect(-20 - grow, r.y - grow, W + 40 + 2 * grow, 52 + 2 * grow, 26);
+    else if (!r.ow || withOneWay) c.rect(r.x - grow, r.y - grow, r.w + 2 * grow, r.h + 2 * grow);
+  }
+}
+const tl = document.createElement("canvas"), tctx = tl.getContext("2d");
 
 function render(now) {
   const g = viewGeom(); stepCamera(g);
@@ -845,11 +884,28 @@ function render(now) {
   ctx.strokeStyle = "#dcdce0"; ctx.lineWidth = 2; ctx.setLineDash([8, 8]);
   ctx.beginPath(); ctx.moveTo(START_X - 6, GY); ctx.lineTo(START_X - 6, GY - 120); ctx.stroke(); ctx.setLineDash([]);
 
-  ctx.fillStyle = "#0d0d0f";
-  for (const r of G.level.rects) {
-    if (r.fixed) { ctx.beginPath(); ctx.roundRect(-20, r.y, W + 40, 52, 26); ctx.fill(); }
-    else if (!r.ow) ctx.fillRect(r.x - 0.25, r.y - 0.25, r.w + 0.5, r.h + 0.5);   // slight overlap hides seams between slices
+  // Trails go on their own layer, with the blocks (grown by a small gap) cut out, so they never touch the black.
+  if (tl.width !== cv.width || tl.height !== cv.height) { tl.width = cv.width; tl.height = cv.height; }
+  tctx.setTransform(1, 0, 0, 1, 0, 0); tctx.clearRect(0, 0, tl.width, tl.height);
+  tctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * ox, dpr * oy);
+  tctx.lineCap = "round"; tctx.lineJoin = "round";
+  for (const t of G.trails) {
+    if (!t) continue;
+    tctx.strokeStyle = t.color; tctx.lineWidth = Math.max(1.4, 9 * t.s);
+    polyline(t.pts, tctx);
   }
+  if (G.showProof && G.proof) {
+    tctx.strokeStyle = "rgba(13,13,15,.55)"; tctx.lineWidth = Math.max(0.4, 1.6 / k);
+    tctx.setLineDash([4 / k, 5 / k]); polyline(G.proof.pts, tctx); tctx.setLineDash([]);
+  }
+  tctx.globalCompositeOperation = "destination-out";
+  blockPath(tctx, 4 / k, true); tctx.fill();
+  tctx.globalCompositeOperation = "source-over";
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(tl, 0, 0);
+  ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * ox, dpr * oy);
+
+  ctx.fillStyle = "#0d0d0f";
+  blockPath(ctx, 0, false); ctx.fill();
   for (const r of G.level.rects) if (r.ow) drawOneWay(r, k);
   drawFlag();
 
@@ -863,16 +919,6 @@ function render(now) {
     ctx.setLineDash([]); ctx.globalAlpha = 1;
   }
 
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
-  for (const t of G.trails) {
-    if (!t) continue;
-    ctx.strokeStyle = t.color; ctx.lineWidth = Math.max(1.4, 9 * t.s);
-    polyline(t.pts);
-  }
-  if (G.showProof && G.proof) {
-    ctx.strokeStyle = "rgba(13,13,15,.55)"; ctx.lineWidth = Math.max(0.4, 1.6 / k);
-    ctx.setLineDash([4 / k, 5 / k]); polyline(G.proof.pts); ctx.setLineDash([]);
-  }
   for (const sp of G.level.spinners) drawSpinner(sp, k);
   if (G.player) drawPlayer(G.player, P(G.sizes[G.round]), G.face);
 
@@ -889,7 +935,7 @@ function render(now) {
 let acc = 0, lastT = performance.now();
 function frame(now) {
   acc += Math.min(100, now - lastT); lastT = now;
-  while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
+  while (acc >= 1000 / 60) { for (let n = G.auto ? 3 : 1; n > 0; n--) update(); acc -= 1000 / 60; }
   render(now);
   requestAnimationFrame(frame);
 }
