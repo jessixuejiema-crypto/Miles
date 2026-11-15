@@ -97,7 +97,7 @@ kbd { font: 11px var(--body); opacity: 0.6; margin-left: 4px; }
       <h2>Shrink Run</h2>
       <p>Reach the flag. Each time you finish, you shrink by 1.5×: smaller body, slower run, lower jump. It never ends: there is always a smaller size.</p>
       <p>Spinning bars send you back to the start. Striped platforms are one-way, so you can jump up through them. Some blocks have tunnels inside.</p>
-      <p>Before every new size the level tests itself. If the smaller you can't finish, it adds slopes and ledges or cuts into blocks. On long, flat walks it adds small obstacles made for your new size and erases old ones made for much bigger sizes.</p>
+      <p>Before every new size the level tests itself. If the smaller you can't finish, or could get stuck somewhere with no way out, it adds slopes and ledges or digs a cave through a block at your size, without flattening the level. Jumps never need to be perfect: the check uses a slightly weaker you. On long, flat walks it adds small details for your new size, around the ones already there, and they stay.</p>
       <div class="keys">Move: ← → or A D · Jump: ↑ W or Space · Restart: R<br>Drag to look around, pinch or scroll to zoom, Recenter (C) to follow your player.<br>AI play (I) lets the computer play and keep shrinking.</div>
       <div class="row"><button class="go" id="bStart" disabled>Building level…</button><button id="bStartAI">Watch the AI play</button></div>
     </div>
@@ -125,9 +125,12 @@ function fmt(s) {
   const d = Math.max(2, -Math.floor(Math.log10(s)) + 1);
   return "×" + s.toFixed(d);
 }
-function P(s) {
-  return { s, w: BASE.w * s, h: BASE.h * s, sp: BASE.sp * s, g: BASE.g * s, jv: BASE.jv * s, mf: BASE.mf * s,
-           jh: (BASE.jv * BASE.jv / (2 * BASE.g)) * s, up: BASE.h * s * 0.3 };
+// strict: a slightly weaker player (lower jump, slower run) used for every level check,
+// so any path the check approves leaves the real player some room for error.
+function P(s, strict = false) {
+  const jv = BASE.jv * s * (strict ? 0.94 : 1), sp = BASE.sp * s * (strict ? 0.95 : 1);
+  return { s, w: BASE.w * s, h: BASE.h * s, sp, g: BASE.g * s, jv, mf: BASE.mf * s,
+           jh: jv * jv / (2 * BASE.g * s), up: BASE.h * s * 0.3 };
 }
 
 // ---------- random ----------
@@ -267,7 +270,7 @@ const startState = p => ({ x: START_X, y: GY - p.h, vy: 0, g: true });
 const atGoal = (st, p) => st.x + p.w >= FINISH_X;
 
 // ---------- solver: best-first search over the real physics ----------
-const ACTS = [{ d: 1, j: 1 }, { d: 1, j: 0 }, { d: 0, j: 1 }, { d: -1, j: 1 }, { d: -1, j: 0 }, { d: 0, j: 0 }];
+const ACTS = [{ d: 1, j: 0 }, { d: 1, j: 1 }, { d: 0, j: 1 }, { d: -1, j: 0 }, { d: -1, j: 1 }, { d: 0, j: 0 }];
 let POOL = { n: 0 };
 function pool(n) {
   if (POOL.n < n) POOL = { n, X: new Float64Array(n), Y: new Float64Array(n), V: new Float64Array(n), PAR: new Int32Array(n), ACT: new Int8Array(n), Gd: new Uint8Array(n) };
@@ -276,27 +279,33 @@ function pool(n) {
 const STATS = {};
 function solve(level, s, opt = {}) {
   const maxNodes = opt.maxNodes || Math.min(600000, Math.round(150000 * Math.max(1, 0.1 / s)));
-  const t0 = performance.now(), res = solve_(level, s, maxNodes, opt.start, opt.minX ?? -1);
+  const t0 = performance.now(), res = solve_(level, s, maxNodes, opt);
   const k = fmt(s), o = STATS[k] || (STATS[k] = { n: 0, ms: 0, fails: 0, cap: 0 });
   o.n++; o.ms += performance.now() - t0; if (!res.ok) { o.fails++; if (res.nodes >= maxNodes) o.cap++; }
   return res;
 }
-// start: optional grounded state to search from; minX: never explore left of this (for quick local checks).
-function solve_(level, s, maxNodes, start, minX) {
-  const p = P(s), world = buildWorld(level), q = 4 * s, qv = 3 * s;
+const spotKey = (x, feet, p) => Math.round(x / (2 * p.w)) * 1e9 + Math.round(feet / (0.25 * p.h));
+// opt.start: grounded state to search from; opt.minX: never explore left of this (quick local checks);
+// opt.strict (default true): weaker player; opt.safe: set of spots that count as reaching the goal;
+// opt.explore: keep going after the goal and return every standing spot reached.
+function solve_(level, s, maxNodes, opt) {
+  const start = opt.start, minX = opt.minX ?? -1, safe = opt.safe, explore = opt.explore;
+  const p = P(s, opt.strict !== false), world = buildWorld(level), q = 4 * s, qv = 3 * s, tb = q * 0.3;
   const { X, Y, V, PAR, ACT, Gd } = pool(maxNodes + 8);
   let count = 0;
   const heap = [];
-  const push = n => { heap.push(n); let i = heap.length - 1; while (i > 0) { const pa = (i - 1) >> 1; if (X[heap[pa]] >= X[n]) break; heap[i] = heap[pa]; i = pa; } heap[i] = n; };
+  const pr = n => X[n] + (Gd[n] ? tb : 0);        // prefer standing states, so paths walk instead of hopping
+  const push = n => { heap.push(n); let i = heap.length - 1; const v = pr(n); while (i > 0) { const pa = (i - 1) >> 1; if (pr(heap[pa]) >= v) break; heap[i] = heap[pa]; i = pa; } heap[i] = n; };
   const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { let i = 0; const n = heap.length;
-      while (true) { let l = 2 * i + 1, r = l + 1, m = i; let mv = X[last];
-        if (l < n && X[heap[l]] > mv) { m = l; mv = X[heap[l]]; } if (r < n && X[heap[r]] > mv) m = r;
+      while (true) { let l = 2 * i + 1, r = l + 1, m = i; let mv = pr(last);
+        if (l < n && pr(heap[l]) > mv) { m = l; mv = pr(heap[l]); } if (r < n && pr(heap[r]) > mv) m = r;
         if (m === i) break; heap[i] = heap[m]; i = m; } heap[i] = last; } return top; };
   const seen = new Set();
   const key = st => ((Math.round(st.x / q) * 2097152 + (Math.round(st.y / q) + 1000000)) * 64 + (Math.round(st.vy / qv) + 32)) * 2 + (st.g ? 1 : 0);
   const s0 = start ? { x: start.x, y: start.y, vy: 0, g: true } : startState(p), ck = [];
   X[0] = s0.x; Y[0] = s0.y; V[0] = 0; Gd[0] = 1; PAR[0] = -1; ACT[0] = -1; count = 1; seen.add(key(s0)); push(0);
-  let best = { x: s0.x, y: s0.y };
+  let best = { x: s0.x, y: s0.y }, found = false;
+  const spots = explore ? new Map() : null;
   const st = { x: 0, y: 0, vy: 0, g: false };
   while (heap.length && count < maxNodes) {
     const i = pop();
@@ -312,6 +321,8 @@ function solve_(level, s, maxNodes, start, minX) {
         if (atGoal(st, p)) { goal = true; break; }
       }
       if (dead || st.x < minX) continue;
+      if (!goal && safe && st.g && safe.has(spotKey(st.x, st.y + p.h, p))) goal = true;
+      if (goal && explore) { found = true; continue; }
       const k = key(st);
       if (!goal && seen.has(k)) continue;
       seen.add(k);
@@ -321,22 +332,24 @@ function solve_(level, s, maxNodes, start, minX) {
         const acts = []; for (let c = n; PAR[c] !== -1; c = PAR[c]) acts.push(ACT[c]);
         return { ok: true, actions: acts.reverse(), nodes: count };
       }
-      if (st.g) { if (st.x > best.x) best = { x: st.x, y: st.y }; const bk = Math.floor(st.x / (30 * Math.max(s, 0.05))); if (!ck[bk]) ck[bk] = { x: st.x, y: st.y }; }
+      if (st.g) { if (spots) { const sk = spotKey(st.x, st.y + p.h, p); if (!spots.has(sk)) spots.set(sk, { x: st.x, y: st.y }); }
+        if (st.x > best.x) best = { x: st.x, y: st.y }; const bk = Math.floor(st.x / (30 * Math.max(s, 0.05))); if (!ck[bk]) ck[bk] = { x: st.x, y: st.y }; }
       push(n);
       if (count >= maxNodes) break;
     }
   }
-  return { ok: false, frontier: best, nodes: count, ck };
+  if (explore) return { ok: found, spots: [...spots.values()], nodes: count, capped: count >= maxNodes };
+  return { ok: false, frontier: best, nodes: count, ck, capped: count >= maxNodes };
 }
-function replayStates(level, actions, s) {
-  const p = P(s), world = buildWorld(level), st = startState(p), out = [{ x: st.x, y: st.y, g: true }];
+function replayStates(level, actions, s, strict = true, start = null) {
+  const p = P(s, strict), world = buildWorld(level), st = start ? { x: start.x, y: start.y, vy: 0, g: true } : startState(p), out = [{ x: st.x, y: st.y, g: true }];
   for (const ai of actions) { const a = ACTS[ai];
     for (let f = 0; f < M; f++) { physStep(st, a.d, a.j && f === 0, p, world); out.push({ x: st.x, y: st.y, g: st.g }); if (atGoal(st, p)) return out; } }
   return out;
 }
-function replay(level, actions, s) {
+function replay(level, actions, s, strict = true) {
   const p = P(s);
-  return replayStates(level, actions, s).map(q => [q.x + p.w / 2, q.y + p.h / 2]);
+  return replayStates(level, actions, s, strict).map(q => [q.x + p.w / 2, q.y + p.h / 2, q.g ? 1 : 0]);
 }
 
 // ---------- overlap rules: nothing may overlap anything ----------
@@ -353,6 +366,22 @@ function circleHitsPiece(sp, r, pad = 0) {
   const rad = hazR(sp) + pad;
   const cx = Math.max(r.x, Math.min(sp.x, r.x + r.w)), cy = Math.max(r.y, Math.min(sp.y, r.y + r.h));
   return (cx - sp.x) ** 2 + (cy - sp.y) ** 2 < rad * rad;
+}
+// A one-way platform has to touch the side of a solid block.
+function attachedOW(level, pc) {
+  for (const r of level.rects) {
+    if (r.ow || r.fixed) continue;
+    let X = null;
+    if (Math.abs(r.x + r.w - pc.x) < 0.01) X = r.x + r.w; else if (Math.abs(r.x - (pc.x + pc.w)) < 0.01) X = r.x;
+    if (X === null) continue;
+    if (topAt(r, X) < pc.y + pc.h - 1e-6 && r.y + r.h > pc.y + 1e-6) return true;
+  }
+  return false;
+}
+// Drop one-way platforms that no longer touch a block (after a cut or an erase).
+function tidy(level) {
+  const keep = level.rects.filter(r => !r.ow || attachedOW(level, r));
+  return keep.length === level.rects.length ? level : { rects: keep, spinners: level.spinners };
 }
 function freeFor(level, pc, skip) {
   for (const r of level.rects) if (r !== skip && piecesHit(r, pc)) return false;
@@ -454,10 +483,21 @@ function genLevel() {
     const sp = { x: (c.x0 + c.x1) / 2, y: c.top - L - R(58, 72), L, w: (rng() < 0.5 ? -1 : 1) * R(0.025, 0.04), a0: R(0, 6.28) };
     if (spinnerFree(level, sp)) level.spinners.push(sp);
   }
-  for (const gp of gaps) if (!gp.used && rng() < 0.6) {
-    const w = R(44, 80); addFree({ x: gp.x0 + R(6, Math.max(7, gp.x1 - gp.x0 - w - 6)), y: GY - R(90, 160), w, h: 8, ow: true });
+  // floating solid platforms in some gaps
+  for (const gp of gaps) if (!gp.used && rng() < 0.45) {
+    const w = R(40, 70), pc = { x: (gp.x0 + gp.x1) / 2 - w / 2, y: GY - R(105, 150), w, h: R(12, 18) };
+    if (addFree(pc)) gp.used = true;
   }
-  return level;
+  // one-way platforms in gaps, stuck to the side of the block next to them
+  for (const gp of gaps) if (!gp.used && rng() < 0.6) {
+    const w = R(36, 60), leftSide = rng() < 0.5, edgeX = leftSide ? gp.x0 : gp.x1;
+    const wall = rects.find(r => !r.ow && !r.fixed && (leftSide ? Math.abs(r.x + r.w - edgeX) < 0.01 : Math.abs(r.x - edgeX) < 0.01) && r.y + r.h >= GY - 0.5);
+    if (!wall) continue;
+    const t = topAt(wall, edgeX), lo = Math.max(t + 4, GY - 170), hi = GY - 80;
+    if (lo > hi) continue;
+    addFree({ x: leftSide ? edgeX : edgeX - w, y: R(lo, hi), w, h: 8, ow: true });
+  }
+  return tidy(level);
 }
 
 // ---------- level surgery ----------
@@ -543,7 +583,7 @@ function mkRamp(level, r, fr, p) {
   const D = floorY - target;
   if (D <= 0.5 || (!steep.length && D <= p.jh * 0.85)) return null;
   let base = level;
-  if (steep.length) { const set = new Set(steep); base = withRects(level, level.rects.filter(o => !set.has(o))); }
+  if (steep.length) return null;               // never erase the curve: a cave handles steep edges
   for (const slope of [0.7, 1.2, Math.min(2, maxSlope)]) {
     const L = D / slope, ramp = mkSlope(end - L, L, floorY, target, floorY);
     if (ramp.x < START_X + 40) continue;
@@ -559,20 +599,29 @@ function spanOf(level, r, floorY) {
     for (const o of level.rects) if (!o.fixed && !o.ow && o.x <= end + 0.5 && o.x + o.w > end && o.y < floorY - 0.5) { end = o.x + o.w; changed = true; } }
   return Math.min(end, r.x + 260) - r.x;
 }
-function mkTunnel(level, r, fr, p) {
-  const floorY = fr.y + p.h, th = p.h * 2.8, len = Math.max(spanOf(level, r, floorY), p.w * 3);
-  const c = carve(level, { x: r.x - 0.5, y: floorY - th, w: len + 1, h: th });
-  const added = [];
-  let x = r.x + p.w * R(3, 5), low = false;
-  while (x < r.x + len - p.w * 4) {
-    let pc;
-    if (!low && rng() < 0.35) { const w = p.w * R(2.5, 4); pc = { x, y: floorY - th, w, h: p.h * R(0.9, 1.3) }; low = true; }
-    else { const w = p.w * R(1.2, 2), h = p.h * R(0.7, 1.15); pc = { x, y: floorY - h, w, h }; low = false; }
-    if (freeFor(c.level, pc) && !added.some(o => piecesHit(o, pc))) added.push(pc);
-    x += pc.w + p.w * R(4, 7);
+// A cave dug through the block at floor level, sized for this size: a bumpy roof, stalactites and bumps inside.
+// The rest of the block stays, so the level keeps its shape.
+function mkTunnel(level, r, fr, p, withObs = true) {
+  const floorY = fr.y + p.h, len = Math.max(spanOf(level, r, floorY), p.w * 3);
+  const strips = Math.max(3, Math.min(24, Math.round(len / (p.w * 1.5)))), sw = (len + 1) / strips, ph = R(0, 6.28);
+  let lv = level; const erased = [], roof = [];
+  for (let i = 0; i < strips; i++) {
+    const x = r.x - 0.5 + i * sw, th = p.h * (2.9 + 0.5 * Math.sin(i * 0.9 + ph));
+    const c = carve(lv, { x, y: floorY - th, w: sw + (i === strips - 1 ? 0 : 1e-6), h: th });
+    lv = c.level; erased.push(...c.erased); roof.push({ x, w: sw, th });
   }
-  return { level: withRects(c.level, c.level.rects.concat(added)), added, erased: c.erased, modX: r.x,
-           label: added.length ? `Cut a tunnel with ${added.length} obstacle${added.length > 1 ? "s" : ""} inside` : "Cut a tunnel into a block" };
+  const added = [];
+  if (withObs) {
+    for (let i = 2; i < strips - 1; i += 1 + Math.floor(R(1, 4))) {
+      const st = roof[i];
+      let pc;
+      if (rng() < 0.4) pc = { x: st.x + st.w * 0.15, y: floorY - st.th, w: st.w * 0.7, h: p.h * R(0.7, 1.1) };   // stalactite
+      else { const h = p.h * R(0.6, 1.0); pc = { x: st.x + st.w * 0.2, y: floorY - h, w: Math.max(st.w * 0.6, p.w * 1.2), h }; }   // bump
+      if (freeFor(lv, pc) && !added.some(o => piecesHit(o, pc))) added.push(pc);
+    }
+  }
+  return { level: withRects(lv, lv.rects.concat(added)), added, erased, modX: r.x,
+           label: added.length ? `Dug a cave with ${added.length} obstacle${added.length > 1 ? "s" : ""} inside` : "Dug a cave through a block" };
 }
 function mkCut(level, r, fr, p) {
   const floorY = fr.y + p.h, cutY = Math.max(r.y, floorY - 0.5 * p.jh);
@@ -619,13 +668,36 @@ async function allOk(level, order) {
 }
 const sortedSizes = () => [...G.sizes].sort((a, b) => a - b);
 
-// Make sure every size so far can reach the flag; fix the level when one can't.
+// Look for a trap at size s: a spot you can reach (alive) from which the flag can't be reached.
+async function findTrap(level, s) {
+  const p = P(s, true);
+  const main = solve(level, s);
+  if (!main.ok) return null;
+  const safe = new Set();
+  const mark = (acts, start) => { for (const q of replayStates(level, acts, s, true, start)) if (q.g) safe.add(spotKey(q.x, q.y + p.h, p)); };
+  mark(main.actions);
+  const ex = solve(level, s, { explore: true, maxNodes: Math.min(200000, Math.round(80000 * Math.max(1, 0.1 / s))) });
+  let spots = ex.spots.filter(q => !safe.has(spotKey(q.x, q.y + p.h, p)));
+  if (spots.length > 160) { const step = spots.length / 160; spots = Array.from({ length: 160 }, (_, i) => spots[Math.floor(i * step)]); }
+  const cap = Math.min(40000, Math.round(20000 * Math.max(1, 0.1 / s)));
+  let n = 0;
+  for (const q of spots) {
+    if (safe.has(spotKey(q.x, q.y + p.h, p))) continue;
+    const r = solve(level, s, { start: q, safe, maxNodes: cap });
+    if (r.ok) mark(r.actions, q);
+    else if (!r.capped) return { s, start: q, res: r };
+    if (++n % 15 === 0) await tick();
+  }
+  return null;
+}
+
+// Make sure every size so far can reach the flag, with no traps; fix the level when not.
 async function ensureSolvable() {
   const order = sortedSizes();
-  let fixes = 0, firstPass = true, warned = false;
-  const t0 = performance.now(), hurry = () => performance.now() - t0 > 8000;
-  for (let iter = 0; iter < 90 && performance.now() - t0 < 25000; iter++) {
-    let fail = null, failRes = null;
+  let fixes = 0, firstPass = true, warned = false, trapFixes = 0;
+  const t0 = performance.now(), hurry = () => performance.now() - t0 > 9000;
+  for (let iter = 0; iter < 90 && performance.now() - t0 < 30000; iter++) {
+    let fail = null, failRes = null, escape = null;
     if (!firstPass) log("Re-checking every size…");
     for (const s of order) {
       const res = solve(G.level, s);
@@ -635,18 +707,28 @@ async function ensureSolvable() {
       if (s === order[0]) G.proof = { s, pts: replay(G.level, res.actions, s) };
     }
     firstPass = false;
+    // traps: the newest two sizes (older ones were checked when they were new)
+    if (fail === null && trapFixes < 4 && performance.now() - t0 < 12000) {
+      for (const s of order.slice(0, 2)) {
+        const trap = await findTrap(G.level, s);
+        if (trap) { trapFixes++; fail = s; failRes = trap.res; escape = trap.start; log(`<span class="bad">At ${fmt(s)} there's a spot you could get stuck in ✗</span>`); break; }
+      }
+    }
     if (fail === null) {
-      log(`<span class="ok">All ${order.length} size${order.length > 1 ? "s" : ""} can finish ✓</span>`);
+      log(`<span class="ok">All ${order.length} size${order.length > 1 ? "s" : ""} can finish, with no traps ✓</span>`);
       return fixes;
     }
-    if (iter > 0) log(`<span class="bad">${fmt(fail)} still can't finish ✗</span>`);
-    const p = P(fail), fr = failRes.frontier, blocker = findBlocker(G.level, fr, p), sp = findSpinner(G.level, fr, p);
+    if (iter > 0 && !escape) log(`<span class="bad">${fmt(fail)} still can't finish ✗</span>`);
+    const p = P(fail, true), fr = failRes.frontier, blocker = findBlocker(G.level, fr, p), sp = escape ? null : findSpinner(G.level, fr, p);
     if (hurry() && !warned) { warned = true; log("Taking a while, trying bigger fixes…"); }
-    const rectList = hurry() ? [mkRamp, mkCut] : [...shuffle([mkLedges, mkRamp]), ...shuffle([mkTunnel, mkCut])];
+    const rectList = hurry() ? [mkTunnel, mkRamp] : [...shuffle([mkLedges, mkRamp, mkTunnel])];
     const rectFns = blocker ? rectList.map(fn => fn(G.level, blocker, fr, p)) : [];
     const spinFns = sp ? (hurry() ? [mkSpinRemove] : [mkSpinShorter, mkSpinRaise, mkSpinRemove]).map(fn => fn(G.level, sp)) : [];
     const spinFirst = sp && (!blocker || sp.x - sp.L < blocker.x);
-    const cands = (spinFirst ? [...spinFns, ...rectFns] : [...rectFns, ...spinFns]).filter(Boolean);
+    const tidyC = c => { if (c) c.level = tidy(c.level); return c; };
+    const cands = (spinFirst ? [...spinFns, ...rectFns] : [...rectFns, ...spinFns]).filter(Boolean).map(tidyC);
+    // the stuck spot must have a way out (or be gone)
+    const escOk = lv => !escape || solidIn(buildWorld(lv), escape.x, escape.y, p.w, p.h) || solve(lv, fail, { start: escape }).ok;
     let chosen = null;
     const local = c => {
       const pts = (failRes.ck || []).filter(q => q && q.x < c.modX - 2 * p.w - 2).sort((a, b) => b.x - a.x);
@@ -658,36 +740,79 @@ async function ensureSolvable() {
     const quick = new Map();
     for (const c of cands) {
       const q = local(c); quick.set(c, q); await tick();
-      if (q.ok && await allOk(c.level, [fail, ...order.filter(s => s !== fail)])) { chosen = c; break; }
+      if (q.ok && escOk(c.level) && await allOk(c.level, [fail, ...order.filter(s => s !== fail)])) { chosen = c; break; }
     }
     const others = order.filter(s => s !== fail);
-    const removals = [blocker && mkRemove(G.level, blocker, fr, p), sp && mkSpinRemove(G.level, sp)].filter(Boolean);
+    const removals = [blocker && mkTunnel(G.level, blocker, fr, p, false), sp && mkSpinShorter(G.level, sp), sp && mkSpinRemove(G.level, sp)].filter(Boolean).map(tidyC);
     if (!chosen) for (const c of (hurry() ? removals : [...cands, ...removals])) {
       const r2 = quick.get(c) || local(c);
-      if ((r2.ok || r2.frontier.x > fr.x + p.w * 0.5) && await allOk(c.level, others)) { chosen = c; break; }
+      if ((r2.ok || r2.frontier.x > fr.x + p.w * 0.5) && await allOk(c.level, escape ? order : others)) { chosen = c; break; }
     }
-    if (!chosen) chosen = removals[0] || null;
+    if (!chosen && !escape) chosen = removals[0] || null;
+    if (!chosen && escape) {
+      // could not open a way out: fill the trap's floor up so it can't be entered from above
+      const filler = { x: escape.x - p.w, y: escape.y + p.h - p.jh * 0.45, w: p.w * 3, h: p.jh * 0.45 };
+      if (freeFor(G.level, filler)) { const lv = tidy(withRects(G.level, G.level.rects.concat([filler]))); if (await allOk(lv, order)) chosen = { level: lv, added: [filler], erased: [], label: "Raised the floor of a trap" }; }
+      if (!chosen && blocker) chosen = removals[0] || null;
+    }
     if (!chosen) {
       const loose = G.level.rects.filter(r => !r.fixed && r.x > fr.x);
       if (!loose.length) break;
       const r = loose[Math.floor(rng() * loose.length)];
-      chosen = { level: withRects(G.level, G.level.rects.filter(o => o !== r)), added: [], erased: [{ ...r }], label: "Erased a block" };
+      chosen = { level: tidy(withRects(G.level, G.level.rects.filter(o => o !== r))), added: [], erased: [{ ...r }], label: "Erased a block" };
     }
     setLevel(chosen.level);
     G.fx.push({ added: chosen.added, erased: chosen.erased, ring: chosen.ring, t: performance.now() });
-    log(chosen.label);
+    log(escape ? `${chosen.label} so you can get out` : chosen.label);
     fixes++;
     await tick();
   }
-  // Safety net: clear spinners, then the tallest blocks, until every size can finish.
-  while (!order.every(s => solve(G.level, s).ok)) {
-    if (G.level.spinners.length) { setLevel({ rects: G.level.rects, spinners: G.level.spinners.slice(1) }); continue; }
-    const loose = G.level.rects.filter(r => !r.fixed); if (!loose.length) break;
-    const r = loose.reduce((a, b) => (b.h > a.h ? b : a));
-    setLevel(withRects(G.level, G.level.rects.filter(o => o !== r))); await tick();
+  // Safety net: dig caves (and clear spinning bars) where the smallest stuck size stops, until every size can finish.
+  for (let k = 0; k < 60; k++) {
+    let bad = null;
+    for (const s of order) { const r = solve(G.level, s); if (!r.ok) { bad = { s, r }; break; } }
+    if (!bad) break;
+    const p = P(bad.s, true), fr = bad.r.frontier, sp = findSpinner(G.level, fr, p), bl = findBlocker(G.level, fr, p);
+    if (sp) { setLevel(mkSpinRemove(G.level, sp).level); continue; }
+    if (!bl) break;
+    const c = mkTunnel(G.level, bl, fr, p, false);
+    setLevel(tidy(c.level)); G.fx.push({ added: [], erased: c.erased, t: performance.now() });
+    await tick();
   }
   const fin = solve(G.level, order[0]); if (fin.ok) G.proof = { s: order[0], pts: replay(G.level, fin.actions, order[0]) };
   return fixes;
+}
+
+// Old trails must not float over blocks that were erased or run through new ones.
+// Any that would get redrawn along a real path for that size in the level as it is now.
+function fixTrails(upto) {
+  const world = buildWorld(G.level);
+  let n = 0;
+  for (let i = 0; i < upto; i++) {
+    const t = G.trails[i]; if (!t || !t.pts.length) continue;
+    const p = P(t.s);
+    let bad = false;
+    for (const q of t.pts) {
+      const x = q[0] - p.w / 2, y = q[1] - p.h / 2;
+      if (solidIn(world, x + p.w * 0.25, y + p.h * 0.25, p.w * 0.5, p.h * 0.5)) { bad = true; break; }
+      if (q[2] && !standingOn(world, x, y + p.h, p)) { bad = true; break; }
+    }
+    if (!bad) continue;
+    const res = solve(G.level, t.s, { strict: false });
+    if (!res.ok) continue;
+    t.pts = replay(G.level, res.actions, t.s, false); n++;
+  }
+  if (n) log(`Redrew ${n} old trail${n > 1 ? "s" : ""} so ${n > 1 ? "they don't" : "it doesn't"} float over erased blocks`);
+}
+function standingOn(world, x, feet, p) {
+  const tol = Math.max(p.h * 0.12, 1e-4), CW = world.CW;
+  const a = Math.max(0, Math.floor(x / CW)), b = Math.min(world.last, Math.floor((x + p.w) / CW));
+  for (let c = a; c <= b; c++) for (const r of world.cols[c]) {
+    if (!(r.x < x + p.w - EPS && r.x + r.w > x + EPS)) continue;
+    const t = spanTop(r, x, x + p.w);
+    if (Math.abs(t - feet) <= tol) return true;
+  }
+  return false;
 }
 
 // Small obstacles made for sizes two or more steps bigger get erased.
@@ -702,7 +827,7 @@ function eraseOldMicro(idx) {
 
 // On long, flat walks, add obstacles sized for this size.
 async function addMicro(idx) {
-  const s = G.sizes[idx], p = P(s), order = sortedSizes();
+  const s = G.sizes[idx], p = P(s, true), order = sortedSizes();
   const res = solve(G.level, s);
   if (!res.ok) return;
   const world = buildWorld(G.level), states = replayStates(G.level, res.actions, s);
@@ -735,6 +860,16 @@ async function addMicro(idx) {
   for (const t of longOnes) {
     if (budget <= 0) break;
     const lv = { rects: G.level.rects.slice(), spinners: G.level.spinners.slice() }, added = [], spins = [];
+    // details that trace around what is already there: small bumps against the obstacle at each end of the walk
+    for (const side of [0, 1]) {
+      const edge = G.level.rects.filter(o => !o.ow && !o.fixed && o.y < t.f - 0.01 && Math.abs(o.y + o.h - t.f) < 0.01 && (side ? o.x >= t.x1 + p.w - 0.01 : o.x + o.w <= t.x0 + 0.01))
+        .sort((a, b) => side ? a.x - b.x : (b.x + b.w) - (a.x + a.w))[0];
+      if (!edge || budget - added.length - spins.length <= 0) continue;
+      const w = p.w * R(1, 1.6), hh = Math.min(p.jh * R(0.25, 0.4), t.f - topAt(edge, side ? edge.x : edge.x + edge.w) - 0.01);
+      if (hh < p.h * 0.25) continue;
+      const pc = { x: side ? edge.x - w : edge.x + edge.w, y: t.f - hh, w, h: hh, micro: idx };
+      if (freeFor(lv, pc)) { lv.rects.push(pc); added.push(pc); }
+    }
     let x = t.x0 + p.w * R(4, 6);
     while (x < t.x1 - p.w * 5 && budget - added.length - spins.length > 0) {
       const roll = rng(), headPx = t.head * p.h;
@@ -795,9 +930,9 @@ async function finishRound() {
   const s = G.sizes[G.round], idx = G.round + 1, ns = sizeOf(idx);
   log(`Finished at ${fmt(s)} in ${(G.time / 60).toFixed(1)}s. Shrinking 1.5× to ${fmt(ns)}`);
   G.sizes.push(ns);
-  eraseOldMicro(idx);
   await ensureSolvable();
   await addMicro(idx);
+  fixTrails(idx);
   G.round = idx; G.deaths = 0;
   resetPlayer(); updateHud();
   G.busy = false; setButtonsBusy(false); renderStatus(true);
@@ -875,8 +1010,8 @@ function autoInput() {
   const st = G.player, s = G.sizes[G.round];
   if (!G.plan) {
     if (!st.g) return { d: 0, j: false };
-    let res = solve(G.level, s, { start: st });
-    if (!res.ok) { resetPlayer(); res = solve(G.level, s); if (!res.ok) return { d: 0, j: false }; }
+    let res = solve(G.level, s, { start: st, strict: false });
+    if (!res.ok) { resetPlayer(); res = solve(G.level, s, { strict: false }); if (!res.ok) return { d: 0, j: false }; }
     G.plan = { acts: res.actions, i: 0, f: 0 };
   }
   const pl = G.plan;
@@ -897,7 +1032,7 @@ function update() {
   if (dir && st.g) G.walk += p.sp / p.w * 0.5;
   for (const sp of G.level.spinners) if (hitsSpinner(st, p, sp, G.frame)) { die(); return; }
   const tr = G.trails[G.round].pts, cx = st.x + p.w / 2, cy = st.y + p.h / 2, last = tr[tr.length - 1];
-  if (!last || Math.hypot(cx - last[0], cy - last[1]) > Math.max(1.2 * p.s, 0.12)) tr.push([cx, cy]);
+  if (!last || Math.hypot(cx - last[0], cy - last[1]) > Math.max(1.2 * p.s, 0.12)) tr.push([cx, cy, st.g ? 1 : 0]);
   if (atGoal(st, p)) finishRound();
 }
 
@@ -1147,6 +1282,6 @@ updateHud();
 requestAnimationFrame(frame);
 newLevel(false);
 
-window.__shrink = { G, STATS, solve, P, sizeOf, ensureSolvable, addMicro, eraseOldMicro, setLevel, replay, buildWorld, physStep, hitsSpinner, piecesHit, circleHitsPiece, spinnerFree };
+window.__shrink = { findTrap, tidy, attachedOW, fixTrails, G, STATS, solve, P, sizeOf, ensureSolvable, addMicro, eraseOldMicro, setLevel, replay, buildWorld, physStep, hitsSpinner, piecesHit, circleHitsPiece, spinnerFree };
 })();
 </script>
