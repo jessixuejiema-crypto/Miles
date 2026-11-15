@@ -62,6 +62,8 @@ body {
   border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 600; min-width: 92px;
 }
 #camctl button.on { background: var(--jade); color: var(--jade-ink); border-color: var(--jade); }
+.zoomrow { display: flex; gap: 6px; }
+#camctl .zoomrow button { min-width: 43px; font-size: 18px; padding: 4px 0; line-height: 1.2; }
 #depthlbl { font-size: 11px; color: var(--muted); background: rgba(13,16,25,.75); padding: 4px 8px; border-radius: 8px; text-align: right; }
 
 #toast {
@@ -152,6 +154,7 @@ label.chk { display: flex; gap: 8px; align-items: center; font-size: 13px; color
     </div>
     <div id="camctl">
       <div id="depthlbl">Maze 1</div>
+      <div class="zoomrow"><button id="zoomOut" type="button" aria-label="Zoom out">−</button><button id="zoomIn" type="button" aria-label="Zoom in">+</button></div>
       <button id="camTop" type="button">Generators</button>
       <button id="camFollow" type="button">Follow lead</button>
     </div>
@@ -188,9 +191,10 @@ label.chk { display: flex; gap: 8px; align-items: center; font-size: 13px; color
         <ul>
           <li>Each generator's ring fills around its edge. When the ring closes, a ball drops into the marble run. The mini generator beside it drops a smaller ball a bit faster.</li>
           <li>Balls only pay <b>c</b> when they touch a coloured hazard. Red pays ×1, orange ×2, yellow ×4, green ×8 and so on; each colour is twice as rare as the one before. Deeper mazes allow rarer colours.</li>
-          <li>A ball that enters an unexplored maze reveals the next one, forever. Each maze is 200 to 500 ub long (1 ub = one ball width).</li>
+          <li>Each maze is a closed room. Walls split the path in two, shelves and pits send balls different ways, and many routes tip balls into the <b>recycle chute</b> on one side, where a fan blows them back to the top. The only way out is a pit in the bottom floor.</li>
+          <li>When a ball breaks into an unexplored maze, the next one appears beside it or below it, forever. Sizes are shown in ub (1 ub = one ball width).</li>
           <li>A ball that hasn't moved for 10 to 40 seconds is cleared.</li>
-          <li>Drag the course to look around. Earn c to level up and spend skill points in the Skill Tree.</li>
+          <li>Drag in any direction to look around and pinch with two fingers to zoom (trackpad pinch or the − / + buttons on a computer). Earn c to level up and spend skill points in the Skill Tree.</li>
         </ul>
       </div>
       <div class="row">
@@ -332,7 +336,7 @@ function globalMult() {
   return (rk('root') ? 1.1 : 1) * (1 + 0.25 * rk('gold')) * (1 + 0.05 * rk('reson') * ownedCount()) * (rk('zen') ? 2 : 1);
 }
 const hazMult = t => Math.pow(2, t) * (1 + 0.25 * rk('prism'));
-const ballCap = () => 260 + 100 * rk('over');
+const ballCap = () => 200 + 100 * rk('over');
 const gravity = () => G * (1 + 0.1 * rk('moment'));
 
 // level: lifetime earnings thresholds 50 * 4^L
@@ -369,61 +373,114 @@ function mulberry32(a) {
 }
 
 /* ================================================================
-   World: objects, buckets, mazes
+   World: rooms laid out in 2D, objects in 2D buckets
    ================================================================ */
+const RW = 40 * UB;            // room width
+const CW = 3.4 * UB;           // recycle chute width (along one side of every room)
+const WC = RW - CW;            // usable content width
+const HMAX = 240 * UB;         // upper bound on room height, for placement checks
 let mazes = [];
 let buckets = new Map();
-let dyn = [];           // spinners & movers
+let dyn = [];
 let lobbyObjs = [];
 let stamp = 1;
 
-function bucketAdd(o, y0, y1, zone) {
-  const a = Math.floor(y0 / BS), b = Math.floor(y1 / BS);
-  for (let k = a; k <= b; k++) {
+const bkey = (r, c) => (r + 40000) * 80000 + (c + 40000);
+function bucketAdd(o, x0, y0, x1, y1, zone) {
+  const r0 = Math.floor(y0 / BS), r1 = Math.floor(y1 / BS), c0 = Math.floor(x0 / BS), c1 = Math.floor(x1 / BS);
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const k = bkey(r, c);
     let bk = buckets.get(k);
     if (!bk) { bk = { o: [], z: [] }; buckets.set(k, bk); }
     (zone ? bk.z : bk.o).push(o);
   }
 }
-function objRange(o) {
+function objBox(o) {
   switch (o.t) {
-    case 'seg': return [Math.min(o.y1, o.y2) - o.th, Math.max(o.y1, o.y2) + o.th];
-    case 'circ': return [o.y - o.r, o.y + o.r];
-    case 'spin': return [o.cy - o.len / 2 - o.th, o.cy + o.len / 2 + o.th];
-    case 'mov': return [o.by - Math.abs(o.tilt) * o.len / 2 - o.th, o.by + Math.abs(o.tilt) * o.len / 2 + o.th];
+    case 'seg': return [Math.min(o.x1, o.x2) - o.th, Math.min(o.y1, o.y2) - o.th, Math.max(o.x1, o.x2) + o.th, Math.max(o.y1, o.y2) + o.th];
+    case 'circ': return [o.x - o.r, o.y - o.r, o.x + o.r, o.y + o.r];
+    case 'spin': return [o.cx - o.len / 2 - o.th, o.cy - o.len / 2 - o.th, o.cx + o.len / 2 + o.th, o.cy + o.len / 2 + o.th];
+    case 'mov': {
+      const hy = Math.abs(o.tilt) * o.len / 2 + o.th;
+      return [o.bx - Math.abs(o.amp) - o.len / 2 - o.th, o.by - hy, o.bx + Math.abs(o.amp) + o.len / 2 + o.th, o.by + hy];
+    }
   }
 }
 function registerObj(o, list) {
   list.push(o);
-  if (o.t === 'fan' || o.t === 'ladder') { bucketAdd(o, o.y, o.y + o.h, true); return; }
-  const [a, b] = objRange(o);
-  o.ymin = a; o.ymax = b;
-  bucketAdd(o, a, b, false);
+  if (o.t === 'fan' || o.t === 'ladder') { bucketAdd(o, o.x, o.y, o.x + o.w, o.y + o.h, true); return; }
+  const [a, b, c, d] = objBox(o);
+  o.xmin = a; o.ymin = b; o.xmax = c; o.ymax = d;
+  bucketAdd(o, a, b, c, d, false);
   if (o.t === 'spin' || o.t === 'mov') { dyn.push(o); updDyn(o, 0); }
 }
 
 function buildLobby() {
   lobbyObjs = [];
   const s = (x1, y1, x2, y2) => registerObj({ t: 'seg', x1, y1, x2, y2, th: 5, haz: -1 }, lobbyObjs);
-  s(0, -150, W / 2 - 3 * UB, -40);
-  s(W, -150, W / 2 + 3 * UB, -40);
-  // a few pegs inside the hopper
-  for (let i = 0; i < 5; i++) registerObj({ t: 'circ', x: W / 2 - 2 * 3.1 * UB + i * 3.1 * UB, y: -175, r: 4.5, haz: -1 }, lobbyObjs);
+  s(0, LOBBY_TOP - 40, 0, 0); s(RW, LOBBY_TOP - 40, RW, 0);
+  s(0, -150, RW / 2 - 1.3 * UB, -12);
+  s(RW, -150, RW / 2 + 1.3 * UB, -12);
+  for (let i = 0; i < 5; i++) registerObj({ t: 'circ', x: RW / 2 - 2 * 3.1 * UB + i * 3.1 * UB, y: -178, r: 4.5, haz: -1 }, lobbyObjs);
 }
 
 function genPositions(i) {
-  const row = i < 6 ? 0 : 1, col = i % 6, sw = W / 6;
+  const row = i < 6 ? 0 : 1, col = i % 6, sw = RW / 6;
   const cy = -300 + row * 84;
-  return { bx: col * sw + sw * 0.4, by: cy, br: 17, mx: col * sw + sw * 0.82, my: cy + 9, mr: 9.5 };
+  return { bx: col * sw + sw * 0.4, by: cy, br: 18, mx: col * sw + sw * 0.82, my: cy + 9, mr: 10 };
 }
 
+function roomRng(k, salt) { return mulberry32((S.seed ^ Math.imul(k + 1, 0x9E3779B1) ^ salt) >>> 0); }
+function rectsOverlap(a, b) { return a.x < b.x + b.w - 2 && b.x < a.x + a.w - 2 && a.y < b.y + b.h - 2 && b.y < a.y + a.h - 2; }
+
+/*
+  Every room ("maze") is a closed box RW wide. Along one side runs a recycle chute: a fan blows any ball
+  that falls into it back up to the top of the room. Many paths in the room drain into that chute,
+  and the only way out is a pit in the floor at the very bottom. Rooms chain left, right or down.
+  Coordinates while building are room-local and "unmirrored" (chute on the left); WX() mirrors them.
+*/
 function generateMaze(k) {
-  const rng = mulberry32((S.seed ^ Math.imul(k + 1, 0x9E3779B1)) >>> 0);
-  const y0 = k === 0 ? 0 : mazes[k - 1].y1;
-  const L = 200 + Math.floor(rng() * 301);
-  const target = y0 + L * UB;
-  const maze = { k, y0, y1: 0, L, objs: [], hue: (210 + k * 37) % 360, haz: 0, maxTier: 0 };
-  const hazChance = Math.min(0.6, 0.14 + 0.035 * k) * (1 + 0.2 * rk('bloom'));
+  const rng = roomRng(k, 0);
+  const prev = k ? mazes[k - 1] : null;
+  let ox, oy, entr;
+  if (!prev) { ox = 0; oy = 0; entr = { side: 'top', wx: RW / 2 }; }
+  else {
+    const e = prev.exit;
+    if (e.side === 'down') { ox = prev.ox + e.shift; oy = prev.oy + prev.H; entr = { side: 'top', wx: e.wx }; }
+    else if (e.side === 'left') { ox = prev.ox - RW; oy = prev.oy + prev.H - 4.3 * UB; entr = { side: 'right' }; }
+    else { ox = prev.ox + RW; oy = prev.oy + prev.H - 4.3 * UB; entr = { side: 'left' }; }
+  }
+  // chute goes on the side away from where balls come in
+  let mir;
+  if (entr.side === 'left') mir = true;
+  else if (entr.side === 'right') mir = false;
+  else {
+    const ex = entr.wx - ox, okL = ex >= 8 * UB, okR = RW - ex >= 8 * UB;
+    mir = okL && okR ? rng() < 0.5 : !okL;
+  }
+  const WX = x => ox + (mir ? RW - x : x);
+  const toLocal = wx => mir ? RW - (wx - ox) : wx - ox;
+
+  // choose where this room exits (side exits continue in the chute's direction)
+  const sideDir = mir ? 'right' : 'left';
+  const sideRect = { x: mir ? ox + RW : ox - RW, y: oy + 40 * UB, w: RW, h: 2 * HMAX };
+  const sideOk = mazes.every(m => !rectsOverlap(sideRect, m.rect));
+  const exLocal = RW - (3.5 + rng() * 6) * UB;   // exit pit sits near the high end of the bottom floor
+  const exWorld = WX(exLocal);
+  let down = null;
+  for (let t = 0; t < 4 && !down; t++) {
+    const shift = t === 3 ? 0 : Math.round((rng() - 0.5) * 24) * UB;
+    const e = exWorld - (ox + shift);
+    if (e < 6 * UB || e > RW - 6 * UB) continue;
+    const r = { x: ox + shift, y: oy + 40 * UB, w: RW, h: 2 * HMAX };
+    if (mazes.every(m => !rectsOverlap(r, m.rect))) down = { side: 'down', shift, wx: exWorld };
+  }
+  if (!down) down = { side: 'down', shift: 0, wx: exWorld };
+  const exit = sideOk && rng() < 0.5 ? { side: sideDir } : down;
+
+  const maze = { k, ox, oy, H: 0, exit, mir, objs: [], hue: (210 + k * 37) % 360, haz: 0, maxTier: 0, rect: null };
+  const hazChance = Math.min(0.6, 0.18 + 0.035 * k) * (1 + 0.2 * rk('bloom'));
+  const drainP = Math.min(0.75, 0.32 + 0.04 * k);
   const maxTier = Math.min(60, 1 + k + rk('deep'));
   maze.maxTier = maxTier;
   const rp = Math.min(0.62, 0.5 + 0.04 * rk('lucky'));
@@ -431,189 +488,306 @@ function generateMaze(k) {
   for (let t = 0; t <= maxTier; t++) { const w = Math.pow(rp, t + 1); tierW.push(w); tw += w; }
   const pickTier = () => { let r = rng() * tw; for (let t = 0; t <= maxTier; t++) { r -= tierW[t]; if (r <= 0) return t; } return maxTier; };
   const diff = Math.min(1, k / 12);
-
-  let y = y0 + 2 * UB, mirror = false, scatterNext = false;
-  const X = x => mirror ? W - x : x;
-  const add = o => registerObj(o, maze.objs);
-  const seg = (x1, y1, x2, y2, haz = -1, th = 5) => { add({ t: 'seg', x1: X(x1), y1, x2: X(x2), y2, th, haz }); if (haz >= 0) maze.haz++; };
-  const peg = (x, yy, r = 4.5, haz = -1) => { add({ t: 'circ', x: X(x), y: yy, r, haz }); if (haz >= 0) maze.haz++; };
-  const bump = (x, yy, r) => add({ t: 'circ', x: X(x), y: yy, r, haz: -1, bump: true, pulse: 0 });
   const roll = () => rng() < hazChance;
 
+  // primitives in room-local unmirrored coordinates
+  const add = o => registerObj(o, maze.objs);
+  const seg = (x1, y1, x2, y2, haz = -1, th = 5) => { add({ t: 'seg', x1: WX(x1), y1: oy + y1, x2: WX(x2), y2: oy + y2, th, haz }); if (haz >= 0) maze.haz++; };
+  const peg = (x, y, r = 4.5, haz = -1) => { add({ t: 'circ', x: WX(x), y: oy + y, r, haz }); if (haz >= 0) maze.haz++; };
+  const bump = (x, y, r) => add({ t: 'circ', x: WX(x), y: oy + y, r, haz: -1, bump: true, pulse: 0 });
+  const zone = (xa, xb, y, h, up, side, cap = 230) => { const a = WX(xa), b = WX(xb); add({ t: 'fan', x: Math.min(a, b), y: oy + y, w: Math.abs(b - a), h, up, side: mir ? -side : side, cap }); };
+  const ladder = (xa, xb, y, h, dir) => { const a = WX(xa), b = WX(xb); add({ t: 'ladder', x: Math.min(a, b), y: oy + y, w: Math.abs(b - a), h, dir: mir ? -dir : dir }); };
+  const drains = [];
+  const maxDrains = 1 + Math.floor(k / 4);
+  let drainCount = 0;
+  const canDrain = () => y > 26 * UB && drainCount < maxDrains;
+
+  // band-level flip inside the content area (never used by bands that drain into the chute)
+  let flip = false;
+  const cx = u => CW + (flip ? WC - u : u);
+  const fs = () => flip ? -1 : 1;
+
+  let y = 9 * UB, scatterNext = false;
+  const floorHole = (uHigh, uLow, yHigh, yLow, holeAt, holeW, endGap) => {
+    // a sloped floor from uHigh down to uLow (stopping endGap short), with a hole centred at fraction holeAt
+    const L = uLow - uHigh, dir = Math.sign(L);
+    const yAt = u => yHigh + (yLow - yHigh) * (u - uHigh) / L;
+    const hc = uHigh + L * holeAt, h0 = hc - dir * holeW / 2, h1 = hc + dir * holeW / 2, uEnd = uLow - dir * endGap;
+    seg(cx(uHigh), yHigh, cx(h0), yAt(h0));
+    seg(cx(h1), yAt(h1), cx(uEnd), yAt(uEnd));
+    return { u: hc, y: yAt(hc) };
+  };
+
   const M = {
-    zigzag() {
-      const n = 3 + Math.floor(rng() * 3), sp = 6 * UB, drop = 3 * UB, gap = 3.3 * UB;
-      for (let i = 0; i < n; i++) {
-        const yy = y + i * sp;
-        if (i % 2 === 0) seg(0, yy, W - gap, yy + drop); else seg(W, yy, gap, yy + drop);
-      }
-      if (roll()) scatterNext = true;
-      return n * sp + drop;
-    },
     scatter() {
-      // three staggered peg rows; one peg in the middle row is a hazard
       const rs = 2.6 * UB, hs = 3.1 * UB, mids = [];
       for (let r = 0; r < 3; r++) {
         const off = r % 2 ? hs / 2 : 0;
-        for (let x = 1.6 * UB + off; x < W - 1.8 * UB; x += hs) r === 1 ? mids.push(x) : peg(x, y + r * rs);
+        for (let u = 1.6 * UB + off; u < WC - 1.8 * UB; u += hs) r === 1 ? mids.push(u) : peg(cx(u), y + r * rs);
       }
       const hi = 1 + Math.floor(rng() * (mids.length - 2));
-      mids.forEach((x, i) => i === hi ? peg(x, y + rs, 0.45 * UB, pickTier()) : peg(x, y + rs));
+      mids.forEach((u, i) => i === hi ? peg(cx(u), y + rs, 0.45 * UB, pickTier()) : peg(cx(u), y + rs));
       return 2 * rs + UB;
     },
     pegs(rowsOverride) {
-      const rows = rowsOverride || 5 + Math.floor(rng() * 5), rs = 2.6 * UB, hs = 3.1 * UB;
+      const rows = rowsOverride || 4 + Math.floor(rng() * 4), rs = 2.6 * UB, hs = 3.1 * UB;
       const list = [];
       for (let r = 0; r < rows; r++) {
         const off = r % 2 ? hs / 2 : 0;
-        for (let x = 1.6 * UB + off; x < W - 1.8 * UB; x += hs) list.push([x, y + r * rs]);
+        for (let u = 1.6 * UB + off; u < WC - 1.8 * UB; u += hs) list.push([u, y + r * rs]);
       }
-      let hz = new Set();
+      const hz = new Set();
       if (!rowsOverride && roll()) {
         const nh = 1 + Math.floor(rng() * (1 + 2 * diff));
         for (let i = 0; i < nh; i++) hz.add(Math.floor(rng() * list.length));
       }
-      list.forEach(([px, py], i) => hz.has(i) ? peg(px, py, 0.45 * UB, pickTier()) : peg(px, py));
+      list.forEach(([u, py], i) => hz.has(i) ? peg(cx(u), py, 0.45 * UB, pickTier()) : peg(cx(u), py));
       return (rows - 1) * rs + UB;
     },
-    plinko(force) {
+    plinko() {
       const h0 = M.pegs(3);
-      const yb = y + h0 + 1.5 * UB, nb = 10, bw = W / nb, dh = 3 * UB;
-      for (let i = 1; i < nb; i++) seg(i * bw, yb, i * bw, yb + dh, -1, 4);
-      if (force || roll()) {
-        const nh = 1 + Math.floor(rng() * (1 + 2 * diff));
-        const used = new Set();
+      const yb = y + h0 + 1.5 * UB, nb = 10, bw = WC / nb, dh = 3 * UB;
+      for (let i = 1; i < nb; i++) seg(cx(i * bw), yb, cx(i * bw), yb + dh, -1, 4);
+      if (roll()) {
+        const nh = 1 + Math.floor(rng() * (1 + 2 * diff)), used = new Set();
         for (let i = 0; i < nh; i++) {
           const b = Math.floor(rng() * nb); if (used.has(b)) continue; used.add(b);
-          seg(b * bw + 3, yb + dh, (b + 1) * bw - 3, yb + dh, pickTier(), 5);
+          seg(cx(b * bw + 3), yb + dh, cx((b + 1) * bw - 3), yb + dh, pickTier());
         }
       }
       return h0 + 1.5 * UB + dh + UB;
     },
     bumpers() {
-      seg(0, y, W / 2 - 2.4 * UB, y + 5 * UB);
-      seg(W, y, W / 2 + 2.4 * UB, y + 5 * UB);
+      seg(cx(0), y, cx(WC / 2 - 2.4 * UB), y + 5 * UB);
+      seg(cx(WC), y, cx(WC / 2 + 2.4 * UB), y + 5 * UB);
       const pts = [], n = 4 + Math.floor(rng() * 3);
       let tries = 0;
       while (pts.length < n && tries++ < 200) {
-        const px = 2.6 * UB + rng() * (W - 5.2 * UB), py = y + 8 * UB + rng() * 12 * UB;
-        if (pts.every(([a, b]) => Math.hypot(a - px, b - py) > 4.6 * UB)) pts.push([px, py]);
+        const pu = 2.6 * UB + rng() * (WC - 5.2 * UB), py = y + 8 * UB + rng() * 11 * UB;
+        if (pts.every(([a, b]) => Math.hypot(a - pu, b - py) > 4.6 * UB)) pts.push([pu, py]);
       }
-      pts.forEach(([px, py]) => bump(px, py, 1.2 * UB));
+      pts.forEach(([pu, py]) => bump(cx(pu), py, 1.2 * UB));
       if (roll()) {
         tries = 0;
         while (tries++ < 200) {
-          const px = 2.5 * UB + rng() * (W - 5 * UB), py = y + 8 * UB + rng() * 12 * UB;
-          if (pts.every(([a, b]) => Math.hypot(a - px, b - py) > 3.8 * UB)) { peg(px, py, 0.8 * UB, pickTier()); break; }
+          const pu = 2.5 * UB + rng() * (WC - 5 * UB), py = y + 8 * UB + rng() * 11 * UB;
+          if (pts.every(([a, b]) => Math.hypot(a - pu, b - py) > 3.8 * UB)) { peg(cx(pu), py, 0.8 * UB, pickTier()); break; }
         }
       }
-      return 21.5 * UB;
+      return 20.5 * UB;
     },
     spinners() {
       const n = 2 + Math.floor(rng() * 2), cy = y + 4 * UB;
       const hk = roll() ? Math.floor(rng() * n) : -1;
       for (let i = 0; i < n; i++) {
-        const cx = W * (i + 0.5) / n;
-        const len = (W / n) * (i === hk ? 0.32 : 0.58);
+        const len = (WC / n) * (i === hk ? 0.32 : 0.58);
         const w = (1.3 + rng() * 1.6) * (1 + diff * 0.6) * (rng() < 0.5 ? -1 : 1);
-        add({ t: 'spin', cx: X(cx), cy, len, w: mirror ? -w : w, ang: rng() * Math.PI, th: 6, haz: i === hk ? pickTier() : -1 });
+        add({ t: 'spin', cx: WX(cx(WC * (i + 0.5) / n)), cy: oy + cy, len, w, ang: rng() * Math.PI, th: 6, haz: i === hk ? pickTier() : -1 });
         if (i === hk) maze.haz++;
       }
-      const yp = cy + 5.5 * UB, hs = 3.4 * UB;
-      for (let x = 2 * UB; x < W - 1.8 * UB; x += hs) peg(x, yp);
+      for (let u = 2 * UB; u < WC - 1.8 * UB; u += 3.4 * UB) peg(cx(u), cy + 5.5 * UB);
       return 11 * UB;
     },
     movers() {
-      const rows = 2;
-      for (let r = 0; r < rows; r++) {
-        const by = y + 2 * UB + r * 7 * UB, len = 8 * UB, amp = W / 2 - len / 2 - 2.2 * UB;
-        add({ t: 'mov', bx: W / 2, by, len, amp, per: 3.2 + rng() * 2.5 - diff, ph: rng() * 6.28, tilt: (rng() < 0.5 ? -1 : 1) * 0.16, th: 6, haz: -1 });
+      for (let r = 0; r < 2; r++) {
+        const by = y + 2 * UB + r * 7 * UB, len = 8 * UB, amp = WC / 2 - len / 2 - 2.2 * UB;
+        add({ t: 'mov', bx: WX(cx(WC / 2)), by: oy + by, len, amp, per: 3.2 + rng() * 2.5 - diff, ph: rng() * 6.28, tilt: (rng() < 0.5 ? -1 : 1) * 0.16, th: 6, haz: -1 });
       }
-      let h = rows * 7 * UB;
+      let h = 14 * UB;
       if (roll()) {
-        const by = y + h + 1.5 * UB, len = 2.6 * UB;
-        add({ t: 'mov', bx: W / 2, by, len, amp: W / 2 - len / 2 - 1.5 * UB, per: 2 + rng() * 1.5, ph: rng() * 6.28, tilt: 0, th: 6, haz: pickTier() });
+        const len = 2.6 * UB;
+        add({ t: 'mov', bx: WX(cx(WC / 2)), by: oy + y + h + 1.5 * UB, len, amp: WC / 2 - len / 2 - 1.5 * UB, per: 2 + rng() * 1.5, ph: rng() * 6.28, tilt: 0, th: 6, haz: pickTier() });
         maze.haz++;
         h += 3 * UB;
       }
       return h + UB;
     },
+    zigzag() {
+      const n = 3 + Math.floor(rng() * 3), sp = 6 * UB, drop = 3 * UB, gap = 3.3 * UB;
+      for (let i = 0; i < n; i++) {
+        const yy = y + i * sp;
+        if (i % 2 === 0) seg(cx(0), yy, cx(WC - gap), yy + drop); else seg(cx(WC), yy, cx(gap), yy + drop);
+      }
+      if (roll()) scatterNext = true;
+      return n * sp + drop;
+    },
     lift(kind) {
-      const d = 10 * UB, wallX = 0.5 * W, tipX = 0.35 * W;
-      seg(W, y, tipX, y + d);
+      const d = 10 * UB, wallU = 0.5 * WC, tipU = 0.35 * WC;
+      seg(cx(WC), y, cx(tipU), y + d);
       const ytip = y + d;
       const yw = kind === 'fan' ? ytip + 4.5 * UB : y + d * 0.77 + 4.2 * UB;
       const yb = yw + 9 * UB;
-      seg(wallX, yw, wallX, yb);
+      seg(cx(wallU), yw, cx(wallU), yb);
       if (kind === 'fan') {
-        seg(0, yb, wallX, yb);
-        add({ t: 'fan', x: Math.min(X(0), X(wallX)), y: ytip + 2 * UB, w: wallX, h: yb - ytip - 2 * UB, up: 1.9, side: mirror ? -0.6 : 0.6 });
+        seg(cx(0), yb, cx(wallU), yb);
+        zone(cx(0), cx(wallU), ytip + 2 * UB, yb - ytip - 2 * UB, 1.9, 0.6 * fs());
       } else {
-        seg(0, yb - 2.5 * UB, wallX, yb);
-        const lx = wallX - 1.5 * UB;
-        add({ t: 'ladder', x: mirror ? W - wallX + 2.5 : lx, y: yw - 1.6 * UB, w: 1.5 * UB - 2.5, h: yb - yw + 1.6 * UB, dir: mirror ? -1 : 1 });
+        seg(cx(0), yb - 2.5 * UB, cx(wallU), yb);
+        ladder(cx(wallU - 2.4 * UB), cx(wallU - 0.18 * UB), yw - 1.6 * UB, yb - yw + 1.6 * UB, fs());
       }
-      if (roll()) peg(wallX + 1.3 * UB + rng() * 2.5 * UB, yb - 1.5 * UB, 0.5 * UB, pickTier());
+      if (roll()) peg(cx(wallU + 1.3 * UB + rng() * 2.5 * UB), yb - 1.5 * UB, 0.5 * UB, pickTier());
       return yb - y + UB;
     },
     labyrinth() {
+      // shelves with gaps; shelves touching the chute wall may tip balls into the chute (back to the top)
       const rows = 4 + Math.floor(rng() * 3), rs = 5.5 * UB, gw = 2.6 * UB;
-      if (roll()) scatterNext = true;
+      let drained = false;
       for (let r = 0; r < rows; r++) {
-        const yy = y + r * rs;
-        const ng = rng() < 0.5 ? 1 : 2;
-        const gs = [];
+        const yy = y + r * rs, ng = rng() < 0.5 ? 1 : 2, gs = [];
         let tries = 0;
         while (gs.length < ng && tries++ < 50) {
-          const g = gw / 2 + rng() * (W - gw);
+          const g = 3 * UB + rng() * (WC - 3 * UB - gw / 2);
           if (gs.every(o => Math.abs(o - g) > 8 * UB)) gs.push(g);
         }
         gs.sort((a, b) => a - b);
         let a = 0;
         const ivs = [];
         gs.forEach(g => { ivs.push([a, g - gw / 2]); a = g + gw / 2; });
-        ivs.push([a, W]);
+        ivs.push([a, WC]);
         for (const [p, q] of ivs) {
           const len = q - p; if (len < 1.5 * UB) continue;
           const drop = Math.max(1.2 * UB, Math.min(2.6 * UB, len * 0.16));
           let lowRight;
-          if (p <= 0.01) lowRight = true; else if (q >= W - 0.01) lowRight = false; else lowRight = rng() < 0.5;
-          if (lowRight) seg(p, yy, q, yy + drop); else seg(p, yy + drop, q, yy);
+          if (p <= 0.01) lowRight = !drained && len > 8 * UB && canDrain() && rng() < drainP ? false : true;
+          else if (q >= WC - 0.01) lowRight = false;
+          else lowRight = rng() < 0.5;
+          if (p <= 0.01 && !lowRight) floorHole(q, p, yy, yy + drop, 1 - (2.6 * UB + rng() * 2 * UB) / len, 2.9 * UB, 0);
+          else if (lowRight) seg(cx(p), yy, cx(q), yy + drop); else seg(cx(p), yy + drop, cx(q), yy);
+          if (p <= 0.01 && !lowRight) { drains.push([yy + drop - 1.8 * UB, yy + drop + 0.3 * UB]); drained = true; drainCount++; }
         }
       }
+      if (roll()) scatterNext = true;
       return (rows - 1) * rs + 3 * UB;
     },
+    split() {
+      // a wall splits the flow in two; each side gets its own path, often with a pit
+      const mid = WC / 2, fy = y + 6 * UB, bh = 13 * UB;
+      seg(cx(mid), y, cx(mid), y + bh);
+      seg(cx(mid), y, cx(mid - 1.6 * UB), y + 1.4 * UB);
+      seg(cx(mid), y, cx(mid + 1.6 * UB), y + 1.4 * UB);
+      const pickW = list => { const s = list.reduce((a, b) => a + b[1], 0); let r = rng() * s; for (const [n, w] of list) { r -= w; if (r <= 0) return n; } return list[0][0]; };
+      const kA = canDrain() ? pickW([['pitDrain', 4 + 2 * diff], ['pegs', 2], ['pitHaz', 1.5]]) : pickW([['pegs', 2], ['pitHaz', 1.5]]);
+      if (kA === 'pitDrain') drainCount++;
+      const kB = pickW([['pegs', 2], ['pitHaz', 2.5], ['bumps', 1.5]]);
+      const channel = (a, b, kind) => {
+        const w = b - a;
+        if (kind === 'pegs') {
+          for (let r = 0; r < 3; r++) for (let u = a + 1.6 * UB + (r % 2) * 1.55 * UB; u < b - 1.6 * UB; u += 3.1 * UB) peg(cx(u), y + 3.5 * UB + r * 2.6 * UB);
+        } else if (kind === 'bumps') {
+          bump(cx(a + w * 0.3), y + 5 * UB, 1.1 * UB); bump(cx(a + w * 0.72), y + 8 * UB, 1.1 * UB);
+        } else if (kind === 'drain') {
+          seg(cx(b), fy, cx(a), fy + 2 * UB);
+          drains.push([fy + 2 * UB - 1.8 * UB, fy + 2 * UB + 0.3 * UB]);
+        } else if (kind === 'pitDrain') {
+          floorHole(b, a, fy, fy + 2 * UB, 0.62 + rng() * 0.18, 2.9 * UB, 0);
+          drains.push([fy + 2 * UB - 1.8 * UB, fy + 2 * UB + 0.3 * UB]);
+        } else if (kind === 'pitHaz') {
+          const toB = rng() < 0.5;
+          const hole = toB ? floorHole(a, b, fy, fy + 2 * UB, 0.45 + rng() * 0.2, 2.4 * UB, 1.9 * UB)
+                           : floorHole(b, a, fy, fy + 2 * UB, 0.45 + rng() * 0.2, 2.4 * UB, 1.9 * UB);
+          if (roll()) seg(cx(hole.u - 1.4 * UB), hole.y + 3 * UB, cx(hole.u + 1.4 * UB), hole.y + 3 * UB, pickTier());
+        }
+      };
+      channel(0, mid, kA);
+      channel(mid, WC, kB);
+      return bh;
+    },
   };
+
   const table = [
-    ['zigzag', 3], ['pegs', 3], ['plinko', 3], ['bumpers', 2], ['spinners', 2 + diff * 2],
-    ['movers', 1.5 + diff * 2], ['fan', 1.5 + diff], ['ladder', 1.5 + diff], ['labyrinth', 2 + diff * 2],
+    ['split', 4 + 2 * diff], ['labyrinth', 3 + 2 * diff], ['pegs', 2.5], ['plinko', 2], ['zigzag', 2], ['bumpers', 2],
+    ['spinners', 2 + 2 * diff], ['movers', 1.5 + 2 * diff], ['fan', 1.5 + diff], ['ladder', 1.5 + diff],
   ];
+  const noFlip = new Set(['split', 'labyrinth']);
   const tsum = table.reduce((a, b) => a + b[1], 0);
+  const target = 9 * UB + (75 + rng() * 85) * UB;
   let last = '';
   while (y < target) {
     let r = rng() * tsum, pick = table[0][0];
     for (const [n, w] of table) { r -= w; if (r <= 0) { pick = n; break; } }
     if (pick === last) continue;
     last = pick;
-    mirror = rng() < 0.5;
+    flip = noFlip.has(pick) ? false : rng() < 0.5;
     const h = pick === 'fan' || pick === 'ladder' ? M.lift(pick) : M[pick]();
     y += h + 2.2 * UB;
-    if (scatterNext) { scatterNext = false; mirror = false; y += M.scatter() + 2.2 * UB; }
+    if (scatterNext) { scatterNext = false; flip = false; y += M.scatter() + 2.2 * UB; }
   }
-  if (maze.haz === 0) { mirror = false; y += M.plinko(true) + 2.2 * UB; }
-  maze.y1 = y;
-  maze.L = Math.round((maze.y1 - maze.y0) / UB);
+  flip = false;
+  const H = y + 14 * UB;
+  maze.H = H;
+  maze.rect = { x: ox, y: oy, w: RW, h: H };
+
+  /* --- exit band: one sloped floor with pits. The exit pit leads out; the rest rolls into the chute. --- */
+  const gy0 = H - 12 * UB, gy1 = H - 8.2 * UB;
+  const gyAt = x => gy0 + (gy1 - gy0) * (RW - x) / (RW - CW);
+  const sideExit = exit.side !== 'down';
+  const xe = sideExit ? RW - (3.5 + rng() * 6) * UB : toLocal(exit.wx);
+  const pitW = Math.max(2.1, 2.7 - 0.03 * k) * UB;
+  const holes = [[xe, pitW]];
+  const hz = [];
+  for (let t = 0; t < 60 && hz.length < 2; t++) {
+    const c = CW + 3 * UB + rng() * (WC - 6 * UB);
+    if (Math.abs(c - xe) > 5 * UB && hz.every(h => Math.abs(h - c) > 5 * UB)) { hz.push(c); holes.push([c, 2.4 * UB]); }
+  }
+  holes.sort((a, b) => b[0] - a[0]);
+  let fx = RW;
+  for (const [c, w] of holes) { seg(fx, gyAt(fx), c + w / 2, gyAt(c + w / 2)); fx = c - w / 2; }
+  seg(fx, gyAt(fx), CW, gy1);
+  // a sliding shutter covers the exit pit most of the time; deeper mazes keep it shut longer
+  {
+    const sl = pitW + 2 * UB, open = Math.max(0.07, 0.17 - 0.01 * k);
+    const amp = (sl - pitW) / 2 / Math.cos(Math.PI / 2 * open);
+    const tilt = (gy1 - gy0) / (RW - CW) * (mir ? 1 : -1);
+    add({ t: 'mov', bx: WX(xe), by: oy + gyAt(xe), len: sl, amp, per: 2.6 + rng() * 1.5, ph: rng() * 6.28, tilt, th: 5, haz: -1, shutter: true });
+  }
+  for (const xh of hz) seg(xh - 1.4 * UB, gyAt(xh) + 2.6 * UB, xh + 1.4 * UB, gyAt(xh) + 2.6 * UB, pickTier());
+  seg(CW, gy1, CW, sideExit ? H - 6 * UB : H);       // chute wall below the drain
+  seg(0, H - 6 * UB, CW, H - 6 * UB);                // chute floor
+  if (sideExit) {
+    seg(RW, H - 4.4 * UB, 0, H - 0.9 * UB);          // lower run toward the side exit
+    seg(0, H, RW, H);
+  } else {
+    seg(0, H, xe - 1.4 * UB, H); seg(xe + 1.4 * UB, H, RW, H);
+    seg(CW, H - 2.6 * UB, xe - 1.45 * UB, H - 0.1 * UB);
+    seg(RW, H - 2.6 * UB, xe + 1.45 * UB, H - 0.1 * UB);
+  }
+
+  /* --- outer walls, chute, entrance --- */
+  if (entr.side === 'top') {
+    const el = toLocal(entr.wx);
+    seg(0, 0, el - 1.6 * UB, 0); seg(el + 1.6 * UB, 0, RW, 0);
+    seg(RW, 0, RW, H);
+  } else {
+    seg(0, 0, RW, 0);
+    seg(RW, 0, RW, 0.5 * UB); seg(RW, 4.1 * UB, RW, H);
+    seg(RW, 4.2 * UB, RW - 9 * UB, 6 * UB);         // entrance shelf
+  }
+  seg(0, 0, 0, sideExit ? H - 4.2 * UB : H);
+  // inner chute wall with drain openings
+  drains.push([gy1 - 1.8 * UB, gy1]);
+  drains.sort((a, b) => a[0] - b[0]);
+  let wy = 8 * UB;
+  for (const [a, b] of drains) { if (a > wy) seg(CW, wy, CW, a); wy = Math.max(wy, b); }
+  seg(0, 6.8 * UB, 5.2 * UB, 4.6 * UB);              // deflector that turns rising balls into the room
+  zone(0, CW, 5 * UB, 3.5 * UB, 1.8, 1.1);
+  zone(0, CW, 8.5 * UB, H - 6 * UB - 8.5 * UB, 2.6, -0.12, 330);
+  maze.chute = { x: Math.min(WX(0), WX(CW)), y: oy + 5 * UB, w: CW, h: H - 11 * UB };
   return maze;
 }
 
-function ensureMazes(n) {
-  while (mazes.length < n) mazes.push(generateMaze(mazes.length));
-}
+function ensureMazes(n) { while (mazes.length < n) mazes.push(generateMaze(mazes.length)); }
 function rebuildWorld() {
   mazes = []; buckets = new Map(); dyn = [];
   buildLobby();
   ensureMazes(Math.max(2, S.mazes));
   S.mazes = mazes.length;
+}
+const inRoom = (m, x, y) => x >= m.ox && x < m.ox + RW && y >= m.oy && y < m.oy + m.H;
+function roomAt(x, y, hint) {
+  if (hint >= 0 && hint < mazes.length && inRoom(mazes[hint], x, y)) return hint;
+  if (hint + 1 < mazes.length && hint + 1 >= 0 && inRoom(mazes[hint + 1], x, y)) return hint + 1;
+  for (let i = mazes.length - 1; i >= 0; i--) if (inRoom(mazes[i], x, y)) return i;
+  return -2;
 }
 
 /* ================================================================
@@ -648,7 +822,7 @@ function spawnBall(i, mini) {
     x: (mini ? pos.mx : pos.bx) + (Math.random() - 0.5) * 2, y: (mini ? pos.my : pos.by) + 2,
     vx: (Math.random() - 0.5) * 40, vy: 0, r, g: i, mini,
     v: mini ? miniValue(i) : genValue(i),
-    m: -1, maxM: -1, ax: 0, ay: 0, st: 0, lim: 10 + Math.random() * 30, bounces: 0, dead: false,
+    m: -1, maxM: -1, ax: 0, ay: 0, st: 0, lim: 10 + Math.random() * 30, bounces: 0, dead: false, out: 0,
   });
   S.stats.spawned++;
 }
@@ -671,6 +845,8 @@ function killBall(b, why, tier) {
     S.stats.tiers[tier] = (S.stats.tiers[tier] || 0) + 1;
     S.stats.best = Math.max(S.stats.best, pay);
     burst(b.x, b.y, tierColor(tier), 14);
+  } else if (why === 'lost') {
+    lostCount++; lostAt.push(b.esc);
   } else if (why === 'stuck') {
     S.stats.stuck++;
     if (rk('echo')) earn(b.v * 0.5 * gm, b.x, b.y - 8, '#c9d1e8');
@@ -687,6 +863,7 @@ function burst(x, y, col, n) {
 }
 
 const mazeEntries = [];
+let lostCount = 0; const lostAt = [];
 function enterMaze(b, k) {
   b.m = k;
   if (k > b.maxM) {
@@ -695,7 +872,7 @@ function enterMaze(b, k) {
     if (rk('toll')) earn(b.v * 0.1 * rk('toll') * globalMult(), b.x, b.y - 10, '#5fe0c0');
     if (k > S.deepest) {
       S.deepest = k;
-      if (k > 0) toast(`A ball reached Maze ${k + 1}. Maze ${k + 2} appears below.`);
+      if (k > 0) toast(`A ball broke into Maze ${k + 1}. Maze ${k + 2} has appeared.`);
     }
     if (k + 2 > mazes.length) { ensureMazes(k + 2); S.mazes = mazes.length; }
   }
@@ -732,24 +909,21 @@ function hitCirc(b, o) {
     const tx = -ny, ty = nx, vt = (b.vx * tx + b.vy * ty) * 0.5;
     const sp = 30 * UB;
     b.vx = nx * sp + tx * vt; b.vy = ny * sp + ty * vt;
-    o.pulse = 1;
+    o.pulse = 1; pulsing.add(o);
     if (rk('spring') && b.bounces < 25) { b.bounces++; earn(b.v * 0.02 * rk('spring') * globalMult()); }
   } else if (vn < 0) {
-    b.vx -= (1 + 0.45) * vn * nx; b.vy -= (1 + 0.45) * vn * ny;
+    b.vx -= 1.45 * vn * nx; b.vy -= 1.45 * vn * ny;
     b.vx += (Math.random() - 0.5) * 6;
   }
   return true;
 }
+const pulsing = new Set();
 
 function collideObj(b, o) {
   switch (o.t) {
     case 'seg': return hitSeg(b, o.x1, o.y1, o.x2, o.y2, o.th, 0, 0, 0.25);
     case 'circ': return hitCirc(b, o);
-    case 'spin': {
-      // surface velocity evaluated at the ball's projection
-      const px = b.x - o.cx, py = b.y - o.cy;
-      return hitSeg(b, o.x1, o.y1, o.x2, o.y2, o.th, -o.w * py, o.w * px, 0.35);
-    }
+    case 'spin': return hitSeg(b, o.x1, o.y1, o.x2, o.y2, o.th, -o.w * (b.y - o.cy), o.w * (b.x - o.cx), 0.35);
     case 'mov': return hitSeg(b, o.x1, o.y1, o.x2, o.y2, o.th, o.vx, 0, 0.2);
   }
   return false;
@@ -757,40 +931,36 @@ function collideObj(b, o) {
 
 function stepBall(b, h, gy) {
   b.vy += gy * h;
-  const k0 = Math.floor(b.y / BS);
-  const bk = buckets.get(k0);
+  const bk = buckets.get(bkey(Math.floor(b.y / BS), Math.floor(b.x / BS)));
   if (bk && bk.z.length) {
     for (const z of bk.z) {
       if (z.t === 'fan') {
         if (b.x > z.x && b.x < z.x + z.w && b.y > z.y && b.y < z.y + z.h) {
           b.vy -= z.up * gy * h;
           b.vx += z.side * gy * h;
-          if (b.vy < -200) b.vy = -200;
+          if (b.vy < -z.cap) b.vy = -z.cap;
           b.vx *= 0.995;
         }
-      } else if (z.t === 'ladder') {
+      } else {
         const cx = Math.max(z.x, Math.min(b.x, z.x + z.w)), cy = Math.max(z.y, Math.min(b.y, z.y + z.h));
-        if ((b.x - cx) ** 2 + (b.y - cy) ** 2 < b.r * b.r) {
-          b.vy = -6.5 * UB; b.vx = z.dir * 5 * UB; b.lad = 0.1;
-        }
+        if ((b.x - cx) ** 2 + (b.y - cy) ** 2 < b.r * b.r) { b.vy = -9 * UB; b.vx = z.dir * 5 * UB; }
       }
     }
   }
   const sp2 = b.vx * b.vx + b.vy * b.vy;
   if (sp2 > MAX_SPEED * MAX_SPEED) { const f = MAX_SPEED / Math.sqrt(sp2); b.vx *= f; b.vy *= f; }
   b.x += b.vx * h; b.y += b.vy * h;
-  if (b.x < b.r) { b.x = b.r; if (b.vx < 0) b.vx = -b.vx * 0.4; }
-  else if (b.x > W - b.r) { b.x = W - b.r; if (b.vx > 0) b.vx = -b.vx * 0.4; }
 
-  const a = Math.floor((b.y - b.r - 8) / BS), c = Math.floor((b.y + b.r + 8) / BS);
+  const r0 = Math.floor((b.y - b.r - 8) / BS), r1 = Math.floor((b.y + b.r + 8) / BS);
+  const c0 = Math.floor((b.x - b.r - 8) / BS), c1 = Math.floor((b.x + b.r + 8) / BS);
   stamp++;
-  for (let k = a; k <= c; k++) {
-    const bb = buckets.get(k); if (!bb) continue;
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const bb = buckets.get(bkey(r, c)); if (!bb) continue;
     const os = bb.o;
     for (let i = 0; i < os.length; i++) {
       const o = os[i];
       if (o._s === stamp) continue; o._s = stamp;
-      if (o.ymin > b.y + b.r + 2 || o.ymax < b.y - b.r - 2) continue;
+      if (o.ymin > b.y + b.r + 2 || o.ymax < b.y - b.r - 2 || o.xmin > b.x + b.r + 2 || o.xmax < b.x - b.r - 2) continue;
       if (collideObj(b, o) && o.haz >= 0) { o.kills = (o.kills || 0) + 1; killBall(b, 'haz', o.haz); return; }
     }
   }
@@ -798,27 +968,28 @@ function stepBall(b, h, gy) {
 
 function ballPairs() {
   const grid = new Map(), cs = 16;
+  const key = (gx, gy) => (gy + 100000) * 200000 + (gx + 100000);
   for (let i = 0; i < balls.length; i++) {
     const b = balls[i]; b.id = i; if (b.dead) continue;
-    const key = Math.floor(b.x / cs) + Math.floor(b.y / cs) * 64;
-    let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(b);
+    const k = key(Math.floor(b.x / cs), Math.floor(b.y / cs));
+    let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(b);
   }
   for (const b of balls) {
     if (b.dead) continue;
     const gx = Math.floor(b.x / cs), gy = Math.floor(b.y / cs);
     for (let oy = 0; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
       if (oy === 0 && ox < 0) continue;
-      const l = grid.get(gx + ox + (gy + oy) * 64); if (!l) continue;
+      const l = grid.get(key(gx + ox, gy + oy)); if (!l) continue;
       for (const o of l) {
         if (o === b || o.dead) continue;
         if (oy === 0 && ox === 0 && o.id <= b.id) continue;
         const dx = o.x - b.x, dy = o.y - b.y, rr = b.r + o.r, d2 = dx * dx + dy * dy;
         if (d2 >= rr * rr || d2 === 0) continue;
-        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, ov = (rr - d) / 2;
+        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, ov = Math.min(2.5, (rr - d) / 2);
         b.x -= nx * ov; b.y -= ny * ov; o.x += nx * ov; o.y += ny * ov;
         const rv = (o.vx - b.vx) * nx + (o.vy - b.vy) * ny;
         if (rv < 0) {
-          const ma = b.r * b.r, mb = o.r * o.r, j = -(1.3) * rv / (1 / ma + 1 / mb);
+          const ma = b.r * b.r, mb = o.r * o.r, j = -1.3 * rv / (1 / ma + 1 / mb);
           b.vx -= j / ma * nx; b.vy -= j / ma * ny; o.vx += j / mb * nx; o.vy += j / mb * ny;
         }
       }
@@ -831,11 +1002,7 @@ function ballPairs() {
    ================================================================ */
 function step(dt) {
   simT += dt;
-  for (const o of dyn) {
-    if (o.t === 'spin') o.ang += o.w * dt;
-    updDyn(o, simT);
-  }
-  // generators
+  for (const o of dyn) { if (o.t === 'spin') o.ang += o.w * dt; updDyn(o, simT); }
   const cap = ballCap();
   for (let i = 0; i < GENS.length; i++) {
     if (!S.owned[i]) continue;
@@ -851,168 +1018,176 @@ function step(dt) {
     }
   }
   const h = dt / SUBSTEPS, gy = gravity();
-  for (let s = 0; s < SUBSTEPS; s++) {
-    for (const b of balls) if (!b.dead) stepBall(b, h, gy);
-  }
+  for (let s = 0; s < SUBSTEPS; s++) for (const b of balls) if (!b.dead) stepBall(b, h, gy);
   ballPairs();
-  const lastY = mazes[mazes.length - 1].y1;
   for (const b of balls) {
     if (b.dead) continue;
-    // maze tracking
-    if (b.y >= 0) {
-      let k = b.m < 0 ? 0 : b.m;
-      while (k < mazes.length - 1 && b.y >= mazes[k].y1) k++;
-      if (k !== b.m) enterMaze(b, k);
+    if (b.m >= 0) {
+      // side walls are solid except at the entrance (top) and exit (bottom) gaps; never let a crowd push a ball through
+      const m = mazes[b.m];
+      if (b.y > m.oy + 5 * UB && b.y < m.oy + m.H - 5 * UB) {
+        const lo = m.ox + b.r + 2.5, hi = m.ox + RW - b.r - 2.5;
+        if (b.x < lo) { b.x = lo; b.vx = Math.abs(b.vx) * 0.3; } else if (b.x > hi) { b.x = hi; b.vx = -Math.abs(b.vx) * 0.3; }
+      }
     }
-    // stuck detection
+    if (b.y < 0 && b.x > 0 && b.x < RW && b.m < 0) { b.out = 0; }
+    else {
+      const k = roomAt(b.x, b.y, b.m);
+      if (k >= 0) { b.out = 0; if (k !== b.m) enterMaze(b, k); }
+      else { if (!b.out) b.esc = [Math.round(b.x), Math.round(b.y), Math.round(b.vx), Math.round(b.vy)]; b.out += dt; if (b.out > 2) killBall(b, 'lost'); }
+    }
     const dx = b.x - b.ax, dy = b.y - b.ay;
     if (dx * dx + dy * dy > (1.5 * UB) ** 2) { b.ax = b.x; b.ay = b.y; b.st = 0; }
     else { b.st += dt; if (b.st > b.lim) killBall(b, 'stuck'); }
-    if (b.y > lastY + 200 || !isFinite(b.x) || !isFinite(b.y)) killBall(b, 'lost');
+    if (!isFinite(b.x) || !isFinite(b.y)) killBall(b, 'lost');
   }
   balls = balls.filter(b => !b.dead);
-  for (const o of mazesNear()) if (o.pulse) o.pulse = Math.max(0, o.pulse - dt * 4);
+  for (const o of pulsing) { o.pulse -= dt * 4; if (o.pulse <= 0) { o.pulse = 0; pulsing.delete(o); } }
 }
-let pulseList = [];
-function mazesNear() { return pulseList; }
 
 /* ================================================================
-   Rendering
+   Camera (2D pan + pinch zoom) and rendering
    ================================================================ */
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
-let VW = 0, VH = 0, DPR = 1, scale = 1, offX = 0;
-const cam = { y: LOBBY_TOP - 60, mode: 'top', target: null };
+let VW = 0, VH = 0, DPR = 1, base = 1;
+const cam = { x: 0, y: LOBBY_TOP - 60, z: 1, mode: 'top' };
+const ZMIN = 0.12, ZMAX = 3.5;
+const sc = () => base * cam.z;
 
 function resize() {
   const r = cv.getBoundingClientRect();
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   VW = r.width; VH = r.height;
   cv.width = Math.max(1, Math.round(VW * DPR)); cv.height = Math.max(1, Math.round(VH * DPR));
-  scale = Math.min((VW - 16) / W, Math.max(0.5, VH / 560), 2.2);
-  if (scale * W > VW - 16) scale = (VW - 16) / W;
-  offX = (VW - W * scale) / 2;
+  base = Math.min((VW - 16) / RW, Math.max(0.45, VH / 600), 2.2);
+  if (base * RW > VW - 16) base = (VW - 16) / RW;
 }
-
 function hudH() { return document.getElementById('hud').offsetHeight; }
-function camTopY() { return LOBBY_TOP - (hudH() + 6) / scale; }
-function camMaxY() { return mazes[mazes.length - 1].y1 - VH / scale * 0.5; }
-
+function topView() { const s = sc(); return { x: RW / 2 - VW / s / 2, y: LOBBY_TOP - (hudH() + 6) / s }; }
+function worldBounds() {
+  let x0 = -40, x1 = RW + 40, y1 = 0;
+  for (const m of mazes) { x0 = Math.min(x0, m.ox - 40); x1 = Math.max(x1, m.ox + RW + 40); y1 = Math.max(y1, m.oy + m.H + 40); }
+  return { x0, x1, y0: LOBBY_TOP - 120, y1 };
+}
+function zoomAt(f, sx, sy) {
+  const s0 = sc();
+  const wx = cam.x + sx / s0, wy = cam.y + sy / s0;
+  cam.z = Math.max(ZMIN, Math.min(ZMAX, cam.z * f));
+  const s1 = sc();
+  cam.x = wx - sx / s1; cam.y = wy - sy / s1;
+}
+function leadBall() {
+  let lead = null;
+  for (const b of balls) if (!lead || b.m > lead.m || (b.m === lead.m && b.y > lead.y)) lead = b;
+  return lead;
+}
 function updateCamera(dt) {
+  const k = Math.min(1, dt * 4);
   if (cam.mode === 'top') {
-    cam.y += (camTopY() - cam.y) * Math.min(1, dt * 6);
+    cam.z += (1 - cam.z) * k;
+    const t = topView(); cam.x += (t.x - cam.x) * k; cam.y += (t.y - cam.y) * k;
   } else if (cam.mode === 'follow') {
-    let lead = null;
-    for (const b of balls) if (!lead || b.y > lead.y) lead = b;
+    const lead = leadBall();
     if (lead) {
-      const ty = lead.y - VH / scale * 0.45;
-      cam.y += (ty - cam.y) * Math.min(1, dt * 3);
+      const s = sc();
+      cam.x += (lead.x - VW / s / 2 - cam.x) * k * 0.8;
+      cam.y += (lead.y - VH / s * 0.45 - cam.y) * k * 0.8;
     }
   }
-  cam.y = Math.max(camTopY(), Math.min(camMaxY(), cam.y));
+  const s = sc(), wb = worldBounds();
+  const cxm = cam.x + VW / s / 2, cym = cam.y + VH / s / 2;
+  cam.x += Math.max(wb.x0, Math.min(wb.x1, cxm)) - cxm;
+  cam.y += Math.max(wb.y0, Math.min(wb.y1, cym)) - cym;
 }
 
 function mazeTint(m, l) { return `hsl(${m.hue},22%,${l}%)`; }
 
 function draw(now) {
-  const t = now / 1000;
+  const t = now / 1000, s = sc();
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = '#0d1019';
   ctx.fillRect(0, 0, VW, VH);
-  ctx.setTransform(DPR * scale, 0, 0, DPR * scale, DPR * offX, -DPR * scale * cam.y);
-  const vy0 = cam.y, vy1 = cam.y + VH / scale;
+  ctx.setTransform(DPR * s, 0, 0, DPR * s, -DPR * s * cam.x, -DPR * s * cam.y);
+  const v = { x0: cam.x, y0: cam.y, x1: cam.x + VW / s, y1: cam.y + VH / s };
+  const vis = (x0, y0, x1, y1) => x1 >= v.x0 && x0 <= v.x1 && y1 >= v.y0 && y0 <= v.y1;
 
-  // lobby backdrop
-  if (vy0 < 0) {
+  if (vis(0, LOBBY_TOP - 40, RW, 0)) {
     const g = ctx.createLinearGradient(0, LOBBY_TOP - 40, 0, 0);
     g.addColorStop(0, '#191e2e'); g.addColorStop(1, '#262d44');
-    ctx.fillStyle = g; ctx.fillRect(0, LOBBY_TOP - 40, W, -LOBBY_TOP + 40);
+    ctx.fillStyle = g; ctx.fillRect(0, LOBBY_TOP - 40, RW, -LOBBY_TOP + 40);
   }
-  // maze backdrops + banners
-  pulseList = [];
+  const fsz = Math.max(13, 12 / s);
   for (const m of mazes) {
-    if (m.y1 < vy0 || m.y0 > vy1) continue;
-    ctx.fillStyle = mazeTint(m, 23);
-    ctx.fillRect(0, m.y0, W, m.y1 - m.y0);
-    // faint unit ruler on the right edge (every 25 ub)
-    ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    for (let u = 25; u * UB < m.y1 - m.y0; u += 25) {
-      const yy = m.y0 + u * UB; if (yy < vy0 - 20 || yy > vy1 + 20) continue;
-      ctx.fillRect(W - 10, yy, 10, 1.5);
-    }
+    if (!vis(m.ox, m.oy, m.ox + RW, m.oy + m.H)) continue;
+    ctx.fillStyle = mazeTint(m, m.k > S.deepest ? 15 : 23);
+    ctx.fillRect(m.ox, m.oy, RW, m.H);
+    ctx.fillStyle = 'rgba(126,230,239,0.05)';
+    ctx.fillRect(m.chute.x, m.chute.y, m.chute.w, m.chute.h);
   }
-  // side walls
-  ctx.fillStyle = '#0a0c14';
-  ctx.fillRect(-60, vy0, 60, vy1 - vy0); ctx.fillRect(W, vy0, 60, vy1 - vy0);
-
   for (const m of mazes) {
-    if (m.y1 < vy0 - 50 || m.y0 > vy1 + 50) continue;
-    if (m.y0 > vy0 - 40 && m.y0 < vy1 + 40) {
-      ctx.fillStyle = 'rgba(95,224,192,0.18)'; ctx.fillRect(0, m.y0 - 1, W, 2);
-      ctx.fillStyle = 'rgba(230,233,242,0.75)';
-      ctx.font = '600 13px Sora, system-ui, sans-serif'; ctx.textAlign = 'left';
-      ctx.fillText(`MAZE ${m.k + 1}`, 8, m.y0 + 18);
-      ctx.fillStyle = 'rgba(141,149,176,0.85)'; ctx.font = '11px Sora, system-ui, sans-serif';
-      ctx.fillText(`${m.L} ub · ${m.k > S.deepest ? 'unexplored' : 'up to ' + tierName(m.maxTier).toLowerCase() + ' x' + fmt(Math.pow(2, m.maxTier))}`, 8, m.y0 + 33);
-    }
-    drawObjs(m.objs, vy0, vy1, t);
+    if (!vis(m.ox - 60, m.oy - 60, m.ox + RW + 60, m.oy + m.H + 60)) continue;
+    drawObjs(m.objs, v, t);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(230,233,242,0.8)';
+    ctx.font = `600 ${fsz}px Sora, system-ui, sans-serif`;
+    const lx = m.ox + RW / 2 + (m.mir ? -2 * UB : 2 * UB);
+    ctx.fillText(`MAZE ${m.k + 1}`, lx, m.oy + 2.2 * UB + fsz * 0.4);
+    ctx.fillStyle = 'rgba(141,149,176,0.9)';
+    ctx.font = `${fsz * 0.8}px Sora, system-ui, sans-serif`;
+    ctx.fillText(m.k > S.deepest ? 'unexplored' : `${Math.round(RW / UB)}×${Math.round(m.H / UB)} ub · up to x${fmt(Math.pow(2, m.maxTier))}`, lx, m.oy + 2.2 * UB + fsz * 1.45);
   }
-  drawObjs(lobbyObjs, vy0, vy1, t);
+  drawObjs(lobbyObjs, v, t);
   drawGenerators(t);
 
-  // balls
   for (const b of balls) {
-    if (b.y < vy0 - 10 || b.y > vy1 + 10) continue;
+    if (!vis(b.x - 10, b.y - 10, b.x + 10, b.y + 10)) continue;
     ctx.fillStyle = GENS[b.g].c;
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
-    if (!b.mini) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.32, 0, Math.PI * 2); ctx.fill(); }
+    if (!b.mini && s > 0.35) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.32, 0, Math.PI * 2); ctx.fill(); }
   }
-  // particles
   for (const p of parts) {
-    if (p.y < vy0 || p.y > vy1) continue;
+    if (!vis(p.x, p.y, p.x, p.y)) continue;
     ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.6));
     ctx.fillStyle = p.col; ctx.fillRect(p.x - 1.6, p.y - 1.6, 3.2, 3.2);
   }
   ctx.globalAlpha = 1;
-  // floaters
-  ctx.textAlign = 'center'; ctx.font = '600 12px Sora, system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.font = `600 ${Math.max(12, 11 / s)}px Sora, system-ui, sans-serif`;
   for (const f of floaters) {
-    if (f.y < vy0 || f.y > vy1) continue;
+    if (!vis(f.x, f.y, f.x, f.y)) continue;
     ctx.globalAlpha = Math.min(1, f.life);
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(f.txt, f.x + 1, f.y + 1);
     ctx.fillStyle = f.col; ctx.fillText(f.txt, f.x, f.y);
   }
   ctx.globalAlpha = 1;
-
-  // darkness below the deepest generated maze
-  const lastY = mazes[mazes.length - 1].y1;
-  if (lastY < vy1) { ctx.fillStyle = '#05060a'; ctx.fillRect(-60, lastY, W + 120, vy1 - lastY + 10); }
 }
 
-function drawObjs(list, vy0, vy1, t) {
+function drawObjs(list, v, t) {
   for (const o of list) {
     if (o.t === 'fan') {
-      if (o.y > vy1 || o.y + o.h < vy0) continue;
-      ctx.fillStyle = 'rgba(126,230,239,0.07)'; ctx.fillRect(o.x, o.y, o.w, o.h);
+      if (o.x > v.x1 || o.x + o.w < v.x0 || o.y > v.y1 || o.y + o.h < v.y0) continue;
+      ctx.fillStyle = 'rgba(126,230,239,0.06)'; ctx.fillRect(o.x, o.y, o.w, o.h);
       ctx.strokeStyle = 'rgba(126,230,239,0.35)'; ctx.lineWidth = 1.5;
       ctx.beginPath();
-      for (let i = 0; i < 9; i++) {
-        const sx = o.x + 8 + ((i * 53.7) % (o.w - 16));
-        const sy = o.y + o.h - ((t * 130 + i * 47) % o.h);
-        ctx.moveTo(sx, sy); ctx.lineTo(sx + (o.side > 0 ? 3 : -3), sy - 14);
+      const n = Math.max(3, Math.min(30, Math.round(o.w * o.h / 2500)));
+      for (let i = 0; i < n; i++) {
+        const sx = o.x + 4 + ((i * 53.7) % Math.max(1, o.w - 8));
+        const sy = o.y + o.h - ((t * 150 + i * 97) % o.h);
+        ctx.moveTo(sx, sy); ctx.lineTo(sx + o.side * 5, sy - 12);
       }
       ctx.stroke();
-      // fan unit
-      const fy = o.y + o.h - 4;
-      ctx.fillStyle = '#7ee6ef';
-      for (let i = 0; i < 4; i++) {
-        const cx = o.x + o.w * (i + 0.5) / 4, w = 10 * Math.abs(Math.cos(t * 9 + i));
-        ctx.fillRect(cx - w, fy - 2, w * 2, 3);
+      if (o.h > 3 * UB) {
+        ctx.fillStyle = '#7ee6ef';
+        const fy = o.y + o.h - 4, nb = Math.max(1, Math.round(o.w / 60));
+        for (let i = 0; i < nb; i++) {
+          const cx = o.x + o.w * (i + 0.5) / nb, w = Math.min(10, o.w / 4) * Math.abs(Math.cos(t * 9 + i));
+          ctx.fillRect(cx - w, fy - 2, w * 2, 3);
+        }
       }
       continue;
     }
     if (o.t === 'ladder') {
-      if (o.y > vy1 || o.y + o.h < vy0) continue;
+      if (o.x > v.x1 || o.x + o.w < v.x0 || o.y > v.y1 || o.y + o.h < v.y0) continue;
       ctx.strokeStyle = '#c99a5b'; ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(o.x + 1, o.y); ctx.lineTo(o.x + 1, o.y + o.h);
@@ -1021,9 +1196,8 @@ function drawObjs(list, vy0, vy1, t) {
       ctx.stroke();
       continue;
     }
-    if (o.ymax < vy0 || o.ymin > vy1) continue;
+    if (o.xmax < v.x0 || o.xmin > v.x1 || o.ymax < v.y0 || o.ymin > v.y1) continue;
     if (o.t === 'circ') {
-      if (o.bump) pulseList.push(o);
       if (o.haz >= 0) {
         const col = tierColor(o.haz);
         ctx.fillStyle = col; ctx.globalAlpha = 0.25;
@@ -1043,10 +1217,8 @@ function drawObjs(list, vy0, vy1, t) {
       }
       continue;
     }
-    // segments, spinners, movers
-    const haz = o.haz >= 0;
     ctx.lineCap = 'round';
-    if (haz) {
+    if (o.haz >= 0) {
       const col = tierColor(o.haz);
       ctx.strokeStyle = col; ctx.globalAlpha = 0.3; ctx.lineWidth = o.th + 7;
       ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke();
@@ -1058,15 +1230,14 @@ function drawObjs(list, vy0, vy1, t) {
       ctx.lineWidth = o.th;
       ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke();
     }
-    if (o.t === 'spin') {
-      ctx.fillStyle = '#10131c'; ctx.beginPath(); ctx.arc(o.cx, o.cy, 4, 0, Math.PI * 2); ctx.fill();
-    }
+    if (o.t === 'spin') { ctx.fillStyle = '#10131c'; ctx.beginPath(); ctx.arc(o.cx, o.cy, 4, 0, Math.PI * 2); ctx.fill(); }
   }
 }
 function hazLabel(tier, x, y) {
   ctx.font = '700 10px Sora, system-ui, sans-serif'; ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText('x' + fmt(Math.pow(2, tier)), x + 0.8, y + 0.8);
-  ctx.fillStyle = tierColor(tier); ctx.fillText('x' + fmt(Math.pow(2, tier)), x, y);
+  const s = 'x' + fmt(Math.pow(2, tier));
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(s, x + 0.8, y + 0.8);
+  ctx.fillStyle = tierColor(tier); ctx.fillText(s, x, y);
 }
 
 function drawGenerators(t) {
@@ -1081,9 +1252,8 @@ function drawGenerators(t) {
         ctx.beginPath(); ctx.arc(x, y, r - 4, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
         ctx.strokeStyle = col; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, prog)); ctx.stroke();
-        // leading spark
         const a = -Math.PI / 2 + Math.PI * 2 * Math.min(1, prog);
+        ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, a); ctx.stroke();
         ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, small ? 1.6 : 2.2, 0, Math.PI * 2); ctx.fill();
       }
@@ -1091,7 +1261,6 @@ function drawGenerators(t) {
     ring(p.bx, p.by, p.br, gens[i].p, false);
     ring(p.mx, p.my, p.mr, gens[i].mp, true);
     if (!owned) {
-      // lock glyph
       ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(255,255,255,0.35)';
       ctx.beginPath(); ctx.arc(p.bx, p.by - 3, 4.5, Math.PI, 0); ctx.stroke();
       ctx.fillRect(p.bx - 6.5, p.by - 3, 13, 9);
@@ -1103,35 +1272,65 @@ function drawGenerators(t) {
 }
 
 /* ================================================================
-   Input: drag to scroll, tap a generator
+   Input: one finger pans in any direction, two fingers pinch-zoom, tap a generator
    ================================================================ */
-let drag = null;
+const ptrs = new Map();
+let gesture = null;
+function gestureInfo() {
+  const ps = [...ptrs.values()];
+  if (ps.length >= 2) {
+    const [a, b] = ps;
+    return { n: 2, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
+  }
+  return { n: 1, x: ps[0].x, y: ps[0].y, d: 0 };
+}
 cv.addEventListener('pointerdown', e => {
-  drag = { id: e.pointerId, y: e.clientY, x: e.clientX, moved: 0 };
-  cv.setPointerCapture(e.pointerId); cv.classList.add('drag');
+  const r = cv.getBoundingClientRect();
+  ptrs.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
+  try { cv.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+  cv.classList.add("drag");
+  gesture = Object.assign(gestureInfo(), { moved: ptrs.size > 1 ? 99 : 0 });
 });
 cv.addEventListener('pointermove', e => {
-  if (!drag || drag.id !== e.pointerId) return;
-  const dy = e.clientY - drag.y;
-  drag.moved += Math.abs(dy) + Math.abs(e.clientX - drag.x);
-  drag.y = e.clientY; drag.x = e.clientX;
-  if (drag.moved > 6) { setCamMode('free'); cam.y -= dy / scale; }
-});
-function endDrag(e) {
-  if (!drag) return;
-  if (drag.moved <= 6) {
-    const r = cv.getBoundingClientRect();
-    const wx = (e.clientX - r.left - offX) / scale, wy = (e.clientY - r.top) / scale + cam.y;
-    for (let i = 0; i < GENS.length; i++) {
-      const p = genPositions(i);
-      if (Math.hypot(wx - p.bx, wy - p.by) < p.br + 6 || Math.hypot(wx - p.mx, wy - p.my) < p.mr + 6) { focusGen(i); break; }
-    }
+  if (!ptrs.has(e.pointerId)) return;
+  const r = cv.getBoundingClientRect();
+  ptrs.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
+  const g = gestureInfo();
+  if (!gesture || g.n !== gesture.n) { gesture = Object.assign(g, { moved: gesture ? gesture.moved : 0 }); return; }
+  const dx = g.x - gesture.x, dy = g.y - gesture.y;
+  gesture.moved += Math.abs(dx) + Math.abs(dy);
+  if (gesture.moved > 6) {
+    setCamMode('free');
+    const s = sc();
+    cam.x -= dx / s; cam.y -= dy / s;
+    if (g.n === 2 && gesture.d > 0) zoomAt(g.d / gesture.d, g.x, g.y);
   }
-  drag = null; cv.classList.remove('drag');
+  gesture.x = g.x; gesture.y = g.y; gesture.d = g.d;
+});
+function endPtr(e) {
+  if (!ptrs.has(e.pointerId)) return;
+  const p = ptrs.get(e.pointerId);
+  ptrs.delete(e.pointerId);
+  if (ptrs.size === 0) {
+    if (gesture && gesture.moved <= 6 && e.type === 'pointerup') {
+      const s = sc(), wx = cam.x + p.x / s, wy = cam.y + p.y / s;
+      for (let i = 0; i < GENS.length; i++) {
+        const q = genPositions(i);
+        if (Math.hypot(wx - q.bx, wy - q.by) < q.br + 6 || Math.hypot(wx - q.mx, wy - q.my) < q.mr + 6) { focusGen(i); break; }
+      }
+    }
+    gesture = null; cv.classList.remove('drag');
+  } else gesture = Object.assign(gestureInfo(), { moved: 99 });
 }
-cv.addEventListener('pointerup', endDrag);
-cv.addEventListener('pointercancel', () => { drag = null; cv.classList.remove('drag'); });
-cv.addEventListener('wheel', e => { e.preventDefault(); setCamMode('free'); cam.y += e.deltaY / scale; }, { passive: false });
+cv.addEventListener('pointerup', endPtr);
+cv.addEventListener('pointercancel', endPtr);
+cv.addEventListener('wheel', e => {
+  e.preventDefault(); setCamMode('free');
+  const r = cv.getBoundingClientRect();
+  if (e.ctrlKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top);
+  else { const s = sc(); cam.x += e.deltaX / s; cam.y += e.deltaY / s; }
+}, { passive: false });
+['gesturestart', 'gesturechange'].forEach(n => cv.addEventListener(n, e => e.preventDefault()));
 
 function setCamMode(m) {
   cam.mode = m;
@@ -1140,6 +1339,8 @@ function setCamMode(m) {
 }
 document.getElementById('camTop').onclick = () => setCamMode('top');
 document.getElementById('camFollow').onclick = () => setCamMode(cam.mode === 'follow' ? 'free' : 'follow');
+document.getElementById('zoomIn').onclick = () => zoomAt(1.4, VW / 2, VH / 2);
+document.getElementById('zoomOut').onclick = () => { if (cam.mode === 'top') setCamMode('free'); zoomAt(1 / 1.4, VW / 2, VH / 2); };
 
 /* ================================================================
    UI
@@ -1361,9 +1562,8 @@ function renderHud() {
   $('lvltxt').textContent = `Lv. ${L}${sp > 0 ? ` · ${sp} skill point${sp > 1 ? 's' : ''} ready` : ''}`;
   $('spbadge').textContent = sp > 0 ? sp : '';
   // depth label
-  const cy = cam.y + VH / scale * 0.5;
-  let vm = -1; for (const m of mazes) if (cy >= m.y0 && cy < m.y1) vm = m.k;
-  $('depthlbl').textContent = (vm < 0 ? 'Generators' : `Viewing Maze ${vm + 1}`) + ` · deepest ${S.deepest + 1}`;
+  const s = sc(), vm = roomAt(cam.x + VW / s / 2, cam.y + VH / s / 2, -1);
+  $('depthlbl').textContent = (vm >= 0 ? `Viewing Maze ${vm + 1}` : cam.y + VH / s / 2 < 0 ? 'Generators' : 'Overview') + ` · deepest ${S.deepest + 1}`;
 }
 
 /* ================================================================
@@ -1418,7 +1618,7 @@ rebuildWorld();
 resize();
 buildGens(); renderGens();
 $('optFloat').checked = S.opt.float;
-cam.y = camTopY();
+{ const t = topView(); cam.x = t.x; cam.y = t.y; }
 setCamMode('top');
 if (hadSave) offlineGrant((Date.now() - S.t) / 1000, true);
 else toast('Your white generator is filling. Watch it drop balls into the run.');
@@ -1426,7 +1626,7 @@ requestAnimationFrame(frame);
 
 // testing hook
 window.__zen = {
-  get S() { return S; }, get balls() { return balls; }, get mazes() { return mazes; }, cam, setCamMode, mazeEntries,
+  get S() { return S; }, get balls() { return balls; }, get mazes() { return mazes; }, cam, setCamMode, mazeEntries, get lost() { return lostCount; }, lostAt,
   sim(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) step(DT); },
   give(n) { S.c += n; S.life += n; },
   renderGens,
