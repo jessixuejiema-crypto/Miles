@@ -1,0 +1,1437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Zen Idle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap">
+<style>
+/* Layout: marble course on a canvas (left / top), control panel (right / bottom). Single dark look. */
+:root {
+  color-scheme: dark;
+  --ink: #0d1019;
+  --well: #151a28;
+  --panel: #1b2133;
+  --panel-2: #232a40;
+  --line: #2f3754;
+  --text: #e6e9f2;
+  --muted: #8d95b0;
+  --jade: #5fe0c0;
+  --jade-ink: #08261f;
+  --amber: #f5a524;
+  --amber-ink: #2b1a00;
+  --danger: #ff5d5d;
+  --font: "Sora", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--ink); color: var(--text);
+  font-family: var(--font); font-size: 14px; overflow: hidden;
+  -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+}
+#app { height: 100%; display: grid; grid-template-columns: 1fr minmax(340px, 420px); }
+#stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--ink); }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
+#cv.drag { cursor: grabbing; }
+
+#hud {
+  position: absolute; top: 0; left: 0; right: 0; pointer-events: none;
+  padding: 10px max(12px, env(safe-area-inset-left, 0px)) 8px;
+  display: flex; flex-direction: column; gap: 6px;
+  background: linear-gradient(var(--ink) 55%, rgba(13,16,25,0));
+}
+.hud-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+#money { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+#money small { font-size: 15px; color: var(--jade); margin-left: 4px; font-weight: 600; }
+#rate { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+#lvl { position: relative; height: 18px; border-radius: 9px; background: var(--panel-2); overflow: hidden; pointer-events: auto; cursor: pointer; }
+#lvlfill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, #2bb59a, var(--jade)); transition: width .3s; }
+#lvltxt { position: relative; font-size: 11px; line-height: 18px; text-align: center; color: var(--text); font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+
+#camctl {
+  position: absolute; right: max(10px, env(safe-area-inset-right, 0px)); bottom: 10px;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+}
+#camctl button, .seg button, .tabs button, .btn {
+  font-family: inherit; color: inherit; border: 0; cursor: pointer;
+}
+#camctl button {
+  background: rgba(27,33,51,.9); border: 1px solid var(--line); color: var(--text);
+  border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 600; min-width: 92px;
+}
+#camctl button.on { background: var(--jade); color: var(--jade-ink); border-color: var(--jade); }
+#depthlbl { font-size: 11px; color: var(--muted); background: rgba(13,16,25,.75); padding: 4px 8px; border-radius: 8px; text-align: right; }
+
+#toast {
+  position: absolute; left: 50%; top: 92px; transform: translateX(-50%);
+  background: var(--panel-2); border: 1px solid var(--jade); color: var(--text);
+  padding: 8px 14px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .3s;
+  pointer-events: none; max-width: 86%; text-align: center;
+}
+#toast.show { opacity: 1; }
+
+#panel { background: var(--well); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); }
+.tabs button { background: var(--panel); color: var(--muted); padding: 10px 6px; border-radius: 10px; font-size: 13px; font-weight: 600; position: relative; }
+.tabs button.on { background: #6d3fd1; color: #fff; }
+.tabs .badge { position: absolute; top: 4px; right: 6px; background: var(--amber); color: var(--amber-ink); border-radius: 8px; font-size: 10px; padding: 1px 5px; }
+.tabs .badge:empty { display: none; }
+.pane { flex: 1; overflow-y: auto; padding: 10px 10px 18px; min-height: 0; -webkit-overflow-scrolling: touch; }
+.pane[hidden] { display: none !important; }
+.pane h2 { margin: 2px 4px 8px; font-size: 18px; letter-spacing: .02em; }
+.panehead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.seg { display: inline-flex; background: var(--panel); border-radius: 9px; padding: 3px; gap: 2px; }
+.seg button { background: transparent; color: var(--muted); padding: 5px 10px; border-radius: 7px; font-size: 12px; font-weight: 600; }
+.seg button.on { background: var(--jade); color: var(--jade-ink); }
+
+.gen { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: stretch; background: var(--panel); border-radius: 12px; padding: 8px; margin-bottom: 8px; border: 1px solid transparent; transition: border-color .4s; }
+.gen.flash { border-color: var(--jade); }
+.ginfo { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.dots { position: relative; width: 46px; height: 40px; flex: none; }
+.dot { position: absolute; border-radius: 50%; }
+.dot.big { width: 34px; height: 34px; left: 0; top: 3px; }
+.dot.mini { width: 16px; height: 16px; left: 30px; top: 22px; box-shadow: 0 0 0 2px var(--panel); }
+.gtxt { min-width: 0; font-variant-numeric: tabular-nums; }
+.gname { font-weight: 700; font-size: 13px; }
+.gstat { font-size: 12px; color: var(--text); white-space: nowrap; }
+.gmini { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.up { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 86px; padding: 6px 6px; border-radius: 9px; background: #7ee6ef; color: #0b2a30; font-variant-numeric: tabular-nums; }
+.up .k { font-size: 10px; font-weight: 600; opacity: .75; text-transform: uppercase; letter-spacing: .06em; }
+.up .p { font-size: 13px; font-weight: 700; }
+.up .l { font-size: 10px; font-weight: 600; opacity: .8; }
+.up:disabled { background: #34405a; color: #8d95b0; cursor: default; }
+.unlock { grid-column: 2 / 4; display: flex; gap: 8px; align-items: center; justify-content: center; border-radius: 9px; background: var(--amber); color: var(--amber-ink); font-weight: 700; font-size: 14px; padding: 8px; font-variant-numeric: tabular-nums; }
+.unlock:disabled { background: #3a3424; color: #a08a5a; cursor: default; }
+.unlock svg { width: 16px; height: 16px; }
+
+.sptop { background: var(--panel); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.sptop b { color: var(--amber); font-size: 15px; }
+#tree { width: 100%; height: auto; display: block; }
+#tree text { font-family: var(--font); }
+.node { cursor: pointer; }
+#skdet { background: var(--panel); border-radius: 12px; padding: 12px; margin-top: 6px; }
+#skdet h3 { margin: 0 0 4px; font-size: 15px; }
+#skdet p { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.btn { background: var(--jade); color: var(--jade-ink); padding: 9px 14px; border-radius: 9px; font-weight: 700; font-size: 13px; }
+.btn:disabled { background: #34405a; color: #8d95b0; cursor: default; }
+.btn.danger { background: var(--danger); color: #2a0606; }
+.btn.ghost { background: var(--panel-2); color: var(--text); }
+
+.stats { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; background: var(--panel); border-radius: 12px; padding: 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.stats span:nth-child(odd) { color: var(--muted); }
+.stats span:nth-child(even) { text-align: right; font-weight: 600; }
+.tiers { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.tier { display: flex; align-items: center; gap: 6px; background: var(--panel); border-radius: 8px; padding: 5px 8px; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.tier i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.help { background: var(--panel); border-radius: 12px; padding: 12px 14px; font-size: 12.5px; line-height: 1.55; color: var(--muted); margin-top: 10px; }
+.help b { color: var(--text); }
+.help ul { margin: 6px 0 0; padding-left: 18px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+label.chk { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text); }
+:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
+
+@media (max-width: 820px) {
+  #app { grid-template-columns: 1fr; grid-template-rows: minmax(0, 56fr) minmax(0, 44fr); }
+  #panel { border-left: 0; border-top: 1px solid var(--line); }
+  #money { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="cv" aria-label="Marble course"></canvas>
+    <div id="hud">
+      <div class="hud-row">
+        <div id="money">0<small>c</small></div>
+        <div id="rate">0 c/s</div>
+      </div>
+      <div id="lvl" title="Level: earn c to level up and gain skill points"><div id="lvlfill"></div><div id="lvltxt">Lv. 0</div></div>
+    </div>
+    <div id="camctl">
+      <div id="depthlbl">Maze 1</div>
+      <button id="camTop" type="button">Generators</button>
+      <button id="camFollow" type="button">Follow lead</button>
+    </div>
+    <div id="toast"></div>
+  </div>
+  <div id="panel">
+    <div class="tabs" role="tablist">
+      <button type="button" data-tab="gens" class="on">Generators</button>
+      <button type="button" data-tab="skills">Skill Tree <span class="badge" id="spbadge"></span></button>
+      <button type="button" data-tab="stats">Stats</button>
+    </div>
+    <section class="pane" id="pane-gens">
+      <div class="panehead">
+        <h2>Generators</h2>
+        <div class="seg" id="buyamt">
+          <button type="button" data-n="1" class="on">x1</button>
+          <button type="button" data-n="10">x10</button>
+          <button type="button" data-n="max">Max</button>
+        </div>
+      </div>
+      <div id="genlist"></div>
+    </section>
+    <section class="pane" id="pane-skills" hidden>
+      <div class="sptop" id="sptop"></div>
+      <svg id="tree" viewBox="0 0 400 494" role="img" aria-label="Skill tree"></svg>
+      <div id="skdet"></div>
+    </section>
+    <section class="pane" id="pane-stats" hidden>
+      <h2>Stats</h2>
+      <div class="stats" id="statgrid"></div>
+      <div class="tiers" id="tierlist"></div>
+      <div class="help">
+        <b>How it works</b>
+        <ul>
+          <li>Each generator's ring fills around its edge. When the ring closes, a ball drops into the marble run. The mini generator beside it drops a smaller ball a bit faster.</li>
+          <li>Balls only pay <b>c</b> when they touch a coloured hazard. Red pays ×1, orange ×2, yellow ×4, green ×8 and so on; each colour is twice as rare as the one before. Deeper mazes allow rarer colours.</li>
+          <li>A ball that enters an unexplored maze reveals the next one, forever. Each maze is 200 to 500 ub long (1 ub = one ball width).</li>
+          <li>A ball that hasn't moved for 10 to 40 seconds is cleared.</li>
+          <li>Drag the course to look around. Earn c to level up and spend skill points in the Skill Tree.</li>
+        </ul>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="optFloat" checked> Show payout numbers</label>
+      </div>
+      <div class="row">
+        <button type="button" class="btn danger" id="resetBtn">Reset progress</button>
+        <span id="resetConfirm" hidden>
+          <button type="button" class="btn danger" id="resetYes">Yes, erase everything</button>
+          <button type="button" class="btn ghost" id="resetNo">Cancel</button>
+        </span>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ================================================================
+   Zen Idle — constants
+   ================================================================ */
+const UB = 14;                 // 1 unit ball = diameter of a regular ball (px in world space)
+const R_BIG = 7, R_MINI = 4.6;
+const W = 34 * UB;             // course width
+const G = 900;                 // gravity px/s^2
+const LOBBY_TOP = -330;
+const BS = 112;                // spatial bucket height
+const SUBSTEPS = 3;
+const MAX_SPEED = 820;
+
+const GENS = [
+  { n: 'White',   c: '#f2f5f4', t: 1.2, v: 1 },
+  { n: 'Sky',     c: '#8fe9f1', t: 2.0, v: 40 },
+  { n: 'Lime',    c: '#b8d940', t: 3.0, v: 1.6e3 },
+  { n: 'Gold',    c: '#f3b61f', t: 4.5, v: 6.4e4 },
+  { n: 'Ember',   c: '#f47f20', t: 6.0, v: 2.56e6 },
+  { n: 'Plum',    c: '#9a4f9e', t: 7.5, v: 1.02e8 },
+  { n: 'Crimson', c: '#e4492f', t: 9.0, v: 4.1e9 },
+  { n: 'Azure',   c: '#2196f3', t: 11,  v: 1.64e11 },
+  { n: 'Pine',    c: '#3f8a4d', t: 13,  v: 6.55e12 },
+  { n: 'Orchid',  c: '#ff3df5', t: 15,  v: 2.62e14 },
+  { n: 'Lemon',   c: '#fdf66b', t: 17,  v: 1.05e16 },
+  { n: 'Coral',   c: '#ff7f7b', t: 20,  v: 4.2e17 },
+];
+const MINI_TIME = 0.75, MINI_VALUE = 0.35;
+const TIER_COLORS = ['#ff4040', '#ff8a1c', '#ffe23a', '#3dff72', '#3de4ff', '#4a74ff', '#a64aff', '#ff4ad8', '#ffffff'];
+const TIER_NAMES = ['Red', 'Orange', 'Yellow', 'Green', 'Cyan', 'Blue', 'Violet', 'Pink', 'White'];
+function tierColor(t) { return t < TIER_COLORS.length ? TIER_COLORS[t] : `hsl(${(t * 47) % 360},95%,68%)`; }
+function tierName(t) { return t < TIER_NAMES.length ? TIER_NAMES[t] : 'Prism ' + (t - TIER_NAMES.length + 1); }
+
+/* ================================================================
+   Skills
+   ================================================================ */
+const SKILLS = [
+  { id: 'root',   n: 'Stillness',      g: '◎', max: 1, cost: 1, req: [], x: 200, y: 40, d: 'All payouts +10%.' },
+  { id: 'gold',   n: 'Golden Breath',  g: '✦', max: 5, cost: 1, req: ['root'], x: 78, y: 122, d: 'All payouts +25% per rank.' },
+  { id: 'prism',  n: 'Prism Hazards',  g: '◆', max: 4, cost: 2, req: ['gold'], x: 40, y: 204, d: 'Hazard colour multipliers are 25% stronger per rank.' },
+  { id: 'toll',   n: 'Toll Gates',     g: '⊓', max: 3, cost: 1, req: ['gold'], x: 115, y: 204, d: 'A ball pays 10% of its value per rank every time it enters a new maze.' },
+  { id: 'bargain',n: 'Bargain Mind',   g: '%', max: 5, cost: 1, req: ['prism'], x: 40, y: 286, d: 'Generator upgrades cost 6% less per rank.' },
+  { id: 'echo',   n: 'Echoes',         g: '≋', max: 1, cost: 2, req: ['toll'], x: 115, y: 286, d: 'Balls cleared for being stuck pay 50% of their value instead of nothing.' },
+  { id: 'dream',  n: 'Dream Income',   g: '☾', max: 3, cost: 2, req: ['bargain', 'echo'], x: 78, y: 368, d: 'While the game is closed you keep earning 10% of your income rate, +15% per rank (up to 8 hours).' },
+  { id: 'swift',  n: 'Swift Rings',    g: '⟳', max: 5, cost: 1, req: ['root'], x: 200, y: 122, d: 'Every generator ring fills 6% faster per rank.' },
+  { id: 'little', n: 'Little Ones',    g: '•', max: 4, cost: 1, req: ['swift'], x: 165, y: 204, d: 'Mini balls are worth 50% more per rank.' },
+  { id: 'over',   n: 'Overflow',       g: '∪', max: 3, cost: 2, req: ['swift'], x: 235, y: 204, d: 'The course holds 100 more balls per rank.' },
+  { id: 'twin',   n: 'Twin Minis',     g: '∶', max: 3, cost: 2, req: ['little'], x: 165, y: 286, d: 'Mini generators have a 20% chance per rank to release two balls at once.' },
+  { id: 'reson',  n: 'Resonance',      g: '✺', max: 2, cost: 3, req: ['over'], x: 235, y: 286, d: 'Payouts +5% per rank for every generator you own.' },
+  { id: 'harm',   n: 'Harmony',        g: '♢', max: 3, cost: 2, req: ['twin', 'reson'], x: 200, y: 368, d: 'Balls from your newest generator pay +50% per rank.' },
+  { id: 'lucky',  n: 'Lucky Stones',   g: '✧', max: 3, cost: 1, req: ['root'], x: 322, y: 122, d: 'Rarer hazard colours show up more often in newly found mazes.' },
+  { id: 'deep',   n: 'Deep Sight',     g: '▼', max: 3, cost: 2, req: ['lucky'], x: 285, y: 204, d: 'Newly found mazes can use one more hazard colour per rank.' },
+  { id: 'bloom',  n: 'Hazard Bloom',   g: '❋', max: 3, cost: 1, req: ['lucky'], x: 360, y: 204, d: 'Newly found mazes have 20% more hazards per rank.' },
+  { id: 'moment', n: 'Momentum',       g: '↓', max: 3, cost: 1, req: ['deep'], x: 285, y: 286, d: 'Gravity +10% per rank, so balls race faster.' },
+  { id: 'spring', n: 'Springy',        g: '⊙', max: 3, cost: 1, req: ['bloom'], x: 360, y: 286, d: 'Bouncers pay 2% of the ball\'s value per rank on each hit (up to 25 hits per ball).' },
+  { id: 'abyss',  n: 'Abyss Bonus',    g: '∇', max: 3, cost: 2, req: ['moment', 'spring'], x: 322, y: 368, d: 'Eliminations pay +5% per rank for each maze the ball has descended.' },
+  { id: 'zen',    n: 'Enlightenment',  g: '◉', max: 1, cost: 5, req: ['dream', 'harm', 'abyss'], x: 200, y: 452, d: 'Doubles every payout.' },
+];
+const SK = Object.fromEntries(SKILLS.map(s => [s.id, s]));
+
+/* ================================================================
+   State
+   ================================================================ */
+function freshState() {
+  return {
+    c: 0, life: 0,
+    owned: GENS.map((_, i) => i === 0),
+    vl: GENS.map(() => 0), sl: GENS.map(() => 0),
+    skills: {},
+    seed: (Math.random() * 2 ** 31) | 0,
+    mazes: 1,           // number of mazes generated
+    deepest: 0,
+    stats: { spawned: 0, elim: 0, stuck: 0, tiers: {}, best: 0 },
+    rate: 0, t: Date.now(),
+    opt: { float: true },
+  };
+}
+let S = freshState();
+const rk = id => S.skills[id] || 0;
+
+function load() {
+  try {
+    const raw = localStorage.getItem('zen-idle-save');
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    const f = freshState();
+    S = Object.assign(f, d);
+    S.stats = Object.assign(f.stats, d.stats || {});
+    S.opt = Object.assign(f.opt, d.opt || {});
+    for (const k of ['owned', 'vl', 'sl']) {
+      const arr = f[k];
+      (d[k] || []).forEach((v, i) => { if (i < arr.length) arr[i] = v; });
+      S[k] = arr;
+    }
+    return true;
+  } catch (e) { return false; }
+}
+function save() {
+  S.t = Date.now();
+  try { localStorage.setItem('zen-idle-save', JSON.stringify(S)); } catch (e) { /* storage unavailable */ }
+}
+
+/* ================================================================
+   Economy formulas
+   ================================================================ */
+const genCost = i => i === 0 ? 0 : 250 * Math.pow(1000, i - 1);
+const upBase = i => i === 0 ? 5 : genCost(i) * 0.05;
+const bargain = () => Math.pow(0.94, rk('bargain'));
+const valCost = (i, l) => upBase(i) * Math.pow(1.5, l) * bargain();
+const spdCost = (i, l) => upBase(i) * 1.6 * Math.pow(1.65, l) * bargain();
+const genValue = i => GENS[i].v * Math.pow(1.3, S.vl[i]);
+const MIN_TIME = 0.3;
+const rawTime = (i, l) => GENS[i].t * Math.pow(0.92, l) * Math.pow(0.94, rk('swift'));
+const genTime = i => Math.max(MIN_TIME, rawTime(i, S.sl[i]));
+const speedMaxed = i => rawTime(i, S.sl[i]) <= MIN_TIME;
+const miniTime = i => Math.max(MIN_TIME * MINI_TIME, genTime(i) * MINI_TIME);
+const miniValue = i => genValue(i) * MINI_VALUE * (1 + 0.5 * rk('little'));
+const ownedCount = () => S.owned.filter(Boolean).length;
+const topGen = () => { let t = 0; S.owned.forEach((o, i) => { if (o) t = i; }); return t; };
+const nextGen = () => S.owned.indexOf(false);
+function globalMult() {
+  return (rk('root') ? 1.1 : 1) * (1 + 0.25 * rk('gold')) * (1 + 0.05 * rk('reson') * ownedCount()) * (rk('zen') ? 2 : 1);
+}
+const hazMult = t => Math.pow(2, t) * (1 + 0.25 * rk('prism'));
+const ballCap = () => 260 + 100 * rk('over');
+const gravity = () => G * (1 + 0.1 * rk('moment'));
+
+// level: lifetime earnings thresholds 50 * 4^L
+const LV_BASE = 50, LV_MUL = 4;
+function levelOf(life) { return life < LV_BASE ? 0 : Math.floor(Math.log(life / LV_BASE) / Math.log(LV_MUL)) + 1; }
+const lvlNeed = L => LV_BASE * Math.pow(LV_MUL, L - 1);
+const spentSP = () => SKILLS.reduce((a, s) => a + (S.skills[s.id] || 0) * s.cost, 0);
+const freeSP = () => levelOf(S.life) - spentSP();
+
+/* ================================================================
+   Number format
+   ================================================================ */
+const SUF = ['', 'K', 'M', 'B', 'T', 'q', 'Q', 's', 'S', 'O', 'N', 'D', 'Ud', 'Dd', 'Td', 'qd', 'Qd', 'sd', 'Sd', 'Od', 'Nd', 'V'];
+function fmt(n) {
+  if (!isFinite(n)) return '∞';
+  if (n < 0) return '-' + fmt(-n);
+  if (n < 1000) return n < 100 && n % 1 ? n.toFixed(n < 10 ? 2 : 1) : Math.floor(n).toString();
+  const e = Math.floor(Math.log10(n) / 3);
+  if (e < SUF.length) return (n / Math.pow(1000, e)).toFixed(2) + SUF[e];
+  return n.toExponential(2).replace('+', '');
+}
+const fmtT = s => s < 10 ? s.toFixed(2) + 's' : s.toFixed(1) + 's';
+
+/* ================================================================
+   Seeded RNG
+   ================================================================ */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ================================================================
+   World: objects, buckets, mazes
+   ================================================================ */
+let mazes = [];
+let buckets = new Map();
+let dyn = [];           // spinners & movers
+let lobbyObjs = [];
+let stamp = 1;
+
+function bucketAdd(o, y0, y1, zone) {
+  const a = Math.floor(y0 / BS), b = Math.floor(y1 / BS);
+  for (let k = a; k <= b; k++) {
+    let bk = buckets.get(k);
+    if (!bk) { bk = { o: [], z: [] }; buckets.set(k, bk); }
+    (zone ? bk.z : bk.o).push(o);
+  }
+}
+function objRange(o) {
+  switch (o.t) {
+    case 'seg': return [Math.min(o.y1, o.y2) - o.th, Math.max(o.y1, o.y2) + o.th];
+    case 'circ': return [o.y - o.r, o.y + o.r];
+    case 'spin': return [o.cy - o.len / 2 - o.th, o.cy + o.len / 2 + o.th];
+    case 'mov': return [o.by - Math.abs(o.tilt) * o.len / 2 - o.th, o.by + Math.abs(o.tilt) * o.len / 2 + o.th];
+  }
+}
+function registerObj(o, list) {
+  list.push(o);
+  if (o.t === 'fan' || o.t === 'ladder') { bucketAdd(o, o.y, o.y + o.h, true); return; }
+  const [a, b] = objRange(o);
+  o.ymin = a; o.ymax = b;
+  bucketAdd(o, a, b, false);
+  if (o.t === 'spin' || o.t === 'mov') { dyn.push(o); updDyn(o, 0); }
+}
+
+function buildLobby() {
+  lobbyObjs = [];
+  const s = (x1, y1, x2, y2) => registerObj({ t: 'seg', x1, y1, x2, y2, th: 5, haz: -1 }, lobbyObjs);
+  s(0, -150, W / 2 - 3 * UB, -40);
+  s(W, -150, W / 2 + 3 * UB, -40);
+  // a few pegs inside the hopper
+  for (let i = 0; i < 5; i++) registerObj({ t: 'circ', x: W / 2 - 2 * 3.1 * UB + i * 3.1 * UB, y: -175, r: 4.5, haz: -1 }, lobbyObjs);
+}
+
+function genPositions(i) {
+  const row = i < 6 ? 0 : 1, col = i % 6, sw = W / 6;
+  const cy = -300 + row * 84;
+  return { bx: col * sw + sw * 0.4, by: cy, br: 17, mx: col * sw + sw * 0.82, my: cy + 9, mr: 9.5 };
+}
+
+function generateMaze(k) {
+  const rng = mulberry32((S.seed ^ Math.imul(k + 1, 0x9E3779B1)) >>> 0);
+  const y0 = k === 0 ? 0 : mazes[k - 1].y1;
+  const L = 200 + Math.floor(rng() * 301);
+  const target = y0 + L * UB;
+  const maze = { k, y0, y1: 0, L, objs: [], hue: (210 + k * 37) % 360, haz: 0, maxTier: 0 };
+  const hazChance = Math.min(0.6, 0.14 + 0.035 * k) * (1 + 0.2 * rk('bloom'));
+  const maxTier = Math.min(60, 1 + k + rk('deep'));
+  maze.maxTier = maxTier;
+  const rp = Math.min(0.62, 0.5 + 0.04 * rk('lucky'));
+  const tierW = []; let tw = 0;
+  for (let t = 0; t <= maxTier; t++) { const w = Math.pow(rp, t + 1); tierW.push(w); tw += w; }
+  const pickTier = () => { let r = rng() * tw; for (let t = 0; t <= maxTier; t++) { r -= tierW[t]; if (r <= 0) return t; } return maxTier; };
+  const diff = Math.min(1, k / 12);
+
+  let y = y0 + 2 * UB, mirror = false, scatterNext = false;
+  const X = x => mirror ? W - x : x;
+  const add = o => registerObj(o, maze.objs);
+  const seg = (x1, y1, x2, y2, haz = -1, th = 5) => { add({ t: 'seg', x1: X(x1), y1, x2: X(x2), y2, th, haz }); if (haz >= 0) maze.haz++; };
+  const peg = (x, yy, r = 4.5, haz = -1) => { add({ t: 'circ', x: X(x), y: yy, r, haz }); if (haz >= 0) maze.haz++; };
+  const bump = (x, yy, r) => add({ t: 'circ', x: X(x), y: yy, r, haz: -1, bump: true, pulse: 0 });
+  const roll = () => rng() < hazChance;
+
+  const M = {
+    zigzag() {
+      const n = 3 + Math.floor(rng() * 3), sp = 6 * UB, drop = 3 * UB, gap = 3.3 * UB;
+      for (let i = 0; i < n; i++) {
+        const yy = y + i * sp;
+        if (i % 2 === 0) seg(0, yy, W - gap, yy + drop); else seg(W, yy, gap, yy + drop);
+      }
+      if (roll()) scatterNext = true;
+      return n * sp + drop;
+    },
+    scatter() {
+      // three staggered peg rows; one peg in the middle row is a hazard
+      const rs = 2.6 * UB, hs = 3.1 * UB, mids = [];
+      for (let r = 0; r < 3; r++) {
+        const off = r % 2 ? hs / 2 : 0;
+        for (let x = 1.6 * UB + off; x < W - 1.8 * UB; x += hs) r === 1 ? mids.push(x) : peg(x, y + r * rs);
+      }
+      const hi = 1 + Math.floor(rng() * (mids.length - 2));
+      mids.forEach((x, i) => i === hi ? peg(x, y + rs, 0.45 * UB, pickTier()) : peg(x, y + rs));
+      return 2 * rs + UB;
+    },
+    pegs(rowsOverride) {
+      const rows = rowsOverride || 5 + Math.floor(rng() * 5), rs = 2.6 * UB, hs = 3.1 * UB;
+      const list = [];
+      for (let r = 0; r < rows; r++) {
+        const off = r % 2 ? hs / 2 : 0;
+        for (let x = 1.6 * UB + off; x < W - 1.8 * UB; x += hs) list.push([x, y + r * rs]);
+      }
+      let hz = new Set();
+      if (!rowsOverride && roll()) {
+        const nh = 1 + Math.floor(rng() * (1 + 2 * diff));
+        for (let i = 0; i < nh; i++) hz.add(Math.floor(rng() * list.length));
+      }
+      list.forEach(([px, py], i) => hz.has(i) ? peg(px, py, 0.45 * UB, pickTier()) : peg(px, py));
+      return (rows - 1) * rs + UB;
+    },
+    plinko(force) {
+      const h0 = M.pegs(3);
+      const yb = y + h0 + 1.5 * UB, nb = 10, bw = W / nb, dh = 3 * UB;
+      for (let i = 1; i < nb; i++) seg(i * bw, yb, i * bw, yb + dh, -1, 4);
+      if (force || roll()) {
+        const nh = 1 + Math.floor(rng() * (1 + 2 * diff));
+        const used = new Set();
+        for (let i = 0; i < nh; i++) {
+          const b = Math.floor(rng() * nb); if (used.has(b)) continue; used.add(b);
+          seg(b * bw + 3, yb + dh, (b + 1) * bw - 3, yb + dh, pickTier(), 5);
+        }
+      }
+      return h0 + 1.5 * UB + dh + UB;
+    },
+    bumpers() {
+      seg(0, y, W / 2 - 2.4 * UB, y + 5 * UB);
+      seg(W, y, W / 2 + 2.4 * UB, y + 5 * UB);
+      const pts = [], n = 4 + Math.floor(rng() * 3);
+      let tries = 0;
+      while (pts.length < n && tries++ < 200) {
+        const px = 2.6 * UB + rng() * (W - 5.2 * UB), py = y + 8 * UB + rng() * 12 * UB;
+        if (pts.every(([a, b]) => Math.hypot(a - px, b - py) > 4.6 * UB)) pts.push([px, py]);
+      }
+      pts.forEach(([px, py]) => bump(px, py, 1.2 * UB));
+      if (roll()) {
+        tries = 0;
+        while (tries++ < 200) {
+          const px = 2.5 * UB + rng() * (W - 5 * UB), py = y + 8 * UB + rng() * 12 * UB;
+          if (pts.every(([a, b]) => Math.hypot(a - px, b - py) > 3.8 * UB)) { peg(px, py, 0.8 * UB, pickTier()); break; }
+        }
+      }
+      return 21.5 * UB;
+    },
+    spinners() {
+      const n = 2 + Math.floor(rng() * 2), cy = y + 4 * UB;
+      const hk = roll() ? Math.floor(rng() * n) : -1;
+      for (let i = 0; i < n; i++) {
+        const cx = W * (i + 0.5) / n;
+        const len = (W / n) * (i === hk ? 0.32 : 0.58);
+        const w = (1.3 + rng() * 1.6) * (1 + diff * 0.6) * (rng() < 0.5 ? -1 : 1);
+        add({ t: 'spin', cx: X(cx), cy, len, w: mirror ? -w : w, ang: rng() * Math.PI, th: 6, haz: i === hk ? pickTier() : -1 });
+        if (i === hk) maze.haz++;
+      }
+      const yp = cy + 5.5 * UB, hs = 3.4 * UB;
+      for (let x = 2 * UB; x < W - 1.8 * UB; x += hs) peg(x, yp);
+      return 11 * UB;
+    },
+    movers() {
+      const rows = 2;
+      for (let r = 0; r < rows; r++) {
+        const by = y + 2 * UB + r * 7 * UB, len = 8 * UB, amp = W / 2 - len / 2 - 2.2 * UB;
+        add({ t: 'mov', bx: W / 2, by, len, amp, per: 3.2 + rng() * 2.5 - diff, ph: rng() * 6.28, tilt: (rng() < 0.5 ? -1 : 1) * 0.16, th: 6, haz: -1 });
+      }
+      let h = rows * 7 * UB;
+      if (roll()) {
+        const by = y + h + 1.5 * UB, len = 2.6 * UB;
+        add({ t: 'mov', bx: W / 2, by, len, amp: W / 2 - len / 2 - 1.5 * UB, per: 2 + rng() * 1.5, ph: rng() * 6.28, tilt: 0, th: 6, haz: pickTier() });
+        maze.haz++;
+        h += 3 * UB;
+      }
+      return h + UB;
+    },
+    lift(kind) {
+      const d = 10 * UB, wallX = 0.5 * W, tipX = 0.35 * W;
+      seg(W, y, tipX, y + d);
+      const ytip = y + d;
+      const yw = kind === 'fan' ? ytip + 4.5 * UB : y + d * 0.77 + 4.2 * UB;
+      const yb = yw + 9 * UB;
+      seg(wallX, yw, wallX, yb);
+      if (kind === 'fan') {
+        seg(0, yb, wallX, yb);
+        add({ t: 'fan', x: Math.min(X(0), X(wallX)), y: ytip + 2 * UB, w: wallX, h: yb - ytip - 2 * UB, up: 1.9, side: mirror ? -0.6 : 0.6 });
+      } else {
+        seg(0, yb - 2.5 * UB, wallX, yb);
+        const lx = wallX - 1.5 * UB;
+        add({ t: 'ladder', x: mirror ? W - wallX + 2.5 : lx, y: yw - 1.6 * UB, w: 1.5 * UB - 2.5, h: yb - yw + 1.6 * UB, dir: mirror ? -1 : 1 });
+      }
+      if (roll()) peg(wallX + 1.3 * UB + rng() * 2.5 * UB, yb - 1.5 * UB, 0.5 * UB, pickTier());
+      return yb - y + UB;
+    },
+    labyrinth() {
+      const rows = 4 + Math.floor(rng() * 3), rs = 5.5 * UB, gw = 2.6 * UB;
+      if (roll()) scatterNext = true;
+      for (let r = 0; r < rows; r++) {
+        const yy = y + r * rs;
+        const ng = rng() < 0.5 ? 1 : 2;
+        const gs = [];
+        let tries = 0;
+        while (gs.length < ng && tries++ < 50) {
+          const g = gw / 2 + rng() * (W - gw);
+          if (gs.every(o => Math.abs(o - g) > 8 * UB)) gs.push(g);
+        }
+        gs.sort((a, b) => a - b);
+        let a = 0;
+        const ivs = [];
+        gs.forEach(g => { ivs.push([a, g - gw / 2]); a = g + gw / 2; });
+        ivs.push([a, W]);
+        for (const [p, q] of ivs) {
+          const len = q - p; if (len < 1.5 * UB) continue;
+          const drop = Math.max(1.2 * UB, Math.min(2.6 * UB, len * 0.16));
+          let lowRight;
+          if (p <= 0.01) lowRight = true; else if (q >= W - 0.01) lowRight = false; else lowRight = rng() < 0.5;
+          if (lowRight) seg(p, yy, q, yy + drop); else seg(p, yy + drop, q, yy);
+        }
+      }
+      return (rows - 1) * rs + 3 * UB;
+    },
+  };
+  const table = [
+    ['zigzag', 3], ['pegs', 3], ['plinko', 3], ['bumpers', 2], ['spinners', 2 + diff * 2],
+    ['movers', 1.5 + diff * 2], ['fan', 1.5 + diff], ['ladder', 1.5 + diff], ['labyrinth', 2 + diff * 2],
+  ];
+  const tsum = table.reduce((a, b) => a + b[1], 0);
+  let last = '';
+  while (y < target) {
+    let r = rng() * tsum, pick = table[0][0];
+    for (const [n, w] of table) { r -= w; if (r <= 0) { pick = n; break; } }
+    if (pick === last) continue;
+    last = pick;
+    mirror = rng() < 0.5;
+    const h = pick === 'fan' || pick === 'ladder' ? M.lift(pick) : M[pick]();
+    y += h + 2.2 * UB;
+    if (scatterNext) { scatterNext = false; mirror = false; y += M.scatter() + 2.2 * UB; }
+  }
+  if (maze.haz === 0) { mirror = false; y += M.plinko(true) + 2.2 * UB; }
+  maze.y1 = y;
+  maze.L = Math.round((maze.y1 - maze.y0) / UB);
+  return maze;
+}
+
+function ensureMazes(n) {
+  while (mazes.length < n) mazes.push(generateMaze(mazes.length));
+}
+function rebuildWorld() {
+  mazes = []; buckets = new Map(); dyn = [];
+  buildLobby();
+  ensureMazes(Math.max(2, S.mazes));
+  S.mazes = mazes.length;
+}
+
+/* ================================================================
+   Dynamic objects
+   ================================================================ */
+let simT = 0;
+function updDyn(o, t) {
+  if (o.t === 'spin') {
+    const c = Math.cos(o.ang) * o.len / 2, s = Math.sin(o.ang) * o.len / 2;
+    o.x1 = o.cx - c; o.y1 = o.cy - s; o.x2 = o.cx + c; o.y2 = o.cy + s;
+  } else {
+    const ph = 2 * Math.PI * t / o.per + o.ph;
+    const cx = o.bx + o.amp * Math.sin(ph);
+    o.vx = o.amp * Math.cos(ph) * 2 * Math.PI / o.per;
+    const hx = o.len / 2, hy = o.tilt * o.len / 2;
+    o.x1 = cx - hx; o.y1 = o.by - hy; o.x2 = cx + hx; o.y2 = o.by + hy;
+  }
+}
+
+/* ================================================================
+   Balls
+   ================================================================ */
+let balls = [];
+const gens = GENS.map(() => ({ p: 0, mp: 0 }));
+let floaters = [], parts = [];
+let incomeAcc = 0;
+
+function spawnBall(i, mini) {
+  const pos = genPositions(i);
+  const r = mini ? R_MINI : R_BIG;
+  balls.push({
+    x: (mini ? pos.mx : pos.bx) + (Math.random() - 0.5) * 2, y: (mini ? pos.my : pos.by) + 2,
+    vx: (Math.random() - 0.5) * 40, vy: 0, r, g: i, mini,
+    v: mini ? miniValue(i) : genValue(i),
+    m: -1, maxM: -1, ax: 0, ay: 0, st: 0, lim: 10 + Math.random() * 30, bounces: 0, dead: false,
+  });
+  S.stats.spawned++;
+}
+
+function earn(n, x, y, col) {
+  if (!(n > 0)) return;
+  S.c += n; S.life += n; incomeAcc += n;
+  if (S.opt.float && floaters.length < 70 && x !== undefined) floaters.push({ x, y, txt: '+' + fmt(n), col, life: 1.4 });
+}
+
+function killBall(b, why, tier) {
+  if (b.dead) return;
+  b.dead = true;
+  const gm = globalMult() * (b.g === topGen() ? 1 + 0.5 * rk('harm') : 1);
+  if (why === 'haz') {
+    const depth = Math.max(0, b.m);
+    const pay = b.v * hazMult(tier) * gm * (1 + 0.05 * rk('abyss') * depth);
+    earn(pay, b.x, b.y - 8, tierColor(tier));
+    S.stats.elim++;
+    S.stats.tiers[tier] = (S.stats.tiers[tier] || 0) + 1;
+    S.stats.best = Math.max(S.stats.best, pay);
+    burst(b.x, b.y, tierColor(tier), 14);
+  } else if (why === 'stuck') {
+    S.stats.stuck++;
+    if (rk('echo')) earn(b.v * 0.5 * gm, b.x, b.y - 8, '#c9d1e8');
+    burst(b.x, b.y, '#8d95b0', 6);
+  }
+}
+
+function burst(x, y, col, n) {
+  if (parts.length > 700) return;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = 40 + Math.random() * 160;
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: 0.5 + Math.random() * 0.5, col });
+  }
+}
+
+const mazeEntries = [];
+function enterMaze(b, k) {
+  b.m = k;
+  if (k > b.maxM) {
+    b.maxM = k;
+    mazeEntries[k] = (mazeEntries[k] || 0) + 1;
+    if (rk('toll')) earn(b.v * 0.1 * rk('toll') * globalMult(), b.x, b.y - 10, '#5fe0c0');
+    if (k > S.deepest) {
+      S.deepest = k;
+      if (k > 0) toast(`A ball reached Maze ${k + 1}. Maze ${k + 2} appears below.`);
+    }
+    if (k + 2 > mazes.length) { ensureMazes(k + 2); S.mazes = mazes.length; }
+  }
+}
+
+/* --- collision primitives --- */
+function hitSeg(b, x1, y1, x2, y2, th, svx, svy, rest) {
+  const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy;
+  let t = L2 ? ((b.x - x1) * dx + (b.y - y1) * dy) / L2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const px = x1 + dx * t, py = y1 + dy * t;
+  let nx = b.x - px, ny = b.y - py;
+  const d2 = nx * nx + ny * ny, rr = b.r + th / 2;
+  if (d2 >= rr * rr) return false;
+  let d = Math.sqrt(d2);
+  if (d < 1e-6) { const l = Math.sqrt(L2) || 1; nx = -dy / l; ny = dx / l; d = 1; } else { nx /= d; ny /= d; }
+  b.x = px + nx * rr; b.y = py + ny * rr;
+  const rvx = b.vx - svx, rvy = b.vy - svy, vn = rvx * nx + rvy * ny;
+  if (vn < 0) {
+    const tx = -ny, ty = nx, vt = rvx * tx + rvy * ty;
+    const nvn = -vn * rest, nvt = vt * 0.9995;
+    b.vx = svx + nx * nvn + tx * nvt; b.vy = svy + ny * nvn + ty * nvt;
+  }
+  return true;
+}
+function hitCirc(b, o) {
+  let nx = b.x - o.x, ny = b.y - o.y;
+  const rr = b.r + o.r, d2 = nx * nx + ny * ny;
+  if (d2 >= rr * rr) return false;
+  const d = Math.sqrt(d2) || 1e-3; nx /= d; ny /= d;
+  b.x = o.x + nx * rr; b.y = o.y + ny * rr;
+  const vn = b.vx * nx + b.vy * ny;
+  if (o.bump) {
+    const tx = -ny, ty = nx, vt = (b.vx * tx + b.vy * ty) * 0.5;
+    const sp = 30 * UB;
+    b.vx = nx * sp + tx * vt; b.vy = ny * sp + ty * vt;
+    o.pulse = 1;
+    if (rk('spring') && b.bounces < 25) { b.bounces++; earn(b.v * 0.02 * rk('spring') * globalMult()); }
+  } else if (vn < 0) {
+    b.vx -= (1 + 0.45) * vn * nx; b.vy -= (1 + 0.45) * vn * ny;
+    b.vx += (Math.random() - 0.5) * 6;
+  }
+  return true;
+}
+
+function collideObj(b, o) {
+  switch (o.t) {
+    case 'seg': return hitSeg(b, o.x1, o.y1, o.x2, o.y2, o.th, 0, 0, 0.25);
+    case 'circ': return hitCirc(b, o);
+    case 'spin': {
+      // surface velocity evaluated at the ball's projection
+      const px = b.x - o.cx, py = b.y - o.cy;
+      return hitSeg(b, o.x1, o.y1, o.x2, o.y2, o.th, -o.w * py, o.w * px, 0.35);
+    }
+    case 'mov': return hitSeg(b, o.x1, o.y1, o.x2, o.y2, o.th, o.vx, 0, 0.2);
+  }
+  return false;
+}
+
+function stepBall(b, h, gy) {
+  b.vy += gy * h;
+  const k0 = Math.floor(b.y / BS);
+  const bk = buckets.get(k0);
+  if (bk && bk.z.length) {
+    for (const z of bk.z) {
+      if (z.t === 'fan') {
+        if (b.x > z.x && b.x < z.x + z.w && b.y > z.y && b.y < z.y + z.h) {
+          b.vy -= z.up * gy * h;
+          b.vx += z.side * gy * h;
+          if (b.vy < -200) b.vy = -200;
+          b.vx *= 0.995;
+        }
+      } else if (z.t === 'ladder') {
+        const cx = Math.max(z.x, Math.min(b.x, z.x + z.w)), cy = Math.max(z.y, Math.min(b.y, z.y + z.h));
+        if ((b.x - cx) ** 2 + (b.y - cy) ** 2 < b.r * b.r) {
+          b.vy = -6.5 * UB; b.vx = z.dir * 5 * UB; b.lad = 0.1;
+        }
+      }
+    }
+  }
+  const sp2 = b.vx * b.vx + b.vy * b.vy;
+  if (sp2 > MAX_SPEED * MAX_SPEED) { const f = MAX_SPEED / Math.sqrt(sp2); b.vx *= f; b.vy *= f; }
+  b.x += b.vx * h; b.y += b.vy * h;
+  if (b.x < b.r) { b.x = b.r; if (b.vx < 0) b.vx = -b.vx * 0.4; }
+  else if (b.x > W - b.r) { b.x = W - b.r; if (b.vx > 0) b.vx = -b.vx * 0.4; }
+
+  const a = Math.floor((b.y - b.r - 8) / BS), c = Math.floor((b.y + b.r + 8) / BS);
+  stamp++;
+  for (let k = a; k <= c; k++) {
+    const bb = buckets.get(k); if (!bb) continue;
+    const os = bb.o;
+    for (let i = 0; i < os.length; i++) {
+      const o = os[i];
+      if (o._s === stamp) continue; o._s = stamp;
+      if (o.ymin > b.y + b.r + 2 || o.ymax < b.y - b.r - 2) continue;
+      if (collideObj(b, o) && o.haz >= 0) { o.kills = (o.kills || 0) + 1; killBall(b, 'haz', o.haz); return; }
+    }
+  }
+}
+
+function ballPairs() {
+  const grid = new Map(), cs = 16;
+  for (let i = 0; i < balls.length; i++) {
+    const b = balls[i]; b.id = i; if (b.dead) continue;
+    const key = Math.floor(b.x / cs) + Math.floor(b.y / cs) * 64;
+    let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(b);
+  }
+  for (const b of balls) {
+    if (b.dead) continue;
+    const gx = Math.floor(b.x / cs), gy = Math.floor(b.y / cs);
+    for (let oy = 0; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      if (oy === 0 && ox < 0) continue;
+      const l = grid.get(gx + ox + (gy + oy) * 64); if (!l) continue;
+      for (const o of l) {
+        if (o === b || o.dead) continue;
+        if (oy === 0 && ox === 0 && o.id <= b.id) continue;
+        const dx = o.x - b.x, dy = o.y - b.y, rr = b.r + o.r, d2 = dx * dx + dy * dy;
+        if (d2 >= rr * rr || d2 === 0) continue;
+        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, ov = (rr - d) / 2;
+        b.x -= nx * ov; b.y -= ny * ov; o.x += nx * ov; o.y += ny * ov;
+        const rv = (o.vx - b.vx) * nx + (o.vy - b.vy) * ny;
+        if (rv < 0) {
+          const ma = b.r * b.r, mb = o.r * o.r, j = -(1.3) * rv / (1 / ma + 1 / mb);
+          b.vx -= j / ma * nx; b.vy -= j / ma * ny; o.vx += j / mb * nx; o.vy += j / mb * ny;
+        }
+      }
+    }
+  }
+}
+
+/* ================================================================
+   Simulation step
+   ================================================================ */
+function step(dt) {
+  simT += dt;
+  for (const o of dyn) {
+    if (o.t === 'spin') o.ang += o.w * dt;
+    updDyn(o, simT);
+  }
+  // generators
+  const cap = ballCap();
+  for (let i = 0; i < GENS.length; i++) {
+    if (!S.owned[i]) continue;
+    const g = gens[i];
+    g.p += dt / genTime(i); g.mp += dt / miniTime(i);
+    if (g.p >= 1) { if (balls.length < cap) { spawnBall(i, false); g.p = Math.min(g.p - 1, 0.99); } else g.p = 1; }
+    if (g.mp >= 1) {
+      if (balls.length < cap) {
+        spawnBall(i, true);
+        if (Math.random() < 0.2 * rk('twin')) spawnBall(i, true);
+        g.mp = Math.min(g.mp - 1, 0.99);
+      } else g.mp = 1;
+    }
+  }
+  const h = dt / SUBSTEPS, gy = gravity();
+  for (let s = 0; s < SUBSTEPS; s++) {
+    for (const b of balls) if (!b.dead) stepBall(b, h, gy);
+  }
+  ballPairs();
+  const lastY = mazes[mazes.length - 1].y1;
+  for (const b of balls) {
+    if (b.dead) continue;
+    // maze tracking
+    if (b.y >= 0) {
+      let k = b.m < 0 ? 0 : b.m;
+      while (k < mazes.length - 1 && b.y >= mazes[k].y1) k++;
+      if (k !== b.m) enterMaze(b, k);
+    }
+    // stuck detection
+    const dx = b.x - b.ax, dy = b.y - b.ay;
+    if (dx * dx + dy * dy > (1.5 * UB) ** 2) { b.ax = b.x; b.ay = b.y; b.st = 0; }
+    else { b.st += dt; if (b.st > b.lim) killBall(b, 'stuck'); }
+    if (b.y > lastY + 200 || !isFinite(b.x) || !isFinite(b.y)) killBall(b, 'lost');
+  }
+  balls = balls.filter(b => !b.dead);
+  for (const o of mazesNear()) if (o.pulse) o.pulse = Math.max(0, o.pulse - dt * 4);
+}
+let pulseList = [];
+function mazesNear() { return pulseList; }
+
+/* ================================================================
+   Rendering
+   ================================================================ */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let VW = 0, VH = 0, DPR = 1, scale = 1, offX = 0;
+const cam = { y: LOBBY_TOP - 60, mode: 'top', target: null };
+
+function resize() {
+  const r = cv.getBoundingClientRect();
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  VW = r.width; VH = r.height;
+  cv.width = Math.max(1, Math.round(VW * DPR)); cv.height = Math.max(1, Math.round(VH * DPR));
+  scale = Math.min((VW - 16) / W, Math.max(0.5, VH / 560), 2.2);
+  if (scale * W > VW - 16) scale = (VW - 16) / W;
+  offX = (VW - W * scale) / 2;
+}
+
+function hudH() { return document.getElementById('hud').offsetHeight; }
+function camTopY() { return LOBBY_TOP - (hudH() + 6) / scale; }
+function camMaxY() { return mazes[mazes.length - 1].y1 - VH / scale * 0.5; }
+
+function updateCamera(dt) {
+  if (cam.mode === 'top') {
+    cam.y += (camTopY() - cam.y) * Math.min(1, dt * 6);
+  } else if (cam.mode === 'follow') {
+    let lead = null;
+    for (const b of balls) if (!lead || b.y > lead.y) lead = b;
+    if (lead) {
+      const ty = lead.y - VH / scale * 0.45;
+      cam.y += (ty - cam.y) * Math.min(1, dt * 3);
+    }
+  }
+  cam.y = Math.max(camTopY(), Math.min(camMaxY(), cam.y));
+}
+
+function mazeTint(m, l) { return `hsl(${m.hue},22%,${l}%)`; }
+
+function draw(now) {
+  const t = now / 1000;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = '#0d1019';
+  ctx.fillRect(0, 0, VW, VH);
+  ctx.setTransform(DPR * scale, 0, 0, DPR * scale, DPR * offX, -DPR * scale * cam.y);
+  const vy0 = cam.y, vy1 = cam.y + VH / scale;
+
+  // lobby backdrop
+  if (vy0 < 0) {
+    const g = ctx.createLinearGradient(0, LOBBY_TOP - 40, 0, 0);
+    g.addColorStop(0, '#191e2e'); g.addColorStop(1, '#262d44');
+    ctx.fillStyle = g; ctx.fillRect(0, LOBBY_TOP - 40, W, -LOBBY_TOP + 40);
+  }
+  // maze backdrops + banners
+  pulseList = [];
+  for (const m of mazes) {
+    if (m.y1 < vy0 || m.y0 > vy1) continue;
+    ctx.fillStyle = mazeTint(m, 23);
+    ctx.fillRect(0, m.y0, W, m.y1 - m.y0);
+    // faint unit ruler on the right edge (every 25 ub)
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for (let u = 25; u * UB < m.y1 - m.y0; u += 25) {
+      const yy = m.y0 + u * UB; if (yy < vy0 - 20 || yy > vy1 + 20) continue;
+      ctx.fillRect(W - 10, yy, 10, 1.5);
+    }
+  }
+  // side walls
+  ctx.fillStyle = '#0a0c14';
+  ctx.fillRect(-60, vy0, 60, vy1 - vy0); ctx.fillRect(W, vy0, 60, vy1 - vy0);
+
+  for (const m of mazes) {
+    if (m.y1 < vy0 - 50 || m.y0 > vy1 + 50) continue;
+    if (m.y0 > vy0 - 40 && m.y0 < vy1 + 40) {
+      ctx.fillStyle = 'rgba(95,224,192,0.18)'; ctx.fillRect(0, m.y0 - 1, W, 2);
+      ctx.fillStyle = 'rgba(230,233,242,0.75)';
+      ctx.font = '600 13px Sora, system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(`MAZE ${m.k + 1}`, 8, m.y0 + 18);
+      ctx.fillStyle = 'rgba(141,149,176,0.85)'; ctx.font = '11px Sora, system-ui, sans-serif';
+      ctx.fillText(`${m.L} ub · ${m.k > S.deepest ? 'unexplored' : 'up to ' + tierName(m.maxTier).toLowerCase() + ' x' + fmt(Math.pow(2, m.maxTier))}`, 8, m.y0 + 33);
+    }
+    drawObjs(m.objs, vy0, vy1, t);
+  }
+  drawObjs(lobbyObjs, vy0, vy1, t);
+  drawGenerators(t);
+
+  // balls
+  for (const b of balls) {
+    if (b.y < vy0 - 10 || b.y > vy1 + 10) continue;
+    ctx.fillStyle = GENS[b.g].c;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+    if (!b.mini) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.32, 0, Math.PI * 2); ctx.fill(); }
+  }
+  // particles
+  for (const p of parts) {
+    if (p.y < vy0 || p.y > vy1) continue;
+    ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.6));
+    ctx.fillStyle = p.col; ctx.fillRect(p.x - 1.6, p.y - 1.6, 3.2, 3.2);
+  }
+  ctx.globalAlpha = 1;
+  // floaters
+  ctx.textAlign = 'center'; ctx.font = '600 12px Sora, system-ui, sans-serif';
+  for (const f of floaters) {
+    if (f.y < vy0 || f.y > vy1) continue;
+    ctx.globalAlpha = Math.min(1, f.life);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(f.txt, f.x + 1, f.y + 1);
+    ctx.fillStyle = f.col; ctx.fillText(f.txt, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+
+  // darkness below the deepest generated maze
+  const lastY = mazes[mazes.length - 1].y1;
+  if (lastY < vy1) { ctx.fillStyle = '#05060a'; ctx.fillRect(-60, lastY, W + 120, vy1 - lastY + 10); }
+}
+
+function drawObjs(list, vy0, vy1, t) {
+  for (const o of list) {
+    if (o.t === 'fan') {
+      if (o.y > vy1 || o.y + o.h < vy0) continue;
+      ctx.fillStyle = 'rgba(126,230,239,0.07)'; ctx.fillRect(o.x, o.y, o.w, o.h);
+      ctx.strokeStyle = 'rgba(126,230,239,0.35)'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let i = 0; i < 9; i++) {
+        const sx = o.x + 8 + ((i * 53.7) % (o.w - 16));
+        const sy = o.y + o.h - ((t * 130 + i * 47) % o.h);
+        ctx.moveTo(sx, sy); ctx.lineTo(sx + (o.side > 0 ? 3 : -3), sy - 14);
+      }
+      ctx.stroke();
+      // fan unit
+      const fy = o.y + o.h - 4;
+      ctx.fillStyle = '#7ee6ef';
+      for (let i = 0; i < 4; i++) {
+        const cx = o.x + o.w * (i + 0.5) / 4, w = 10 * Math.abs(Math.cos(t * 9 + i));
+        ctx.fillRect(cx - w, fy - 2, w * 2, 3);
+      }
+      continue;
+    }
+    if (o.t === 'ladder') {
+      if (o.y > vy1 || o.y + o.h < vy0) continue;
+      ctx.strokeStyle = '#c99a5b'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(o.x + 1, o.y); ctx.lineTo(o.x + 1, o.y + o.h);
+      ctx.moveTo(o.x + o.w - 1, o.y); ctx.lineTo(o.x + o.w - 1, o.y + o.h);
+      for (let yy = o.y + 6; yy < o.y + o.h; yy += 9) { ctx.moveTo(o.x, yy); ctx.lineTo(o.x + o.w, yy); }
+      ctx.stroke();
+      continue;
+    }
+    if (o.ymax < vy0 || o.ymin > vy1) continue;
+    if (o.t === 'circ') {
+      if (o.bump) pulseList.push(o);
+      if (o.haz >= 0) {
+        const col = tierColor(o.haz);
+        ctx.fillStyle = col; ctx.globalAlpha = 0.25;
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.r + 4 + Math.sin(t * 3 + o.x) * 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2); ctx.fill();
+        if (o.r > 5) hazLabel(o.haz, o.x, o.y - o.r - 6);
+      } else if (o.bump) {
+        const p = o.pulse || 0;
+        ctx.fillStyle = '#2a8f80';
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.r + p * 3, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#5fe0c0'; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.fillStyle = '#5fe0c0'; ctx.beginPath(); ctx.arc(o.x, o.y, o.r * 0.35, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.fillStyle = '#aab2cc';
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2); ctx.fill();
+      }
+      continue;
+    }
+    // segments, spinners, movers
+    const haz = o.haz >= 0;
+    ctx.lineCap = 'round';
+    if (haz) {
+      const col = tierColor(o.haz);
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.3; ctx.lineWidth = o.th + 7;
+      ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke();
+      ctx.globalAlpha = 1; ctx.lineWidth = o.th;
+      ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke();
+      hazLabel(o.haz, (o.x1 + o.x2) / 2, Math.min(o.y1, o.y2) - 8);
+    } else {
+      ctx.strokeStyle = o.t === 'seg' ? '#10131c' : o.t === 'spin' ? '#e7c35a' : '#9e7cf0';
+      ctx.lineWidth = o.th;
+      ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke();
+    }
+    if (o.t === 'spin') {
+      ctx.fillStyle = '#10131c'; ctx.beginPath(); ctx.arc(o.cx, o.cy, 4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+function hazLabel(tier, x, y) {
+  ctx.font = '700 10px Sora, system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText('x' + fmt(Math.pow(2, tier)), x + 0.8, y + 0.8);
+  ctx.fillStyle = tierColor(tier); ctx.fillText('x' + fmt(Math.pow(2, tier)), x, y);
+}
+
+function drawGenerators(t) {
+  for (let i = 0; i < GENS.length; i++) {
+    const p = genPositions(i), owned = S.owned[i], col = GENS[i].c;
+    const ring = (x, y, r, prog, small) => {
+      ctx.lineWidth = small ? 3 : 4.5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+      if (owned) {
+        ctx.fillStyle = col; ctx.globalAlpha = 0.18 + 0.22 * prog;
+        ctx.beginPath(); ctx.arc(x, y, r - 4, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = col; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, prog)); ctx.stroke();
+        // leading spark
+        const a = -Math.PI / 2 + Math.PI * 2 * Math.min(1, prog);
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, small ? 1.6 : 2.2, 0, Math.PI * 2); ctx.fill();
+      }
+    };
+    ring(p.bx, p.by, p.br, gens[i].p, false);
+    ring(p.mx, p.my, p.mr, gens[i].mp, true);
+    if (!owned) {
+      // lock glyph
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath(); ctx.arc(p.bx, p.by - 3, 4.5, Math.PI, 0); ctx.stroke();
+      ctx.fillRect(p.bx - 6.5, p.by - 3, 13, 9);
+      ctx.fillStyle = col; ctx.globalAlpha = 0.6;
+      ctx.beginPath(); ctx.arc(p.bx, p.by + p.br + 7, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+/* ================================================================
+   Input: drag to scroll, tap a generator
+   ================================================================ */
+let drag = null;
+cv.addEventListener('pointerdown', e => {
+  drag = { id: e.pointerId, y: e.clientY, x: e.clientX, moved: 0 };
+  cv.setPointerCapture(e.pointerId); cv.classList.add('drag');
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag || drag.id !== e.pointerId) return;
+  const dy = e.clientY - drag.y;
+  drag.moved += Math.abs(dy) + Math.abs(e.clientX - drag.x);
+  drag.y = e.clientY; drag.x = e.clientX;
+  if (drag.moved > 6) { setCamMode('free'); cam.y -= dy / scale; }
+});
+function endDrag(e) {
+  if (!drag) return;
+  if (drag.moved <= 6) {
+    const r = cv.getBoundingClientRect();
+    const wx = (e.clientX - r.left - offX) / scale, wy = (e.clientY - r.top) / scale + cam.y;
+    for (let i = 0; i < GENS.length; i++) {
+      const p = genPositions(i);
+      if (Math.hypot(wx - p.bx, wy - p.by) < p.br + 6 || Math.hypot(wx - p.mx, wy - p.my) < p.mr + 6) { focusGen(i); break; }
+    }
+  }
+  drag = null; cv.classList.remove('drag');
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', () => { drag = null; cv.classList.remove('drag'); });
+cv.addEventListener('wheel', e => { e.preventDefault(); setCamMode('free'); cam.y += e.deltaY / scale; }, { passive: false });
+
+function setCamMode(m) {
+  cam.mode = m;
+  document.getElementById('camTop').classList.toggle('on', m === 'top');
+  document.getElementById('camFollow').classList.toggle('on', m === 'follow');
+}
+document.getElementById('camTop').onclick = () => setCamMode('top');
+document.getElementById('camFollow').onclick = () => setCamMode(cam.mode === 'follow' ? 'free' : 'follow');
+
+/* ================================================================
+   UI
+   ================================================================ */
+const $ = id => document.getElementById(id);
+let buyN = '1';
+$('buyamt').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  buyN = b.dataset.n;
+  [...$('buyamt').children].forEach(x => x.classList.toggle('on', x === b));
+  renderGens(true);
+});
+document.querySelector('.tabs').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  showTab(b.dataset.tab);
+});
+function showTab(name) {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  ['gens', 'skills', 'stats'].forEach(n => $('pane-' + n).hidden = n !== name);
+  if (name === 'skills') renderTree();
+  if (name === 'stats') renderStats();
+}
+$('lvl').onclick = () => showTab('skills');
+
+let toastTimer = 0;
+function toast(msg) {
+  const el = $('toast'); el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+function focusGen(i) {
+  showTab('gens');
+  const row = $('genlist').children[i];
+  if (row) { row.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 900); }
+}
+
+// how many levels to buy, and total cost
+function plan(costFn, lvl, capFn) {
+  let n = 0, total = 0;
+  const want = buyN === 'max' ? 1000 : +buyN;
+  while (n < want) {
+    if (capFn && capFn(lvl + n)) break;
+    const c = costFn(lvl + n);
+    if (buyN === 'max' && total + c > S.c) break;
+    total += c; n++;
+  }
+  if (n === 0) { // show the price of a single level even if unaffordable
+    if (capFn && capFn(lvl)) return { n: 0, total: Infinity, maxed: true };
+    return { n: 1, total: costFn(lvl) };
+  }
+  return { n, total };
+}
+const spdCapped = i => l => rawTime(i, l) <= MIN_TIME;
+
+const LOCK_SVG = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 7V5a4 4 0 0 1 8 0v2h1v8H3V7h1zm2 0h4V5a2 2 0 0 0-4 0v2z"/></svg>';
+let genRows = [];
+function buildGens() {
+  const list = $('genlist'); list.innerHTML = ''; genRows = [];
+  GENS.forEach((g, i) => {
+    const el = document.createElement('div');
+    el.className = 'gen';
+    el.innerHTML = `
+      <div class="ginfo">
+        <div class="dots"><span class="dot big" style="background:${g.c}"></span><span class="dot mini" style="background:${g.c}"></span></div>
+        <div class="gtxt"><div class="gname">${g.n}</div><div class="gstat"></div><div class="gmini"></div></div>
+      </div>
+      <button type="button" class="up" data-k="v"><span class="k">Value</span><span class="p"></span><span class="l"></span></button>
+      <button type="button" class="up" data-k="s"><span class="k">Speed</span><span class="p"></span><span class="l"></span></button>
+      <button type="button" class="unlock">${LOCK_SVG}<span></span></button>`;
+    const [bv, bs] = el.querySelectorAll('.up');
+    const bu = el.querySelector('.unlock');
+    bv.onclick = () => buyUp(i, 'v'); bs.onclick = () => buyUp(i, 's'); bu.onclick = () => buyGen(i);
+    list.appendChild(el);
+    genRows.push({ el, stat: el.querySelector('.gstat'), mini: el.querySelector('.gmini'), bv, bs, bu });
+  });
+}
+function renderGens() {
+  const nx = nextGen();
+  genRows.forEach((r, i) => {
+    const owned = S.owned[i];
+    r.bv.hidden = r.bs.hidden = !owned; r.bu.hidden = owned;
+    if (owned) {
+      r.stat.textContent = `${fmt(genValue(i))} c · ${fmtT(genTime(i))}`;
+      r.mini.textContent = `mini ${fmt(miniValue(i))} c · ${fmtT(miniTime(i))}`;
+      const pv = plan(l => valCost(i, l), S.vl[i]);
+      r.bv.querySelector('.p').textContent = fmt(pv.total);
+      r.bv.querySelector('.l').textContent = `Lv ${S.vl[i]} + ${pv.n}`;
+      r.bv.disabled = S.c < pv.total;
+      const ps = plan(l => spdCost(i, l), S.sl[i], spdCapped(i));
+      if (ps.maxed) { r.bs.querySelector('.p').textContent = 'MAX'; r.bs.querySelector('.l').textContent = `Lv ${S.sl[i]}`; r.bs.disabled = true; }
+      else {
+        r.bs.querySelector('.p').textContent = fmt(ps.total);
+        r.bs.querySelector('.l').textContent = `Lv ${S.sl[i]} + ${ps.n}`;
+        r.bs.disabled = S.c < ps.total;
+      }
+    } else {
+      r.stat.textContent = `${fmt(GENS[i].v)} c · ${fmtT(GENS[i].t)}`;
+      r.mini.textContent = `mini included`;
+      const span = r.bu.querySelector('span');
+      if (i === nx) { span.textContent = fmt(genCost(i)) + ' c'; r.bu.disabled = S.c < genCost(i); }
+      else { span.textContent = `Unlock ${GENS[i - 1].n} first`; r.bu.disabled = true; }
+    }
+  });
+}
+function buyUp(i, k) {
+  if (k === 'v') {
+    const p = plan(l => valCost(i, l), S.vl[i]);
+    if (S.c < p.total) return;
+    S.c -= p.total; S.vl[i] += p.n;
+  } else {
+    const p = plan(l => spdCost(i, l), S.sl[i], spdCapped(i));
+    if (p.maxed || S.c < p.total) return;
+    S.c -= p.total; S.sl[i] += p.n;
+  }
+  renderGens();
+}
+function buyGen(i) {
+  if (i !== nextGen() || S.c < genCost(i)) return;
+  S.c -= genCost(i); S.owned[i] = true;
+  toast(`${GENS[i].n} generator added. Its mini twin came with it.`);
+  renderGens(); save();
+}
+
+/* --- skill tree --- */
+let selSkill = 'root';
+function skillState(s) {
+  const r = rk(s.id);
+  if (r >= s.max) return 'max';
+  const reqOk = s.req.every(q => rk(q) > 0);
+  if (!reqOk) return 'locked';
+  return freeSP() >= s.cost ? 'buy' : 'open';
+}
+function renderTree() {
+  const svg = $('tree');
+  let h = '';
+  for (const s of SKILLS) for (const q of s.req) {
+    const p = SK[q], on = rk(q) > 0 && rk(s.id) > 0;
+    h += `<line x1="${p.x}" y1="${p.y}" x2="${s.x}" y2="${s.y}" stroke="${on ? '#5fe0c0' : rk(q) > 0 ? '#4b5679' : '#2f3754'}" stroke-width="${on ? 3 : 2}"/>`;
+  }
+  for (const s of SKILLS) {
+    const st = skillState(s), r = rk(s.id);
+    const fill = st === 'max' ? '#5fe0c0' : r > 0 ? '#2b7d6c' : st === 'locked' ? '#1b2133' : '#232a40';
+    const stroke = s.id === selSkill ? '#ffffff' : st === 'buy' ? '#f5a524' : st === 'locked' ? '#2f3754' : '#4b5679';
+    const tc = st === 'max' ? '#08261f' : st === 'locked' ? '#4b5679' : '#e6e9f2';
+    h += `<g class="node" data-id="${s.id}" tabindex="0" role="button" aria-label="${s.n}">
+      <circle cx="${s.x}" cy="${s.y}" r="${s.id === 'zen' ? 21 : 17}" fill="${fill}" stroke="${stroke}" stroke-width="${s.id === selSkill ? 3 : 2}"/>
+      <text x="${s.x}" y="${s.y + 5}" text-anchor="middle" font-size="15" fill="${tc}">${s.g}</text>
+      <text x="${s.x}" y="${s.y + (s.id === 'zen' ? 36 : 31)}" text-anchor="middle" font-size="8.5" fill="#c3c9dc">${s.n}</text>
+      <text x="${s.x + 21}" y="${s.y - 14}" text-anchor="start" font-size="8" font-weight="700" fill="${st === 'max' ? '#5fe0c0' : '#8d95b0'}">${r}/${s.max}</text>
+    </g>`;
+  }
+  svg.innerHTML = h;
+  const sp = freeSP(), L = levelOf(S.life);
+  $('sptop').innerHTML = `<b>${sp}</b> skill point${sp === 1 ? '' : 's'} to spend · Level ${L}<br>Next point at ${fmt(lvlNeed(L + 1))} lifetime c (you have ${fmt(S.life)}).`;
+  renderSkillDetail();
+}
+function renderSkillDetail() {
+  const s = SK[selSkill], st = skillState(s), r = rk(s.id);
+  const reqTxt = s.req.length ? 'Needs: ' + s.req.map(q => SK[q].n).join(' + ') + '. ' : '';
+  let btn;
+  if (st === 'max') btn = `<button class="btn" disabled>Fully learned</button>`;
+  else if (st === 'locked') btn = `<button class="btn" disabled>Locked</button>`;
+  else btn = `<button class="btn" id="learn" ${st === 'buy' ? '' : 'disabled'}>Learn rank ${r + 1} · ${s.cost} SP</button>`;
+  $('skdet').innerHTML = `<h3>${s.n} <span style="color:#8d95b0;font-weight:400;font-size:12px">rank ${r}/${s.max}</span></h3><p>${s.d}<br>${reqTxt}Cost: ${s.cost} skill point${s.cost > 1 ? 's' : ''} per rank.</p>${btn}`;
+  const lb = $('learn');
+  if (lb) lb.onclick = () => {
+    if (skillState(s) !== 'buy') return;
+    S.skills[s.id] = r + 1;
+    toast(`${s.n} → rank ${r + 1}`);
+    renderTree(); renderGens(); save();
+  };
+}
+$('tree').addEventListener('click', e => {
+  const g = e.target.closest('.node'); if (!g) return;
+  selSkill = g.dataset.id; renderTree();
+});
+$('tree').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const g = e.target.closest('.node'); if (!g) return;
+  e.preventDefault(); selSkill = g.dataset.id; renderTree();
+});
+
+/* --- stats --- */
+function renderStats() {
+  const st = S.stats;
+  const rows = [
+    ['Balls on the course', `${balls.length} / ${ballCap()}`],
+    ['Balls released', fmt(st.spawned)],
+    ['Eliminated by hazards', fmt(st.elim)],
+    ['Cleared for being stuck', fmt(st.stuck)],
+    ['Deepest maze reached', `Maze ${S.deepest + 1}`],
+    ['Mazes discovered', `${mazes.length}`],
+    ['Best single payout', fmt(st.best) + ' c'],
+    ['Lifetime earnings', fmt(S.life) + ' c'],
+    ['Payout multiplier', '×' + globalMult().toFixed(2)],
+  ];
+  $('statgrid').innerHTML = rows.map(([a, b]) => `<span>${a}</span><span>${b}</span>`).join('');
+  const ts = Object.keys(st.tiers).map(Number).sort((a, b) => a - b);
+  $('tierlist').innerHTML = ts.map(t => `<span class="tier"><i style="background:${tierColor(t)}"></i>${tierName(t)} x${fmt(Math.pow(2, t))}: ${fmt(st.tiers[t])}</span>`).join('');
+}
+$('optFloat').onchange = e => { S.opt.float = e.target.checked; };
+$('resetBtn').onclick = () => { $('resetConfirm').hidden = false; $('resetBtn').hidden = true; };
+$('resetNo').onclick = () => { $('resetConfirm').hidden = true; $('resetBtn').hidden = false; };
+$('resetYes').onclick = () => {
+  S = freshState(); balls = []; gens.forEach(g => { g.p = 0; g.mp = 0; });
+  try { localStorage.removeItem('zen-idle-save'); } catch (e) { /* ignore */ }
+  rebuildWorld(); buildGens(); renderGens(); renderStats(); setCamMode('top');
+  $('resetConfirm').hidden = true; $('resetBtn').hidden = false; $('optFloat').checked = true;
+  toast('Fresh start. One white generator, an empty course.');
+};
+
+function renderHud() {
+  $('money').innerHTML = `${fmt(S.c)}<small>c</small>`;
+  $('rate').textContent = `${fmt(S.rate)} c/s · ${balls.length} balls`;
+  const L = levelOf(S.life), a = L === 0 ? 0 : lvlNeed(L), b = lvlNeed(L + 1);
+  const f = L === 0 ? S.life / LV_BASE : Math.log(S.life / a) / Math.log(b / a);
+  $('lvlfill').style.width = (Math.max(0, Math.min(1, f)) * 100).toFixed(1) + '%';
+  const sp = freeSP();
+  $('lvltxt').textContent = `Lv. ${L}${sp > 0 ? ` · ${sp} skill point${sp > 1 ? 's' : ''} ready` : ''}`;
+  $('spbadge').textContent = sp > 0 ? sp : '';
+  // depth label
+  const cy = cam.y + VH / scale * 0.5;
+  let vm = -1; for (const m of mazes) if (cy >= m.y0 && cy < m.y1) vm = m.k;
+  $('depthlbl').textContent = (vm < 0 ? 'Generators' : `Viewing Maze ${vm + 1}`) + ` · deepest ${S.deepest + 1}`;
+}
+
+/* ================================================================
+   Main loop
+   ================================================================ */
+let lastNow = performance.now(), acc = 0, uiT = 0, rateT = 0, saveT = 0;
+const DT = 1 / 60;
+function frame(now) {
+  let el = (now - lastNow) / 1000; lastNow = now;
+  if (el > 5) { offlineGrant(el, false); el = 0; }
+  acc += Math.min(el, 0.1);
+  let n = 0;
+  while (acc >= DT && n < 4) { step(DT); acc -= DT; n++; }
+  if (n === 4) acc = 0;
+  tickFx(el);
+  updateCamera(Math.min(el, 0.1));
+  draw(now);
+  uiT += el; rateT += el; saveT += el;
+  if (rateT >= 1) { S.rate += (incomeAcc / rateT - S.rate) * 0.15; incomeAcc = 0; rateT = 0; }
+  if (uiT > 0.25) {
+    uiT = 0; renderHud(); renderGens();
+    if (!$('pane-stats').hidden) renderStats();
+    if (!$('pane-skills').hidden) { const sp = freeSP(); if (sp !== lastSP) renderTree(); }
+  }
+  lastSP = freeSP();
+  if (saveT > 10) { saveT = 0; save(); }
+  requestAnimationFrame(frame);
+}
+let lastSP = -1;
+function tickFx(el) {
+  const dt = Math.min(el, 0.1);
+  for (const p of parts) { p.vy += 500 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+  parts = parts.filter(p => p.life > 0);
+  for (const f of floaters) { f.y -= 22 * dt; f.life -= dt; }
+  floaters = floaters.filter(f => f.life > 0);
+}
+function offlineGrant(seconds, onLoad) {
+  const secs = Math.min(seconds, 8 * 3600);
+  const frac = 0.1 + 0.15 * rk('dream');
+  const amt = S.rate * secs * (rk('dream') ? frac : 0);
+  if (amt > 0) { earn(amt); toast(`While you were away (${Math.round(secs / 60)} min) you earned ${fmt(amt)} c.`); }
+  else if (onLoad && seconds > 60) toast('Welcome back. Learn Dream Income to earn while away.');
+}
+
+window.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+window.addEventListener('pagehide', save);
+new ResizeObserver(resize).observe(cv);
+
+// boot
+const hadSave = load();
+rebuildWorld();
+resize();
+buildGens(); renderGens();
+$('optFloat').checked = S.opt.float;
+cam.y = camTopY();
+setCamMode('top');
+if (hadSave) offlineGrant((Date.now() - S.t) / 1000, true);
+else toast('Your white generator is filling. Watch it drop balls into the run.');
+requestAnimationFrame(frame);
+
+// testing hook
+window.__zen = {
+  get S() { return S; }, get balls() { return balls; }, get mazes() { return mazes; }, cam, setCamMode, mazeEntries,
+  sim(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) step(DT); },
+  give(n) { S.c += n; S.life += n; },
+  renderGens,
+  reseed(s) { S.seed = s; S.mazes = 1; S.deepest = 0; balls = []; rebuildWorld(); },
+};
+</script>
+</body>
+</html>
