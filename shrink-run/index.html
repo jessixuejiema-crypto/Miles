@@ -1,0 +1,623 @@
+<title>Shrink Run</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&display=swap">
+<style>
+/* Layout: one full-screen sheet of white paper; the level is drawn in black ink, every run leaves a marker trail. */
+:root {
+  --paper: #ffffff;
+  --ink: #0d0d0f;
+  --ink-soft: #55565c;
+  --chip: #f1f1f3;
+  --line: #dcdce0;
+  --ok: #16a34a;
+  --bad: #dc2626;
+  --display: "Bungee", "Arial Black", Impact, sans-serif;
+  --body: "Rubik", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--paper); color: var(--ink); font-family: var(--body); overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+#app { position: relative; height: 100%; width: 100%; overflow: hidden; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.hud { position: absolute; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+  padding-block: 12px 6px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  pointer-events: none; }
+.hud > * { pointer-events: auto; }
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 22px; letter-spacing: 0.02em; }
+#sizeLbl { font-size: 14px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 6px; border-radius: 999px; background: var(--chip);
+  font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-soft); border: 1.5px solid transparent; }
+.chip i { width: 18px; border-radius: 3px; display: inline-block; }
+.chip.now { border-color: var(--ink); color: var(--ink); font-weight: 700; }
+.chip.done { color: var(--ink); }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+button { font: 500 13px var(--body); color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: 8px;
+  padding: 6px 10px; cursor: pointer; }
+button:hover { background: var(--chip); }
+button:focus-visible { outline: 3px solid #3b82f6; outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+kbd { font: 11px var(--body); opacity: 0.6; margin-left: 4px; }
+
+.status { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  width: min(440px, calc(100% - 32px)); background: var(--paper); border: 2px solid var(--ink); border-radius: 12px;
+  padding: 10px 14px; font-size: 13px; line-height: 1.5; box-shadow: 4px 4px 0 var(--ink); transition: opacity .4s; }
+.status.hide { opacity: 0; pointer-events: none; }
+.status h2 { margin: 0 0 4px; font: 400 14px var(--display); letter-spacing: 0.03em; }
+.status .ok { color: var(--ok); } .status .bad { color: var(--bad); }
+.status div { font-variant-numeric: tabular-nums; }
+
+#touch { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: flex-end;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  pointer-events: none; }
+#touch .pad { display: flex; gap: 12px; pointer-events: auto; }
+#touch button { width: 76px; height: 76px; border-radius: 50%; font: 400 22px var(--display); border-width: 2.5px; background: rgba(255,255,255,.85); touch-action: none; }
+#touch button.on { background: var(--ink); color: var(--paper); }
+#touch #tJ { width: 96px; height: 96px; font-size: 16px; }
+
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.72); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.card { max-width: 460px; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 16px; padding: 22px 24px; box-shadow: 6px 6px 0 var(--ink); display: grid; gap: 12px; }
+.card h2 { margin: 0; font: 400 30px var(--display); text-wrap: balance; }
+.card p { margin: 0; line-height: 1.55; color: var(--ink-soft); }
+.card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.card .go { background: var(--ink); color: var(--paper); font-size: 15px; padding: 10px 18px; }
+.keys { font-size: 13px; color: var(--ink-soft); }
+@media (max-width: 640px) { .brand h1 { font-size: 18px; } .btns kbd { display: none; } }
+@media (prefers-reduced-motion: reduce) { .status { transition: none; } }
+</style>
+
+<div id="app">
+  <canvas id="cv" aria-label="Game level"></canvas>
+  <header class="hud">
+    <div class="brand"><h1>Shrink Run</h1><span id="sizeLbl">Size 1 of 7 · ×1.00</span></div>
+    <div class="legend" id="legend"></div>
+    <div class="btns">
+      <button id="bRestart">Restart<kbd>R</kbd></button>
+      <button id="bProof" aria-pressed="true">Proof path<kbd>P</kbd></button>
+      <button id="bZoom" aria-pressed="false">Zoom<kbd>Z</kbd></button>
+      <button id="bNew">New level<kbd>N</kbd></button>
+    </div>
+  </header>
+  <div id="status" class="status hide" aria-live="polite"></div>
+  <div id="touch" hidden>
+    <div class="pad"><button id="tL" aria-label="Left">◀</button><button id="tR" aria-label="Right">▶</button></div>
+    <div class="pad"><button id="tJ">Jump</button></div>
+  </div>
+  <div id="overlay" class="overlay">
+    <div class="card" id="card">
+      <h2>Shrink Run</h2>
+      <p>Jump over the blocks and reach the flag. Each time you finish, you shrink by 1.5×: smaller body, slower run, lower jump.</p>
+      <p>Before every new size the level tests itself. If the smaller you can't make it, it erases blocks and adds stairs until every size you've been can still finish.</p>
+      <div class="keys">Move: ← → or A D · Jump: ↑ W or Space · Restart: R</div>
+      <div class="row"><button class="go" id="bStart" disabled>Building level…</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+// ---------- constants ----------
+const W = 1600, H = 720, GY = 640;           // world size, ground top
+const VIEW_Y0 = 90, VIEW_H = 625;            // part of the world shown in full view
+const BASE = { w: 22, h: 34, sp: 4.2, g: 0.62, jv: 12.6, mf: 16 };
+const SHRINK = 1.5, ROUNDS = 7;
+const START_X = 30, FINISH_X = 1530;
+const M = 4;                                  // solver frames per decision
+const COLORS = ["#ff1f1f", "#ff8a00", "#ffb000", "#ffe100", "#8fe000", "#14d43c", "#00b8a9"];
+const EPS = 1e-7;
+
+const sizeOf = r => Math.pow(SHRINK, -r);
+const fmt = s => "×" + s.toFixed(2);
+function P(s) {
+  return { s, w: BASE.w * s, h: BASE.h * s, sp: BASE.sp * s, g: BASE.g * s, jv: BASE.jv * s, mf: BASE.mf * s,
+           jh: (BASE.jv * BASE.jv / (2 * BASE.g)) * s };
+}
+
+// ---------- random ----------
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+let rng = mulberry32(Date.now() & 0xffffffff);
+const R = (a, b) => a + rng() * (b - a);
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+// ---------- world / physics (shared by the game and the solver) ----------
+function buildWorld(rects) {
+  const CW = 64, ncol = Math.ceil(W / CW) + 1, cols = Array.from({ length: ncol }, () => []);
+  for (const r of rects) {
+    const a = Math.max(0, Math.floor(r.x / CW)), b = Math.min(ncol - 1, Math.floor((r.x + r.w) / CW));
+    for (let c = a; c <= b; c++) cols[c].push(r);
+  }
+  return { rects, cols, CW, last: ncol - 1 };
+}
+
+function physStep(st, dir, jump, p, world) {
+  if (jump && st.g) { st.vy = -p.jv; st.g = false; }
+  st.vy += p.g; if (st.vy > p.mf) st.vy = p.mf;
+  const cols = world.cols, CW = world.CW, last = world.last;
+  if (dir !== 0) {
+    let nx = st.x + dir * p.sp;
+    if (nx < 0) nx = 0; else if (nx > W - p.w) nx = W - p.w;
+    const x0 = Math.min(st.x, nx), x1 = Math.max(st.x, nx) + p.w, y0 = st.y, y1 = st.y + p.h;
+    const a = Math.max(0, Math.floor(x0 / CW)), b = Math.min(last, Math.floor(x1 / CW));
+    for (let c = a; c <= b; c++) {
+      const col = cols[c];
+      for (let i = 0; i < col.length; i++) {
+        const r = col[i];
+        if (r.y < y1 - EPS && r.y + r.h > y0 + EPS) {
+          if (dir > 0) { if (r.x >= st.x + p.w - EPS && r.x < nx + p.w) nx = r.x - p.w; }
+          else { if (r.x + r.w <= st.x + EPS && r.x + r.w > nx) nx = r.x + r.w; }
+        }
+      }
+    }
+    st.x = nx;
+  }
+  let ny = st.y + st.vy, landed = false;
+  const xa = st.x, xb = st.x + p.w;
+  const a = Math.max(0, Math.floor(xa / CW)), b = Math.min(last, Math.floor(xb / CW));
+  for (let c = a; c <= b; c++) {
+    const col = cols[c];
+    for (let i = 0; i < col.length; i++) {
+      const r = col[i];
+      if (r.x < xb - EPS && r.x + r.w > xa + EPS) {
+        if (st.vy > 0) { if (r.y >= st.y + p.h - EPS && r.y < ny + p.h) { ny = r.y - p.h; landed = true; } }
+        else if (st.vy < 0) { if (r.y + r.h <= st.y + EPS && r.y + r.h > ny) { ny = r.y + r.h; st.vy = 0; } }
+      }
+    }
+  }
+  if (landed) st.vy = 0;
+  st.g = landed; st.y = ny;
+}
+const startState = p => ({ x: START_X, y: GY - p.h, vy: 0, g: true });
+const atGoal = (st, p) => st.x + p.w >= FINISH_X;
+
+// ---------- solver: best-first search over the real physics ----------
+const ACTS = [{ d: 1, j: 1 }, { d: 1, j: 0 }, { d: 0, j: 1 }, { d: -1, j: 1 }, { d: -1, j: 0 }, { d: 0, j: 0 }];
+function solve(rects, s, maxNodes = 220000) {
+  const p = P(s), world = buildWorld(rects), q = 3 * s, qv = 2.5 * s;
+  const X = [], Y = [], V = [], Gd = [], PAR = [], ACT = [];
+  const heap = []; // node ids, max-heap by X
+  const push = n => { heap.push(n); let i = heap.length - 1; while (i > 0) { const pa = (i - 1) >> 1; if (X[heap[pa]] >= X[n]) break; heap[i] = heap[pa]; i = pa; } heap[i] = n; };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { let i = 0; const n = heap.length;
+      while (true) { let l = 2 * i + 1, r = l + 1, m = i; let mv = X[last];
+        if (l < n && X[heap[l]] > mv) { m = l; mv = X[heap[l]]; } if (r < n && X[heap[r]] > mv) m = r;
+        if (m === i) break; heap[i] = heap[m]; i = m; } heap[i] = last; } return top; };
+  const seen = new Set();
+  const key = st => ((Math.round(st.x / q) * 4096 + (Math.round(st.y / q) + 1000)) * 64 + (Math.round(st.vy / qv) + 32)) * 2 + (st.g ? 1 : 0);
+  const s0 = startState(p);
+  X.push(s0.x); Y.push(s0.y); V.push(0); Gd.push(true); PAR.push(-1); ACT.push(-1); seen.add(key(s0)); push(0);
+  let best = { x: s0.x, y: s0.y };
+  const st = { x: 0, y: 0, vy: 0, g: false };
+  while (heap.length && X.length < maxNodes) {
+    const i = pop();
+    for (let ai = 0; ai < ACTS.length; ai++) {
+      const act = ACTS[ai];
+      if (act.j && !Gd[i]) continue;
+      if (Gd[i] && act.d === 0 && !act.j) continue;
+      st.x = X[i]; st.y = Y[i]; st.vy = V[i]; st.g = Gd[i];
+      let goal = false;
+      for (let f = 0; f < M; f++) { physStep(st, act.d, act.j && f === 0, p, world); if (atGoal(st, p)) { goal = true; break; } }
+      const k = key(st);
+      if (!goal && seen.has(k)) continue;
+      seen.add(k);
+      const n = X.length;
+      X.push(st.x); Y.push(st.y); V.push(st.vy); Gd.push(st.g); PAR.push(i); ACT.push(ai);
+      if (goal) {
+        const acts = []; for (let c = n; PAR[c] !== -1; c = PAR[c]) acts.push(ACT[c]);
+        return { ok: true, actions: acts.reverse(), nodes: n };
+      }
+      if (st.g && st.x > best.x) best = { x: st.x, y: st.y };
+      push(n);
+    }
+  }
+  return { ok: false, frontier: best, nodes: X.length };
+}
+function replay(rects, actions, s) {
+  const p = P(s), world = buildWorld(rects), st = startState(p), pts = [[st.x + p.w / 2, st.y + p.h / 2]];
+  for (const ai of actions) { const a = ACTS[ai];
+    for (let f = 0; f < M; f++) { physStep(st, a.d, a.j && f === 0, p, world); pts.push([st.x + p.w / 2, st.y + p.h / 2]); if (atGoal(st, p)) return pts; } }
+  return pts;
+}
+
+// ---------- level generation ----------
+function genLevel() {
+  const rects = [{ x: 0, y: GY, w: W, h: H - GY + 40, fixed: true }];
+  let x = R(190, 260);
+  while (true) {
+    const cw = R(110, 230);
+    if (x + cw > 1420) break;
+    const t = rng(), bh = R(70, 240);
+    if (t < 0.3) {                                   // solid block with a bump on top
+      rects.push({ x, y: GY - bh, w: cw, h: bh });
+      if (rng() < 0.7) { const bw = R(30, 70), bt = R(20, 60); rects.push({ x: x + R(0, cw - bw), y: GY - bh - bt, w: bw, h: bt + 2 }); }
+    } else if (t < 0.55) {                           // arch with a tunnel under it
+      const lw = R(28, 50), rw = R(28, 50), gap = R(44, 90), roof = R(30, 70);
+      rects.push({ x, y: GY - gap, w: lw, h: gap }, { x: x + cw - rw, y: GY - gap, w: rw, h: gap }, { x, y: GY - gap - roof, w: cw, h: roof });
+    } else if (t < 0.8) {                            // tall tower with ledges
+      const tw = R(50, 90), th = R(200, 330), tx = x + cw - tw;
+      rects.push({ x: tx, y: GY - th, w: tw, h: th });
+      let ly = GY - R(80, 110);
+      while (ly > GY - th + 40) { const lw = R(36, 60); rects.push({ x: tx - lw, y: ly, w: lw + 2, h: 18 }); ly -= R(85, 110); }
+    } else {                                         // low block with an overhanging slab
+      rects.push({ x, y: GY - bh * 0.5, w: cw * 0.6, h: bh * 0.5 });
+      rects.push({ x: x + cw * 0.35, y: GY - bh * 0.5 - R(40, 70) - 30, w: cw * 0.65, h: 30 });
+    }
+    if (rng() < 0.5) rects.push({ x: x + cw + R(10, 40), y: GY - R(90, 170), w: R(40, 80), h: 18 });
+    x += cw + R(80, 170);
+  }
+  return rects.map(r => r.fixed ? r : { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) });
+}
+
+// ---------- level surgery ----------
+const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+function subOne(a, b) {
+  if (!overlaps(a, b)) return [a];
+  const out = [], ax2 = a.x + a.w, ay2 = a.y + a.h, bx2 = b.x + b.w, by2 = b.y + b.h;
+  if (a.y < b.y) out.push({ x: a.x, y: a.y, w: a.w, h: b.y - a.y });
+  if (ay2 > by2) out.push({ x: a.x, y: by2, w: a.w, h: ay2 - by2 });
+  const my = Math.max(a.y, b.y), my2 = Math.min(ay2, by2);
+  if (a.x < b.x) out.push({ x: a.x, y: my, w: b.x - a.x, h: my2 - my });
+  if (ax2 > bx2) out.push({ x: bx2, y: my, w: ax2 - bx2, h: my2 - my });
+  return out.filter(r => r.w >= 2 && r.h >= 2);
+}
+function carve(rects, box) {
+  const out = [], erased = [];
+  for (const r of rects) {
+    if (r.fixed || !overlaps(r, box)) { out.push(r); continue; }
+    const ix = Math.max(r.x, box.x), iy = Math.max(r.y, box.y);
+    erased.push({ x: ix, y: iy, w: Math.min(r.x + r.w, box.x + box.w) - ix, h: Math.min(r.y + r.h, box.y + box.h) - iy });
+    out.push(...subOne(r, box));
+  }
+  return { rects: out, erased };
+}
+function findBlocker(rects, fr, p) {
+  const floorY = fr.y + p.h, right = fr.x + p.w;
+  let best = null, any = null;
+  for (const r of rects) {
+    if (r.fixed || r.x < right - 0.5 || r.y >= floorY - 0.5) continue;
+    if (!any || r.x < any.x) any = r;
+    if (r.y + r.h > floorY - p.h - p.jh && r.x <= right + p.sp * M * 3 + 4 && (!best || r.x < best.x)) best = r;
+  }
+  return best || any;
+}
+function wallTopOf(rects, r, floorY) {
+  let top = r.y, changed = true;
+  while (changed) { changed = false;
+    for (const o of rects) if (!o.fixed && o.x <= r.x + 1 && o.x + o.w > r.x && o.y < top && o.y + o.h >= top - 1 && o.y + o.h <= floorY + 1) { top = o.y; changed = true; } }
+  return top;
+}
+function mkStairs(rects, r, fr, p) {
+  const floorY = fr.y + p.h, top = wallTopOf(rects, r, floorY), D = floorY - top;
+  if (D <= p.jh * 0.85) return null;
+  const stepH = 0.55 * p.jh, n = Math.ceil(D / stepH) - 1, stepW = Math.max(p.w * 1.6, 5);
+  if (n < 1 || n > 16 || r.x - n * stepW < START_X + 40) return null;
+  const added = [];
+  for (let i = 1; i <= n; i++) added.push({ x: r.x - (n - i + 1) * stepW, y: floorY - i * stepH, w: stepW, h: i * stepH, step: true });
+  return { rects: rects.concat(added), added, erased: [], label: `Added ${n} stair step${n > 1 ? "s" : ""}` };
+}
+function mkTunnel(rects, r, fr, p) {
+  const floorY = fr.y + p.h, th = p.h * 1.6;
+  const c = carve(rects, { x: r.x - 0.5, y: floorY - th, w: r.w + 1, h: th });
+  return { rects: c.rects, added: [], erased: c.erased, label: "Erased a tunnel through a block" };
+}
+function mkCut(rects, r, fr, p) {
+  const floorY = fr.y + p.h, cutY = Math.max(r.y, floorY - 0.5 * p.jh);
+  const c = carve(rects, { x: r.x - 0.5, y: -2000, w: r.w + 1, h: cutY + 2000 });
+  return { rects: c.rects, added: [], erased: c.erased, label: "Erased the top of a block" };
+}
+function mkRemove(rects, r) {
+  return { rects: rects.filter(o => o !== r), added: [], erased: [{ ...r }], label: "Erased a whole block" };
+}
+
+// ---------- game state ----------
+const G = {
+  rects: [], world: null, round: 0, sizes: [1], trails: [], player: null, phase: "intro",
+  proof: null, showProof: true, zoom: false, fx: [], log: [], busy: false, time: 0, keys: { l: 0, r: 0, j: 0 }, cam: null, face: 1, walk: 0,
+};
+const $ = id => document.getElementById(id);
+const tick = () => new Promise(r => setTimeout(r, 0));
+function setRects(rs) { G.rects = rs; G.world = buildWorld(rs); }
+
+function log(html, cls = "") { G.log.push({ html, cls }); if (G.log.length > 7) G.log.shift(); renderStatus(true); }
+let statusTimer = 0;
+function renderStatus(show) {
+  const el = $("status");
+  el.innerHTML = `<h2>Level check</h2>` + G.log.map(l => `<div class="${l.cls}">${l.html}</div>`).join("");
+  clearTimeout(statusTimer);
+  if (show) el.classList.remove("hide");
+  if (!G.busy) statusTimer = setTimeout(() => el.classList.add("hide"), 3500);
+}
+
+async function allOk(rects, order) {
+  for (const s of order) { if (!solve(rects, s).ok) return false; await tick(); }
+  return true;
+}
+
+// Make sure every size in `sizes` can reach the flag; fix the level when one can't.
+async function ensureSolvable(sizes) {
+  const order = [...sizes].sort((a, b) => a - b);   // smallest first: most likely to fail
+  let fixes = 0, firstPass = true;
+  for (let iter = 0; iter < 90; iter++) {
+    let fail = null, failRes = null;
+    if (!firstPass) log("Re-checking every size…");
+    for (const s of order) {
+      const res = solve(G.rects, s);
+      if (firstPass) log(`Testing ${fmt(s)}… ${res.ok ? '<span class="ok">possible ✓</span>' : '<span class="bad">not possible ✗</span>'}`);
+      await tick();
+      if (!res.ok) { fail = s; failRes = res; break; }
+      if (s === order[0]) G.proof = { s, pts: replay(G.rects, res.actions, s) };
+    }
+    firstPass = false;
+    if (fail === null) {
+      log(`<span class="ok">All ${order.length} size${order.length > 1 ? "s" : ""} can finish ✓</span>`);
+      return fixes;
+    }
+    if (fixes > 0 || iter > 0) log(`<span class="bad">${fmt(fail)} still can't finish ✗</span>`);
+    const p = P(fail), fr = failRes.frontier, blocker = findBlocker(G.rects, fr, p);
+    let chosen = null;
+    if (blocker) {
+      const cands = shuffle([mkStairs, mkTunnel, mkCut]).map(fn => fn(G.rects, blocker, fr, p)).filter(Boolean);
+      for (const c of cands) { if (await allOk(c.rects, [fail, ...order.filter(s => s !== fail)])) { chosen = c; break; } }
+      if (!chosen) for (const c of cands) {
+        const r2 = solve(c.rects, fail);
+        if (r2.ok || r2.frontier.x > fr.x + p.w * 0.5) { chosen = c; break; }
+      }
+      if (!chosen) chosen = mkRemove(G.rects, blocker);
+    } else {
+      const loose = G.rects.filter(r => !r.fixed);
+      if (!loose.length) return fixes;
+      chosen = mkRemove(G.rects, loose[Math.floor(rng() * loose.length)]);
+    }
+    setRects(chosen.rects);
+    G.fx.push({ added: chosen.added, erased: chosen.erased, t: performance.now() });
+    log(chosen.label);
+    fixes++;
+    await tick();
+  }
+  // Safety net: clear blocks until the smallest size can finish.
+  while (!solve(G.rects, order[0]).ok) {
+    const loose = G.rects.filter(r => !r.fixed); if (!loose.length) break;
+    const r = loose.reduce((a, b) => (b.h > a.h ? b : a));
+    setRects(G.rects.filter(o => o !== r)); G.fx.push({ added: [], erased: [{ ...r }], t: performance.now() });
+    await tick();
+  }
+  return fixes;
+}
+
+function resetPlayer() {
+  const p = P(G.sizes[G.round]);
+  G.player = startState(p); G.time = 0; G.face = 1;
+  G.trails[G.round] = { s: p.s, color: COLORS[G.round % COLORS.length], pts: [] };
+}
+
+async function newLevel() {
+  if (G.busy) return;
+  G.busy = true; G.phase = "check"; G.log = []; G.fx = []; G.proof = null;
+  G.round = 0; G.sizes = [1]; G.trails = [];
+  rng = mulberry32((Date.now() ^ (Math.random() * 1e9)) & 0xffffffff);
+  setRects(genLevel());
+  resetPlayer();
+  updateHud();
+  log("Building a new level…");
+  await ensureSolvable(G.sizes);
+  G.busy = false; renderStatus(true);
+  const b = $("bStart"); b.disabled = false; b.textContent = "Start";
+  G.phase = $("overlay").hidden ? "play" : "intro";
+}
+
+async function finishRound() {
+  G.phase = "check"; G.busy = true; G.log = [];
+  const s = G.sizes[G.round];
+  if (G.round >= ROUNDS - 1) { G.busy = false; showWin(); return; }
+  const ns = sizeOf(G.round + 1);
+  log(`Finished at ${fmt(s)} in ${(G.time / 60).toFixed(1)}s. Shrinking 1.5× to ${fmt(ns)}`);
+  G.sizes.push(ns);
+  await ensureSolvable(G.sizes);
+  G.round++;
+  resetPlayer(); updateHud();
+  G.busy = false; renderStatus(true);
+  G.phase = "play";
+}
+
+function showWin() {
+  G.phase = "won";
+  $("card").innerHTML = `<h2>Every size made it</h2>
+    <p>You finished at all ${ROUNDS} sizes, down to ${fmt(sizeOf(ROUNDS - 1))}. The trails show each run, from the thick red one to the thin teal one.</p>
+    <div class="row"><button class="go" id="bAgain">Play a new level</button><button id="bLook">Look at my trails</button></div>`;
+  $("overlay").hidden = false;
+  $("bAgain").onclick = () => { $("overlay").hidden = true; newLevel(); };
+  $("bLook").onclick = () => { $("overlay").hidden = true; };
+}
+
+// ---------- HUD ----------
+function updateHud() {
+  const s = G.sizes[G.round];
+  $("sizeLbl").textContent = `Size ${G.round + 1} of ${ROUNDS} · ${fmt(s)}`;
+  let h = "";
+  for (let i = 0; i < ROUNDS; i++) {
+    const cls = i === G.round ? "chip now" : i < G.round ? "chip done" : "chip";
+    const th = Math.max(2, 9 * sizeOf(i) * 0.8);
+    h += `<span class="${cls}"><i style="background:${COLORS[i]};height:${th.toFixed(1)}px"></i>${fmt(sizeOf(i))}</span>`;
+  }
+  $("legend").innerHTML = h;
+}
+
+// ---------- input ----------
+const keyMap = { ArrowLeft: "l", KeyA: "l", ArrowRight: "r", KeyD: "r", ArrowUp: "j", KeyW: "j", Space: "j" };
+addEventListener("keydown", e => {
+  const k = keyMap[e.code];
+  if (k) { G.keys[k] = 1; e.preventDefault(); if (G.phase === "intro" && !$("bStart").disabled) start(); return; }
+  if (e.repeat) return;
+  if (e.code === "KeyR") restart();
+  else if (e.code === "KeyP") toggleProof();
+  else if (e.code === "KeyZ") toggleZoom();
+  else if (e.code === "KeyN") { $("overlay").hidden = true; newLevel(); }
+  else if (e.code === "Enter" && G.phase === "intro" && !$("bStart").disabled) start();
+});
+addEventListener("keyup", e => { const k = keyMap[e.code]; if (k) G.keys[k] = 0; });
+addEventListener("blur", () => { G.keys.l = G.keys.r = G.keys.j = 0; });
+function bindTouch(id, k) {
+  const el = $(id);
+  const on = e => { e.preventDefault(); G.keys[k] = 1; el.classList.add("on"); el.setPointerCapture?.(e.pointerId); };
+  const off = () => { G.keys[k] = 0; el.classList.remove("on"); };
+  el.addEventListener("pointerdown", on); el.addEventListener("pointerup", off); el.addEventListener("pointercancel", off); el.addEventListener("lostpointercapture", off);
+}
+bindTouch("tL", "l"); bindTouch("tR", "r"); bindTouch("tJ", "j");
+if ("ontouchstart" in window || matchMedia("(pointer: coarse)").matches) $("touch").hidden = false;
+
+function restart() { if (G.phase === "play") resetPlayer(); }
+function toggleProof() { G.showProof = !G.showProof; $("bProof").setAttribute("aria-pressed", G.showProof); }
+function toggleZoom() { G.zoom = !G.zoom; $("bZoom").setAttribute("aria-pressed", G.zoom); }
+function start() { $("overlay").hidden = true; if (!G.busy) G.phase = "play"; }
+$("bRestart").onclick = e => { restart(); e.currentTarget.blur(); };
+$("bProof").onclick = e => { toggleProof(); e.currentTarget.blur(); };
+$("bZoom").onclick = e => { toggleZoom(); e.currentTarget.blur(); };
+$("bNew").onclick = e => { $("overlay").hidden = true; newLevel(); e.currentTarget.blur(); };
+$("bStart").onclick = start;
+
+// ---------- update ----------
+function update() {
+  if (G.phase !== "play") return;
+  const p = P(G.sizes[G.round]), st = G.player;
+  const dir = G.keys.r - G.keys.l;
+  if (dir) G.face = dir;
+  physStep(st, dir, !!G.keys.j, p, G.world);
+  G.time++;
+  if (dir && st.g) G.walk += p.sp / p.w * 0.5;
+  const tr = G.trails[G.round].pts, cx = st.x + p.w / 2, cy = st.y + p.h / 2, last = tr[tr.length - 1];
+  if (!last || Math.hypot(cx - last[0], cy - last[1]) > 1.2 * p.s) tr.push([cx, cy]);
+  if (atGoal(st, p)) finishRound();
+}
+
+// ---------- render ----------
+const cv = $("cv"), ctx = cv.getContext("2d");
+let dpr = 1, cssW = 0, cssH = 0;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  cssW = cv.clientWidth; cssH = cv.clientHeight;
+  cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
+}
+new ResizeObserver(resize).observe(cv); resize();
+
+function camera() {
+  const top = document.querySelector(".hud").offsetHeight + 4;
+  const bottom = $("touch").hidden ? 12 : 110;
+  const availW = cssW - 24, availH = Math.max(120, cssH - top - bottom);
+  const fit = Math.min(availW / W, availH / VIEW_H);
+  const s = G.sizes[G.round] || 1;
+  if (!G.zoom || !G.player) {
+    return { k: fit, ox: (cssW - W * fit) / 2, oy: top + (availH - VIEW_H * fit) / 2 - VIEW_Y0 * fit };
+  }
+  const k = fit * Math.min(8, Math.max(1, 0.8 / s));
+  const p = P(s), px = G.player.x + p.w / 2, py = G.player.y + p.h / 2;
+  const vw = cssW / k, vh = availH / k;
+  let cx = Math.min(Math.max(px, vw / 2), W - vw / 2); if (vw >= W) cx = W / 2;
+  let cy = Math.min(Math.max(py, VIEW_Y0 + vh / 2), H - vh / 2); if (vh >= H - VIEW_Y0) cy = (VIEW_Y0 + H) / 2;
+  return { k, ox: cssW / 2 - cx * k, oy: top + availH / 2 - cy * k };
+}
+
+function drawPlayer(st, p, face) {
+  const { x, y, w, h } = { x: st.x, y: st.y, w: p.w, h: p.h };
+  const legH = h * 0.18, bodyH = h - legH;
+  ctx.fillStyle = "#0d0d0f";
+  const rad = Math.min(w, bodyH) * 0.22;
+  ctx.beginPath(); ctx.roundRect(x, y, w, bodyH, rad); ctx.fill();
+  const sw = st.g ? Math.sin(G.walk) * w * 0.12 : 0;
+  ctx.fillRect(x + w * 0.16 + sw, y + bodyH - 0.5, w * 0.24, legH + 0.5);
+  ctx.fillRect(x + w * 0.6 - sw, y + bodyH - 0.5, w * 0.24, legH + 0.5);
+  ctx.fillStyle = "#ffffff";
+  const ex = x + w * (face > 0 ? 0.5 : 0.18), ey = y + bodyH * 0.24, ew = w * 0.13, eh = bodyH * 0.26;
+  ctx.fillRect(ex, ey, ew, eh); ctx.fillRect(ex + w * 0.2, ey, ew, eh);
+}
+
+function drawFlag() {
+  const fx = FINISH_X + 14;
+  ctx.fillStyle = "#0d0d0f"; ctx.fillRect(fx, GY - 110, 4, 110);
+  const cw = 9, ch = 9;
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) {
+    ctx.fillStyle = (i + j) % 2 ? "#0d0d0f" : "#ffffff";
+    ctx.fillRect(fx + 4 + i * cw, GY - 110 + j * ch, cw, ch);
+  }
+  ctx.strokeStyle = "#0d0d0f"; ctx.lineWidth = 1.5; ctx.strokeRect(fx + 4, GY - 110, cw * 6, ch * 4);
+}
+
+function polyline(pts) {
+  if (pts.length < 2) return;
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.stroke();
+}
+
+function render(now) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, cssW, cssH);
+  const cam = camera();
+  ctx.setTransform(dpr * cam.k, 0, 0, dpr * cam.k, dpr * cam.ox, dpr * cam.oy);
+
+  // start line
+  ctx.strokeStyle = "#dcdce0"; ctx.lineWidth = 2; ctx.setLineDash([8, 8]);
+  ctx.beginPath(); ctx.moveTo(START_X - 6, GY); ctx.lineTo(START_X - 6, GY - 120); ctx.stroke(); ctx.setLineDash([]);
+
+  // blocks
+  ctx.fillStyle = "#0d0d0f";
+  for (const r of G.rects) {
+    if (r.fixed) { ctx.beginPath(); ctx.roundRect(-20, r.y, W + 40, 52, 26); ctx.fill(); }
+    else ctx.fillRect(r.x, r.y, r.w, r.h);
+  }
+  drawFlag();
+
+  // level changes: green = added, red = erased
+  G.fx = G.fx.filter(f => now - f.t < 4000);
+  for (const f of G.fx) {
+    const a = 1 - (now - f.t) / 4000;
+    ctx.globalAlpha = a;
+    for (const r of f.added) { ctx.fillStyle = "#16a34a"; ctx.fillRect(r.x, r.y, r.w, r.h); }
+    ctx.strokeStyle = "#dc2626"; ctx.lineWidth = 2 / cam.k; ctx.setLineDash([5 / cam.k, 4 / cam.k]);
+    for (const r of f.erased) { ctx.fillStyle = "rgba(220,38,38,.18)"; ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeRect(r.x, r.y, r.w, r.h); }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+
+  // trails, like marker lines
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const t of G.trails) {
+    if (!t) continue;
+    ctx.strokeStyle = t.color; ctx.lineWidth = Math.max(1.4, 9 * t.s);
+    polyline(t.pts);
+  }
+
+  // proof path from the solver for the smallest size
+  if (G.showProof && G.proof) {
+    ctx.strokeStyle = "rgba(13,13,15,.55)"; ctx.lineWidth = Math.max(1, 1.6 / cam.k);
+    ctx.setLineDash([4 / cam.k, 5 / cam.k]); polyline(G.proof.pts); ctx.setLineDash([]);
+  }
+
+  if (G.player) drawPlayer(G.player, P(G.sizes[G.round]), G.face);
+
+  // timer
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (G.phase === "play") {
+    ctx.fillStyle = "#55565c"; ctx.font = "500 13px Rubik, system-ui, sans-serif"; ctx.textAlign = "right";
+    ctx.fillText(`${(G.time / 60).toFixed(1)}s`, cssW - Math.max(16, 16), cssH - ( $("touch").hidden ? 14 : 124));
+  }
+}
+
+// ---------- loop ----------
+let acc = 0, lastT = performance.now();
+function frame(now) {
+  acc += Math.min(100, now - lastT); lastT = now;
+  while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
+  render(now);
+  requestAnimationFrame(frame);
+}
+updateHud();
+requestAnimationFrame(frame);
+newLevel();
+
+// test hooks
+window.__shrink = { G, solve, P, sizeOf, ensureSolvable, setRects, replay };
+})();
+</script>
