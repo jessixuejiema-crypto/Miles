@@ -20,13 +20,14 @@
 html, body { height: 100%; }
 body { background: var(--paper); color: var(--ink); font-family: var(--body); overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
 #app { position: relative; height: 100%; width: 100%; overflow: hidden; }
-#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+#cv:active { cursor: grabbing; }
 
 .hud { position: absolute; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
   padding-block: 12px 6px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   pointer-events: none; }
 .hud > * { pointer-events: auto; }
-.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .brand h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 22px; letter-spacing: 0.02em; }
 #sizeLbl { font-size: 14px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; min-width: 0; }
@@ -41,12 +42,13 @@ button { font: 500 13px var(--body); color: var(--ink); background: var(--paper)
 button:hover { background: var(--chip); }
 button:focus-visible { outline: 3px solid #3b82f6; outline-offset: 2px; }
 button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+button:disabled { opacity: .45; cursor: default; }
 kbd { font: 11px var(--body); opacity: 0.6; margin-left: 4px; }
 
 .status { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   width: min(440px, calc(100% - 32px)); background: var(--paper); border: 2px solid var(--ink); border-radius: 12px;
-  padding: 10px 14px; font-size: 13px; line-height: 1.5; box-shadow: 4px 4px 0 var(--ink); transition: opacity .4s; }
-.status.hide { opacity: 0; pointer-events: none; }
+  padding: 10px 14px; font-size: 13px; line-height: 1.5; box-shadow: 4px 4px 0 var(--ink); transition: opacity .4s; pointer-events: none; }
+.status.hide { opacity: 0; }
 .status h2 { margin: 0 0 4px; font: 400 14px var(--display); letter-spacing: 0.03em; }
 .status .ok { color: var(--ok); } .status .bad { color: var(--bad); }
 .status div { font-variant-numeric: tabular-nums; }
@@ -60,26 +62,28 @@ kbd { font: 11px var(--body); opacity: 0.6; margin-left: 4px; }
 #touch #tJ { width: 96px; height: 96px; font-size: 16px; }
 
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.72); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-.card { max-width: 460px; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 16px; padding: 22px 24px; box-shadow: 6px 6px 0 var(--ink); display: grid; gap: 12px; }
+.card { max-width: 480px; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 16px; padding: 22px 24px; box-shadow: 6px 6px 0 var(--ink); display: grid; gap: 12px; }
 .card h2 { margin: 0; font: 400 30px var(--display); text-wrap: balance; }
 .card p { margin: 0; line-height: 1.55; color: var(--ink-soft); }
 .card .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .card .go { background: var(--ink); color: var(--paper); font-size: 15px; padding: 10px 18px; }
-.keys { font-size: 13px; color: var(--ink-soft); }
+.keys { font-size: 13px; color: var(--ink-soft); line-height: 1.6; }
 @media (max-width: 640px) { .brand h1 { font-size: 18px; } .btns kbd { display: none; } }
 @media (prefers-reduced-motion: reduce) { .status { transition: none; } }
 </style>
 
 <div id="app">
-  <canvas id="cv" aria-label="Game level"></canvas>
+  <canvas id="cv" aria-label="Game level. Drag to look around, pinch or scroll to zoom."></canvas>
   <header class="hud">
     <div class="brand"><h1>Shrink Run</h1><span id="sizeLbl">Size 1 of 7 · ×1.00</span></div>
     <div class="legend" id="legend"></div>
     <div class="btns">
-      <button id="bRestart">Restart<kbd>R</kbd></button>
-      <button id="bProof" aria-pressed="true">Proof path<kbd>P</kbd></button>
-      <button id="bZoom" aria-pressed="false">Zoom<kbd>Z</kbd></button>
-      <button id="bNew">New level<kbd>N</kbd></button>
+      <button id="bRestart" title="Go back to the start at the same size">Restart<kbd>R</kbd></button>
+      <button id="bCenter" aria-pressed="false" title="Zoom in and follow your player">Recenter<kbd>C</kbd></button>
+      <button id="bFit" aria-pressed="true" title="Show the whole level">Full view<kbd>F</kbd></button>
+      <button id="bProof" aria-pressed="true" title="Show the path the level check found">Proof path<kbd>P</kbd></button>
+      <button id="bRegen" title="Build a new layout but keep your size and progress">Regenerate<kbd>G</kbd></button>
+      <button id="bNew" title="New level from size 1">Start over<kbd>N</kbd></button>
     </div>
   </header>
   <div id="status" class="status hide" aria-live="polite"></div>
@@ -90,9 +94,10 @@ kbd { font: 11px var(--body); opacity: 0.6; margin-left: 4px; }
   <div id="overlay" class="overlay">
     <div class="card" id="card">
       <h2>Shrink Run</h2>
-      <p>Jump over the blocks and reach the flag. Each time you finish, you shrink by 1.5×: smaller body, slower run, lower jump.</p>
-      <p>Before every new size the level tests itself. If the smaller you can't make it, it erases blocks and adds stairs until every size you've been can still finish.</p>
-      <div class="keys">Move: ← → or A D · Jump: ↑ W or Space · Restart: R</div>
+      <p>Reach the flag. Each time you finish, you shrink by 1.5×: smaller body, slower run, lower jump.</p>
+      <p>Watch out for spinning bars: touching one sends you back to the start. Striped platforms are one-way, so you can jump up through them. Some blocks have tunnels inside.</p>
+      <p>Before every new size the level tests itself. If the smaller you can't finish, it adds stairs and ledges or cuts into blocks until every size you've been can still make it.</p>
+      <div class="keys">Move: ← → or A D · Jump: ↑ W or Space · Restart: R<br>Drag to look around, pinch or scroll to zoom, Recenter (C) to follow your player.</div>
       <div class="row"><button class="go" id="bStart" disabled>Building level…</button></div>
     </div>
   </div>
@@ -108,6 +113,7 @@ const BASE = { w: 22, h: 34, sp: 4.2, g: 0.62, jv: 12.6, mf: 16 };
 const SHRINK = 1.5, ROUNDS = 7;
 const START_X = 30, FINISH_X = 1530;
 const M = 4;                                  // solver frames per decision
+const BAR_T = 10;                             // spinner bar thickness
 const COLORS = ["#ff1f1f", "#ff8a00", "#ffb000", "#ffe100", "#8fe000", "#14d43c", "#00b8a9"];
 const EPS = 1e-7;
 
@@ -115,7 +121,7 @@ const sizeOf = r => Math.pow(SHRINK, -r);
 const fmt = s => "×" + s.toFixed(2);
 function P(s) {
   return { s, w: BASE.w * s, h: BASE.h * s, sp: BASE.sp * s, g: BASE.g * s, jv: BASE.jv * s, mf: BASE.mf * s,
-           jh: (BASE.jv * BASE.jv / (2 * BASE.g)) * s };
+           jh: (BASE.jv * BASE.jv / (2 * BASE.g)) * s, up: BASE.h * s * 0.3 };
 }
 
 // ---------- random ----------
@@ -126,61 +132,117 @@ const R = (a, b) => a + rng() * (b - a);
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
 // ---------- world / physics (shared by the game and the solver) ----------
-function buildWorld(rects) {
-  const CW = 64, ncol = Math.ceil(W / CW) + 1, cols = Array.from({ length: ncol }, () => []);
-  for (const r of rects) {
+// A level is { rects, spinners }. Rects with ow:true are one-way platforms.
+function buildWorld(level) {
+  const CW = 16, ncol = Math.ceil(W / CW) + 1, cols = Array.from({ length: ncol }, () => []);
+  for (const r of level.rects) {
     const a = Math.max(0, Math.floor(r.x / CW)), b = Math.min(ncol - 1, Math.floor((r.x + r.w) / CW));
     for (let c = a; c <= b; c++) cols[c].push(r);
   }
-  return { rects, cols, CW, last: ncol - 1 };
+  const haz = level.spinners.map(sp => ({ x: sp.x, y: sp.y, r: sp.L + BAR_T / 2 + 1.5 }));
+  return { cols, CW, last: ncol - 1, haz };
+}
+
+// Resolve a horizontal move from x to want at height y. Returns the x reached.
+function sweepX(world, x, y, want, p) {
+  const cols = world.cols, CW = world.CW, dir = want > x ? 1 : -1;
+  let nx = want;
+  const x0 = Math.min(x, want), x1 = Math.max(x, want) + p.w, y0 = y, y1 = y + p.h;
+  const a = Math.max(0, Math.floor(x0 / CW)), b = Math.min(world.last, Math.floor(x1 / CW));
+  for (let c = a; c <= b; c++) {
+    const col = cols[c];
+    for (let i = 0; i < col.length; i++) {
+      const r = col[i];
+      if (r.ow || !(r.y < y1 - EPS && r.y + r.h > y0 + EPS)) continue;
+      if (dir > 0) { if (r.x >= x + p.w - EPS && r.x < nx + p.w) nx = r.x - p.w; }
+      else { if (r.x + r.w <= x + EPS && r.x + r.w > nx) nx = r.x + r.w; }
+    }
+  }
+  return nx;
+}
+function solidIn(world, x, y, w, h) {
+  const CW = world.CW, a = Math.max(0, Math.floor(x / CW)), b = Math.min(world.last, Math.floor((x + w) / CW));
+  for (let c = a; c <= b; c++) for (const r of world.cols[c])
+    if (!r.ow && r.x < x + w - EPS && r.x + r.w > x + EPS && r.y < y + h - EPS && r.y + r.h > y + EPS) return true;
+  return false;
+}
+// Highest surface top within [yFrom, yTo] under the span x..x+w (for walking up small steps and curves).
+function surfaceTop(world, x, w, yFrom, yTo) {
+  const CW = world.CW, a = Math.max(0, Math.floor(x / CW)), b = Math.min(world.last, Math.floor((x + w) / CW));
+  let best = Infinity;
+  for (let c = a; c <= b; c++) for (const r of world.cols[c])
+    if (r.x < x + w - EPS && r.x + r.w > x + EPS && r.y >= yFrom - EPS && r.y <= yTo + EPS && r.y < best) best = r.y;
+  return best;
 }
 
 function physStep(st, dir, jump, p, world) {
   if (jump && st.g) { st.vy = -p.jv; st.g = false; }
   st.vy += p.g; if (st.vy > p.mf) st.vy = p.mf;
-  const cols = world.cols, CW = world.CW, last = world.last;
   if (dir !== 0) {
-    let nx = st.x + dir * p.sp;
-    if (nx < 0) nx = 0; else if (nx > W - p.w) nx = W - p.w;
-    const x0 = Math.min(st.x, nx), x1 = Math.max(st.x, nx) + p.w, y0 = st.y, y1 = st.y + p.h;
-    const a = Math.max(0, Math.floor(x0 / CW)), b = Math.min(last, Math.floor(x1 / CW));
-    for (let c = a; c <= b; c++) {
-      const col = cols[c];
-      for (let i = 0; i < col.length; i++) {
-        const r = col[i];
-        if (r.y < y1 - EPS && r.y + r.h > y0 + EPS) {
-          if (dir > 0) { if (r.x >= st.x + p.w - EPS && r.x < nx + p.w) nx = r.x - p.w; }
-          else { if (r.x + r.w <= st.x + EPS && r.x + r.w > nx) nx = r.x + r.w; }
-        }
+    let want = st.x + dir * p.sp;
+    if (want < 0) want = 0; else if (want > W - p.w) want = W - p.w;
+    let nx = sweepX(world, st.x, st.y, want, p);
+    if (nx !== want && st.g) {                       // try to walk up a small step
+      const y2 = st.y - p.up;
+      if (!solidIn(world, st.x, y2, p.w, p.up) && sweepX(world, st.x, y2, want, p) === want) {
+        const top = surfaceTop(world, want, p.w, y2 + p.h, st.y + p.h);
+        if (top !== Infinity) { st.y = top - p.h; nx = want; }
       }
     }
     st.x = nx;
   }
   let ny = st.y + st.vy, landed = false;
-  const xa = st.x, xb = st.x + p.w;
-  const a = Math.max(0, Math.floor(xa / CW)), b = Math.min(last, Math.floor(xb / CW));
+  const xa = st.x, xb = st.x + p.w, CW = world.CW;
+  const a = Math.max(0, Math.floor(xa / CW)), b = Math.min(world.last, Math.floor(xb / CW));
   for (let c = a; c <= b; c++) {
-    const col = cols[c];
+    const col = world.cols[c];
     for (let i = 0; i < col.length; i++) {
       const r = col[i];
       if (r.x < xb - EPS && r.x + r.w > xa + EPS) {
         if (st.vy > 0) { if (r.y >= st.y + p.h - EPS && r.y < ny + p.h) { ny = r.y - p.h; landed = true; } }
-        else if (st.vy < 0) { if (r.y + r.h <= st.y + EPS && r.y + r.h > ny) { ny = r.y + r.h; st.vy = 0; } }
+        else if (st.vy < 0 && !r.ow) { if (r.y + r.h <= st.y + EPS && r.y + r.h > ny) { ny = r.y + r.h; st.vy = 0; } }
       }
     }
   }
   if (landed) st.vy = 0;
   st.g = landed; st.y = ny;
 }
+// The solver keeps clear of the whole circle a spinner sweeps, so its path never depends on timing.
+function inHazard(st, p, haz) {
+  for (const h of haz) {
+    const cx = Math.max(st.x, Math.min(h.x, st.x + p.w)), cy = Math.max(st.y, Math.min(h.y, st.y + p.h));
+    if ((cx - h.x) ** 2 + (cy - h.y) ** 2 < h.r * h.r) return true;
+  }
+  return false;
+}
+// The game checks the real rotating bar.
+function spinnerAngle(sp, frame) { return sp.a0 + sp.w * frame; }
+function hitsSpinner(st, p, sp, frame) {
+  const a = spinnerAngle(sp, frame), dx = Math.cos(a) * sp.L, dy = Math.sin(a) * sp.L, rr = BAR_T / 2;
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 12 - 1, px = sp.x + dx * t, py = sp.y + dy * t;
+    if (px > st.x - rr && px < st.x + p.w + rr && py > st.y - rr && py < st.y + p.h + rr) return true;
+  }
+  return false;
+}
 const startState = p => ({ x: START_X, y: GY - p.h, vy: 0, g: true });
 const atGoal = (st, p) => st.x + p.w >= FINISH_X;
 
 // ---------- solver: best-first search over the real physics ----------
 const ACTS = [{ d: 1, j: 1 }, { d: 1, j: 0 }, { d: 0, j: 1 }, { d: -1, j: 1 }, { d: -1, j: 0 }, { d: 0, j: 0 }];
-function solve(rects, s, maxNodes = 220000) {
-  const p = P(s), world = buildWorld(rects), q = 3 * s, qv = 2.5 * s;
+const STATS = {};
+function solve(level, s, opt = {}) {
+  const maxNodes = opt.maxNodes || 150000;
+  const _t = performance.now(); const _r = solve_(level, s, maxNodes, opt.start, opt.minX ?? -1);
+  const k = s.toFixed(3); const o = STATS[k] || (STATS[k] = { n: 0, ms: 0, fails: 0, cap: 0 });
+  o.n++; o.ms += performance.now() - _t; if (!_r.ok) o.fails++; if (!_r.ok && _r.nodes >= maxNodes) o.cap++;
+  return _r;
+}
+// start: optional grounded state to search from; minX: never explore left of this (used for quick local checks).
+function solve_(level, s, maxNodes, start, minX) {
+  const p = P(s), world = buildWorld(level), q = 4 * s, qv = 3 * s;
   const X = [], Y = [], V = [], Gd = [], PAR = [], ACT = [];
-  const heap = []; // node ids, max-heap by X
+  const heap = [];
   const push = n => { heap.push(n); let i = heap.length - 1; while (i > 0) { const pa = (i - 1) >> 1; if (X[heap[pa]] >= X[n]) break; heap[i] = heap[pa]; i = pa; } heap[i] = n; };
   const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { let i = 0; const n = heap.length;
       while (true) { let l = 2 * i + 1, r = l + 1, m = i; let mv = X[last];
@@ -188,7 +250,7 @@ function solve(rects, s, maxNodes = 220000) {
         if (m === i) break; heap[i] = heap[m]; i = m; } heap[i] = last; } return top; };
   const seen = new Set();
   const key = st => ((Math.round(st.x / q) * 4096 + (Math.round(st.y / q) + 1000)) * 64 + (Math.round(st.vy / qv) + 32)) * 2 + (st.g ? 1 : 0);
-  const s0 = startState(p);
+  const s0 = start ? { x: start.x, y: start.y, vy: 0, g: true } : startState(p), ck = [];
   X.push(s0.x); Y.push(s0.y); V.push(0); Gd.push(true); PAR.push(-1); ACT.push(-1); seen.add(key(s0)); push(0);
   let best = { x: s0.x, y: s0.y };
   const st = { x: 0, y: 0, vy: 0, g: false };
@@ -199,8 +261,13 @@ function solve(rects, s, maxNodes = 220000) {
       if (act.j && !Gd[i]) continue;
       if (Gd[i] && act.d === 0 && !act.j) continue;
       st.x = X[i]; st.y = Y[i]; st.vy = V[i]; st.g = Gd[i];
-      let goal = false;
-      for (let f = 0; f < M; f++) { physStep(st, act.d, act.j && f === 0, p, world); if (atGoal(st, p)) { goal = true; break; } }
+      let goal = false, dead = false;
+      for (let f = 0; f < M; f++) {
+        physStep(st, act.d, act.j && f === 0, p, world);
+        if (world.haz.length && inHazard(st, p, world.haz)) { dead = true; break; }
+        if (atGoal(st, p)) { goal = true; break; }
+      }
+      if (dead || st.x < minX) continue;
       const k = key(st);
       if (!goal && seen.has(k)) continue;
       seen.add(k);
@@ -210,117 +277,221 @@ function solve(rects, s, maxNodes = 220000) {
         const acts = []; for (let c = n; PAR[c] !== -1; c = PAR[c]) acts.push(ACT[c]);
         return { ok: true, actions: acts.reverse(), nodes: n };
       }
-      if (st.g && st.x > best.x) best = { x: st.x, y: st.y };
+      if (st.g) { if (st.x > best.x) best = { x: st.x, y: st.y }; const b = Math.floor(st.x / 30); if (!ck[b]) ck[b] = { x: st.x, y: st.y }; }
       push(n);
     }
   }
-  return { ok: false, frontier: best, nodes: X.length };
+  return { ok: false, frontier: best, nodes: X.length, ck };
 }
-function replay(rects, actions, s) {
-  const p = P(s), world = buildWorld(rects), st = startState(p), pts = [[st.x + p.w / 2, st.y + p.h / 2]];
+function replay(level, actions, s) {
+  const p = P(s), world = buildWorld(level), st = startState(p), pts = [[st.x + p.w / 2, st.y + p.h / 2]];
   for (const ai of actions) { const a = ACTS[ai];
     for (let f = 0; f < M; f++) { physStep(st, a.d, a.j && f === 0, p, world); pts.push([st.x + p.w / 2, st.y + p.h / 2]); if (atGoal(st, p)) return pts; } }
   return pts;
 }
 
+// ---------- shapes ----------
+// Curves are built from thin vertical slices, so collisions stay exact and match what you see.
+function slices(x0, x1, topF, botF, sw = 4) {
+  const out = [];
+  for (let x = x0; x < x1 - 0.01; x += sw) {
+    const xe = Math.min(x1, x + sw), xm = (x + xe) / 2;
+    const t = Math.round(topF(xm) * 2) / 2, b = Math.round(botF(xm) * 2) / 2;
+    if (b - t < 2) continue;
+    const last = out[out.length - 1];
+    if (last && last.y === t && last.y + last.h === b && Math.abs(last.x + last.w - x) < 0.01) last.w = xe - last.x;
+    else out.push({ x, y: t, w: xe - x, h: b - t });
+  }
+  return out;
+}
+function roundedTop(x0, x1, top, rc) {
+  return x => {
+    const dx = x < x0 + rc ? x0 + rc - x : x > x1 - rc ? x - (x1 - rc) : 0;
+    return dx > 0 ? top + rc - Math.sqrt(Math.max(0, rc * rc - dx * dx)) : top;
+  };
+}
+const ground = () => GY;
+
 // ---------- level generation ----------
 function genLevel() {
-  const rects = [{ x: 0, y: GY, w: W, h: H - GY + 40, fixed: true }];
-  let x = R(190, 260);
+  const rects = [{ x: 0, y: GY, w: W, h: H - GY + 40, fixed: true }], spinners = [], gaps = [], clusters = [];
+  const add = list => { for (const r of list) rects.push(r); };
+  let x = R(290, 340);
+  const kinds = shuffle(["rounded", "dome", "arch", "tunnel", "cut", "tower", "rounded", "tunnel", "arch", "cut"]);
+  let ki = 0;
   while (true) {
-    const cw = R(110, 230);
-    if (x + cw > 1420) break;
-    const t = rng(), bh = R(70, 240);
-    if (t < 0.3) {                                   // solid block with a bump on top
-      rects.push({ x, y: GY - bh, w: cw, h: bh });
-      if (rng() < 0.7) { const bw = R(30, 70), bt = R(20, 60); rects.push({ x: x + R(0, cw - bw), y: GY - bh - bt, w: bw, h: bt + 2 }); }
-    } else if (t < 0.55) {                           // arch with a tunnel under it
-      const lw = R(28, 50), rw = R(28, 50), gap = R(44, 90), roof = R(30, 70);
-      rects.push({ x, y: GY - gap, w: lw, h: gap }, { x: x + cw - rw, y: GY - gap, w: rw, h: gap }, { x, y: GY - gap - roof, w: cw, h: roof });
-    } else if (t < 0.8) {                            // tall tower with ledges
-      const tw = R(50, 90), th = R(200, 330), tx = x + cw - tw;
-      rects.push({ x: tx, y: GY - th, w: tw, h: th });
-      let ly = GY - R(80, 110);
-      while (ly > GY - th + 40) { const lw = R(36, 60); rects.push({ x: tx - lw, y: ly, w: lw + 2, h: 18 }); ly -= R(85, 110); }
-    } else {                                         // low block with an overhanging slab
-      rects.push({ x, y: GY - bh * 0.5, w: cw * 0.6, h: bh * 0.5 });
-      rects.push({ x: x + cw * 0.35, y: GY - bh * 0.5 - R(40, 70) - 30, w: cw * 0.65, h: 30 });
+    const kind = kinds[ki++ % kinds.length];
+    let cw = kind === "tunnel" ? R(180, 250) : kind === "tower" ? R(90, 140) : R(120, 220);
+    if (x + cw > 1420) { if (x + 120 > 1420) break; cw = 1420 - x; }
+    let top = GY;
+    if (kind === "rounded") {                        // block with curved corners and maybe a bump
+      const h = R(100, 230), rc = R(12, 40); top = GY - h;
+      add(slices(x, x + cw, roundedTop(x, x + cw, top, rc), ground));
+      if (rng() < 0.5) { const bw = R(40, 70), bx = x + R(rc, cw - bw - rc); add(slices(bx, bx + bw, roundedTop(bx, bx + bw, top - R(25, 50), bw / 2.2), () => top + 2)); }
+    } else if (kind === "dome") {                     // round hill
+      const hh = R(80, 170), cx = x + cw / 2, r = cw / 2; top = GY - hh;
+      add(slices(x, x + cw, xx => GY - hh * Math.sqrt(Math.max(0, 1 - ((xx - cx) / r) ** 2)), ground, 3));
+    } else if (kind === "arch") {                     // block with a curved tunnel under it
+      const h = R(130, 210), rc = R(16, 36), ow = cw * R(0.5, 0.7), oh = R(52, 80), ocx = x + cw / 2; top = GY - h;
+      add(slices(x, x + cw, roundedTop(x, x + cw, top, rc),
+        xx => Math.abs(xx - ocx) < ow / 2 ? GY - oh * Math.sqrt(Math.max(0, 1 - ((xx - ocx) / (ow / 2)) ** 2)) : GY, 3));
+    } else if (kind === "tunnel") {                   // big block with a winding tunnel inside
+      const h = R(180, 250), rc = R(20, 40); top = GY - h;
+      let body = slices(x, x + cw, roundedTop(x, x + cw, top, rc), ground);
+      const shaftX = x + cw * R(0.4, 0.55), shaftW = 48, exitFloor = GY - R(80, 120), passH = 50;
+      const holes = [
+        { x: x - 1, y: GY - passH, w: shaftX - x + 1, h: passH },                       // entrance at ground level
+        { x: shaftX, y: exitFloor - passH, w: shaftW, h: GY - exitFloor + passH },       // shaft going up
+        { x: shaftX, y: exitFloor - passH, w: x + cw - shaftX + 1, h: passH },           // exit higher up on the right
+      ];
+      for (const hole of holes) body = carve({ rects: body, spinners: [] }, hole).level.rects;
+      add(body);
+      for (let py = GY - 60; py > exitFloor + 10; py -= 60) rects.push({ x: shaftX, y: py, w: shaftW, h: 8, ow: true });
+    } else if (kind === "cut") {                      // block with a slit cut into it
+      const h = R(110, 200), rc = R(10, 26); top = GY - h;
+      let body = slices(x, x + cw, roundedTop(x, x + cw, top, rc), ground);
+      const sw = R(28, 40), sx = x + cw * R(0.35, 0.6);
+      body = carve({ rects: body, spinners: [] }, { x: sx, y: top - 50, w: sw, h: R(60, 100) + 50 }).level.rects;
+      if (rng() < 0.6) body = carve({ rects: body, spinners: [] }, { x: x + cw - R(30, 50), y: top - 50, w: 60, h: R(30, 60) + 50 }).level.rects;
+      add(body);
+    } else {                                          // tower with a round top and one-way ledges
+      const tw = R(50, 80), th = R(220, 320), tx = x + cw - tw; top = GY - th;
+      add(slices(tx, tx + tw, roundedTop(tx, tx + tw, top, tw / 2), ground, 3));
+      let ly = GY - R(70, 95);
+      while (ly > top + 50) { const lw = R(42, 64); rects.push({ x: tx - lw, y: ly, w: lw + 2, h: 8, ow: true }); ly -= R(70, 90); }
     }
-    if (rng() < 0.5) rects.push({ x: x + cw + R(10, 40), y: GY - R(90, 170), w: R(40, 80), h: 18 });
-    x += cw + R(80, 170);
+    clusters.push({ x0: x, x1: x + cw, top });
+    const gap = R(90, 170);
+    if (x + cw + gap < 1440) gaps.push({ x0: x + cw, x1: x + cw + gap });
+    x += cw + gap;
+    if (x > 1400) break;
   }
-  return rects.map(r => r.fixed ? r : { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) });
+  // spinning bars: in some gaps, and maybe one above a block
+  for (const gp of shuffle(gaps.slice())) {
+    if (spinners.length >= 2) break;
+    const gw = gp.x1 - gp.x0, L = Math.min(R(38, 60), gw / 2 - 6);
+    if (L < 30 || rng() < 0.3) continue;
+    spinners.push({ x: (gp.x0 + gp.x1) / 2, y: GY - L - R(46, 64), L, w: (rng() < 0.5 ? -1 : 1) * R(0.025, 0.045), a0: R(0, 6.28) });
+    gp.used = true;
+  }
+  if (clusters.length && rng() < 0.7) {
+    const c = clusters[1 + Math.floor(rng() * (clusters.length - 1))] || clusters[0], L = R(34, 52);
+    spinners.push({ x: (c.x0 + c.x1) / 2, y: c.top - L - R(48, 62), L, w: (rng() < 0.5 ? -1 : 1) * R(0.025, 0.04), a0: R(0, 6.28) });
+  }
+  // one-way platforms floating in the other gaps
+  for (const gp of gaps) if (!gp.used && rng() < 0.6) {
+    const w = R(44, 80); rects.push({ x: gp.x0 + R(4, Math.max(5, gp.x1 - gp.x0 - w - 4)), y: GY - R(90, 160), w, h: 8, ow: true });
+  }
+  return { rects, spinners };
 }
 
 // ---------- level surgery ----------
 const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 function subOne(a, b) {
   if (!overlaps(a, b)) return [a];
-  const out = [], ax2 = a.x + a.w, ay2 = a.y + a.h, bx2 = b.x + b.w, by2 = b.y + b.h;
+  const out = [], ax2 = a.x + a.w, ay2 = a.y + a.h, bx2 = b.x + b.w, by2 = b.y + b.h, ow = a.ow;
   if (a.y < b.y) out.push({ x: a.x, y: a.y, w: a.w, h: b.y - a.y });
   if (ay2 > by2) out.push({ x: a.x, y: by2, w: a.w, h: ay2 - by2 });
   const my = Math.max(a.y, b.y), my2 = Math.min(ay2, by2);
   if (a.x < b.x) out.push({ x: a.x, y: my, w: b.x - a.x, h: my2 - my });
   if (ax2 > bx2) out.push({ x: bx2, y: my, w: ax2 - bx2, h: my2 - my });
-  return out.filter(r => r.w >= 2 && r.h >= 2);
+  return out.filter(r => r.w >= 2 && r.h >= 2).map(r => (ow ? { ...r, ow: true } : r));
 }
-function carve(rects, box) {
+function carve(level, box) {
   const out = [], erased = [];
-  for (const r of rects) {
+  for (const r of level.rects) {
     if (r.fixed || !overlaps(r, box)) { out.push(r); continue; }
     const ix = Math.max(r.x, box.x), iy = Math.max(r.y, box.y);
     erased.push({ x: ix, y: iy, w: Math.min(r.x + r.w, box.x + box.w) - ix, h: Math.min(r.y + r.h, box.y + box.h) - iy });
     out.push(...subOne(r, box));
   }
-  return { rects: out, erased };
+  return { level: { rects: out, spinners: level.spinners }, erased };
 }
-function findBlocker(rects, fr, p) {
+function findBlocker(level, fr, p) {
   const floorY = fr.y + p.h, right = fr.x + p.w;
   let best = null, any = null;
-  for (const r of rects) {
-    if (r.fixed || r.x < right - 0.5 || r.y >= floorY - 0.5) continue;
+  for (const r of level.rects) {
+    if (r.fixed || r.ow || r.x < right - 0.5 || r.y >= floorY - 0.5) continue;
     if (!any || r.x < any.x) any = r;
     if (r.y + r.h > floorY - p.h - p.jh && r.x <= right + p.sp * M * 3 + 4 && (!best || r.x < best.x)) best = r;
   }
   return best || any;
 }
-function wallTopOf(rects, r, floorY) {
+function findSpinner(level, fr, p) {
+  let best = null, bd = Infinity;
+  for (const sp of level.spinners) {
+    const rad = sp.L + BAR_T / 2, left = sp.x - rad;
+    if (sp.x + rad < fr.x) continue;
+    const d = left - (fr.x + p.w);
+    if (d < p.jh * 1.5 + p.sp * M * 4 && d < bd) { bd = d; best = sp; }
+  }
+  return best;
+}
+function wallTopOf(level, r, floorY) {
   let top = r.y, changed = true;
   while (changed) { changed = false;
-    for (const o of rects) if (!o.fixed && o.x <= r.x + 1 && o.x + o.w > r.x && o.y < top && o.y + o.h >= top - 1 && o.y + o.h <= floorY + 1) { top = o.y; changed = true; } }
+    for (const o of level.rects) if (!o.fixed && !o.ow && o.x <= r.x + 1 && o.x + o.w > r.x && o.y < top && o.y + o.h >= top - 1 && o.y + o.h <= floorY + 1) { top = o.y; changed = true; } }
   return top;
 }
-function mkStairs(rects, r, fr, p) {
-  const floorY = fr.y + p.h, top = wallTopOf(rects, r, floorY), D = floorY - top;
+const withRects = (level, rects) => ({ rects, spinners: level.spinners });
+function mkStairs(level, r, fr, p) {
+  const floorY = fr.y + p.h, top = wallTopOf(level, r, floorY), D = floorY - top;
   if (D <= p.jh * 0.85) return null;
-  const stepH = 0.55 * p.jh, n = Math.ceil(D / stepH) - 1, stepW = Math.max(p.w * 1.6, 5);
-  if (n < 1 || n > 16 || r.x - n * stepW < START_X + 40) return null;
+  // Steps low enough for the smallest size, so these stairs never block a later, smaller you.
+  const stepH = 0.55 * P(sizeOf(ROUNDS - 1)).jh, stepW = Math.max(4, stepH * 1.1), n = Math.ceil(D / stepH) - 1;
+  if (n < 1 || n > 60 || r.x - n * stepW < START_X + 40) return null;
   const added = [];
-  for (let i = 1; i <= n; i++) added.push({ x: r.x - (n - i + 1) * stepW, y: floorY - i * stepH, w: stepW, h: i * stepH, step: true });
-  return { rects: rects.concat(added), added, erased: [], label: `Added ${n} stair step${n > 1 ? "s" : ""}` };
+  for (let i = 1; i <= n; i++) added.push({ x: r.x - (n - i + 1) * stepW, y: floorY - i * stepH, w: stepW, h: i * stepH });
+  return { level: withRects(level, level.rects.concat(added)), added, erased: [], modX: added[0].x, label: `Added ${n} stair step${n > 1 ? "s" : ""}` };
 }
-function mkTunnel(rects, r, fr, p) {
+function mkLedges(level, r, fr, p) {
+  const floorY = fr.y + p.h, top = wallTopOf(level, r, floorY), D = floorY - top;
+  if (D <= p.jh * 0.85) return null;
+  const stepH = 0.55 * p.jh, n = Math.ceil(D / stepH) - 1, lw = Math.max(p.w * 2.4, 12), th = Math.max(3, Math.min(8, p.h * 0.3));
+  if (n < 1 || n > 16 || r.x - lw < START_X + 40) return null;
+  const added = [];
+  for (let i = 1; i <= n; i++) added.push({ x: r.x - lw, y: floorY - i * stepH, w: lw, h: th, ow: true });
+  return { level: withRects(level, level.rects.concat(added)), added, erased: [], modX: added[0].x, label: `Added ${n} one-way ledge${n > 1 ? "s" : ""}` };
+}
+// How far a solid obstacle reaches to the right of r, so cuts handle a whole curved shape and not one thin slice.
+function spanOf(level, r, floorY) {
+  let end = r.x + r.w, changed = true;
+  while (changed && end - r.x < 260) { changed = false;
+    for (const o of level.rects) if (!o.fixed && !o.ow && o.x <= end + 0.5 && o.x + o.w > end && o.y < floorY - 0.5) { end = o.x + o.w; changed = true; } }
+  return Math.min(end, r.x + 260) - r.x;
+}
+function mkTunnel(level, r, fr, p) {
   const floorY = fr.y + p.h, th = p.h * 1.6;
-  const c = carve(rects, { x: r.x - 0.5, y: floorY - th, w: r.w + 1, h: th });
-  return { rects: c.rects, added: [], erased: c.erased, label: "Erased a tunnel through a block" };
+  const c = carve(level, { x: r.x - 0.5, y: floorY - th, w: Math.max(spanOf(level, r, floorY), p.w * 3) + 1, h: th });
+  return { level: c.level, added: [], erased: c.erased, modX: r.x, label: "Cut a tunnel into a block" };
 }
-function mkCut(rects, r, fr, p) {
+function mkCut(level, r, fr, p) {
   const floorY = fr.y + p.h, cutY = Math.max(r.y, floorY - 0.5 * p.jh);
-  const c = carve(rects, { x: r.x - 0.5, y: -2000, w: r.w + 1, h: cutY + 2000 });
-  return { rects: c.rects, added: [], erased: c.erased, label: "Erased the top of a block" };
+  const c = carve(level, { x: r.x - 0.5, y: -2000, w: Math.max(spanOf(level, r, floorY), p.w * 2) + 1, h: cutY + 2000 });
+  return { level: c.level, added: [], erased: c.erased, modX: r.x, label: "Cut the top off a block" };
 }
-function mkRemove(rects, r) {
-  return { rects: rects.filter(o => o !== r), added: [], erased: [{ ...r }], label: "Erased a whole block" };
+function mkRemove(level, r, fr, p) {
+  const floorY = fr.y + p.h, c = carve(level, { x: r.x - 0.5, y: -2000, w: spanOf(level, r, floorY) + 1, h: floorY + 2000 });
+  return { level: c.level, added: [], erased: c.erased, modX: r.x, label: "Erased a block" };
 }
+function spinnerSwap(level, sp, nsp, label) {
+  const spinners = level.spinners.filter(o => o !== sp); if (nsp) spinners.push(nsp);
+  return { level: { rects: level.rects, spinners }, added: [], erased: [], ring: { x: sp.x, y: sp.y, r: sp.L }, modX: sp.x - sp.L - BAR_T * 2, label };
+}
+const mkSpinShorter = (level, sp) => sp.L * 0.62 < 18 ? null : spinnerSwap(level, sp, { ...sp, L: sp.L * 0.62 }, "Shortened a spinning bar");
+const mkSpinRaise = (level, sp) => spinnerSwap(level, sp, { ...sp, y: sp.y - sp.L * 0.9 }, "Moved a spinning bar up");
+const mkSpinRemove = (level, sp) => spinnerSwap(level, sp, null, "Erased a spinning bar");
 
 // ---------- game state ----------
 const G = {
-  rects: [], world: null, round: 0, sizes: [1], trails: [], player: null, phase: "intro",
-  proof: null, showProof: true, zoom: false, fx: [], log: [], busy: false, time: 0, keys: { l: 0, r: 0, j: 0 }, cam: null, face: 1, walk: 0,
+  level: { rects: [], spinners: [] }, world: null, round: 0, sizes: [1], trails: [], player: null, phase: "intro",
+  proof: null, showProof: true, fx: [], log: [], busy: false, time: 0, frame: 0, deaths: 0, flash: 0,
+  keys: { l: 0, r: 0, j: 0 }, face: 1, walk: 0,
+  cam: { mode: "fit", k: 1, cx: W / 2, cy: VIEW_Y0 + VIEW_H / 2, init: false },
 };
 const $ = id => document.getElementById(id);
 const tick = () => new Promise(r => setTimeout(r, 0));
-function setRects(rs) { G.rects = rs; G.world = buildWorld(rs); }
+function setLevel(lv) { G.level = lv; G.world = buildWorld(lv); }
 
 function log(html, cls = "") { G.log.push({ html, cls }); if (G.log.length > 7) G.log.shift(); renderStatus(true); }
 let statusTimer = 0;
@@ -332,95 +503,127 @@ function renderStatus(show) {
   if (!G.busy) statusTimer = setTimeout(() => el.classList.add("hide"), 3500);
 }
 
-async function allOk(rects, order) {
-  for (const s of order) { if (!solve(rects, s).ok) return false; await tick(); }
+async function allOk(level, order) {
+  for (const s of order) { if (!solve(level, s).ok) return false; await tick(); }
   return true;
 }
 
 // Make sure every size in `sizes` can reach the flag; fix the level when one can't.
+// Fixes that add things (stairs, ledges) are tried before fixes that remove things, so the level stays challenging.
 async function ensureSolvable(sizes) {
-  const order = [...sizes].sort((a, b) => a - b);   // smallest first: most likely to fail
-  let fixes = 0, firstPass = true;
-  for (let iter = 0; iter < 90; iter++) {
+  const order = [...sizes].sort((a, b) => a - b);
+  let fixes = 0, firstPass = true, warned = false;
+  const t0 = performance.now(), hurry = () => performance.now() - t0 > 8000;
+  for (let iter = 0; iter < 90 && performance.now() - t0 < 20000; iter++) {
     let fail = null, failRes = null;
     if (!firstPass) log("Re-checking every size…");
     for (const s of order) {
-      const res = solve(G.rects, s);
+      const res = solve(G.level, s);
       if (firstPass) log(`Testing ${fmt(s)}… ${res.ok ? '<span class="ok">possible ✓</span>' : '<span class="bad">not possible ✗</span>'}`);
       await tick();
       if (!res.ok) { fail = s; failRes = res; break; }
-      if (s === order[0]) G.proof = { s, pts: replay(G.rects, res.actions, s) };
+      if (s === order[0]) G.proof = { s, pts: replay(G.level, res.actions, s) };
     }
     firstPass = false;
     if (fail === null) {
       log(`<span class="ok">All ${order.length} size${order.length > 1 ? "s" : ""} can finish ✓</span>`);
       return fixes;
     }
-    if (fixes > 0 || iter > 0) log(`<span class="bad">${fmt(fail)} still can't finish ✗</span>`);
-    const p = P(fail), fr = failRes.frontier, blocker = findBlocker(G.rects, fr, p);
+    if (iter > 0) log(`<span class="bad">${fmt(fail)} still can't finish ✗</span>`);
+    const p = P(fail), fr = failRes.frontier, blocker = findBlocker(G.level, fr, p), sp = findSpinner(G.level, fr, p);
+    // Taking too long: switch to fewer, bolder fixes.
+    if (hurry() && !warned) { warned = true; log("Taking a while, trying bigger fixes…"); }
+    const rectList = hurry() ? [mkCut] : [...shuffle([mkStairs, mkLedges]), ...shuffle([mkTunnel, mkCut])];
+    const rectFns = blocker ? rectList.map(fn => fn(G.level, blocker, fr, p)) : [];
+    const spinFns = sp ? (hurry() ? [mkSpinRemove] : [mkSpinShorter, mkSpinRaise, mkSpinRemove]).map(fn => fn(G.level, sp)) : [];
+    const spinFirst = sp && (!blocker || sp.x - sp.L < blocker.x);
+    const cands = (spinFirst ? [...spinFns, ...rectFns] : [...rectFns, ...spinFns]).filter(Boolean);
     let chosen = null;
-    if (blocker) {
-      const cands = shuffle([mkStairs, mkTunnel, mkCut]).map(fn => fn(G.rects, blocker, fr, p)).filter(Boolean);
-      for (const c of cands) { if (await allOk(c.rects, [fail, ...order.filter(s => s !== fail)])) { chosen = c; break; } }
-      if (!chosen) for (const c of cands) {
-        const r2 = solve(c.rects, fail);
-        if (r2.ok || r2.frontier.x > fr.x + p.w * 0.5) { chosen = c; break; }
-      }
-      if (!chosen) chosen = mkRemove(G.rects, blocker);
-    } else {
-      const loose = G.rects.filter(r => !r.fixed);
-      if (!loose.length) return fixes;
-      chosen = mkRemove(G.rects, loose[Math.floor(rng() * loose.length)]);
+    // Quick local test: search only from a checkpoint just before the changed spot.
+    const local = c => {
+      const pts = (failRes.ck || []).filter(q => q && q.x < c.modX - 2 * p.w - 2).sort((a, b) => b.x - a.x);
+      const w2 = buildWorld(c.level);
+      const st = pts.find(q => !solidIn(w2, q.x, q.y, p.w, p.h) && !inHazard(q, p, w2.haz));
+      if (!st) return solve(c.level, fail);
+      return solve(c.level, fail, { start: st, minX: st.x - 150 * Math.max(p.s, 0.3), maxNodes: 60000 });
+    };
+    const quick = new Map();
+    for (const c of cands) {
+      const q = local(c); quick.set(c, q); await tick();
+      if (q.ok && await allOk(c.level, [fail, ...order.filter(s => s !== fail)])) { chosen = c; break; }
     }
-    setRects(chosen.rects);
-    G.fx.push({ added: chosen.added, erased: chosen.erased, t: performance.now() });
+    // No single fix works for every size: take one that gets the failing size further without breaking the others.
+    const others = order.filter(s => s !== fail);
+    const removals = [blocker && mkRemove(G.level, blocker, fr, p), sp && mkSpinRemove(G.level, sp)].filter(Boolean);
+    if (!chosen) for (const c of (hurry() ? removals : [...cands, ...removals])) {
+      const r2 = quick.get(c) || local(c);
+      if ((r2.ok || r2.frontier.x > fr.x + p.w * 0.5) && await allOk(c.level, others)) { chosen = c; break; }
+    }
+    if (!chosen) chosen = removals[0] || null;
+    if (!chosen) {
+      const loose = G.level.rects.filter(r => !r.fixed && r.x > fr.x);
+      if (!loose.length) break;
+      const r = loose[Math.floor(rng() * loose.length)];
+      chosen = { level: withRects(G.level, G.level.rects.filter(o => o !== r)), added: [], erased: [{ ...r }], label: "Erased a block" };
+    }
+    setLevel(chosen.level);
+    G.fx.push({ added: chosen.added, erased: chosen.erased, ring: chosen.ring, t: performance.now() });
     log(chosen.label);
     fixes++;
     await tick();
   }
-  // Safety net: clear blocks until the smallest size can finish.
-  while (!solve(G.rects, order[0]).ok) {
-    const loose = G.rects.filter(r => !r.fixed); if (!loose.length) break;
+  // Safety net: clear spinners, then the tallest blocks, until every size can finish.
+  while (!order.every(s => solve(G.level, s).ok)) {
+    if (G.level.spinners.length) { setLevel({ rects: G.level.rects, spinners: G.level.spinners.slice(1) }); continue; }
+    const loose = G.level.rects.filter(r => !r.fixed); if (!loose.length) break;
     const r = loose.reduce((a, b) => (b.h > a.h ? b : a));
-    setRects(G.rects.filter(o => o !== r)); G.fx.push({ added: [], erased: [{ ...r }], t: performance.now() });
-    await tick();
+    setLevel(withRects(G.level, G.level.rects.filter(o => o !== r))); await tick();
   }
+  const fin = solve(G.level, order[0]); if (fin.ok) G.proof = { s: order[0], pts: replay(G.level, fin.actions, order[0]) };
   return fixes;
 }
 
-function resetPlayer() {
+function resetPlayer(clearTrail = true) {
   const p = P(G.sizes[G.round]);
   G.player = startState(p); G.time = 0; G.face = 1;
-  G.trails[G.round] = { s: p.s, color: COLORS[G.round % COLORS.length], pts: [] };
+  if (clearTrail || !G.trails[G.round]) G.trails[G.round] = { s: p.s, color: COLORS[G.round % COLORS.length], pts: [] };
 }
 
-async function newLevel() {
+function setButtonsBusy(b) { $("bRegen").disabled = b; $("bNew").disabled = b; }
+
+async function newLevel(keepProgress = false) {
   if (G.busy) return;
-  G.busy = true; G.phase = "check"; G.log = []; G.fx = []; G.proof = null;
-  G.round = 0; G.sizes = [1]; G.trails = [];
-  rng = mulberry32((Date.now() ^ (Math.random() * 1e9)) & 0xffffffff);
-  setRects(genLevel());
+  G.busy = true; setButtonsBusy(true); G.phase = "check"; G.log = []; G.fx = []; G.proof = null; G.deaths = 0;
+  if (!keepProgress) { G.round = 0; G.sizes = [1]; }
+  G.trails = [];
+  rng = mulberry32(window.__seed ?? ((Date.now() ^ (Math.random() * 1e9)) & 0xffffffff));
+  setLevel(genLevel());
   resetPlayer();
   updateHud();
-  log("Building a new level…");
+  log(keepProgress ? `Building a new layout for size ${G.round + 1}…` : "Building a new level…");
   await ensureSolvable(G.sizes);
-  G.busy = false; renderStatus(true);
+  G.busy = false; setButtonsBusy(false); renderStatus(true);
   const b = $("bStart"); b.disabled = false; b.textContent = "Start";
   G.phase = $("overlay").hidden ? "play" : "intro";
 }
 
 async function finishRound() {
-  G.phase = "check"; G.busy = true; G.log = [];
+  G.phase = "check"; G.busy = true; setButtonsBusy(true); G.log = [];
   const s = G.sizes[G.round];
-  if (G.round >= ROUNDS - 1) { G.busy = false; showWin(); return; }
+  if (G.round >= ROUNDS - 1) { G.busy = false; setButtonsBusy(false); showWin(); return; }
   const ns = sizeOf(G.round + 1);
   log(`Finished at ${fmt(s)} in ${(G.time / 60).toFixed(1)}s. Shrinking 1.5× to ${fmt(ns)}`);
   G.sizes.push(ns);
   await ensureSolvable(G.sizes);
-  G.round++;
+  G.round++; G.deaths = 0;
   resetPlayer(); updateHud();
-  G.busy = false; renderStatus(true);
+  G.busy = false; setButtonsBusy(false); renderStatus(true);
   G.phase = "play";
+}
+
+function die() {
+  G.deaths++; G.flash = performance.now();
+  resetPlayer(); updateHud();
 }
 
 function showWin() {
@@ -429,14 +632,14 @@ function showWin() {
     <p>You finished at all ${ROUNDS} sizes, down to ${fmt(sizeOf(ROUNDS - 1))}. The trails show each run, from the thick red one to the thin teal one.</p>
     <div class="row"><button class="go" id="bAgain">Play a new level</button><button id="bLook">Look at my trails</button></div>`;
   $("overlay").hidden = false;
-  $("bAgain").onclick = () => { $("overlay").hidden = true; newLevel(); };
+  $("bAgain").onclick = () => { $("overlay").hidden = true; newLevel(false); };
   $("bLook").onclick = () => { $("overlay").hidden = true; };
 }
 
 // ---------- HUD ----------
 function updateHud() {
   const s = G.sizes[G.round];
-  $("sizeLbl").textContent = `Size ${G.round + 1} of ${ROUNDS} · ${fmt(s)}`;
+  $("sizeLbl").textContent = `Size ${G.round + 1} of ${ROUNDS} · ${fmt(s)}` + (G.deaths ? ` · ${G.deaths} hit${G.deaths > 1 ? "s" : ""}` : "");
   let h = "";
   for (let i = 0; i < ROUNDS; i++) {
     const cls = i === G.round ? "chip now" : i < G.round ? "chip done" : "chip";
@@ -444,6 +647,11 @@ function updateHud() {
     h += `<span class="${cls}"><i style="background:${COLORS[i]};height:${th.toFixed(1)}px"></i>${fmt(sizeOf(i))}</span>`;
   }
   $("legend").innerHTML = h;
+}
+function setCamMode(m) {
+  G.cam.mode = m;
+  $("bCenter").setAttribute("aria-pressed", m === "follow");
+  $("bFit").setAttribute("aria-pressed", m === "fit");
 }
 
 // ---------- input ----------
@@ -453,9 +661,11 @@ addEventListener("keydown", e => {
   if (k) { G.keys[k] = 1; e.preventDefault(); if (G.phase === "intro" && !$("bStart").disabled) start(); return; }
   if (e.repeat) return;
   if (e.code === "KeyR") restart();
+  else if (e.code === "KeyC") setCamMode("follow");
+  else if (e.code === "KeyF") setCamMode("fit");
   else if (e.code === "KeyP") toggleProof();
-  else if (e.code === "KeyZ") toggleZoom();
-  else if (e.code === "KeyN") { $("overlay").hidden = true; newLevel(); }
+  else if (e.code === "KeyG") { $("overlay").hidden = true; newLevel(true); }
+  else if (e.code === "KeyN") { $("overlay").hidden = true; newLevel(false); }
   else if (e.code === "Enter" && G.phase === "intro" && !$("bStart").disabled) start();
 });
 addEventListener("keyup", e => { const k = keyMap[e.code]; if (k) G.keys[k] = 0; });
@@ -471,16 +681,19 @@ if ("ontouchstart" in window || matchMedia("(pointer: coarse)").matches) $("touc
 
 function restart() { if (G.phase === "play") resetPlayer(); }
 function toggleProof() { G.showProof = !G.showProof; $("bProof").setAttribute("aria-pressed", G.showProof); }
-function toggleZoom() { G.zoom = !G.zoom; $("bZoom").setAttribute("aria-pressed", G.zoom); }
 function start() { $("overlay").hidden = true; if (!G.busy) G.phase = "play"; }
-$("bRestart").onclick = e => { restart(); e.currentTarget.blur(); };
-$("bProof").onclick = e => { toggleProof(); e.currentTarget.blur(); };
-$("bZoom").onclick = e => { toggleZoom(); e.currentTarget.blur(); };
-$("bNew").onclick = e => { $("overlay").hidden = true; newLevel(); e.currentTarget.blur(); };
+const btn = (id, fn) => { $(id).onclick = e => { fn(); e.currentTarget.blur(); }; };
+btn("bRestart", restart);
+btn("bCenter", () => setCamMode("follow"));
+btn("bFit", () => setCamMode("fit"));
+btn("bProof", toggleProof);
+btn("bRegen", () => { $("overlay").hidden = true; newLevel(true); });
+btn("bNew", () => { $("overlay").hidden = true; newLevel(false); });
 $("bStart").onclick = start;
 
 // ---------- update ----------
 function update() {
+  G.frame++;
   if (G.phase !== "play") return;
   const p = P(G.sizes[G.round]), st = G.player;
   const dir = G.keys.r - G.keys.l;
@@ -488,12 +701,13 @@ function update() {
   physStep(st, dir, !!G.keys.j, p, G.world);
   G.time++;
   if (dir && st.g) G.walk += p.sp / p.w * 0.5;
+  for (const sp of G.level.spinners) if (hitsSpinner(st, p, sp, G.frame)) { die(); return; }
   const tr = G.trails[G.round].pts, cx = st.x + p.w / 2, cy = st.y + p.h / 2, last = tr[tr.length - 1];
   if (!last || Math.hypot(cx - last[0], cy - last[1]) > 1.2 * p.s) tr.push([cx, cy]);
   if (atGoal(st, p)) finishRound();
 }
 
-// ---------- render ----------
+// ---------- camera ----------
 const cv = $("cv"), ctx = cv.getContext("2d");
 let dpr = 1, cssW = 0, cssH = 0;
 function resize() {
@@ -503,29 +717,75 @@ function resize() {
 }
 new ResizeObserver(resize).observe(cv); resize();
 
-function camera() {
+function viewGeom() {
   const top = document.querySelector(".hud").offsetHeight + 4;
   const bottom = $("touch").hidden ? 12 : 110;
-  const availW = cssW - 24, availH = Math.max(120, cssH - top - bottom);
-  const fit = Math.min(availW / W, availH / VIEW_H);
-  const s = G.sizes[G.round] || 1;
-  if (!G.zoom || !G.player) {
-    return { k: fit, ox: (cssW - W * fit) / 2, oy: top + (availH - VIEW_H * fit) / 2 - VIEW_Y0 * fit };
-  }
-  const k = fit * Math.min(8, Math.max(1, 0.8 / s));
-  const p = P(s), px = G.player.x + p.w / 2, py = G.player.y + p.h / 2;
-  const vw = cssW / k, vh = availH / k;
-  let cx = Math.min(Math.max(px, vw / 2), W - vw / 2); if (vw >= W) cx = W / 2;
-  let cy = Math.min(Math.max(py, VIEW_Y0 + vh / 2), H - vh / 2); if (vh >= H - VIEW_Y0) cy = (VIEW_Y0 + H) / 2;
-  return { k, ox: cssW / 2 - cx * k, oy: top + availH / 2 - cy * k };
+  const availH = Math.max(120, cssH - top - bottom);
+  const fit = Math.min((cssW - 24) / W, availH / VIEW_H);
+  return { fit, vcx: cssW / 2, vcy: top + availH / 2, availH };
 }
+function camTarget(g) {
+  const s = G.sizes[G.round] || 1;
+  if (G.cam.mode === "follow" && G.player) {
+    const k = g.fit * Math.min(14, Math.max(1.8, 1.4 / s)), p = P(s);
+    const vw = cssW / k, vh = g.availH / k;
+    let cx = G.player.x + p.w / 2, cy = G.player.y + p.h / 2;
+    cx = vw >= W ? W / 2 : Math.min(Math.max(cx, vw / 2), W - vw / 2);
+    cy = vh >= H - VIEW_Y0 ? (VIEW_Y0 + H) / 2 : Math.min(Math.max(cy, VIEW_Y0 + vh / 2), H - vh / 2);
+    return { k, cx, cy };
+  }
+  if (G.cam.mode === "fit") return { k: g.fit, cx: W / 2, cy: VIEW_Y0 + VIEW_H / 2 };
+  return null;
+}
+function stepCamera(g) {
+  const c = G.cam, t = camTarget(g);
+  if (!c.init) { c.k = g.fit; c.init = true; }
+  if (t) { const a = 0.14; c.k += (t.k - c.k) * a; c.cx += (t.cx - c.cx) * a; c.cy += (t.cy - c.cy) * a; }
+  c.k = Math.min(g.fit * 24, Math.max(g.fit * 0.6, c.k));
+}
+function zoomAt(sx, sy, factor) {
+  const g = viewGeom(), c = G.cam;
+  const wx = c.cx + (sx - g.vcx) / c.k, wy = c.cy + (sy - g.vcy) / c.k;
+  c.k = Math.min(g.fit * 24, Math.max(g.fit * 0.6, c.k * factor));
+  c.cx = wx - (sx - g.vcx) / c.k; c.cy = wy - (sy - g.vcy) / c.k;
+}
+// drag to pan, pinch or scroll to zoom
+const ptrs = new Map(); let pinch = null;
+cv.addEventListener("pointerdown", e => {
+  cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; }
+});
+cv.addEventListener("pointermove", e => {
+  const prev = ptrs.get(e.pointerId); if (!prev) return;
+  const rect = cv.getBoundingClientRect();
+  if (ptrs.size === 1) {
+    const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+    if (Math.abs(dx) + Math.abs(dy) > 0) { setCamMode("free"); G.cam.cx -= dx / G.cam.k; G.cam.cy -= dy / G.cam.k; }
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  } else if (ptrs.size === 2) {
+    const before = [...ptrs.values()], mb = { x: (before[0].x + before[1].x) / 2, y: (before[0].y + before[1].y) / 2 };
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    setCamMode("free");
+    G.cam.cx -= (m.x - mb.x) / G.cam.k; G.cam.cy -= (m.y - mb.y) / G.cam.k;
+    if (pinch && pinch.d > 0) zoomAt(m.x - rect.left, m.y - rect.top, d / pinch.d);
+    pinch = { d };
+  }
+});
+const endPtr = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; };
+cv.addEventListener("pointerup", endPtr); cv.addEventListener("pointercancel", endPtr);
+cv.addEventListener("wheel", e => {
+  e.preventDefault(); setCamMode("free");
+  const rect = cv.getBoundingClientRect();
+  zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0015));
+}, { passive: false });
 
+// ---------- render ----------
 function drawPlayer(st, p, face) {
-  const { x, y, w, h } = { x: st.x, y: st.y, w: p.w, h: p.h };
+  const x = st.x, y = st.y, w = p.w, h = p.h;
   const legH = h * 0.18, bodyH = h - legH;
   ctx.fillStyle = "#0d0d0f";
-  const rad = Math.min(w, bodyH) * 0.22;
-  ctx.beginPath(); ctx.roundRect(x, y, w, bodyH, rad); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(x, y, w, bodyH, Math.min(w, bodyH) * 0.22); ctx.fill();
   const sw = st.g ? Math.sin(G.walk) * w * 0.12 : 0;
   ctx.fillRect(x + w * 0.16 + sw, y + bodyH - 0.5, w * 0.24, legH + 0.5);
   ctx.fillRect(x + w * 0.6 - sw, y + bodyH - 0.5, w * 0.24, legH + 0.5);
@@ -533,18 +793,41 @@ function drawPlayer(st, p, face) {
   const ex = x + w * (face > 0 ? 0.5 : 0.18), ey = y + bodyH * 0.24, ew = w * 0.13, eh = bodyH * 0.26;
   ctx.fillRect(ex, ey, ew, eh); ctx.fillRect(ex + w * 0.2, ey, ew, eh);
 }
-
 function drawFlag() {
-  const fx = FINISH_X + 14;
+  const fx = FINISH_X + 14, cw = 9;
   ctx.fillStyle = "#0d0d0f"; ctx.fillRect(fx, GY - 110, 4, 110);
-  const cw = 9, ch = 9;
   for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) {
     ctx.fillStyle = (i + j) % 2 ? "#0d0d0f" : "#ffffff";
-    ctx.fillRect(fx + 4 + i * cw, GY - 110 + j * ch, cw, ch);
+    ctx.fillRect(fx + 4 + i * cw, GY - 110 + j * cw, cw, cw);
   }
-  ctx.strokeStyle = "#0d0d0f"; ctx.lineWidth = 1.5; ctx.strokeRect(fx + 4, GY - 110, cw * 6, ch * 4);
+  ctx.strokeStyle = "#0d0d0f"; ctx.lineWidth = 1.5; ctx.strokeRect(fx + 4, GY - 110, cw * 6, cw * 4);
 }
-
+function drawSpinner(sp, k) {
+  ctx.strokeStyle = "#c8c8ce"; ctx.lineWidth = 1 / k; ctx.setLineDash([3 / k, 4 / k]);
+  ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.L + BAR_T / 2, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  const a = spinnerAngle(sp, G.frame), dx = Math.cos(a) * sp.L, dy = Math.sin(a) * sp.L;
+  ctx.strokeStyle = "#0d0d0f"; ctx.lineCap = "round"; ctx.lineWidth = BAR_T;
+  ctx.beginPath(); ctx.moveTo(sp.x - dx, sp.y - dy); ctx.lineTo(sp.x + dx, sp.y + dy); ctx.stroke();
+  // saw teeth on the ends
+  ctx.fillStyle = "#0d0d0f";
+  for (const sgn of [-1, 1]) {
+    const ex = sp.x + dx * sgn, ey = sp.y + dy * sgn;
+    ctx.beginPath();
+    for (let i = 0; i < 12; i++) { const t = a + i * Math.PI / 6, rr = i % 2 ? BAR_T * 0.55 : BAR_T * 0.95; ctx.lineTo(ex + Math.cos(t) * rr, ey + Math.sin(t) * rr); }
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(sp.x, sp.y, 2.6, 0, Math.PI * 2); ctx.fill();
+}
+function drawOneWay(r, k) {
+  ctx.fillStyle = "#0d0d0f"; ctx.fillRect(r.x, r.y, r.w, Math.min(r.h, Math.max(1.5, r.h * 0.4)));
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
+  ctx.strokeStyle = "#0d0d0f"; ctx.lineWidth = Math.max(0.6, Math.min(1.6, r.h * 0.18));
+  const step = Math.max(2.5, r.h * 0.9);
+  ctx.beginPath();
+  for (let x = r.x - r.h; x < r.x + r.w + r.h; x += step) { ctx.moveTo(x, r.y + r.h); ctx.lineTo(x + r.h, r.y); }
+  ctx.stroke(); ctx.restore();
+  ctx.strokeStyle = "#0d0d0f"; ctx.lineWidth = Math.max(0.5, 1 / k); ctx.strokeRect(r.x, r.y, r.w, r.h);
+}
 function polyline(pts) {
   if (pts.length < 2) return;
   ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
@@ -553,55 +836,52 @@ function polyline(pts) {
 }
 
 function render(now) {
+  const g = viewGeom(); stepCamera(g);
+  const k = G.cam.k, ox = g.vcx - G.cam.cx * k, oy = g.vcy - G.cam.cy * k;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, cssW, cssH);
-  const cam = camera();
-  ctx.setTransform(dpr * cam.k, 0, 0, dpr * cam.k, dpr * cam.ox, dpr * cam.oy);
+  ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * ox, dpr * oy);
 
-  // start line
   ctx.strokeStyle = "#dcdce0"; ctx.lineWidth = 2; ctx.setLineDash([8, 8]);
   ctx.beginPath(); ctx.moveTo(START_X - 6, GY); ctx.lineTo(START_X - 6, GY - 120); ctx.stroke(); ctx.setLineDash([]);
 
-  // blocks
   ctx.fillStyle = "#0d0d0f";
-  for (const r of G.rects) {
+  for (const r of G.level.rects) {
     if (r.fixed) { ctx.beginPath(); ctx.roundRect(-20, r.y, W + 40, 52, 26); ctx.fill(); }
-    else ctx.fillRect(r.x, r.y, r.w, r.h);
+    else if (!r.ow) ctx.fillRect(r.x - 0.25, r.y - 0.25, r.w + 0.5, r.h + 0.5);   // slight overlap hides seams between slices
   }
+  for (const r of G.level.rects) if (r.ow) drawOneWay(r, k);
   drawFlag();
 
-  // level changes: green = added, red = erased
   G.fx = G.fx.filter(f => now - f.t < 4000);
   for (const f of G.fx) {
-    const a = 1 - (now - f.t) / 4000;
-    ctx.globalAlpha = a;
+    ctx.globalAlpha = 1 - (now - f.t) / 4000;
     for (const r of f.added) { ctx.fillStyle = "#16a34a"; ctx.fillRect(r.x, r.y, r.w, r.h); }
-    ctx.strokeStyle = "#dc2626"; ctx.lineWidth = 2 / cam.k; ctx.setLineDash([5 / cam.k, 4 / cam.k]);
+    ctx.strokeStyle = "#dc2626"; ctx.lineWidth = 2 / k; ctx.setLineDash([5 / k, 4 / k]);
     for (const r of f.erased) { ctx.fillStyle = "rgba(220,38,38,.18)"; ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeRect(r.x, r.y, r.w, r.h); }
+    if (f.ring) { ctx.beginPath(); ctx.arc(f.ring.x, f.ring.y, f.ring.r + BAR_T, 0, Math.PI * 2); ctx.stroke(); }
     ctx.setLineDash([]); ctx.globalAlpha = 1;
   }
 
-  // trails, like marker lines
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   for (const t of G.trails) {
     if (!t) continue;
     ctx.strokeStyle = t.color; ctx.lineWidth = Math.max(1.4, 9 * t.s);
     polyline(t.pts);
   }
-
-  // proof path from the solver for the smallest size
   if (G.showProof && G.proof) {
-    ctx.strokeStyle = "rgba(13,13,15,.55)"; ctx.lineWidth = Math.max(1, 1.6 / cam.k);
-    ctx.setLineDash([4 / cam.k, 5 / cam.k]); polyline(G.proof.pts); ctx.setLineDash([]);
+    ctx.strokeStyle = "rgba(13,13,15,.55)"; ctx.lineWidth = Math.max(0.4, 1.6 / k);
+    ctx.setLineDash([4 / k, 5 / k]); polyline(G.proof.pts); ctx.setLineDash([]);
   }
-
+  for (const sp of G.level.spinners) drawSpinner(sp, k);
   if (G.player) drawPlayer(G.player, P(G.sizes[G.round]), G.face);
 
-  // timer
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const fa = 1 - (now - G.flash) / 350;
+  if (fa > 0) { ctx.fillStyle = `rgba(220,38,38,${0.25 * fa})`; ctx.fillRect(0, 0, cssW, cssH); }
   if (G.phase === "play") {
     ctx.fillStyle = "#55565c"; ctx.font = "500 13px Rubik, system-ui, sans-serif"; ctx.textAlign = "right";
-    ctx.fillText(`${(G.time / 60).toFixed(1)}s`, cssW - Math.max(16, 16), cssH - ( $("touch").hidden ? 14 : 124));
+    ctx.fillText(`${(G.time / 60).toFixed(1)}s`, cssW - 16, cssH - ($("touch").hidden ? 14 : 124));
   }
 }
 
@@ -615,9 +895,8 @@ function frame(now) {
 }
 updateHud();
 requestAnimationFrame(frame);
-newLevel();
+newLevel(false);
 
-// test hooks
-window.__shrink = { G, solve, P, sizeOf, ensureSolvable, setRects, replay };
+window.__shrink = { findBlocker, findSpinner, STATS, G, solve, P, sizeOf, ensureSolvable, setLevel, replay, buildWorld, physStep, hitsSpinner };
 })();
 </script>
