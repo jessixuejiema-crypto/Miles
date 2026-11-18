@@ -1,0 +1,93 @@
+{
+ "epoch": 2461200.5,
+ "classes": [
+  "AST",
+  "MBA",
+  "IMB",
+  "OMB",
+  "APO",
+  "ATE",
+  "AMO",
+  "IEO",
+  "MCA",
+  "TJN",
+  "CEN",
+  "TNO",
+  "PAA",
+  "HYA"
+ ],
+ "lnA": [
+  -2.3025850929940455,
+  8.517193191416238
+ ],
+ "chunks": [
+  {
+   "file": "a00.bin",
+   "count": 200000,
+   "first": 1,
+   "kind": "numbered",
+   "bytes": 3200016
+  },
+  {
+   "file": "a01.bin",
+   "count": 200000,
+   "first": 200001,
+   "kind": "numbered",
+   "bytes": 3200016
+  },
+  {
+   "file": "a02.bin",
+   "count": 200000,
+   "first": 400001,
+   "kind": "numbered",
+   "bytes": 3200016
+  },
+  {
+   "file": "a03.bin",
+   "count": 200000,
+   "first": 600001,
+   "kind": "numbered",
+   "bytes": 3200016
+  },
+  {
+   "file": "a04.bin",
+   "count": 95910,
+   "first": 800001,
+   "kind": "numbered",
+   "bytes": 1534576
+  },
+  {
+   "file": "a05.bin",
+   "count": 200000,
+   "first": 0,
+   "kind": "provisional",
+   "bytes": 4000016
+  },
+  {
+   "file": "a06.bin",
+   "count": 200000,
+   "first": 0,
+   "kind": "provisional",
+   "bytes": 4000016
+  },
+  {
+   "file": "a07.bin",
+   "count": 200000,
+   "first": 0,
+   "kind": "provisional",
+   "bytes": 4000016
+  },
+  {
+   "file": "a08.bin",
+   "count": 85355,
+   "first": 0,
+   "kind": "provisional",
+   "bytes": 1707116
+  }
+ ],
+ "total": 1581265,
+ "stats": {
+  "valid": 1581258,
+  "invalid": 7
+ }
+}
