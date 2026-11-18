@@ -79,10 +79,7 @@
   const modelCache = new Map();
   function loadModel(name) {
     if (modelCache.has(name)) return modelCache.get(name);
-    const p = fetch(`models/${name}.msh`).then((r) => {
-      if (!r.ok) throw new Error('model ' + name);
-      return r.arrayBuffer();
-    }).then((buf) => {
+    const p = E.fetchBinary(`models/${name}.msh`).then((buf) => {
       const dv = new DataView(buf);
       const hl = dv.getUint32(4, true);
       const h = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, hl)));
@@ -249,7 +246,7 @@
       const idx = await (await fetch('data/asteroids/index.json')).json();
       astMeta.index = idx; astMeta.total = idx.total;
       for (const ch of idx.chunks) {
-        const buf = await (await fetch('data/asteroids/' + ch.file)).arrayBuffer();
+        const buf = await E.fetchBinary('data/asteroids/' + ch.file);
         const count = new DataView(buf).getUint32(4, true);
         const recs = new Uint16Array(buf, 16, count * 8);
         const desig = ch.kind === 'provisional' ? new Uint32Array(buf, 16 + count * 16, count) : null;

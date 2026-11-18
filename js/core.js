@@ -43,6 +43,23 @@
   }
   Object.assign(E, { icrfToEcl, eclToIcrf, radec });
 
+  /* ---------- binary files ----------
+     Hosts that only serve web/text types get base64 copies (path + '.b64.txt'); set window.EPH_BIN_B64 = true. */
+  E.fetchBinary = async function (path) {
+    if (!window.EPH_BIN_B64) {
+      const r = await fetch(path);
+      if (!r.ok) throw new Error(`${path}: ${r.status}`);
+      return r.arrayBuffer();
+    }
+    const r = await fetch(path + '.b64.txt');
+    if (!r.ok) throw new Error(`${path}: ${r.status}`);
+    const txt = (await r.text()).replace(/\s+/g, '');
+    const bin = atob(txt);
+    const out = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) out[k] = bin.charCodeAt(k);
+    return out.buffer;
+  };
+
   /* ---------- time ----------
      The app's clock is UTC; ephemerides are in TDB (≈ TT). ΔT = TT − UT from Espenak & Meeus polynomials. */
   function deltaT(jd) {
